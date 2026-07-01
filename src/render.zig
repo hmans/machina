@@ -39,6 +39,7 @@ pub const RenderError = error{
 pub const WindowOptions = struct {
     max_frames: ?u32 = null,
     scene_reload: ?SceneReloadHook = null,
+    frame_update: ?FrameUpdateHook = null,
 };
 
 pub const Scene = struct {
@@ -48,6 +49,11 @@ pub const Scene = struct {
 pub const SceneReloadHook = struct {
     context: *anyopaque,
     poll: *const fn (context: *anyopaque) ?Scene,
+};
+
+pub const FrameUpdateHook = struct {
+    context: *anyopaque,
+    step: *const fn (context: *anyopaque, delta_seconds: f32) void,
 };
 
 pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const u8, scene: Scene) !void {
@@ -90,7 +96,6 @@ pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const 
     try demo.draw(gpu.device, gpu.queue, target_view, depth.view orelse return RenderError.NoDevice, .{
         .width = output_width,
         .height = output_height,
-        .time = 0.72,
         .scene = scene,
     });
 
@@ -231,12 +236,16 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
             }
         }
 
+        const delta_seconds: f32 = 0.025;
+        if (options.frame_update) |frame_update| {
+            frame_update.step(frame_update.context, delta_seconds);
+        }
+
         try configureSurfaceFromWindow(surface, gpu.device, window, surface_format, &width, &height);
         try depth.ensure(gpu.device, width, height);
         try drawCubeToSurface(surface, gpu.device, gpu.queue, &demo, depth.view orelse return RenderError.NoDevice, .{
             .width = width,
             .height = height,
-            .time = @as(f32, @floatFromInt(frame_count)) * 0.025,
             .scene = scene,
         });
         instance.processEvents();
@@ -255,14 +264,12 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
 const FrameConfig = struct {
     width: u32,
     height: u32,
-    time: f32,
     scene: Scene,
 };
 
 const ObjectConfig = struct {
     width: u32,
     height: u32,
-    time: f32,
     cube: *const runtime.RenderableCube,
 };
 
@@ -435,7 +442,6 @@ const CubeDemo = struct {
             var uniforms = frameUniforms(.{
                 .width = config.width,
                 .height = config.height,
-                .time = config.time,
                 .cube = &cube,
             });
             writeUniforms(queue, object.uniform_buffer, &uniforms);
@@ -513,7 +519,6 @@ const ObjectResources = struct {
         var initial_uniforms = frameUniforms(.{
             .width = output_width,
             .height = output_height,
-            .time = 0,
             .cube = &cube,
         });
         writeUniforms(queue, uniform_buffer, &initial_uniforms);
@@ -738,10 +743,10 @@ fn frameUniforms(config: ObjectConfig) FrameUniforms {
     const aspect = @as(f32, @floatFromInt(config.width)) / @as(f32, @floatFromInt(config.height));
     const cube = config.cube;
     const rotation = matMul(
-        rotationZ(cube.rotation[2] + config.time * cube.spin[2]),
+        rotationZ(cube.rotation[2]),
         matMul(
-            rotationY(cube.rotation[1] + config.time * cube.spin[1]),
-            rotationX(cube.rotation[0] + config.time * cube.spin[0]),
+            rotationY(cube.rotation[1]),
+            rotationX(cube.rotation[0]),
         ),
     );
     const model = matMul(

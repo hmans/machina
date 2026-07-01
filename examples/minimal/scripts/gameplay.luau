@@ -14,6 +14,7 @@ ecs.component("mood", {
 ecs.system("observe_cubes", {
   phase = "update",
   reads = { "machina.transform", "machina.render.cube" },
+  after = { "machina.rotate" },
 })
 
 ecs.system("observe_health", {

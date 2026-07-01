@@ -17,6 +17,7 @@ The entity component runtime is the shared low-level model for game state. It gi
 - Scripts can register new component and system types with project-local or qualified non-reserved ids.
 - Engine-owned and script-defined systems declare phases, read/write component access, and optional before/after ordering relationships.
 - The runtime can build phase-specific system schedule batches from those declarations.
+- The first executing engine-owned system is `machina.rotate`, which applies `machina.spin` angular velocity to `machina.transform` rotation during update.
 - Invalid, duplicate, or unsupported entity/component data produces diagnostics suitable for command-line and editor display.
 
 ## Design Decisions

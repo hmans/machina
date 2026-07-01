@@ -97,6 +97,10 @@ fn run(
             .context = &reload_context,
             .poll = pollSceneReload,
         };
+        window_options.frame_update = .{
+            .context = &reload_context,
+            .step = stepLiveProject,
+        };
 
         try stdout.print("Loaded project {s}\n", .{result.project.name});
         try stdout.print("Selected scene: {s}\n", .{result.project.default_scene});
@@ -237,6 +241,11 @@ fn pollSceneReload(raw_context: *anyopaque) ?machina.RenderScene {
             return context.live_project.renderScene();
         },
     }
+}
+
+fn stepLiveProject(raw_context: *anyopaque, delta_seconds: f32) void {
+    const context: *SceneReloadContext = @ptrCast(@alignCast(raw_context));
+    context.live_project.update(delta_seconds);
 }
 
 fn parseWindowOptions(args: []const []const u8) ArgumentError!machina.WindowOptions {

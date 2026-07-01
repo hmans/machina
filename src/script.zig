@@ -49,7 +49,7 @@ fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
         .{ .name = "scale", .value_type = .float },
     };
     try registry.registerEngineComponent(.{
-        .id = "machina.transform",
+        .id = runtime.transform_component_id,
         .version = 1,
         .fields = &transform_fields,
     });
@@ -58,7 +58,7 @@ fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
         .{ .name = "color", .value_type = .float },
     };
     try registry.registerEngineComponent(.{
-        .id = "machina.render.cube",
+        .id = runtime.cube_renderer_component_id,
         .version = 1,
         .fields = &cube_fields,
     });
@@ -67,9 +67,16 @@ fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
         .{ .name = "angular_velocity", .value_type = .float },
     };
     try registry.registerEngineComponent(.{
-        .id = "machina.spin",
+        .id = runtime.spin_component_id,
         .version = 1,
         .fields = &spin_fields,
+    });
+
+    try registry.registerEngineSystem(.{
+        .id = runtime.rotate_system_id,
+        .phase = .update,
+        .reads = &.{runtime.spin_component_id},
+        .writes = &.{runtime.transform_component_id},
     });
 }
 
@@ -418,7 +425,7 @@ test "update schedule batches read-only systems and separates write conflicts" {
     defer schedule.deinit();
 
     try std.testing.expectEqual(@as(usize, 2), schedule.batchCount());
-    try std.testing.expectEqual(@as(usize, 3), schedule.systemCount());
+    try std.testing.expectEqual(@as(usize, 4), schedule.systemCount());
     try std.testing.expectEqual(@as(usize, 2), schedule.batches[0].systems.len);
-    try std.testing.expectEqual(@as(usize, 1), schedule.batches[1].systems.len);
+    try std.testing.expectEqual(@as(usize, 2), schedule.batches[1].systems.len);
 }

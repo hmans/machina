@@ -24,6 +24,10 @@ pub const ScheduleError = error{
 };
 
 const engine_namespace = "machina";
+pub const transform_component_id = "machina.transform";
+pub const cube_renderer_component_id = "machina.render.cube";
+pub const spin_component_id = "machina.spin";
+pub const rotate_system_id = "machina.rotate";
 
 pub const FieldType = enum {
     boolean,
@@ -594,6 +598,39 @@ pub const World = struct {
         self.spins.items[index] = spin;
     }
 
+    pub fn getTransform(self: World, handle: EntityHandle) WorldError!?Transform {
+        const index = try self.componentIndex(handle);
+        return self.transforms.items[index];
+    }
+
+    pub fn runUpdateSchedule(self: *World, schedule: SystemSchedule, delta_seconds: f32) void {
+        for (schedule.batches) |batch| {
+            if (batch.phase != .update) {
+                continue;
+            }
+            for (batch.systems) |system| {
+                self.runEngineSystem(system.id, delta_seconds);
+            }
+        }
+    }
+
+    fn runEngineSystem(self: *World, system_id: []const u8, delta_seconds: f32) void {
+        if (std.mem.eql(u8, system_id, rotate_system_id)) {
+            self.rotateSpinningEntities(delta_seconds);
+        }
+    }
+
+    fn rotateSpinningEntities(self: *World, delta_seconds: f32) void {
+        for (self.transforms.items, self.spins.items) |*maybe_transform, maybe_spin| {
+            const spin = maybe_spin orelse continue;
+            if (maybe_transform.*) |*transform| {
+                transform.rotation[0] += spin.angular_velocity[0] * delta_seconds;
+                transform.rotation[1] += spin.angular_velocity[1] * delta_seconds;
+                transform.rotation[2] += spin.angular_velocity[2] * delta_seconds;
+            }
+        }
+    }
+
     pub fn renderableCubeCount(self: World) usize {
         var count: usize = 0;
         for (self.entities.items, 0..) |_, index| {
@@ -832,6 +869,39 @@ test "world rejects duplicate entity ids" {
 
     _ = try world.createEntity("entity-1", "One");
     try std.testing.expectError(WorldError.DuplicateEntityId, world.createEntity("entity-1", "Two"));
+}
+
+test "world update schedule runs built-in rotation system" {
+    var world = World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const entity = try world.createEntity("spinner", "Spinner");
+    try world.setTransform(entity, .{ .rotation = .{ 0.1, 0.2, 0.3 } });
+    try world.setSpin(entity, .{ .angular_velocity = .{ 1.0, 2.0, -4.0 } });
+
+    const systems = try std.testing.allocator.alloc(ScheduledSystem, 1);
+    defer std.testing.allocator.free(systems);
+    systems[0] = .{
+        .registry_index = 0,
+        .id = rotate_system_id,
+    };
+    const batches = try std.testing.allocator.alloc(SystemBatch, 1);
+    defer std.testing.allocator.free(batches);
+    batches[0] = .{
+        .phase = .update,
+        .systems = systems,
+    };
+    const schedule = SystemSchedule{
+        .allocator = std.testing.allocator,
+        .batches = batches,
+    };
+
+    world.runUpdateSchedule(schedule, 0.5);
+
+    const transform_after = (try world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(f32, 0.6), transform_after.rotation[0]);
+    try std.testing.expectEqual(@as(f32, 1.2), transform_after.rotation[1]);
+    try std.testing.expectEqual(@as(f32, -1.7), transform_after.rotation[2]);
 }
 
 test "type ids distinguish project-local, package, and engine namespaces" {

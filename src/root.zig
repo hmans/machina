@@ -166,6 +166,10 @@ pub const LiveProject = struct {
         return self.scene.renderScene();
     }
 
+    pub fn update(self: *LiveProject, delta_seconds: f32) void {
+        self.scene.world.runUpdateSchedule(self.schedule, delta_seconds);
+    }
+
     pub fn pollLoadedSources(self: *LiveProject) !ReloadResult {
         const project_stamp = try statProjectFile(self.io, self.root_path);
         if (!project_stamp.eql(self.project_source.stamp)) {
@@ -1320,7 +1324,7 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     defer live_project.deinit();
     try std.testing.expect(live_project.registry.findComponent("health") != null);
     try std.testing.expect(live_project.registry.findComponent("mood") == null);
-    try std.testing.expectEqual(@as(usize, 1), live_project.schedule.systemCount());
+    try std.testing.expectEqual(@as(usize, 2), live_project.schedule.systemCount());
 
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
@@ -1352,7 +1356,7 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     try std.testing.expect(!reload.reloaded.scene_reloaded);
     try std.testing.expect(reload.reloaded.scripts_reloaded);
     try std.testing.expect(live_project.registry.findComponent("mood") != null);
-    try std.testing.expectEqual(@as(usize, 2), live_project.schedule.systemCount());
+    try std.testing.expectEqual(@as(usize, 3), live_project.schedule.systemCount());
 
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
@@ -1367,8 +1371,31 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
 
     try std.testing.expectError(ProjectError.InvalidScript, live_project.pollLoadedSources());
     try std.testing.expect(live_project.registry.findComponent("mood") != null);
-    try std.testing.expectEqual(@as(usize, 2), live_project.schedule.systemCount());
+    try std.testing.expectEqual(@as(usize, 3), live_project.schedule.systemCount());
     try std.testing.expectEqual(ReloadResult.unchanged, try live_project.pollLoadedSources());
+}
+
+test "LiveProject update runs the scheduled rotation system" {
+    const root_path = ".zig-cache/test-live-project-update";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+
+    var live_project = try LiveProject.init(io, std.testing.allocator, root_path);
+    defer live_project.deinit();
+
+    const entity = live_project.scene.world.findEntityById("018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001") orelse return error.TestExpectedEqual;
+    const before = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+
+    live_project.update(0.5);
+
+    const after = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    try std.testing.expect(after.rotation[0] > before.rotation[0]);
+    try std.testing.expect(after.rotation[1] > before.rotation[1]);
+    try std.testing.expectEqual(before.rotation[2], after.rotation[2]);
 }
 
 test "LiveProject reloads project metadata and follows default scene changes" {
