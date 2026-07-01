@@ -31,6 +31,7 @@ pub const RenderError = error{
     MetalViewCreateFailed,
     MetalLayerMissing,
     BufferMapFailed,
+    OutOfMemory,
 };
 
 pub const WindowOptions = struct {
@@ -72,7 +73,7 @@ pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const 
     }) orelse return RenderError.NoDevice;
     defer target_view.release();
 
-    var demo = try CubeDemo.create(gpu.device, gpu.queue, texture_format);
+    var demo = try CubeDemo.create(allocator, gpu.device, gpu.queue, texture_format, scene);
     defer demo.deinit();
 
     var depth = try DepthTarget.create(gpu.device, output_width, output_height);
@@ -187,7 +188,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
     defer capabilities.freeMembers();
 
     const surface_format = chooseSurfaceFormat(capabilities) orelse return RenderError.NoSurfaceFormat;
-    var demo = try CubeDemo.create(gpu.device, gpu.queue, surface_format);
+    var demo = try CubeDemo.create(allocator, gpu.device, gpu.queue, surface_format, scene);
     defer demo.deinit();
 
     var depth = DepthTarget{};
@@ -322,37 +323,26 @@ const DepthTarget = struct {
 };
 
 const CubeDemo = struct {
+    allocator: std.mem.Allocator,
     pipeline: *wgpu.RenderPipeline,
     bind_group_layout: *wgpu.BindGroupLayout,
     pipeline_layout: *wgpu.PipelineLayout,
-    bind_group: *wgpu.BindGroup,
     vertex_buffer: *wgpu.Buffer,
     index_buffer: *wgpu.Buffer,
-    uniform_buffer: *wgpu.Buffer,
+    objects: []ObjectResources,
 
-    fn create(device: *wgpu.Device, queue: *wgpu.Queue, texture_format: wgpu.TextureFormat) RenderError!CubeDemo {
+    fn create(
+        allocator: std.mem.Allocator,
+        device: *wgpu.Device,
+        queue: *wgpu.Queue,
+        texture_format: wgpu.TextureFormat,
+        scene: Scene,
+    ) RenderError!CubeDemo {
         const vertex_buffer = try createStaticBuffer(device, "Machina cube vertex buffer", wgpu.BufferUsages.vertex, std.mem.asBytes(&cube_vertices));
         errdefer vertex_buffer.release();
 
         const index_buffer = try createStaticBuffer(device, "Machina cube index buffer", wgpu.BufferUsages.index, std.mem.asBytes(&cube_indices));
         errdefer index_buffer.release();
-
-        const uniform_buffer = device.createBuffer(&wgpu.BufferDescriptor{
-            .label = wgpu.StringView.fromSlice("Machina cube frame uniforms"),
-            .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
-            .size = @sizeOf(FrameUniforms),
-            .mapped_at_creation = @as(u32, @intFromBool(false)),
-        }) orelse return RenderError.NoDevice;
-        errdefer uniform_buffer.release();
-
-        const initial_cube = CubeInstance{};
-        var initial_uniforms = frameUniforms(.{
-            .width = output_width,
-            .height = output_height,
-            .time = 0,
-            .cube = &initial_cube,
-        });
-        writeUniforms(queue, uniform_buffer, &initial_uniforms);
 
         const bind_group_layout_entries = [_]wgpu.BindGroupLayoutEntry{
             .{
@@ -371,20 +361,19 @@ const CubeDemo = struct {
         }) orelse return RenderError.NoDevice;
         errdefer bind_group_layout.release();
 
-        const bind_group_entries = [_]wgpu.BindGroupEntry{
-            .{
-                .binding = 0,
-                .buffer = uniform_buffer,
-                .size = @sizeOf(FrameUniforms),
-            },
-        };
-        const bind_group = device.createBindGroup(&wgpu.BindGroupDescriptor{
-            .label = wgpu.StringView.fromSlice("Machina cube bind group"),
-            .layout = bind_group_layout,
-            .entry_count = bind_group_entries.len,
-            .entries = &bind_group_entries,
-        }) orelse return RenderError.NoDevice;
-        errdefer bind_group.release();
+        const objects = allocator.alloc(ObjectResources, scene.cubes.len) catch return RenderError.OutOfMemory;
+        errdefer allocator.free(objects);
+        var object_count: usize = 0;
+        errdefer {
+            for (objects[0..object_count]) |*object| {
+                object.deinit();
+            }
+        }
+
+        for (scene.cubes, 0..) |*cube, index| {
+            objects[index] = try ObjectResources.create(device, queue, bind_group_layout, cube);
+            object_count += 1;
+        }
 
         const bind_group_layouts = [_]*wgpu.BindGroupLayout{bind_group_layout};
         const pipeline_layout = device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
@@ -398,22 +387,24 @@ const CubeDemo = struct {
         errdefer pipeline.release();
 
         return .{
+            .allocator = allocator,
             .pipeline = pipeline,
             .bind_group_layout = bind_group_layout,
             .pipeline_layout = pipeline_layout,
-            .bind_group = bind_group,
             .vertex_buffer = vertex_buffer,
             .index_buffer = index_buffer,
-            .uniform_buffer = uniform_buffer,
+            .objects = objects,
         };
     }
 
     fn deinit(self: *CubeDemo) void {
         self.pipeline.release();
-        self.bind_group.release();
         self.pipeline_layout.release();
         self.bind_group_layout.release();
-        self.uniform_buffer.release();
+        for (self.objects) |*object| {
+            object.deinit();
+        }
+        self.allocator.free(self.objects);
         self.index_buffer.release();
         self.vertex_buffer.release();
     }
@@ -426,6 +417,16 @@ const CubeDemo = struct {
         depth_view: *wgpu.TextureView,
         config: FrameConfig,
     ) RenderError!void {
+        for (config.scene.cubes, self.objects) |*cube, *object| {
+            var uniforms = frameUniforms(.{
+                .width = config.width,
+                .height = config.height,
+                .time = config.time,
+                .cube = cube,
+            });
+            writeUniforms(queue, object.uniform_buffer, &uniforms);
+        }
+
         const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
             .label = wgpu.StringView.fromSlice("Machina cube command encoder"),
         }) orelse return RenderError.NoDevice;
@@ -455,17 +456,10 @@ const CubeDemo = struct {
             .depth_stencil_attachment = &depth_attachment,
         }) orelse return RenderError.NoDevice;
         render_pass.setPipeline(self.pipeline);
-        render_pass.setBindGroup(0, self.bind_group, 0, null);
         render_pass.setVertexBuffer(0, self.vertex_buffer, 0, @sizeOf(@TypeOf(cube_vertices)));
         render_pass.setIndexBuffer(self.index_buffer, .uint16, 0, @sizeOf(@TypeOf(cube_indices)));
-        for (config.scene.cubes) |*cube| {
-            var uniforms = frameUniforms(.{
-                .width = config.width,
-                .height = config.height,
-                .time = config.time,
-                .cube = cube,
-            });
-            writeUniforms(queue, self.uniform_buffer, &uniforms);
+        for (self.objects) |object| {
+            render_pass.setBindGroup(0, object.bind_group, 0, null);
             render_pass.drawIndexed(cube_indices.len, 1, 0, 0, 0);
         }
         render_pass.end();
@@ -478,6 +472,58 @@ const CubeDemo = struct {
 
         const command_buffers = [_]*const wgpu.CommandBuffer{command_buffer};
         queue.submit(&command_buffers);
+    }
+};
+
+const ObjectResources = struct {
+    uniform_buffer: *wgpu.Buffer,
+    bind_group: *wgpu.BindGroup,
+
+    fn create(
+        device: *wgpu.Device,
+        queue: *wgpu.Queue,
+        bind_group_layout: *wgpu.BindGroupLayout,
+        cube: *const CubeInstance,
+    ) RenderError!ObjectResources {
+        const uniform_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina cube object uniforms"),
+            .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
+            .size = @sizeOf(FrameUniforms),
+            .mapped_at_creation = @as(u32, @intFromBool(false)),
+        }) orelse return RenderError.NoDevice;
+        errdefer uniform_buffer.release();
+
+        var initial_uniforms = frameUniforms(.{
+            .width = output_width,
+            .height = output_height,
+            .time = 0,
+            .cube = cube,
+        });
+        writeUniforms(queue, uniform_buffer, &initial_uniforms);
+
+        const bind_group_entries = [_]wgpu.BindGroupEntry{
+            .{
+                .binding = 0,
+                .buffer = uniform_buffer,
+                .size = @sizeOf(FrameUniforms),
+            },
+        };
+        const bind_group = device.createBindGroup(&wgpu.BindGroupDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina cube object bind group"),
+            .layout = bind_group_layout,
+            .entry_count = bind_group_entries.len,
+            .entries = &bind_group_entries,
+        }) orelse return RenderError.NoDevice;
+
+        return .{
+            .uniform_buffer = uniform_buffer,
+            .bind_group = bind_group,
+        };
+    }
+
+    fn deinit(self: *ObjectResources) void {
+        self.bind_group.release();
+        self.uniform_buffer.release();
     }
 };
 
