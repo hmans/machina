@@ -125,15 +125,24 @@ pub const Program = struct {
         return ok;
     }
 
-    fn activeSystemAllowsRotate(self: Program, transform_component_id_value: []const u8, spin_component_id_value: []const u8) bool {
+    fn activeSystemAllowsRead(self: Program, component_id: []const u8) bool {
         const active_system = self.active_system orelse return false;
         if (active_system.registry_index >= self.registry.systems.items.len) {
             return false;
         }
 
         const definition = self.registry.systems.items[active_system.registry_index];
-        return containsString(definition.reads, spin_component_id_value) and
-            containsString(definition.writes, transform_component_id_value);
+        return containsString(definition.reads, component_id) or containsString(definition.writes, component_id);
+    }
+
+    fn activeSystemAllowsWrite(self: Program, component_id: []const u8) bool {
+        const active_system = self.active_system orelse return false;
+        if (active_system.registry_index >= self.registry.systems.items.len) {
+            return false;
+        }
+
+        const definition = self.registry.systems.items[active_system.registry_index];
+        return containsString(definition.writes, component_id);
     }
 
     pub fn clearLastDiagnostic(self: *Program) void {
@@ -242,7 +251,9 @@ pub fn buildUpdateSchedule(
 
 fn initProgram(allocator: std.mem.Allocator) !Program {
     const callbacks = c.machina_luau_callbacks{
-        .rotate = rotateCallback,
+        .query_next = queryNextCallback,
+        .get_vec3 = getVec3Callback,
+        .set_vec3 = setVec3Callback,
     };
     const vm = c.machina_luau_create(callbacks) orelse return ScriptError.InvalidScript;
 
@@ -283,9 +294,9 @@ fn loadChunk(program: *Program, chunk_name: []const u8, source: []const u8) !?Di
 
 fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
     const transform_fields = [_]runtime.ComponentFieldDefinition{
-        .{ .name = "position", .value_type = .float },
-        .{ .name = "rotation", .value_type = .float },
-        .{ .name = "scale", .value_type = .float },
+        .{ .name = "position", .value_type = .vec3 },
+        .{ .name = "rotation", .value_type = .vec3 },
+        .{ .name = "scale", .value_type = .vec3 },
     };
     try registry.registerEngineComponent(.{
         .id = runtime.transform_component_id,
@@ -294,7 +305,7 @@ fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
     });
 
     const cube_fields = [_]runtime.ComponentFieldDefinition{
-        .{ .name = "color", .value_type = .float },
+        .{ .name = "color", .value_type = .vec3 },
     };
     try registry.registerEngineComponent(.{
         .id = runtime.cube_renderer_component_id,
@@ -516,27 +527,85 @@ fn spanC(value: ?[*:0]const u8) ScriptError![]const u8 {
     return std.mem.span(value orelse return ScriptError.InvalidScript);
 }
 
-fn rotateCallback(
+fn queryNextCallback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
-    transform_id: ?[*:0]const u8,
-    spin_id: ?[*:0]const u8,
-    delta_seconds: f64,
+    raw_component_ids: ?[*]const ?[*:0]const u8,
+    component_count: usize,
+    raw_cursor: ?*u32,
+    raw_out_entity: ?*u32,
+) callconv(.c) c_int {
+    const program: *Program = @ptrCast(@alignCast(raw_context orelse return -1));
+    const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return -1));
+    const component_id_ptr = raw_component_ids orelse return -1;
+    const cursor = raw_cursor orelse return -1;
+    const out_entity = raw_out_entity orelse return -1;
+
+    var component_ids_buffer: [16][]const u8 = undefined;
+    if (component_count == 0 or component_count > component_ids_buffer.len) {
+        return -1;
+    }
+
+    for (0..component_count) |index| {
+        const component_id = std.mem.span(component_id_ptr[index] orelse return -1);
+        if (!program.activeSystemAllowsRead(component_id)) {
+            return -1;
+        }
+        component_ids_buffer[index] = component_id;
+    }
+
+    var cursor_value: usize = cursor.*;
+    const entity = world.queryNext(component_ids_buffer[0..component_count], &cursor_value) orelse return 0;
+    cursor.* = @intCast(cursor_value);
+    out_entity.* = entity.index;
+    return 1;
+}
+
+fn getVec3Callback(
+    raw_context: ?*anyopaque,
+    raw_world: ?*anyopaque,
+    entity_index: u32,
+    raw_component_id: ?[*:0]const u8,
+    raw_field_name: ?[*:0]const u8,
+    raw_out_value: ?[*]f32,
 ) callconv(.c) c_int {
     const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
     const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
-    const transform_component_id_value = std.mem.span(transform_id orelse return 0);
-    const spin_component_id_value = std.mem.span(spin_id orelse return 0);
-    if (!std.math.isFinite(delta_seconds) or
-        delta_seconds > std.math.floatMax(f32) or
-        delta_seconds < -std.math.floatMax(f32))
-    {
+    const component_id = std.mem.span(raw_component_id orelse return 0);
+    const field_name = std.mem.span(raw_field_name orelse return 0);
+    const out_value = raw_out_value orelse return 0;
+    if (!program.activeSystemAllowsRead(component_id)) {
         return 0;
     }
-    if (!program.activeSystemAllowsRotate(transform_component_id_value, spin_component_id_value)) {
+    const value = world.getVec3(.{ .index = entity_index }, component_id, field_name) catch return 0;
+    out_value[0] = value[0];
+    out_value[1] = value[1];
+    out_value[2] = value[2];
+    return 1;
+}
+
+fn setVec3Callback(
+    raw_context: ?*anyopaque,
+    raw_world: ?*anyopaque,
+    entity_index: u32,
+    raw_component_id: ?[*:0]const u8,
+    raw_field_name: ?[*:0]const u8,
+    raw_value: ?[*]const f32,
+) callconv(.c) c_int {
+    const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
+    const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
+    const component_id = std.mem.span(raw_component_id orelse return 0);
+    const field_name = std.mem.span(raw_field_name orelse return 0);
+    const value = raw_value orelse return 0;
+    if (!program.activeSystemAllowsWrite(component_id)) {
         return 0;
     }
-    return if (world.rotateBySpin(transform_component_id_value, spin_component_id_value, @floatCast(delta_seconds))) 1 else 0;
+    world.setVec3(.{ .index = entity_index }, component_id, field_name, .{
+        value[0],
+        value[1],
+        value[2],
+    }) catch return 0;
+    return 1;
 }
 
 fn parseFieldType(value: []const u8) ScriptError!runtime.FieldType {
@@ -548,6 +617,9 @@ fn parseFieldType(value: []const u8) ScriptError!runtime.FieldType {
     }
     if (std.mem.eql(u8, value, "float") or std.mem.eql(u8, value, "f32")) {
         return .float;
+    }
+    if (std.mem.eql(u8, value, "vec3")) {
+        return .vec3;
     }
     if (std.mem.eql(u8, value, "string")) {
         return .string;
@@ -584,7 +656,7 @@ test "luau declarations register components and executable systems" {
     var program = try loadSourceProgram(std.testing.allocator, "test.luau",
         \\ecs.component("spin", {
         \\  fields = {
-        \\    angular_velocity = "f32",
+        \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
@@ -593,7 +665,15 @@ test "luau declarations register components and executable systems" {
         \\  reads = { "spin" },
         \\  writes = { "machina.transform" },
         \\  run = function(world, dt)
-        \\    world.rotate("machina.transform", "spin", dt * (1 + 1.5))
+        \\    for entity in world.query("machina.transform", "spin") do
+        \\      local rotation = entity.get_vec3("machina.transform", "rotation")
+        \\      local angular_velocity = entity.get_vec3("spin", "angular_velocity")
+        \\      entity.set_vec3("machina.transform", "rotation", {
+        \\        rotation[1] + angular_velocity[1] * dt * (1 + 1.5),
+        \\        rotation[2] + angular_velocity[2] * dt * (1 + 1.5),
+        \\        rotation[3] + angular_velocity[3] * dt * (1 + 1.5),
+        \\      })
+        \\    end
         \\  end,
         \\})
     );
@@ -618,17 +698,19 @@ test "luau world mutation requires declared system access" {
     var program = try loadSourceProgram(std.testing.allocator, "test.luau",
         \\ecs.component("spin", {
         \\  fields = {
-        \\    angular_velocity = "f32",
+        \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
         \\ecs.component("marker", {})
         \\
         \\ecs.system("bad_rotate", {
-        \\  reads = { "spin" },
+        \\  reads = { "machina.transform", "spin" },
         \\  writes = { "marker" },
         \\  run = function(world, dt)
-        \\    world.rotate("machina.transform", "spin", dt)
+        \\    for entity in world.query("machina.transform", "spin") do
+        \\      entity.set_vec3("machina.transform", "rotation", { dt, 0, 0 })
+        \\    end
         \\  end,
         \\})
     );
@@ -643,6 +725,37 @@ test "luau world mutation requires declared system access" {
     try std.testing.expect(!program.update(&world, 1.0));
     const transform = (try world.getTransform(entity)) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(f32, 0.0), transform.rotation[0]);
+}
+
+test "luau world query requires declared component access" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
+        \\ecs.component("spin", {
+        \\  fields = {
+        \\    angular_velocity = "vec3",
+        \\  },
+        \\})
+        \\
+        \\ecs.component("marker", {})
+        \\
+        \\ecs.system("bad_query", {
+        \\  reads = { "spin" },
+        \\  writes = { "machina.transform" },
+        \\  run = function(world, dt)
+        \\    for entity in world.query("marker") do
+        \\      entity.set_vec3("machina.transform", "rotation", { dt, 0, 0 })
+        \\    end
+        \\  end,
+        \\})
+    );
+    defer program.deinit();
+
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+    const entity = try world.createEntity("spinner", "Spinner");
+    try world.setTransform(entity, .{});
+    try world.setSpin(entity, .{ .angular_velocity = .{ 1.0, 0.0, 0.0 } });
+
+    try std.testing.expect(!program.update(&world, 1.0));
 }
 
 test "update schedule batches read-only systems and separates write conflicts" {

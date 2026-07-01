@@ -8,6 +8,7 @@ type MachinaFieldType =
     | "i32"
     | "float"
     | "f32"
+    | "vec3"
     | "string"
 
 type MachinaComponentDefinition = {
@@ -17,13 +18,24 @@ type MachinaComponentDefinition = {
 
 type MachinaSystemPhase = "startup" | "update" | "fixed_update" | "render"
 
-type MachinaWorld = {
-    --- Rotates every entity with the requested transform and spin components.
-    rotate: (
-        transform: MachinaComponentId,
-        spin: MachinaComponentId,
-        delta_seconds: number
+type MachinaVec3 = { number }
+
+type MachinaEntity = {
+    get_vec3: (
+        component: MachinaComponentId,
+        field: string
+    ) -> MachinaVec3,
+
+    set_vec3: (
+        component: MachinaComponentId,
+        field: string,
+        value: MachinaVec3
     ) -> (),
+}
+
+type MachinaWorld = {
+    --- Iterates entities that have all requested components.
+    query: (...MachinaComponentId) -> (() -> MachinaEntity?),
 }
 
 type MachinaSystemDefinition = {

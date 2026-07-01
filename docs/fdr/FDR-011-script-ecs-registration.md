@@ -26,7 +26,7 @@ Script ECS registration lets project and package scripts define new component an
 - Systems that only read compatible component sets can share a batch; write conflicts or order dependencies force later batches.
 - Script-authored systems can provide Luau `run` callbacks that execute during the native update schedule.
 - Script system callbacks receive an engine-provided world facade instead of direct component storage ownership.
-- The current world facade exposes a narrow `world.rotate(...)` operation used by the example `rotate_cubes` system.
+- The current world facade exposes `world.query(...)` for component-set iteration and entity vector field accessors `get_vec3(...)` and `set_vec3(...)`.
 - Script-driven world mutation is checked against the system's declared component access.
 - Non-finite script values that reach host mutation APIs fail the system invocation for that frame instead of corrupting world state.
 - Registration failures produce structured diagnostics suitable for command-line, editor, and reload surfaces.
@@ -64,6 +64,12 @@ Script ECS registration lets project and package scripts define new component an
 **Why:** Running real Luau keeps script behavior honest, reloadable, and compatible with editor tooling while preserving native ownership of ECS storage and scheduling. Narrow host APIs prevent scripts from bypassing validation while the ECS query/mutation model matures.
 **Tradeoff:** Each host API must be designed, typed, validated, and diagnosed explicitly before scripts can use it.
 
+### 6. Start world access with declared queries and vec3 mutation
+
+**Decision:** Script systems begin runtime access through declared component queries and explicit `vec3` field reads/writes.
+**Why:** This replaces hardcoded gameplay host functions with real component storage while keeping validation and declared read/write access enforceable. It is enough for the rotating cube example and scene-authored project-local `spin` data.
+**Tradeoff:** The API does not yet expose scalar fields, component insertion/removal, query objects, defaults, or richer diagnostics per accessor failure.
+
 ### 6. Vendor the initial Luau runtime behind the scripting boundary
 
 **Decision:** Machina vendors the embeddable Luau compiler and VM source subset and wraps it behind a small C ABI bridge.
@@ -79,5 +85,6 @@ Script ECS registration lets project and package scripts define new component an
 
 - How will component defaults and migrations be represented in script schemas?
 - Which system phases beyond `update` should be exposed to script-defined systems first?
-- What query and mutation APIs should the world facade expose beyond `world.rotate(...)`?
+- Which scalar and structured field accessors should be added after `vec3`?
+- How should component insertion/removal work from scripts, and which phases may perform structural changes?
 - How should script runtime errors include full stack context and source spans?

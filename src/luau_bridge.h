@@ -9,17 +9,38 @@ extern "C" {
 
 typedef struct machina_luau machina_luau;
 
-typedef int (*machina_luau_rotate_fn)(
+typedef int (*machina_luau_query_next_fn)(
     void* context,
     void* world,
-    const char* transform_component_id,
-    const char* spin_component_id,
-    double delta_seconds
+    const char* const* component_ids,
+    size_t component_count,
+    uint32_t* cursor,
+    uint32_t* out_entity
+);
+
+typedef int (*machina_luau_get_vec3_fn)(
+    void* context,
+    void* world,
+    uint32_t entity,
+    const char* component_id,
+    const char* field_name,
+    float out_value[3]
+);
+
+typedef int (*machina_luau_set_vec3_fn)(
+    void* context,
+    void* world,
+    uint32_t entity,
+    const char* component_id,
+    const char* field_name,
+    const float value[3]
 );
 
 typedef struct machina_luau_callbacks
 {
-    machina_luau_rotate_fn rotate;
+    machina_luau_query_next_fn query_next;
+    machina_luau_get_vec3_fn get_vec3;
+    machina_luau_set_vec3_fn set_vec3;
 } machina_luau_callbacks;
 
 machina_luau* machina_luau_create(machina_luau_callbacks callbacks);

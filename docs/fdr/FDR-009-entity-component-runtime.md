@@ -10,14 +10,15 @@ The entity component runtime is the shared low-level model for game state. It gi
 ## Behavior
 
 - Entities have stable ids suitable for text scene files, diagnostics, editor selection, and reload patching.
-- Components hold structured data and are validated against engine-owned schemas.
+- Components hold structured data and are validated against engine-owned or script-registered schemas.
 - Systems operate over component queries rather than over renderer-specific or script-owned object lists.
-- Scene files author entity and component data as text.
-- Scripts can query, add, update, and remove supported components through the scripting API.
+- Scene files author entity and component data as text component tables.
+- The runtime world stores component instances in generic schema-shaped storage rather than renderer-specific side arrays.
+- Scripts can query entities by component set and mutate supported component fields through the scripting API.
 - Scripts can register new component and system types with project-local or qualified non-reserved ids.
 - Engine-owned and script-defined systems declare phases, read/write component access, and optional before/after ordering relationships.
 - The runtime can build phase-specific system schedule batches from those declarations.
-- The first executing script-authored system in the example is `rotate_cubes`, which applies project-local `spin` angular velocity to `machina.transform` rotation during update.
+- The example script-authored system queries entities with `machina.transform` and project-local `spin`, then applies `spin.angular_velocity` to `machina.transform.rotation` during update.
 - Invalid, duplicate, or unsupported entity/component data produces diagnostics suitable for command-line and editor display.
 
 ## Design Decisions
@@ -28,11 +29,11 @@ The entity component runtime is the shared low-level model for game state. It gi
 **Why:** A shared component-system model keeps scene data, scripting, validation, and editor inspection aligned. It follows ADR-008.
 **Tradeoff:** The engine needs component schema and API design earlier than a hardcoded demo renderer would.
 
-### 2. Commit to ECS semantics before committing to ECS storage
+### 2. Store component instances in the runtime world
 
-**Decision:** The feature commits to entity/component/system behavior now, while storage layout, archetypes, and library choices remain implementation decisions.
-**Why:** Early slices should not lock the engine into a performance strategy before real workloads exist. It follows ADR-008.
-**Tradeoff:** Implementation needs discipline so temporary native structures do not become permanent side channels.
+**Decision:** The runtime world owns generic component instances keyed by entity and component id. Engine helpers such as renderable cube iteration are adapters over component queries.
+**Why:** Real component storage removes renderer-specific side channels and lets scenes, scripts, tests, and future editor tools inspect the same state. It follows ADR-008.
+**Tradeoff:** The current storage is correctness-oriented and not yet an archetype or sparse-set design; performance layout remains future work.
 
 ### 3. Expose a safe ECS facade to scripts
 
@@ -60,5 +61,4 @@ The entity component runtime is the shared low-level model for game state. It gi
 ## Open Questions
 
 - What stable id format should entities use?
-- What is the first explicit component table syntax in scene files?
 - How much scheduler control should scripts get beyond phases, access declarations, and before/after relationships?

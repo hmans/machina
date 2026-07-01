@@ -4,19 +4,29 @@ version = 1
 [[entities]]
 id = "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001"
 name = "Primary Cube"
-kind = "cube"
+
+[entities.components."machina.transform"]
 position = [-0.75, 0.0, 0.0]
 rotation = [0.0, 0.0, 0.0]
 scale = [0.82, 0.82, 0.82]
+
+[entities.components."machina.render.cube"]
 color = [0.0, 0.56, 1.0]
-spin = [0.62, 1.0, 0.0]
+
+[entities.components.spin]
+angular_velocity = [0.62, 1.0, 0.0]
 
 [[entities]]
 id = "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0002"
 name = "Accent Cube"
-kind = "cube"
+
+[entities.components."machina.transform"]
 position = [0.86, -0.24, -0.45]
 rotation = [0.25, 0.15, 0.0]
 scale = [0.42, 0.42, 0.42]
+
+[entities.components."machina.render.cube"]
 color = [1.0, 0.62, 0.08]
-spin = [-0.25, 0.82, 0.4]
+
+[entities.components.spin]
+angular_velocity = [-0.25, 0.82, 0.4]

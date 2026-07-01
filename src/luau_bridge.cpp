@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,13 @@ struct machina_luau
     std::string last_error;
 };
 
+struct QueryState
+{
+    machina_luau* vm = nullptr;
+    std::vector<std::string> component_ids;
+    uint32_t cursor = 0;
+};
+
 static machina_luau* vm_from_upvalue(lua_State* state)
 {
     return static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
@@ -61,6 +69,16 @@ static std::string check_string(lua_State* state, int index)
     size_t len = 0;
     const char* value = luaL_checklstring(state, index, &len);
     return std::string(value, len);
+}
+
+static QueryState* query_state_from_upvalue(lua_State* state)
+{
+    return static_cast<QueryState*>(lua_touserdata(state, lua_upvalueindex(1)));
+}
+
+static void query_state_dtor(void* userdata)
+{
+    static_cast<QueryState*>(userdata)->~QueryState();
 }
 
 static bool read_optional_string_field(lua_State* state, int table_index, const char* key, std::string* out)
@@ -204,17 +222,112 @@ static int ecs_system(lua_State* state)
     return 0;
 }
 
-static int world_rotate(lua_State* state)
+static void push_vec3(lua_State* state, const float value[3])
+{
+    lua_newtable(state);
+    for (int i = 0; i < 3; ++i)
+    {
+        lua_pushnumber(state, value[i]);
+        lua_rawseti(state, -2, i + 1);
+    }
+}
+
+static bool read_vec3(lua_State* state, int index, float value[3])
+{
+    luaL_checktype(state, index, LUA_TTABLE);
+    const int table_index = lua_absindex(state, index);
+    for (int i = 0; i < 3; ++i)
+    {
+        lua_rawgeti(state, table_index, i + 1);
+        value[i] = static_cast<float>(luaL_checknumber(state, -1));
+        lua_pop(state, 1);
+    }
+    return true;
+}
+
+static void push_entity(lua_State* state, machina_luau* vm, uint32_t entity)
+{
+    lua_newtable(state);
+
+    lua_pushlightuserdata(state, vm);
+    lua_pushinteger(state, entity);
+    lua_pushcclosure(state, [](lua_State* state) -> int {
+        machina_luau* vm = static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
+        const uint32_t entity = static_cast<uint32_t>(lua_tointeger(state, lua_upvalueindex(2)));
+        const char* component_id = luaL_checkstring(state, 1);
+        const char* field_name = luaL_checkstring(state, 2);
+        float value[3] = {};
+        if (!vm->callbacks.get_vec3 || !vm->callbacks.get_vec3(vm->callback_context, vm->active_world, entity, component_id, field_name, value))
+            luaL_error(state, "world query get_vec3 access denied or failed");
+        push_vec3(state, value);
+        return 1;
+    }, "entity.get_vec3", 2);
+    lua_setfield(state, -2, "get_vec3");
+
+    lua_pushlightuserdata(state, vm);
+    lua_pushinteger(state, entity);
+    lua_pushcclosure(state, [](lua_State* state) -> int {
+        machina_luau* vm = static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
+        const uint32_t entity = static_cast<uint32_t>(lua_tointeger(state, lua_upvalueindex(2)));
+        const char* component_id = luaL_checkstring(state, 1);
+        const char* field_name = luaL_checkstring(state, 2);
+        float value[3] = {};
+        read_vec3(state, 3, value);
+        if (!vm->callbacks.set_vec3 || !vm->callbacks.set_vec3(vm->callback_context, vm->active_world, entity, component_id, field_name, value))
+            luaL_error(state, "world query set_vec3 access denied or failed");
+        return 0;
+    }, "entity.set_vec3", 2);
+    lua_setfield(state, -2, "set_vec3");
+
+    lua_setreadonly(state, -1, 1);
+}
+
+static int query_iterator(lua_State* state)
+{
+    QueryState* query = query_state_from_upvalue(state);
+    if (!query || !query->vm || !query->vm->callbacks.query_next)
+        return 0;
+
+    std::vector<const char*> component_ids;
+    component_ids.reserve(query->component_ids.size());
+    for (const std::string& id : query->component_ids)
+        component_ids.push_back(id.c_str());
+
+    uint32_t entity = 0;
+    const int status = query->vm->callbacks.query_next(
+        query->vm->callback_context,
+        query->vm->active_world,
+        component_ids.data(),
+        component_ids.size(),
+        &query->cursor,
+        &entity);
+    if (status < 0)
+        luaL_error(state, "world.query access denied or failed");
+    if (status == 0)
+    {
+        return 0;
+    }
+
+    push_entity(state, query->vm, entity);
+    return 1;
+}
+
+static int world_query(lua_State* state)
 {
     machina_luau* vm = vm_from_upvalue(state);
-    const char* transform_id = luaL_checkstring(state, 1);
-    const char* spin_id = luaL_checkstring(state, 2);
-    const double delta_seconds = luaL_checknumber(state, 3);
+    const int component_count = lua_gettop(state);
+    if (component_count <= 0)
+        luaL_error(state, "world.query expects at least one component id");
 
-    if (!vm->callbacks.rotate || !vm->callbacks.rotate(vm->callback_context, vm->active_world, transform_id, spin_id, delta_seconds))
-        luaL_error(state, "world.rotate access denied or failed");
+    void* storage = lua_newuserdatadtor(state, sizeof(QueryState), query_state_dtor);
+    QueryState* query = new (storage) QueryState();
+    query->vm = vm;
+    query->component_ids.reserve(component_count);
+    for (int index = 1; index <= component_count; ++index)
+        query->component_ids.push_back(check_string(state, index));
 
-    return 0;
+    lua_pushcclosure(state, query_iterator, "world.query.iterator", 1);
+    return 1;
 }
 
 static void install_ecs(lua_State* state, machina_luau* vm)
@@ -237,8 +350,8 @@ static void push_world(lua_State* state, machina_luau* vm)
 {
     lua_newtable(state);
     lua_pushlightuserdata(state, vm);
-    lua_pushcclosure(state, world_rotate, "world.rotate", 1);
-    lua_setfield(state, -2, "rotate");
+    lua_pushcclosure(state, world_query, "world.query", 1);
+    lua_setfield(state, -2, "query");
     lua_setreadonly(state, -1, 1);
 }
 

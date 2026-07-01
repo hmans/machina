@@ -129,11 +129,11 @@ pub const LiveProject = struct {
         const project = try loadProject(io, allocator, root_path);
         errdefer freeProject(allocator, project);
 
-        const scene = try loadDefaultScene(io, allocator, project);
-        errdefer freeScene(allocator, scene);
-
         var scripts = try loadProjectScripts(io, allocator, project);
         errdefer scripts.deinit();
+
+        const scene = try loadDefaultSceneWithRegistry(io, allocator, project, scripts.registry);
+        errdefer freeScene(allocator, scene);
 
         const script_sources = try statProjectScripts(io, allocator, project);
         errdefer freeLoadedSources(allocator, script_sources);
@@ -257,9 +257,6 @@ pub const LiveProject = struct {
         const next_project = try loadProject(self.io, self.allocator, self.root_path);
         errdefer freeProject(self.allocator, next_project);
 
-        const next_scene = try loadDefaultScene(self.io, self.allocator, next_project);
-        errdefer freeScene(self.allocator, next_scene);
-
         const next_scripts_result = try loadProjectScriptsDetailed(self.io, self.allocator, next_project);
         var next_scripts = switch (next_scripts_result) {
             .program => |program| program,
@@ -269,6 +266,9 @@ pub const LiveProject = struct {
             },
         };
         errdefer next_scripts.deinit();
+
+        const next_scene = try loadDefaultSceneWithRegistry(self.io, self.allocator, next_project, next_scripts.registry);
+        errdefer freeScene(self.allocator, next_scene);
 
         const next_script_sources = try statProjectScripts(self.io, self.allocator, next_project);
         errdefer freeLoadedSources(self.allocator, next_script_sources);
@@ -309,7 +309,7 @@ pub const LiveProject = struct {
 
     fn reloadScene(self: *LiveProject, scene_stamp: SourceFileStamp) !ReloadResult {
         self.clearLastDiagnostic();
-        const next_scene = try loadDefaultScene(self.io, self.allocator, self.project);
+        const next_scene = try loadDefaultSceneWithRegistry(self.io, self.allocator, self.project, self.scripts.registry);
         const info = ReloadInfo{
             .project_reloaded = false,
             .scene_reloaded = true,
@@ -340,6 +340,9 @@ pub const LiveProject = struct {
             },
         };
         errdefer next_scripts.deinit();
+
+        const checked_scene = try loadDefaultSceneWithRegistry(self.io, self.allocator, self.project, next_scripts.registry);
+        defer freeScene(self.allocator, checked_scene);
 
         const info = ReloadInfo{
             .project_reloaded = false,
@@ -424,12 +427,14 @@ pub fn initProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8, 
             \\[[entities]]
             \\id = "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001"
             \\name = "Demo Cube"
-            \\kind = "cube"
+            \\
+            \\[entities.components."machina.transform"]
             \\position = [0.0, 0.0, 0.0]
             \\rotation = [0.0, 0.0, 0.0]
             \\scale = [1.0, 1.0, 1.0]
+            \\
+            \\[entities.components."machina.render.cube"]
             \\color = [0.0, 0.56, 1.0]
-            \\spin = [0.62, 1.0, 0.0]
             \\
             ,
             .flags = .{ .exclusive = true },
@@ -459,12 +464,13 @@ pub fn checkProjectDetailed(io: Io, allocator: std.mem.Allocator, root_path: []c
         return ProjectError.MissingDefaultScene;
     }
 
-    const scene = try loadSceneFile(io, allocator, root_dir, project.default_scene);
-    defer freeScene(allocator, scene);
-
     var scripts_result = try loadProjectScriptsDetailed(io, allocator, project);
     switch (scripts_result) {
-        .program => |*scripts| scripts.deinit(),
+        .program => |*scripts| {
+            defer scripts.deinit();
+            const scene = try loadSceneFile(io, allocator, root_dir, project.default_scene, scripts.registry);
+            defer freeScene(allocator, scene);
+        },
         .diagnostic => |diagnostic| {
             freeProject(allocator, project);
             return .{ .invalid = diagnostic };
@@ -500,11 +506,17 @@ pub fn loadProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8) 
 }
 
 pub fn loadDefaultScene(io: Io, allocator: std.mem.Allocator, project: Project) !Scene {
+    var scripts = try loadProjectScripts(io, allocator, project);
+    defer scripts.deinit();
+    return loadDefaultSceneWithRegistry(io, allocator, project, scripts.registry);
+}
+
+pub fn loadDefaultSceneWithRegistry(io: Io, allocator: std.mem.Allocator, project: Project, registry: runtime.ComponentRegistry) !Scene {
     const cwd = Io.Dir.cwd();
     const root_dir = try cwd.openDir(io, project.root_path, .{});
     defer root_dir.close(io);
 
-    return loadSceneFile(io, allocator, root_dir, project.default_scene);
+    return loadSceneFile(io, allocator, root_dir, project.default_scene, registry);
 }
 
 fn statProjectFile(io: Io, root_path: []const u8) !SourceFileStamp {
@@ -659,7 +671,7 @@ fn cloneScriptDiagnostic(allocator: std.mem.Allocator, diagnostic: ScriptDiagnos
     };
 }
 
-fn loadSceneFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, scene_path: []const u8) !Scene {
+fn loadSceneFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, scene_path: []const u8, registry: runtime.ComponentRegistry) !Scene {
     const contents = root_dir.readFileAlloc(io, scene_path, allocator, .limited(256 * 1024)) catch |err| switch (err) {
         error.FileNotFound => return ProjectError.MissingDefaultScene,
         else => return err,
@@ -677,6 +689,7 @@ fn loadSceneFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, scene_p
     var parser = SceneParser{
         .allocator = allocator,
         .world = World.init(allocator),
+        .registry = registry,
     };
     return .{
         .name = name,
@@ -687,10 +700,17 @@ fn loadSceneFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, scene_p
 const SceneParser = struct {
     allocator: std.mem.Allocator,
     world: World,
+    registry: runtime.ComponentRegistry,
     active_entity: ?EntityDraft = null,
 
     fn parse(self: *SceneParser, contents: []const u8) !World {
-        errdefer self.world.deinit();
+        errdefer {
+            if (self.active_entity) |*entity| {
+                entity.deinit();
+                self.active_entity = null;
+            }
+            self.world.deinit();
+        }
 
         var lines = std.mem.splitScalar(u8, contents, '\n');
         while (lines.next()) |line| {
@@ -701,16 +721,25 @@ const SceneParser = struct {
 
             if (std.mem.eql(u8, trimmed, "[[entities]]")) {
                 try self.flushEntity();
-                self.active_entity = .{};
+                self.active_entity = EntityDraft.init(self.allocator);
                 continue;
             }
 
             if (trimmed[0] == '[') {
+                if (self.active_entity) |*entity| {
+                    const component_id = parseComponentTableHeader(trimmed) orelse return ProjectError.InvalidSceneEntity;
+                    if (self.registry.findComponent(component_id) == null) {
+                        return ProjectError.InvalidSceneEntity;
+                    }
+                    entity.active_component = component_id;
+                    _ = try entity.ensureComponent(component_id);
+                    continue;
+                }
                 return ProjectError.InvalidSceneEntity;
             }
 
             if (self.active_entity) |*entity| {
-                try entity.readProperty(trimmed);
+                try entity.readProperty(trimmed, self.registry);
             }
         }
 
@@ -725,62 +754,156 @@ const SceneParser = struct {
     }
 
     fn flushEntity(self: *SceneParser) !void {
-        const entity = self.active_entity orelse return;
+        var entity = self.active_entity orelse return;
+        defer entity.deinit();
         self.active_entity = null;
-        if (!entity.id_seen or !entity.name_seen or !entity.kind_seen or !entity.kind_cube) {
+        if (!entity.id_seen or !entity.name_seen or entity.components.items.len == 0) {
             return ProjectError.InvalidSceneEntity;
         }
         const handle = self.world.createEntity(entity.id, entity.name) catch |err| switch (err) {
             runtime.WorldError.DuplicateEntityId => return ProjectError.DuplicateSceneEntityId,
             else => return err,
         };
-        try self.world.setTransform(handle, entity.transform);
-        try self.world.setCubeRenderer(handle, entity.cube_renderer);
-        try self.world.setSpin(handle, entity.spin);
+        for (entity.components.items) |component| {
+            const definition = self.registry.findComponent(component.id) orelse return ProjectError.InvalidSceneEntity;
+            if (!componentHasEveryDefinedField(component, definition.*)) {
+                return ProjectError.InvalidSceneEntity;
+            }
+            try self.world.setComponent(handle, component.id, component.fields.items);
+        }
     }
 };
 
 const EntityDraft = struct {
+    allocator: std.mem.Allocator,
     id_seen: bool = false,
     name_seen: bool = false,
-    kind_seen: bool = false,
-    kind_cube: bool = false,
     id: []const u8 = "",
     name: []const u8 = "",
-    transform: Transform = .{},
-    cube_renderer: CubeRenderer = .{},
-    spin: Spin = .{},
+    components: std.ArrayList(ComponentDraft) = .empty,
+    active_component: ?[]const u8 = null,
 
-    fn readProperty(self: *EntityDraft, line: []const u8) !void {
+    fn init(allocator: std.mem.Allocator) EntityDraft {
+        return .{ .allocator = allocator };
+    }
+
+    fn deinit(self: *EntityDraft) void {
+        for (self.components.items) |*component| {
+            component.deinit(self.allocator);
+        }
+        self.components.deinit(self.allocator);
+    }
+
+    fn readProperty(self: *EntityDraft, line: []const u8, registry: runtime.ComponentRegistry) !void {
         const eq_index = std.mem.indexOfScalar(u8, line, '=') orelse return ProjectError.InvalidSceneEntity;
         const key = std.mem.trim(u8, line[0..eq_index], " \t");
         const value = std.mem.trim(u8, line[eq_index + 1 ..], " \t");
 
-        if (std.mem.eql(u8, key, "id")) {
+        if (self.active_component) |component_id| {
+            try self.readComponentProperty(component_id, key, value, registry);
+        } else if (std.mem.eql(u8, key, "id")) {
             self.id = stringValue(value) orelse return ProjectError.InvalidSceneEntity;
             self.id_seen = true;
         } else if (std.mem.eql(u8, key, "name")) {
             self.name = stringValue(value) orelse return ProjectError.InvalidSceneEntity;
             self.name_seen = true;
-        } else if (std.mem.eql(u8, key, "kind")) {
-            const kind = stringValue(value) orelse return ProjectError.InvalidSceneEntity;
-            self.kind_seen = true;
-            self.kind_cube = std.mem.eql(u8, kind, "cube");
-        } else if (std.mem.eql(u8, key, "position")) {
-            self.transform.position = try readVec3(value);
-        } else if (std.mem.eql(u8, key, "rotation")) {
-            self.transform.rotation = try readVec3(value);
-        } else if (std.mem.eql(u8, key, "scale")) {
-            self.transform.scale = try readVec3(value);
-        } else if (std.mem.eql(u8, key, "color")) {
-            self.cube_renderer.color = try readVec3(value);
-        } else if (std.mem.eql(u8, key, "spin")) {
-            self.spin.angular_velocity = try readVec3(value);
         } else {
             return ProjectError.InvalidSceneEntity;
         }
     }
+
+    fn readComponentProperty(self: *EntityDraft, component_id: []const u8, key: []const u8, value: []const u8, registry: runtime.ComponentRegistry) !void {
+        const definition = registry.findComponent(component_id) orelse return ProjectError.InvalidSceneEntity;
+        const field_definition = findComponentField(definition.*, key) orelse return ProjectError.InvalidSceneEntity;
+        const component = try self.ensureComponent(component_id);
+        for (component.fields.items) |field| {
+            if (std.mem.eql(u8, field.name, key)) {
+                return ProjectError.InvalidSceneEntity;
+            }
+        }
+        const field_value = try readComponentValue(field_definition.value_type, value);
+        try component.fields.append(self.allocator, .{
+            .name = key,
+            .value = field_value,
+        });
+    }
+
+    fn ensureComponent(self: *EntityDraft, component_id: []const u8) !*ComponentDraft {
+        for (self.components.items) |*component| {
+            if (std.mem.eql(u8, component.id, component_id)) {
+                return component;
+            }
+        }
+        try self.components.append(self.allocator, .{ .id = component_id });
+        return &self.components.items[self.components.items.len - 1];
+    }
 };
+
+const ComponentDraft = struct {
+    id: []const u8,
+    fields: std.ArrayList(runtime.ComponentFieldValue) = .empty,
+
+    fn deinit(self: *ComponentDraft, allocator: std.mem.Allocator) void {
+        self.fields.deinit(allocator);
+    }
+};
+
+fn parseComponentTableHeader(header: []const u8) ?[]const u8 {
+    const prefix = "[entities.components.";
+    if (!std.mem.startsWith(u8, header, prefix) or header[header.len - 1] != ']') {
+        return null;
+    }
+    const raw_id = std.mem.trim(u8, header[prefix.len .. header.len - 1], " \t");
+    if (raw_id.len >= 2 and raw_id[0] == '"' and raw_id[raw_id.len - 1] == '"') {
+        return raw_id[1 .. raw_id.len - 1];
+    }
+    return raw_id;
+}
+
+fn findComponentField(definition: runtime.ComponentDefinition, field_name: []const u8) ?runtime.ComponentFieldDefinition {
+    for (definition.fields) |field| {
+        if (std.mem.eql(u8, field.name, field_name)) {
+            return field;
+        }
+    }
+    return null;
+}
+
+fn componentHasEveryDefinedField(component: ComponentDraft, definition: runtime.ComponentDefinition) bool {
+    for (definition.fields) |field| {
+        var found = false;
+        for (component.fields.items) |value| {
+            if (std.mem.eql(u8, value.name, field.name)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn readComponentValue(field_type: runtime.FieldType, value: []const u8) !runtime.ComponentValue {
+    return switch (field_type) {
+        .boolean => .{ .boolean = try readBool(value) },
+        .int => .{ .int = std.fmt.parseInt(i32, value, 10) catch return ProjectError.InvalidSceneNumber },
+        .float => .{ .float = std.fmt.parseFloat(f32, value) catch return ProjectError.InvalidSceneNumber },
+        .vec3 => .{ .vec3 = try readVec3(value) },
+        .string => .{ .string = stringValue(value) orelse return ProjectError.InvalidSceneEntity },
+    };
+}
+
+fn readBool(value: []const u8) !bool {
+    if (std.mem.eql(u8, value, "true")) {
+        return true;
+    }
+    if (std.mem.eql(u8, value, "false")) {
+        return false;
+    }
+    return ProjectError.InvalidSceneEntity;
+}
 
 fn stringValue(value: []const u8) ?[]const u8 {
     if (value.len < 2 or value[0] != '"' or value[value.len - 1] != '"') {
@@ -1132,6 +1255,127 @@ test "loadDefaultScene reads cube entities from scene data" {
     try std.testing.expectEqual(@as(f32, 0.56), cube.color[1]);
 }
 
+test "loadDefaultScene stores script-declared component tables" {
+    const root_path = ".zig-cache/test-load-script-component-scene-data";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.createDirPath(io, "scripts");
+
+    try root_dir.writeFile(io, .{
+        .sub_path = project_file_name,
+        .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
+    });
+    try writeSpinnerScene(io, root_dir);
+    try writeRotateScript(io, root_dir, "dt");
+
+    const project = try loadProject(io, std.testing.allocator, root_path);
+    defer freeProject(std.testing.allocator, project);
+    const scene = try loadDefaultScene(io, std.testing.allocator, project);
+    defer freeScene(std.testing.allocator, scene);
+
+    const entity = scene.world.findEntityById("018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001") orelse return error.TestExpectedEqual;
+    try std.testing.expect(try scene.world.hasComponent(entity, "spin"));
+    const angular_velocity = try scene.world.getVec3(entity, "spin", "angular_velocity");
+    try std.testing.expectEqual(@as(f32, 1.0), angular_velocity[0]);
+
+    var cursor: usize = 0;
+    const query = [_][]const u8{ "machina.transform", "spin" };
+    try std.testing.expectEqual(entity.index, (scene.world.queryNext(&query, &cursor) orelse return error.TestExpectedEqual).index);
+    try std.testing.expect(scene.world.queryNext(&query, &cursor) == null);
+}
+
+test "checkProject rejects scene components missing from the script registry" {
+    const root_path = ".zig-cache/test-undeclared-scene-component";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try writeSpinnerScene(io, root_dir);
+
+    try std.testing.expectError(
+        ProjectError.InvalidSceneEntity,
+        checkProject(io, std.testing.allocator, root_path),
+    );
+}
+
+test "checkProject rejects duplicate component fields in scene data" {
+    const root_path = ".zig-cache/test-duplicate-scene-component-field";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+
+    try root_dir.writeFile(io, .{
+        .sub_path = default_scene_path,
+        .data =
+        \\name = "Main"
+        \\version = 1
+        \\
+        \\[[entities]]
+        \\id = "dupe-field"
+        \\name = "Dupe Field"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\position = [1.0, 0.0, 0.0]
+        \\
+        ,
+    });
+
+    try std.testing.expectError(
+        ProjectError.InvalidSceneEntity,
+        checkProject(io, std.testing.allocator, root_path),
+    );
+}
+
+test "checkProject rejects missing required component fields in scene data" {
+    const root_path = ".zig-cache/test-missing-scene-component-field";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+
+    try root_dir.writeFile(io, .{
+        .sub_path = default_scene_path,
+        .data =
+        \\name = "Main"
+        \\version = 1
+        \\
+        \\[[entities]]
+        \\id = "missing-field"
+        \\name = "Missing Field"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\
+        ,
+    });
+
+    try std.testing.expectError(
+        ProjectError.InvalidSceneEntity,
+        checkProject(io, std.testing.allocator, root_path),
+    );
+}
+
 test "checkProject rejects invalid scene numeric data" {
     const root_path = ".zig-cache/test-invalid-scene-number";
     const io = Io.Threaded.global_single_threaded.io();
@@ -1152,7 +1396,8 @@ test "checkProject rejects invalid scene numeric data" {
         \\[[entities]]
         \\id = "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001"
         \\name = "Bad Cube"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
         \\position = [0.0, nope, 0.0]
         \\
         ,
@@ -1184,12 +1429,20 @@ test "checkProject rejects duplicate scene entity ids" {
         \\[[entities]]
         \\id = "same-id"
         \\name = "One"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         \\[[entities]]
         \\id = "same-id"
         \\name = "Two"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         ,
     });
@@ -1217,11 +1470,31 @@ test "checkProject validates script declarations and builds a system schedule" {
         .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
     });
     try root_dir.writeFile(io, .{
+        .sub_path = default_scene_path,
+        .data =
+        \\name = "Main"
+        \\version = 1
+        \\
+        \\[[entities]]
+        \\id = "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001"
+        \\name = "Spinner"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
+        \\
+        \\[entities.components.spin]
+        \\angular_velocity = [1.0, 0.0, 0.0]
+        \\
+        ,
+    });
+    try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
         \\ecs.component("spin", {
         \\  fields = {
-        \\    angular_velocity = "f32",
+        \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
@@ -1264,6 +1537,7 @@ test "checkProject rejects invalid script declarations" {
         .sub_path = project_file_name,
         .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
     });
+    try writeSpinnerScene(io, root_dir);
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
@@ -1296,7 +1570,7 @@ test "checkProjectDetailed returns script diagnostics" {
     });
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
-        .data = "ecs.system(\"broken\", { run = function(world, dt) world.rotate( end })",
+        .data = "ecs.system(\"broken\", { run = function(world, dt) world.query( end })",
     });
 
     var result = try checkProjectDetailed(io, std.testing.allocator, root_path);
@@ -1338,12 +1612,20 @@ test "LiveProject reloads changed active scene and keeps last good state on fail
         \\[[entities]]
         \\id = "one"
         \\name = "One"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         \\[[entities]]
         \\id = "two"
         \\name = "Two"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         ,
     });
@@ -1363,12 +1645,20 @@ test "LiveProject reloads changed active scene and keeps last good state on fail
         \\[[entities]]
         \\id = "same"
         \\name = "One"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         \\[[entities]]
         \\id = "same"
         \\name = "Two"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         ,
     });
@@ -1394,12 +1684,13 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
         .sub_path = project_file_name,
         .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
     });
+    try writeSpinnerScene(io, root_dir);
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
         \\ecs.component("spin", {
         \\  fields = {
-        \\    angular_velocity = "f32",
+        \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
@@ -1420,7 +1711,7 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
         .data =
         \\ecs.component("spin", {
         \\  fields = {
-        \\    angular_velocity = "f32",
+        \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
@@ -1484,12 +1775,13 @@ test "LiveProject update runs the scheduled rotation system" {
         .sub_path = project_file_name,
         .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
     });
+    try writeSpinnerScene(io, root_dir);
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
         \\ecs.component("spin", {
         \\  fields = {
-        \\    angular_velocity = "f32",
+        \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
@@ -1497,7 +1789,15 @@ test "LiveProject update runs the scheduled rotation system" {
         \\  reads = { "spin" },
         \\  writes = { "machina.transform" },
         \\  run = function(world, dt)
-        \\    world.rotate("machina.transform", "spin", dt)
+        \\    for entity in world.query("machina.transform", "spin") do
+        \\      local rotation = entity.get_vec3("machina.transform", "rotation")
+        \\      local angular_velocity = entity.get_vec3("spin", "angular_velocity")
+        \\      entity.set_vec3("machina.transform", "rotation", {
+        \\        rotation[1] + angular_velocity[1] * dt,
+        \\        rotation[2] + angular_velocity[2] * dt,
+        \\        rotation[3] + angular_velocity[3] * dt,
+        \\      })
+        \\    end
         \\  end,
         \\})
         ,
@@ -1533,6 +1833,7 @@ test "LiveProject reloads script runner multiplier" {
         .sub_path = project_file_name,
         .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
     });
+    try writeSpinnerScene(io, root_dir);
     try writeRotateScript(io, root_dir, "dt");
 
     var live_project = try LiveProject.init(io, std.testing.allocator, root_path);
@@ -1570,6 +1871,7 @@ test "LiveProject recovers after script update produces non-finite rotation delt
         .sub_path = project_file_name,
         .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
     });
+    try writeSpinnerScene(io, root_dir);
     try writeRotateScript(io, root_dir, "dt");
 
     var live_project = try LiveProject.init(io, std.testing.allocator, root_path);
@@ -1632,12 +1934,20 @@ test "LiveProject reloads project metadata and follows default scene changes" {
         \\[[entities]]
         \\id = "alternate-one"
         \\name = "Alternate One"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         \\[[entities]]
         \\id = "alternate-two"
         \\name = "Alternate Two"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         ,
     });
@@ -1679,7 +1989,11 @@ test "LiveProject reloads project metadata and follows default scene changes" {
         \\[[entities]]
         \\id = "alternate-one"
         \\name = "Alternate One"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         ,
     });
@@ -1699,7 +2013,11 @@ test "LiveProject reloads project metadata and follows default scene changes" {
         \\[[entities]]
         \\id = "recovered-one"
         \\name = "Recovered One"
-        \\kind = "cube"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
         \\
         ,
     });
@@ -1793,12 +2111,12 @@ test "checkProject rejects unsupported metadata version" {
 }
 
 fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !void {
-    var buffer: [512]u8 = undefined;
+    var buffer: [1024]u8 = undefined;
     const data = try std.fmt.bufPrint(
         &buffer,
         \\ecs.component("spin", {{
         \\  fields = {{
-        \\    angular_velocity = "f32",
+        \\    angular_velocity = "vec3",
         \\  }},
         \\}})
         \\
@@ -1806,14 +2124,45 @@ fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !vo
         \\  reads = {{ "spin" }},
         \\  writes = {{ "machina.transform" }},
         \\  run = function(world, dt)
-        \\    world.rotate("machina.transform", "spin", {s})
+        \\    for entity in world.query("machina.transform", "spin") do
+        \\      local rotation = entity.get_vec3("machina.transform", "rotation")
+        \\      local angular_velocity = entity.get_vec3("spin", "angular_velocity")
+        \\      entity.set_vec3("machina.transform", "rotation", {{
+        \\        rotation[1] + angular_velocity[1] * ({s}),
+        \\        rotation[2] + angular_velocity[2] * ({s}),
+        \\        rotation[3] + angular_velocity[3] * ({s}),
+        \\      }})
+        \\    end
         \\  end,
         \\}})
     ,
-        .{delta_expression},
+        .{ delta_expression, delta_expression, delta_expression },
     );
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data = data,
+    });
+}
+
+fn writeSpinnerScene(io: Io, root_dir: Io.Dir) !void {
+    try root_dir.writeFile(io, .{
+        .sub_path = default_scene_path,
+        .data =
+        \\name = "Main"
+        \\version = 1
+        \\
+        \\[[entities]]
+        \\id = "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001"
+        \\name = "Spinner"
+        \\
+        \\[entities.components."machina.transform"]
+        \\position = [0.0, 0.0, 0.0]
+        \\rotation = [0.0, 0.0, 0.0]
+        \\scale = [1.0, 1.0, 1.0]
+        \\
+        \\[entities.components.spin]
+        \\angular_velocity = [1.0, 1.0, 0.0]
+        \\
+        ,
     });
 }

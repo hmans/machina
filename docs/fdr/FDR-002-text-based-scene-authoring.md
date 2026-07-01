@@ -12,7 +12,9 @@ Text-based scene authoring defines how projects describe scenes, entities, compo
 - Scenes are stored as text files in a documented, schema-validated format.
 - Scene files describe entities, names, component data, and eventually hierarchy, references to assets, scripts, prefabs, and other project resources.
 - The initial scene format uses TOML-shaped text files, starting with `scenes/main.scene.toml`.
-- The current renderable entity schema uses `[[entities]]` records with stable text ids, names, `kind = "cube"`, and vector properties for position, rotation, scale, color, and spin.
+- The current entity schema uses `[[entities]]` records with stable text ids and names, then component data under `[entities.components.<id>]` tables.
+- Engine component tables currently include `[entities.components."machina.transform"]` with `position`, `rotation`, and `scale` `vec3` fields, plus `[entities.components."machina.render.cube"]` with a `color` `vec3` field.
+- Project and package component tables may appear in scenes after scripts register matching component schemas.
 - Scene references are forward-slash, project-relative paths and may not escape the project directory.
 - Scene files are stable under repeated editor saves when the scene has not changed.
 - Invalid scene files produce precise diagnostics suitable for command-line and editor display.
@@ -33,11 +35,11 @@ Text-based scene authoring defines how projects describe scenes, entities, compo
 **Why:** Clean diffs are central to human review and agentic workflows.
 **Tradeoff:** File writers need deliberate formatting rules instead of naive serialization.
 
-### 3. Start with explicit component-shaped fields
+### 3. Author explicit component tables
 
-**Decision:** The first renderable entity schema uses named scalar/vector fields rather than embedding ad hoc script code or opaque blobs.
-**Why:** It keeps the data easy to inspect, validate, diff, and edit by agents while leaving room to evolve toward explicit component tables later. It follows ADR-008.
-**Tradeoff:** The schema is intentionally narrow and only supports cube renderables in this slice.
+**Decision:** Scene entities author component instances as explicit component tables instead of top-level kind-specific fields.
+**Why:** Component tables make scene data line up with the runtime ECS model, script-declared schemas, validation, and future editor inspection. It follows ADR-008 and ADR-010.
+**Tradeoff:** Scene loading must build the script registry before validating component tables, and schema migrations need to account for both engine and script-defined components.
 
 ## Related
 

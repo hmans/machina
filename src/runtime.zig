@@ -1,8 +1,11 @@
 const std = @import("std");
 
-pub const WorldError = error{
+pub const WorldError = std.mem.Allocator.Error || error{
     DuplicateEntityId,
     InvalidEntity,
+    UnknownComponent,
+    UnknownField,
+    InvalidFieldType,
 };
 
 pub const TypeIdError = error{
@@ -32,6 +35,7 @@ pub const FieldType = enum {
     boolean,
     int,
     float,
+    vec3,
     string,
 };
 
@@ -520,12 +524,28 @@ pub const RenderableCube = struct {
     spin: [3]f32,
 };
 
+pub const ComponentValue = union(FieldType) {
+    boolean: bool,
+    int: i32,
+    float: f32,
+    vec3: [3]f32,
+    string: []const u8,
+};
+
+pub const ComponentFieldValue = struct {
+    name: []const u8,
+    value: ComponentValue,
+};
+
+const ComponentInstance = struct {
+    id: []const u8,
+    fields: []ComponentFieldValue,
+};
+
 pub const World = struct {
     allocator: std.mem.Allocator,
     entities: std.ArrayList(Entity) = .empty,
-    transforms: std.ArrayList(?Transform) = .empty,
-    cube_renderers: std.ArrayList(?CubeRenderer) = .empty,
-    spins: std.ArrayList(?Spin) = .empty,
+    components: std.ArrayList(std.ArrayList(ComponentInstance)) = .empty,
 
     pub fn init(allocator: std.mem.Allocator) World {
         return .{ .allocator = allocator };
@@ -537,9 +557,10 @@ pub const World = struct {
             allocator.free(stored_entity.id);
             allocator.free(stored_entity.name);
         }
-        self.spins.deinit(allocator);
-        self.cube_renderers.deinit(allocator);
-        self.transforms.deinit(allocator);
+        for (self.components.items) |*entity_components| {
+            self.freeComponentList(entity_components);
+        }
+        self.components.deinit(allocator);
         self.entities.deinit(allocator);
         self.* = .{ .allocator = allocator };
     }
@@ -561,11 +582,7 @@ pub const World = struct {
         });
         errdefer _ = self.entities.pop();
 
-        try self.transforms.append(self.allocator, null);
-        errdefer _ = self.transforms.pop();
-        try self.cube_renderers.append(self.allocator, null);
-        errdefer _ = self.cube_renderers.pop();
-        try self.spins.append(self.allocator, null);
+        try self.components.append(self.allocator, .empty);
 
         return handle;
     }
@@ -592,72 +609,129 @@ pub const World = struct {
     }
 
     pub fn setTransform(self: *World, handle: EntityHandle, transform: Transform) WorldError!void {
-        const index = try self.componentIndex(handle);
-        self.transforms.items[index] = transform;
+        const fields = [_]ComponentFieldValue{
+            .{ .name = "position", .value = .{ .vec3 = transform.position } },
+            .{ .name = "rotation", .value = .{ .vec3 = transform.rotation } },
+            .{ .name = "scale", .value = .{ .vec3 = transform.scale } },
+        };
+        try self.setComponent(handle, transform_component_id, &fields);
     }
 
     pub fn setCubeRenderer(self: *World, handle: EntityHandle, cube_renderer: CubeRenderer) WorldError!void {
-        const index = try self.componentIndex(handle);
-        self.cube_renderers.items[index] = cube_renderer;
+        const fields = [_]ComponentFieldValue{
+            .{ .name = "color", .value = .{ .vec3 = cube_renderer.color } },
+        };
+        try self.setComponent(handle, cube_renderer_component_id, &fields);
     }
 
     pub fn setSpin(self: *World, handle: EntityHandle, spin: Spin) WorldError!void {
-        const index = try self.componentIndex(handle);
-        self.spins.items[index] = spin;
+        const fields = [_]ComponentFieldValue{
+            .{ .name = "angular_velocity", .value = .{ .vec3 = spin.angular_velocity } },
+        };
+        try self.setComponent(handle, spin_component_id, &fields);
     }
 
     pub fn getTransform(self: World, handle: EntityHandle) WorldError!?Transform {
-        const index = try self.componentIndex(handle);
-        return self.transforms.items[index];
+        if (!try self.hasComponent(handle, transform_component_id)) {
+            return null;
+        }
+        return .{
+            .position = try self.getVec3(handle, transform_component_id, "position"),
+            .rotation = try self.getVec3(handle, transform_component_id, "rotation"),
+            .scale = try self.getVec3(handle, transform_component_id, "scale"),
+        };
     }
 
-    pub fn rotateBySpin(self: *World, transform_component_id_value: []const u8, spin_component_id_value: []const u8, delta_seconds: f32) bool {
-        if (!std.mem.eql(u8, transform_component_id_value, transform_component_id) or
-            !std.mem.eql(u8, spin_component_id_value, spin_component_id))
-        {
-            return false;
-        }
-        if (!std.math.isFinite(delta_seconds)) {
-            return false;
+    pub fn setComponent(self: *World, handle: EntityHandle, component_id: []const u8, fields: []const ComponentFieldValue) WorldError!void {
+        const index = try self.componentIndex(handle);
+        const owned = try self.copyComponentInstance(component_id, fields);
+        errdefer self.freeComponentInstance(owned);
+
+        const entity_components = &self.components.items[index];
+        for (entity_components.items, 0..) |component, component_index| {
+            if (std.mem.eql(u8, component.id, component_id)) {
+                self.freeComponentInstance(component);
+                entity_components.items[component_index] = owned;
+                return;
+            }
         }
 
-        for (self.transforms.items, self.spins.items) |*maybe_transform, maybe_spin| {
-            const spin = maybe_spin orelse continue;
-            if (maybe_transform.*) |*transform| {
-                transform.rotation[0] += spin.angular_velocity[0] * delta_seconds;
-                transform.rotation[1] += spin.angular_velocity[1] * delta_seconds;
-                transform.rotation[2] += spin.angular_velocity[2] * delta_seconds;
+        try entity_components.append(self.allocator, owned);
+    }
+
+    pub fn hasComponent(self: World, handle: EntityHandle, component_id: []const u8) WorldError!bool {
+        const index = try self.componentIndex(handle);
+        return self.findComponentInList(self.components.items[index].items, component_id) != null;
+    }
+
+    pub fn hasComponents(self: World, handle: EntityHandle, component_ids: []const []const u8) WorldError!bool {
+        for (component_ids) |component_id| {
+            if (!try self.hasComponent(handle, component_id)) {
+                return false;
             }
         }
         return true;
     }
 
+    pub fn queryNext(self: World, component_ids: []const []const u8, cursor: *usize) ?EntityHandle {
+        while (cursor.* < self.entities.items.len) : (cursor.* += 1) {
+            const handle = EntityHandle{ .index = @intCast(cursor.*) };
+            if (self.hasComponents(handle, component_ids) catch false) {
+                cursor.* += 1;
+                return handle;
+            }
+        }
+        return null;
+    }
+
+    pub fn getVec3(self: World, handle: EntityHandle, component_id: []const u8, field_name: []const u8) WorldError![3]f32 {
+        const field = try self.findField(handle, component_id, field_name);
+        return switch (field.value) {
+            .vec3 => |value| value,
+            else => WorldError.InvalidFieldType,
+        };
+    }
+
+    pub fn setVec3(self: *World, handle: EntityHandle, component_id: []const u8, field_name: []const u8, value: [3]f32) WorldError!void {
+        if (!std.math.isFinite(value[0]) or !std.math.isFinite(value[1]) or !std.math.isFinite(value[2])) {
+            return WorldError.InvalidFieldType;
+        }
+        const field = try self.findMutableField(handle, component_id, field_name);
+        switch (field.value) {
+            .vec3 => field.value = .{ .vec3 = value },
+            else => return WorldError.InvalidFieldType,
+        }
+    }
+
     pub fn renderableCubeCount(self: World) usize {
         var count: usize = 0;
-        for (self.entities.items, 0..) |_, index| {
-            if (self.transforms.items[index] != null and self.cube_renderers.items[index] != null) {
-                count += 1;
-            }
+        var cursor: usize = 0;
+        const component_ids = [_][]const u8{ transform_component_id, cube_renderer_component_id };
+        while (self.queryNext(&component_ids, &cursor)) |_| {
+            count += 1;
         }
         return count;
     }
 
     pub fn renderableCubeAt(self: World, render_index: usize) ?RenderableCube {
         var found: usize = 0;
-        for (self.entities.items, 0..) |stored_entity, index| {
-            const transform = self.transforms.items[index] orelse continue;
-            const cube_renderer = self.cube_renderers.items[index] orelse continue;
+        var cursor: usize = 0;
+        const component_ids = [_][]const u8{ transform_component_id, cube_renderer_component_id };
+        while (self.queryNext(&component_ids, &cursor)) |handle| {
+            const stored_entity = self.entity(handle) catch return null;
             if (found == render_index) {
-                const spin = self.spins.items[index] orelse Spin{};
+                const transform = (self.getTransform(handle) catch return null) orelse return null;
+                const color = self.getVec3(handle, cube_renderer_component_id, "color") catch return null;
+                const spin = self.getVec3(handle, spin_component_id, "angular_velocity") catch .{ 0.0, 0.0, 0.0 };
                 return .{
-                    .entity = .{ .index = @intCast(index) },
+                    .entity = handle,
                     .id = stored_entity.id,
                     .name = stored_entity.name,
                     .position = transform.position,
                     .rotation = transform.rotation,
                     .scale = transform.scale,
-                    .color = cube_renderer.color,
-                    .spin = spin.angular_velocity,
+                    .color = color,
+                    .spin = spin,
                 };
             }
             found += 1;
@@ -675,6 +749,106 @@ pub const World = struct {
             return WorldError.InvalidEntity;
         }
         return index;
+    }
+
+    fn findField(self: World, handle: EntityHandle, component_id: []const u8, field_name: []const u8) WorldError!*const ComponentFieldValue {
+        const index = try self.componentIndex(handle);
+        const component = self.findComponentInList(self.components.items[index].items, component_id) orelse return WorldError.UnknownComponent;
+        for (component.fields) |*field| {
+            if (std.mem.eql(u8, field.name, field_name)) {
+                return field;
+            }
+        }
+        return WorldError.UnknownField;
+    }
+
+    fn findMutableField(self: *World, handle: EntityHandle, component_id: []const u8, field_name: []const u8) WorldError!*ComponentFieldValue {
+        const index = try self.componentIndex(handle);
+        const entity_components = &self.components.items[index];
+        for (entity_components.items) |*component| {
+            if (!std.mem.eql(u8, component.id, component_id)) {
+                continue;
+            }
+            for (component.fields) |*field| {
+                if (std.mem.eql(u8, field.name, field_name)) {
+                    return field;
+                }
+            }
+            return WorldError.UnknownField;
+        }
+        return WorldError.UnknownComponent;
+    }
+
+    fn findComponentInList(self: World, components: []const ComponentInstance, component_id: []const u8) ?*const ComponentInstance {
+        _ = self;
+        for (components) |*component| {
+            if (std.mem.eql(u8, component.id, component_id)) {
+                return component;
+            }
+        }
+        return null;
+    }
+
+    fn copyComponentInstance(self: World, component_id: []const u8, fields: []const ComponentFieldValue) !ComponentInstance {
+        const owned_id = try self.allocator.dupe(u8, component_id);
+        errdefer self.allocator.free(owned_id);
+        const owned_fields = try self.allocator.alloc(ComponentFieldValue, fields.len);
+        errdefer self.allocator.free(owned_fields);
+
+        var copied_count: usize = 0;
+        errdefer {
+            for (owned_fields[0..copied_count]) |field| {
+                self.freeFieldValue(field);
+            }
+        }
+
+        for (fields, 0..) |field, index| {
+            const owned_name = try self.allocator.dupe(u8, field.name);
+            const owned_value = self.copyValue(field.value) catch |err| {
+                self.allocator.free(owned_name);
+                return err;
+            };
+            owned_fields[index] = .{
+                .name = owned_name,
+                .value = owned_value,
+            };
+            copied_count += 1;
+        }
+
+        return .{ .id = owned_id, .fields = owned_fields };
+    }
+
+    fn copyValue(self: World, value: ComponentValue) !ComponentValue {
+        return switch (value) {
+            .string => |string| .{ .string = try self.allocator.dupe(u8, string) },
+            .boolean => |boolean| .{ .boolean = boolean },
+            .int => |int| .{ .int = int },
+            .float => |float| .{ .float = float },
+            .vec3 => |vec3| .{ .vec3 = vec3 },
+        };
+    }
+
+    fn freeComponentList(self: World, components: *std.ArrayList(ComponentInstance)) void {
+        for (components.items) |component| {
+            self.freeComponentInstance(component);
+        }
+        components.deinit(self.allocator);
+    }
+
+    fn freeComponentInstance(self: World, component: ComponentInstance) void {
+        self.allocator.free(component.id);
+        for (component.fields) |field| {
+            self.freeFieldValue(field);
+        }
+        self.allocator.free(component.fields);
+    }
+
+    fn freeFieldValue(self: World, field: ComponentFieldValue) void {
+        self.allocator.free(field.name);
+        switch (field.value) {
+            .string => |string| self.allocator.free(string),
+            else => {},
+        }
     }
 };
 
@@ -883,7 +1057,7 @@ test "world rejects duplicate entity ids" {
     try std.testing.expectError(WorldError.DuplicateEntityId, world.createEntity("entity-1", "Two"));
 }
 
-test "world rotates transforms through spin component data" {
+test "world queries and mutates component field storage" {
     var world = World.init(std.testing.allocator);
     defer world.deinit();
 
@@ -891,14 +1065,26 @@ test "world rotates transforms through spin component data" {
     try world.setTransform(entity, .{ .rotation = .{ 0.1, 0.2, 0.3 } });
     try world.setSpin(entity, .{ .angular_velocity = .{ 1.0, 2.0, -4.0 } });
 
-    try std.testing.expect(world.rotateBySpin(transform_component_id, spin_component_id, 0.5));
+    var cursor: usize = 0;
+    const query = [_][]const u8{ transform_component_id, spin_component_id };
+    const queried = world.queryNext(&query, &cursor) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(entity.index, queried.index);
+    try std.testing.expect(world.queryNext(&query, &cursor) == null);
+
+    const rotation = try world.getVec3(entity, transform_component_id, "rotation");
+    const angular_velocity = try world.getVec3(entity, spin_component_id, "angular_velocity");
+    try world.setVec3(entity, transform_component_id, "rotation", .{
+        rotation[0] + angular_velocity[0] * 0.5,
+        rotation[1] + angular_velocity[1] * 0.5,
+        rotation[2] + angular_velocity[2] * 0.5,
+    });
 
     const transform_after = (try world.getTransform(entity)) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(f32, 0.6), transform_after.rotation[0]);
     try std.testing.expectEqual(@as(f32, 1.2), transform_after.rotation[1]);
     try std.testing.expectEqual(@as(f32, -1.7), transform_after.rotation[2]);
-    try std.testing.expect(!world.rotateBySpin("stamina", spin_component_id, 0.5));
-    try std.testing.expect(!world.rotateBySpin(transform_component_id, spin_component_id, std.math.inf(f32)));
+    try std.testing.expectError(WorldError.UnknownComponent, world.getVec3(entity, "stamina", "value"));
+    try std.testing.expectError(WorldError.InvalidFieldType, world.setVec3(entity, transform_component_id, "rotation", .{ std.math.inf(f32), 0.0, 0.0 }));
 }
 
 test "type ids distinguish project-local, package, and engine namespaces" {
