@@ -1,5 +1,5 @@
 ---
-name: render-verification
+name: machina-render-verification
 description: Use when changing Machina rendering, WGSL shaders, scene-driven render data, or visual test expectations. Provides the offscreen render verification workflow and explains what render-test can and cannot prove.
 ---
 
@@ -33,4 +33,3 @@ This catches failures such as blank frames, invalid artifacts, and the prior cla
 `render-test` is not a golden-image comparison and does not prove exact object count or pixel-perfect layout. If a rendering change needs stricter guarantees, extend the verifier deliberately instead of replacing it with manual screenshot inspection.
 
 Use headful `run --frames N` as smoke coverage for SDL/window/surface setup. Prefer offscreen checks for repeatable assertions.
-

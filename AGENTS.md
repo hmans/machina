@@ -32,5 +32,4 @@ Rendering uses `wgpu-native`. Headful rendering currently uses SDL3 on macOS via
 
 ## Local Skills
 
-- Use `.agents/skills/render-verification` when changing rendering, shaders, scene-driven render data, or visual test expectations.
-
+- Use `.agents/skills/machina-render-verification` when changing rendering, shaders, scene-driven render data, or visual test expectations.
