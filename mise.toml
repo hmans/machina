@@ -1,2 +1,10 @@
 [tools]
 zig = "latest"
+
+[tasks.build]
+description = "Build the machina CLI"
+run = "zig build"
+
+[tasks.machina]
+description = "Build and run the machina CLI"
+run = "mise build && ./zig-out/bin/machina"
