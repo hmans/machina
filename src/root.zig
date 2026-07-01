@@ -1418,6 +1418,43 @@ test "LiveProject update runs the scheduled rotation system" {
     try std.testing.expectEqual(before.rotation[2], after.rotation[2]);
 }
 
+test "LiveProject reloads script runner multiplier" {
+    const root_path = ".zig-cache/test-live-script-runner-reload";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.createDirPath(io, "scripts");
+
+    try root_dir.writeFile(io, .{
+        .sub_path = project_file_name,
+        .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
+    });
+    try writeRotateScript(io, root_dir, "dt");
+
+    var live_project = try LiveProject.init(io, std.testing.allocator, root_path);
+    defer live_project.deinit();
+
+    const entity = live_project.scene.world.findEntityById("018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001") orelse return error.TestExpectedEqual;
+    const start = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    live_project.update(1.0);
+    const after_base = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    const base_delta = after_base.rotation[0] - start.rotation[0];
+
+    try writeRotateScript(io, root_dir, "dt * 3");
+    const reload = try live_project.pollLoadedSources();
+    try std.testing.expect(reload.reloaded.scripts_reloaded);
+
+    live_project.update(1.0);
+    const after_reloaded = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    const reloaded_delta = after_reloaded.rotation[0] - after_base.rotation[0];
+    try std.testing.expect(reloaded_delta > base_delta * 2.9);
+}
+
 test "LiveProject reloads project metadata and follows default scene changes" {
     const root_path = ".zig-cache/test-live-project-reload";
     const io = Io.Threaded.global_single_threaded.io();
@@ -1597,4 +1634,23 @@ test "checkProject rejects unsupported metadata version" {
         ProjectError.UnsupportedProjectVersion,
         loadProjectFile(io, std.testing.allocator, ".", root_dir),
     );
+}
+
+fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !void {
+    var buffer: [512]u8 = undefined;
+    const data = try std.fmt.bufPrint(&buffer,
+        \\ecs.system("rotate_cubes", {{
+        \\  reads = {{ "machina.spin" }},
+        \\  writes = {{ "machina.transform" }},
+        \\  run = function(world, dt)
+        \\    world.rotate("machina.transform", "machina.spin", {s})
+        \\  end,
+        \\}})
+        ,
+        .{delta_expression},
+    );
+    try root_dir.writeFile(io, .{
+        .sub_path = "scripts/gameplay.luau",
+        .data = data,
+    });
 }

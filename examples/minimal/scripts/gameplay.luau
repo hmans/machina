@@ -16,7 +16,7 @@ ecs.system("rotate_cubes", {
   reads = { "machina.spin" },
   writes = { "machina.transform" },
   run = function(world, dt)
-    world.rotate("machina.transform", "machina.spin", dt)
+    world.rotate("machina.transform", "machina.spin", dt * 10)
   end,
 })
 

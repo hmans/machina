@@ -208,7 +208,7 @@ const DeclarationParser = struct {
         try self.expectByte(',');
         const spin_id = try self.parseString();
         try self.expectByte(',');
-        try self.expectLiteral("dt");
+        const multiplier = try self.parseDeltaExpression();
         try self.expectByte(')');
         _ = self.consumeByte(';');
 
@@ -217,9 +217,18 @@ const DeclarationParser = struct {
         if (std.mem.eql(u8, transform_id, runtime.transform_component_id) and
             std.mem.eql(u8, spin_id, runtime.spin_component_id))
         {
-            return .rotate_by_spin;
+            return .{ .rotate_by_spin = multiplier };
         }
         return ScriptError.UnsupportedScript;
+    }
+
+    fn parseDeltaExpression(self: *DeclarationParser) ScriptError!f32 {
+        try self.expectLiteral("dt");
+        self.skipTrivia();
+        if (!self.consumeByte('*')) {
+            return 1.0;
+        }
+        return self.parseF32();
     }
 
     fn parseFieldTable(
@@ -301,6 +310,30 @@ const DeclarationParser = struct {
             return ScriptError.InvalidScript;
         }
         return std.fmt.parseInt(u32, self.source[start..self.index], 10) catch ScriptError.InvalidScript;
+    }
+
+    fn parseF32(self: *DeclarationParser) ScriptError!f32 {
+        self.skipTrivia();
+        const start = self.index;
+        if (!self.isEof() and (self.source[self.index] == '+' or self.source[self.index] == '-')) {
+            self.index += 1;
+        }
+        var saw_digit = false;
+        while (!self.isEof() and std.ascii.isDigit(self.source[self.index])) {
+            self.index += 1;
+            saw_digit = true;
+        }
+        if (!self.isEof() and self.source[self.index] == '.') {
+            self.index += 1;
+            while (!self.isEof() and std.ascii.isDigit(self.source[self.index])) {
+                self.index += 1;
+                saw_digit = true;
+            }
+        }
+        if (!saw_digit) {
+            return ScriptError.InvalidScript;
+        }
+        return std.fmt.parseFloat(f32, self.source[start..self.index]) catch ScriptError.InvalidScript;
     }
 
     fn expectLiteral(self: *DeclarationParser, literal: []const u8) ScriptError!void {
@@ -441,7 +474,7 @@ test "script declarations register components and systems" {
         \\  reads = { "machina.spin" },
         \\  writes = { "machina.transform" },
         \\  run = function(world, dt)
-        \\    world.rotate("machina.transform", "machina.spin", dt)
+        \\    world.rotate("machina.transform", "machina.spin", dt * 2.5)
         \\  end,
         \\})
         ,
@@ -450,7 +483,7 @@ test "script declarations register components and systems" {
 
     try std.testing.expect(registry.findComponent("health") != null);
     const system = registry.findSystem("rotate_cubes") orelse return error.TestExpectedEqual;
-    try std.testing.expectEqual(runtime.SystemRunner.rotate_by_spin, system.runner);
+    try std.testing.expectEqual(@as(f32, 2.5), system.runner.rotate_by_spin);
 }
 
 test "script runner body must match declared access" {

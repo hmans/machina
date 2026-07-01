@@ -22,7 +22,7 @@ Script ECS registration lets project and package scripts define new component an
 - Systems may declare ordering relationships by system id.
 - The native runtime builds update schedule batches from declared read/write access and before/after dependencies.
 - Systems that only read compatible component sets can share a batch; write conflicts or order dependencies force later batches.
-- Script-authored systems can execute the first constrained Luau runner body; the example `rotate_cubes` system updates transform rotation from spin data.
+- Script-authored systems can execute the first constrained Luau runner body; the example `rotate_cubes` system updates transform rotation from spin data and supports `dt * scalar` speed multipliers.
 - Registration failures produce diagnostics suitable for command-line, editor, and reload surfaces.
 - This slice does not execute arbitrary Luau system bodies yet.
 

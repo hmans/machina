@@ -63,9 +63,9 @@ pub const SystemDefinition = struct {
     runner: SystemRunner = .none,
 };
 
-pub const SystemRunner = enum {
+pub const SystemRunner = union(enum) {
     none,
-    rotate_by_spin,
+    rotate_by_spin: f32,
 };
 
 pub const ScheduledSystem = struct {
@@ -625,7 +625,7 @@ pub const World = struct {
     fn runScheduledSystem(self: *World, runner: SystemRunner, delta_seconds: f32) void {
         switch (runner) {
             .none => {},
-            .rotate_by_spin => self.rotateSpinningEntities(delta_seconds),
+            .rotate_by_spin => |multiplier| self.rotateSpinningEntities(delta_seconds * multiplier),
         }
     }
 
@@ -806,11 +806,21 @@ fn componentDefinitionsEqual(left: ComponentDefinition, right: ComponentDefiniti
 
 fn systemDefinitionsEqual(left: SystemDefinition, right: SystemDefinition) bool {
     return std.mem.eql(u8, left.id, right.id) and left.phase == right.phase and
-        left.runner == right.runner and
+        systemRunnersEqual(left.runner, right.runner) and
         stringListsEqual(left.reads, right.reads) and
         stringListsEqual(left.writes, right.writes) and
         stringListsEqual(left.before, right.before) and
         stringListsEqual(left.after, right.after);
+}
+
+fn systemRunnersEqual(left: SystemRunner, right: SystemRunner) bool {
+    return switch (left) {
+        .none => right == .none,
+        .rotate_by_spin => |left_multiplier| switch (right) {
+            .none => false,
+            .rotate_by_spin => |right_multiplier| left_multiplier == right_multiplier,
+        },
+    };
 }
 
 fn systemsConflict(left: SystemDefinition, right: SystemDefinition) bool {
@@ -894,7 +904,7 @@ test "world update schedule runs scripted rotation runner" {
     systems[0] = .{
         .registry_index = 0,
         .id = "rotate_cubes",
-        .runner = .rotate_by_spin,
+        .runner = .{ .rotate_by_spin = 1.0 },
     };
     const batches = try std.testing.allocator.alloc(SystemBatch, 1);
     defer std.testing.allocator.free(batches);
