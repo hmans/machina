@@ -1,0 +1,40 @@
+# FDR-001: Project Directory Runtime
+
+**Status:** Planned
+**Last reviewed:** 2026-07-01
+
+## Overview
+
+The project directory runtime lets users and agents run the `machina` binary inside a project folder and operate on that project without additional setup. It exists so interactive play, editor startup, validation, importing, testing, and building all share the same project discovery and loading behavior.
+
+## Behavior
+
+- Users can launch Machina commands from a project directory.
+- Users can pass an explicit project path when they do not want to rely on the current working directory.
+- The runtime locates project metadata, resolves project-relative paths, and reports clear diagnostics when the directory is not a valid project.
+- Interactive and headless commands use the same project loading rules.
+- Commands that write files keep generated artifacts separate from authoritative source files.
+
+## Design Decisions
+
+### 1. Treat the current directory as a project entrypoint
+
+**Decision:** `machina` commands default to the current working directory as the active project.
+**Why:** This supports ordinary shell workflows, CI jobs, editor terminals, and coding agents. It follows ADR-003.
+**Tradeoff:** Commands must be careful about diagnostics when run from the wrong directory.
+
+### 2. Keep generated files out of the source model
+
+**Decision:** Generated caches and build artifacts are written outside the authoritative project files.
+**Why:** The project model is text-first and reviewable. It follows ADR-001.
+**Tradeoff:** The runtime needs explicit cache and artifact path rules.
+
+## Related
+
+- **ADRs:** ADR-001, ADR-003
+- **FDRs:** FDR-002, FDR-003, FDR-006
+
+## Open Questions
+
+- What is the canonical project metadata filename?
+- Should `machina init` be part of the first implementation slice?
