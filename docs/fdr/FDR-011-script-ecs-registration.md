@@ -14,7 +14,8 @@ Script ECS registration lets project and package scripts define new component an
 - Engine-owned ids use the reserved `machina.*` namespace.
 - Machina does not infer a default project namespace.
 - Project metadata lists script files in a root-level `scripts = [...]` array.
-- Script files use Luau source files and currently support a constrained declaration surface: `ecs.component(...)` and `ecs.system(...)`.
+- Script files use Luau source files executed by the embedded Luau VM.
+- Scripts register component and system definitions through the engine-provided `ecs.component(...)` and `ecs.system(...)` globals.
 - Duplicate registration with an identical definition is accepted as reload-compatible.
 - Duplicate registration with an incompatible definition fails validation.
 - Systems declare the component types they read and write.
@@ -22,9 +23,13 @@ Script ECS registration lets project and package scripts define new component an
 - Systems may declare ordering relationships by system id.
 - The native runtime builds update schedule batches from declared read/write access and before/after dependencies.
 - Systems that only read compatible component sets can share a batch; write conflicts or order dependencies force later batches.
-- Script-authored systems can execute the first constrained Luau runner body; the example `rotate_cubes` system updates transform rotation from spin data and supports `dt * scalar` speed multipliers.
+- Script-authored systems can provide Luau `run` callbacks that execute during the native update schedule.
+- Script system callbacks receive an engine-provided world facade instead of direct component storage ownership.
+- The current world facade exposes a narrow `world.rotate(...)` operation used by the example `rotate_cubes` system.
+- Script-driven world mutation is checked against the system's declared component access.
+- Non-finite script values that reach host mutation APIs fail the system invocation for that frame instead of corrupting world state.
 - Registration failures produce diagnostics suitable for command-line, editor, and reload surfaces.
-- This slice does not execute arbitrary Luau system bodies yet.
+- Script runtime failures keep the last loaded project state active and should surface through interactive and headless diagnostics.
 
 ## Design Decisions
 
@@ -52,20 +57,26 @@ Script ECS registration lets project and package scripts define new component an
 **Why:** The engine needs deterministic validation, dependency planning, parallel batch construction, and a path toward multiple Luau VM partitions. It follows ADR-006 and ADR-008.
 **Tradeoff:** Script authors must describe access up front, and dynamic component access needs explicit API design before it can be supported.
 
-### 5. Start with Luau declarations before VM execution
+### 5. Execute real Luau, keep host APIs narrow
 
-**Decision:** The first implementation parses a constrained Luau declaration surface and does not execute `run` callbacks.
-**Why:** Registration and scheduling shape the architecture more than callback execution. They can be validated headlessly and reloaded before the Luau runtime dependency is wired into the build.
-**Tradeoff:** This is scripting metadata, not playable script behavior yet.
+**Decision:** Project scripts run in the embedded Luau VM. `ecs.component` and `ecs.system` are host-provided globals, and system `run` callbacks are stored and invoked as real Luau functions. Runtime world access is exposed through narrow host APIs.
+**Why:** Running real Luau keeps script behavior honest, reloadable, and compatible with editor tooling while preserving native ownership of ECS storage and scheduling. Narrow host APIs prevent scripts from bypassing validation while the ECS query/mutation model matures.
+**Tradeoff:** Each host API must be designed, typed, validated, and diagnosed explicitly before scripts can use it.
+
+### 6. Vendor the initial Luau runtime behind the scripting boundary
+
+**Decision:** Machina vendors the embeddable Luau compiler and VM source subset and wraps it behind a small C ABI bridge.
+**Why:** Homebrew provides Luau command-line tools but not the embeddable library surface Machina needs. Keeping Luau behind the scripting boundary follows ADR-005 and lets the Zig runtime avoid depending on Luau internals directly.
+**Tradeoff:** The repository carries third-party source and must periodically update the vendored subset deliberately.
 
 ## Related
 
 - **ADRs:** ADR-006, ADR-008, ADR-009, ADR-010
-- **FDRs:** FDR-004, FDR-009, FDR-010
+- **FDRs:** FDR-004, FDR-009, FDR-010, FDR-012
 
 ## Open Questions
 
-- How should the real Luau VM be packaged and linked across platforms?
-- How are Luau system bodies compiled, cached, invoked, and isolated?
 - How will component defaults and migrations be represented in script schemas?
 - Which system phases beyond `update` should be exposed to script-defined systems first?
+- What query and mutation APIs should the world facade expose beyond `world.rotate(...)`?
+- How should script runtime errors be surfaced with file, system id, and stack context?
