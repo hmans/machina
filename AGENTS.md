@@ -20,7 +20,9 @@ Projects have a `project.machina.toml` file and a default scene path. Scenes are
 
 Rendering uses `wgpu-native`. Headful rendering currently uses SDL3 on macOS via Homebrew paths in `build.zig`; offscreen rendering writes BMP artifacts and is the preferred automation surface.
 
-The intended low-level runtime model is ECS-ish: stable entity identity, structured components, systems over component queries, and a scripting API that exposes those concepts directly. Live reload of scenes and scripts is a core runtime capability, so new architecture should preserve reloadable text data, stable ids, staged validation, and last-known-good behavior.
+The intended low-level runtime model is ECS-ish: stable entity identity, structured components, systems over component queries, and a scripting API that exposes those concepts directly. `src/runtime.zig` owns the current `World` and component storage. Scene loading builds a world, and rendering queries renderable components from that world.
+
+Live reload is a core runtime capability. `machina run` currently uses a `LiveProject` session that tracks project metadata and the active scene as loaded text sources. Valid edits swap into the running renderer; invalid edits keep the last known good project and scene active. New architecture should preserve reloadable text data, stable ids, staged validation, and last-known-good behavior.
 
 ## Working Rules
 
@@ -28,7 +30,12 @@ The intended low-level runtime model is ECS-ish: stable entity identity, structu
 - Prefer small vertical slices that leave `main` working.
 - Update ADRs when changing architecture or backend choices.
 - Update FDRs when changing feature behavior, command behavior, scene schema, or validation semantics.
-- For rendering changes, prefer deterministic offscreen verification before relying on visible-window inspection.
+- Route runtime state through the ECS-ish world instead of introducing renderer-specific or script-owned side channels.
+- When adding a text-authored runtime resource, register it with the live reload path or document why it is intentionally not reloadable yet.
+- Preserve last-known-good behavior for live reload. Failed reloads should produce diagnostics without destroying the running project state.
+- For long-lived interactive state, use an allocator that can free replaced resources; avoid arena-backed state for reloadable worlds and scenes.
+- For rendering changes, use deterministic offscreen verification before relying on visible-window inspection.
+- For window-loop, surface, or live-reload changes in `machina run`, also run a bounded headful smoke test such as `mise machina run examples/minimal --frames 2`.
 - Treat `examples/minimal/` as the smoke-test fixture; update it when the supported scene schema changes.
 - Do not hide external backend APIs in scene, project, or scripting layers. Keep native dependency details behind engine-owned boundaries.
 
