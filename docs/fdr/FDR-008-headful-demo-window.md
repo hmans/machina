@@ -11,8 +11,9 @@ Headful demo rendering proves that Machina can create a platform window, hand it
 
 - Users can run `machina run [path]` against a valid project.
 - The command validates the project before opening a window.
-- The renderer opens a visible window and presents the current built-in demo scene until the window is closed.
-- The current demo scene is a rotating colored cube with depth testing and simple directional diffuse shading.
+- The renderer opens a visible window and presents the project's default scene until the window is closed.
+- Cube entity position, rotation, scale, color, and spin values come from scene data.
+- Cubes render with depth testing and simple directional diffuse shading.
 - Users can run `machina run [path] --frames N` to exit after a fixed number of frames for smoke tests and automation.
 - `machina render [path] [output.bmp]` remains the headless/offscreen snapshot command.
 

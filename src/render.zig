@@ -37,7 +37,19 @@ pub const WindowOptions = struct {
     max_frames: ?u32 = null,
 };
 
-pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const u8) !void {
+pub const Scene = struct {
+    cubes: []const CubeInstance,
+};
+
+pub const CubeInstance = struct {
+    position: [3]f32 = .{ 0.0, 0.0, 0.0 },
+    rotation: [3]f32 = .{ 0.0, 0.0, 0.0 },
+    scale: [3]f32 = .{ 1.0, 1.0, 1.0 },
+    color: [3]f32 = .{ 0.0, 0.56, 1.0 },
+    spin: [3]f32 = .{ 0.62, 1.0, 0.0 },
+};
+
+pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const u8, scene: Scene) !void {
     const instance = wgpu.Instance.create(null) orelse return RenderError.NoAdapter;
     defer instance.release();
 
@@ -77,7 +89,8 @@ pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const 
     try demo.draw(gpu.device, gpu.queue, target_view, depth.view orelse return RenderError.NoDevice, .{
         .width = output_width,
         .height = output_height,
-        .angle = 0.72,
+        .time = 0.72,
+        .scene = scene,
     });
 
     const encoder = gpu.device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
@@ -131,7 +144,7 @@ pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const 
     try write24BitBmp(io, allocator, output_path, mapped[0..output_size]);
 }
 
-pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: WindowOptions) !void {
+pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: WindowOptions, scene: Scene) !void {
     if (builtin.os.tag != .macos) {
         return RenderError.WindowingUnsupported;
     }
@@ -212,7 +225,8 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
         try drawCubeToSurface(surface, gpu.device, gpu.queue, &demo, depth.view orelse return RenderError.NoDevice, .{
             .width = width,
             .height = height,
-            .angle = @as(f32, @floatFromInt(frame_count)) * 0.025,
+            .time = @as(f32, @floatFromInt(frame_count)) * 0.025,
+            .scene = scene,
         });
         instance.processEvents();
 
@@ -230,7 +244,15 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
 const FrameConfig = struct {
     width: u32,
     height: u32,
-    angle: f32,
+    time: f32,
+    scene: Scene,
+};
+
+const ObjectConfig = struct {
+    width: u32,
+    height: u32,
+    time: f32,
+    cube: *const CubeInstance,
 };
 
 const GpuContext = struct {
@@ -323,10 +345,12 @@ const CubeDemo = struct {
         }) orelse return RenderError.NoDevice;
         errdefer uniform_buffer.release();
 
+        const initial_cube = CubeInstance{};
         var initial_uniforms = frameUniforms(.{
             .width = output_width,
             .height = output_height,
-            .angle = 0,
+            .time = 0,
+            .cube = &initial_cube,
         });
         writeUniforms(queue, uniform_buffer, &initial_uniforms);
 
@@ -402,9 +426,6 @@ const CubeDemo = struct {
         depth_view: *wgpu.TextureView,
         config: FrameConfig,
     ) RenderError!void {
-        var uniforms = frameUniforms(config);
-        writeUniforms(queue, self.uniform_buffer, &uniforms);
-
         const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
             .label = wgpu.StringView.fromSlice("Machina cube command encoder"),
         }) orelse return RenderError.NoDevice;
@@ -437,7 +458,16 @@ const CubeDemo = struct {
         render_pass.setBindGroup(0, self.bind_group, 0, null);
         render_pass.setVertexBuffer(0, self.vertex_buffer, 0, @sizeOf(@TypeOf(cube_vertices)));
         render_pass.setIndexBuffer(self.index_buffer, .uint16, 0, @sizeOf(@TypeOf(cube_indices)));
-        render_pass.drawIndexed(cube_indices.len, 1, 0, 0, 0);
+        for (config.scene.cubes) |*cube| {
+            var uniforms = frameUniforms(.{
+                .width = config.width,
+                .height = config.height,
+                .time = config.time,
+                .cube = cube,
+            });
+            writeUniforms(queue, self.uniform_buffer, &uniforms);
+            render_pass.drawIndexed(cube_indices.len, 1, 0, 0, 0);
+        }
         render_pass.end();
         render_pass.release();
 
@@ -576,11 +606,6 @@ fn createCubePipeline(device: *wgpu.Device, texture_format: wgpu.TextureFormat, 
             .offset = @offsetOf(Vertex, "normal"),
             .shader_location = 1,
         },
-        .{
-            .format = .float32x3,
-            .offset = @offsetOf(Vertex, "color"),
-            .shader_location = 2,
-        },
     };
     const vertex_buffers = [_]wgpu.VertexBufferLayout{
         .{
@@ -646,10 +671,20 @@ fn writeUniforms(queue: *wgpu.Queue, buffer: *wgpu.Buffer, uniforms: *const Fram
     queue.writeBuffer(buffer, 0, bytes.ptr, bytes.len);
 }
 
-fn frameUniforms(config: FrameConfig) FrameUniforms {
+fn frameUniforms(config: ObjectConfig) FrameUniforms {
     const aspect = @as(f32, @floatFromInt(config.width)) / @as(f32, @floatFromInt(config.height));
-    const rotation = matMul(rotationY(config.angle), rotationX(config.angle * 0.62));
-    const model = rotation;
+    const cube = config.cube;
+    const rotation = matMul(
+        rotationZ(cube.rotation[2] + config.time * cube.spin[2]),
+        matMul(
+            rotationY(cube.rotation[1] + config.time * cube.spin[1]),
+            rotationX(cube.rotation[0] + config.time * cube.spin[0]),
+        ),
+    );
+    const model = matMul(
+        translation(cube.position[0], cube.position[1], cube.position[2]),
+        matMul(rotation, scaling(cube.scale[0], cube.scale[1], cube.scale[2])),
+    );
     const view = translation(0.0, 0.0, -4.8);
     const projection = perspective(std.math.degreesToRadians(48.0), aspect, 0.1, 100.0);
     const mvp = matMul(projection, matMul(view, model));
@@ -658,6 +693,7 @@ fn frameUniforms(config: FrameConfig) FrameUniforms {
         .mvp = mvp,
         .model = model,
         .light_dir = .{ 0.35, 0.68, 0.64, 0.0 },
+        .object_color = .{ cube.color[0], cube.color[1], cube.color[2], 1.0 },
     };
 }
 
@@ -677,6 +713,15 @@ fn translation(x: f32, y: f32, z: f32) [16]f32 {
         0.0, 1.0, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
         x,   y,   z,   1.0,
+    };
+}
+
+fn scaling(x: f32, y: f32, z: f32) [16]f32 {
+    return .{
+        x,   0.0, 0.0, 0.0,
+        0.0, y,   0.0, 0.0,
+        0.0, 0.0, z,   0.0,
+        0.0, 0.0, 0.0, 1.0,
     };
 }
 
@@ -702,6 +747,17 @@ fn rotationY(angle: f32) [16]f32 {
     };
 }
 
+fn rotationZ(angle: f32) [16]f32 {
+    const c = @cos(angle);
+    const s = @sin(angle);
+    return .{
+        c,   s,   0.0, 0.0,
+        -s,  c,   0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    };
+}
+
 fn matMul(a: [16]f32, b: [16]f32) [16]f32 {
     var out: [16]f32 = undefined;
     for (0..4) |column| {
@@ -720,44 +776,44 @@ const FrameUniforms = extern struct {
     mvp: [16]f32,
     model: [16]f32,
     light_dir: [4]f32,
+    object_color: [4]f32,
 };
 
 const Vertex = extern struct {
     position: [3]f32,
     normal: [3]f32,
-    color: [3]f32,
 };
 
 const cube_vertices = [_]Vertex{
-    .{ .position = .{ -1.0, -1.0, 1.0 }, .normal = .{ 0.0, 0.0, 1.0 }, .color = .{ 0.0, 0.56, 1.0 } },
-    .{ .position = .{ 1.0, -1.0, 1.0 }, .normal = .{ 0.0, 0.0, 1.0 }, .color = .{ 0.0, 0.56, 1.0 } },
-    .{ .position = .{ 1.0, 1.0, 1.0 }, .normal = .{ 0.0, 0.0, 1.0 }, .color = .{ 0.0, 0.56, 1.0 } },
-    .{ .position = .{ -1.0, 1.0, 1.0 }, .normal = .{ 0.0, 0.0, 1.0 }, .color = .{ 0.0, 0.56, 1.0 } },
+    .{ .position = .{ -1.0, -1.0, 1.0 }, .normal = .{ 0.0, 0.0, 1.0 } },
+    .{ .position = .{ 1.0, -1.0, 1.0 }, .normal = .{ 0.0, 0.0, 1.0 } },
+    .{ .position = .{ 1.0, 1.0, 1.0 }, .normal = .{ 0.0, 0.0, 1.0 } },
+    .{ .position = .{ -1.0, 1.0, 1.0 }, .normal = .{ 0.0, 0.0, 1.0 } },
 
-    .{ .position = .{ 1.0, -1.0, -1.0 }, .normal = .{ 0.0, 0.0, -1.0 }, .color = .{ 1.0, 0.26, 0.16 } },
-    .{ .position = .{ -1.0, -1.0, -1.0 }, .normal = .{ 0.0, 0.0, -1.0 }, .color = .{ 1.0, 0.26, 0.16 } },
-    .{ .position = .{ -1.0, 1.0, -1.0 }, .normal = .{ 0.0, 0.0, -1.0 }, .color = .{ 1.0, 0.26, 0.16 } },
-    .{ .position = .{ 1.0, 1.0, -1.0 }, .normal = .{ 0.0, 0.0, -1.0 }, .color = .{ 1.0, 0.26, 0.16 } },
+    .{ .position = .{ 1.0, -1.0, -1.0 }, .normal = .{ 0.0, 0.0, -1.0 } },
+    .{ .position = .{ -1.0, -1.0, -1.0 }, .normal = .{ 0.0, 0.0, -1.0 } },
+    .{ .position = .{ -1.0, 1.0, -1.0 }, .normal = .{ 0.0, 0.0, -1.0 } },
+    .{ .position = .{ 1.0, 1.0, -1.0 }, .normal = .{ 0.0, 0.0, -1.0 } },
 
-    .{ .position = .{ -1.0, 1.0, 1.0 }, .normal = .{ 0.0, 1.0, 0.0 }, .color = .{ 0.78, 0.92, 0.21 } },
-    .{ .position = .{ 1.0, 1.0, 1.0 }, .normal = .{ 0.0, 1.0, 0.0 }, .color = .{ 0.78, 0.92, 0.21 } },
-    .{ .position = .{ 1.0, 1.0, -1.0 }, .normal = .{ 0.0, 1.0, 0.0 }, .color = .{ 0.78, 0.92, 0.21 } },
-    .{ .position = .{ -1.0, 1.0, -1.0 }, .normal = .{ 0.0, 1.0, 0.0 }, .color = .{ 0.78, 0.92, 0.21 } },
+    .{ .position = .{ -1.0, 1.0, 1.0 }, .normal = .{ 0.0, 1.0, 0.0 } },
+    .{ .position = .{ 1.0, 1.0, 1.0 }, .normal = .{ 0.0, 1.0, 0.0 } },
+    .{ .position = .{ 1.0, 1.0, -1.0 }, .normal = .{ 0.0, 1.0, 0.0 } },
+    .{ .position = .{ -1.0, 1.0, -1.0 }, .normal = .{ 0.0, 1.0, 0.0 } },
 
-    .{ .position = .{ -1.0, -1.0, -1.0 }, .normal = .{ 0.0, -1.0, 0.0 }, .color = .{ 0.54, 0.36, 1.0 } },
-    .{ .position = .{ 1.0, -1.0, -1.0 }, .normal = .{ 0.0, -1.0, 0.0 }, .color = .{ 0.54, 0.36, 1.0 } },
-    .{ .position = .{ 1.0, -1.0, 1.0 }, .normal = .{ 0.0, -1.0, 0.0 }, .color = .{ 0.54, 0.36, 1.0 } },
-    .{ .position = .{ -1.0, -1.0, 1.0 }, .normal = .{ 0.0, -1.0, 0.0 }, .color = .{ 0.54, 0.36, 1.0 } },
+    .{ .position = .{ -1.0, -1.0, -1.0 }, .normal = .{ 0.0, -1.0, 0.0 } },
+    .{ .position = .{ 1.0, -1.0, -1.0 }, .normal = .{ 0.0, -1.0, 0.0 } },
+    .{ .position = .{ 1.0, -1.0, 1.0 }, .normal = .{ 0.0, -1.0, 0.0 } },
+    .{ .position = .{ -1.0, -1.0, 1.0 }, .normal = .{ 0.0, -1.0, 0.0 } },
 
-    .{ .position = .{ 1.0, -1.0, 1.0 }, .normal = .{ 1.0, 0.0, 0.0 }, .color = .{ 0.0, 0.78, 0.46 } },
-    .{ .position = .{ 1.0, -1.0, -1.0 }, .normal = .{ 1.0, 0.0, 0.0 }, .color = .{ 0.0, 0.78, 0.46 } },
-    .{ .position = .{ 1.0, 1.0, -1.0 }, .normal = .{ 1.0, 0.0, 0.0 }, .color = .{ 0.0, 0.78, 0.46 } },
-    .{ .position = .{ 1.0, 1.0, 1.0 }, .normal = .{ 1.0, 0.0, 0.0 }, .color = .{ 0.0, 0.78, 0.46 } },
+    .{ .position = .{ 1.0, -1.0, 1.0 }, .normal = .{ 1.0, 0.0, 0.0 } },
+    .{ .position = .{ 1.0, -1.0, -1.0 }, .normal = .{ 1.0, 0.0, 0.0 } },
+    .{ .position = .{ 1.0, 1.0, -1.0 }, .normal = .{ 1.0, 0.0, 0.0 } },
+    .{ .position = .{ 1.0, 1.0, 1.0 }, .normal = .{ 1.0, 0.0, 0.0 } },
 
-    .{ .position = .{ -1.0, -1.0, -1.0 }, .normal = .{ -1.0, 0.0, 0.0 }, .color = .{ 1.0, 0.62, 0.08 } },
-    .{ .position = .{ -1.0, -1.0, 1.0 }, .normal = .{ -1.0, 0.0, 0.0 }, .color = .{ 1.0, 0.62, 0.08 } },
-    .{ .position = .{ -1.0, 1.0, 1.0 }, .normal = .{ -1.0, 0.0, 0.0 }, .color = .{ 1.0, 0.62, 0.08 } },
-    .{ .position = .{ -1.0, 1.0, -1.0 }, .normal = .{ -1.0, 0.0, 0.0 }, .color = .{ 1.0, 0.62, 0.08 } },
+    .{ .position = .{ -1.0, -1.0, -1.0 }, .normal = .{ -1.0, 0.0, 0.0 } },
+    .{ .position = .{ -1.0, -1.0, 1.0 }, .normal = .{ -1.0, 0.0, 0.0 } },
+    .{ .position = .{ -1.0, 1.0, 1.0 }, .normal = .{ -1.0, 0.0, 0.0 } },
+    .{ .position = .{ -1.0, 1.0, -1.0 }, .normal = .{ -1.0, 0.0, 0.0 } },
 };
 
 const cube_indices = [_]u16{

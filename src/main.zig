@@ -81,10 +81,17 @@ fn run(
             return 1;
         };
         defer machina.freeProject(allocator, result.project);
+        const scene = machina.loadDefaultScene(io, allocator, result.project) catch |err| {
+            try printProjectError(stderr, target_path, err);
+            return 1;
+        };
+        defer machina.freeScene(allocator, scene);
+
         try stdout.print("Loaded project {s}\n", .{result.project.name});
         try stdout.print("Selected scene: {s}\n", .{result.project.default_scene});
+        try stdout.print("Scene entities: {d}\n", .{scene.cubes.len});
 
-        machina.runDemoWindow(allocator, result.project.name, window_options) catch |err| {
+        machina.runDemoWindow(allocator, result.project.name, window_options, scene.renderScene()) catch |err| {
             try stderr.print("run failed: {s}\n", .{@errorName(err)});
             return 1;
         };
@@ -99,8 +106,13 @@ fn run(
             return 1;
         };
         defer machina.freeProject(allocator, result.project);
+        const scene = machina.loadDefaultScene(io, allocator, result.project) catch |err| {
+            try printProjectError(stderr, target_path, err);
+            return 1;
+        };
+        defer machina.freeScene(allocator, scene);
 
-        machina.renderDemoBmp(io, allocator, output_path) catch |err| {
+        machina.renderDemoBmp(io, allocator, output_path, scene.renderScene()) catch |err| {
             try stderr.print("render failed: {s}\n", .{@errorName(err)});
             return 1;
         };
@@ -174,6 +186,9 @@ fn printProjectError(writer: *Io.Writer, root_path: []const u8, err: anyerror) !
         machina.ProjectError.UnsupportedProjectVersion => "unsupported project version",
         machina.ProjectError.InvalidProjectName => "invalid project name",
         machina.ProjectError.InvalidDefaultScene => "invalid default scene",
+        machina.ProjectError.InvalidSceneEntity => "invalid scene entity",
+        machina.ProjectError.InvalidSceneNumber => "invalid scene number",
+        machina.ProjectError.MissingSceneContent => "missing scene content",
         else => "unexpected project error",
     };
     try writer.print("{s}: {s}\n", .{ root_path, message });

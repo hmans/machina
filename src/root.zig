@@ -9,11 +9,22 @@ pub const default_scene_path = "scenes/main.scene.toml";
 pub const renderDemoBmp = render.renderDemoBmp;
 pub const runDemoWindow = render.runDemoWindow;
 pub const WindowOptions = render.WindowOptions;
+pub const CubeInstance = render.CubeInstance;
+pub const RenderScene = render.Scene;
 
 pub const Project = struct {
     root_path: []const u8,
     name: []const u8,
     default_scene: []const u8,
+};
+
+pub const Scene = struct {
+    name: []const u8,
+    cubes: []CubeInstance,
+
+    pub fn renderScene(self: Scene) RenderScene {
+        return .{ .cubes = self.cubes };
+    }
 };
 
 pub const Diagnostic = struct {
@@ -33,6 +44,9 @@ pub const ProjectError = error{
     UnsupportedProjectVersion,
     InvalidProjectName,
     InvalidDefaultScene,
+    InvalidSceneEntity,
+    InvalidSceneNumber,
+    MissingSceneContent,
 };
 
 pub fn initProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8, name: []const u8) !void {
@@ -76,6 +90,16 @@ pub fn initProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8, 
             \\name = "Main"
             \\version = 1
             \\
+            \\[[entities]]
+            \\id = "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001"
+            \\name = "Demo Cube"
+            \\kind = "cube"
+            \\position = [0.0, 0.0, 0.0]
+            \\rotation = [0.0, 0.0, 0.0]
+            \\scale = [1.0, 1.0, 1.0]
+            \\color = [0.0, 0.56, 1.0]
+            \\spin = [0.62, 1.0, 0.0]
+            \\
             ,
             .flags = .{ .exclusive = true },
         });
@@ -91,11 +115,13 @@ pub fn checkProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8)
     defer root_dir.close(io);
 
     const project = try loadProjectFile(io, allocator, root_path, root_dir);
+    errdefer freeProject(allocator, project);
     if (!fileExists(io, root_dir, project.default_scene)) {
         return ProjectError.MissingDefaultScene;
     }
 
-    try validateScene(io, root_dir, project.default_scene);
+    const scene = try loadSceneFile(io, allocator, root_dir, project.default_scene);
+    defer freeScene(allocator, scene);
 
     return .{ .project = project };
 }
@@ -104,6 +130,19 @@ pub fn freeProject(allocator: std.mem.Allocator, project: Project) void {
     allocator.free(project.root_path);
     allocator.free(project.name);
     allocator.free(project.default_scene);
+}
+
+pub fn loadDefaultScene(io: Io, allocator: std.mem.Allocator, project: Project) !Scene {
+    const cwd = Io.Dir.cwd();
+    const root_dir = try cwd.openDir(io, project.root_path, .{});
+    defer root_dir.close(io);
+
+    return loadSceneFile(io, allocator, root_dir, project.default_scene);
+}
+
+pub fn freeScene(allocator: std.mem.Allocator, scene: Scene) void {
+    allocator.free(scene.name);
+    allocator.free(scene.cubes);
 }
 
 fn loadProjectFile(io: Io, allocator: std.mem.Allocator, root_path: []const u8, root_dir: Io.Dir) !Project {
@@ -134,21 +173,147 @@ fn loadProjectFile(io: Io, allocator: std.mem.Allocator, root_path: []const u8, 
     };
 }
 
-fn validateScene(io: Io, root_dir: Io.Dir, scene_path: []const u8) !void {
-    var buffer: [4096]u8 = undefined;
-    const contents = root_dir.readFile(io, scene_path, &buffer) catch |err| switch (err) {
+fn loadSceneFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, scene_path: []const u8) !Scene {
+    const contents = root_dir.readFileAlloc(io, scene_path, allocator, .limited(256 * 1024)) catch |err| switch (err) {
         error.FileNotFound => return ProjectError.MissingDefaultScene,
         else => return err,
     };
+    defer allocator.free(contents);
 
-    if (!hasRequiredString(contents, "name")) {
-        return ProjectError.InvalidProject;
-    }
+    const name = try readRequiredRootString(allocator, contents, "name") orelse return ProjectError.InvalidProject;
+    errdefer allocator.free(name);
 
-    const version_value = readRequiredInt(contents, "version") orelse return ProjectError.UnsupportedProjectVersion;
+    const version_value = readRequiredRootInt(contents, "version") orelse return ProjectError.UnsupportedProjectVersion;
     if (version_value != 1) {
         return ProjectError.UnsupportedProjectVersion;
     }
+
+    var parser = SceneParser{
+        .allocator = allocator,
+    };
+    return .{
+        .name = name,
+        .cubes = try parser.parse(contents),
+    };
+}
+
+const SceneParser = struct {
+    allocator: std.mem.Allocator,
+    cubes: std.ArrayList(CubeInstance) = .empty,
+    active_entity: ?EntityDraft = null,
+
+    fn parse(self: *SceneParser, contents: []const u8) ![]CubeInstance {
+        errdefer self.cubes.deinit(self.allocator);
+
+        var lines = std.mem.splitScalar(u8, contents, '\n');
+        while (lines.next()) |line| {
+            const trimmed = std.mem.trim(u8, line, " \t\r");
+            if (trimmed.len == 0 or trimmed[0] == '#') {
+                continue;
+            }
+
+            if (std.mem.eql(u8, trimmed, "[[entities]]")) {
+                try self.flushEntity();
+                self.active_entity = .{};
+                continue;
+            }
+
+            if (trimmed[0] == '[') {
+                return ProjectError.InvalidSceneEntity;
+            }
+
+            if (self.active_entity) |*entity| {
+                try entity.readProperty(trimmed);
+            }
+        }
+
+        try self.flushEntity();
+        if (self.cubes.items.len == 0) {
+            return ProjectError.MissingSceneContent;
+        }
+
+        return try self.cubes.toOwnedSlice(self.allocator);
+    }
+
+    fn flushEntity(self: *SceneParser) !void {
+        const entity = self.active_entity orelse return;
+        self.active_entity = null;
+        if (!entity.id_seen or !entity.name_seen or !entity.kind_seen or !entity.kind_cube) {
+            return ProjectError.InvalidSceneEntity;
+        }
+        try self.cubes.append(self.allocator, entity.cube);
+    }
+};
+
+const EntityDraft = struct {
+    id_seen: bool = false,
+    name_seen: bool = false,
+    kind_seen: bool = false,
+    kind_cube: bool = false,
+    cube: CubeInstance = .{},
+
+    fn readProperty(self: *EntityDraft, line: []const u8) !void {
+        const eq_index = std.mem.indexOfScalar(u8, line, '=') orelse return ProjectError.InvalidSceneEntity;
+        const key = std.mem.trim(u8, line[0..eq_index], " \t");
+        const value = std.mem.trim(u8, line[eq_index + 1 ..], " \t");
+
+        if (std.mem.eql(u8, key, "id")) {
+            _ = stringValue(value) orelse return ProjectError.InvalidSceneEntity;
+            self.id_seen = true;
+        } else if (std.mem.eql(u8, key, "name")) {
+            _ = stringValue(value) orelse return ProjectError.InvalidSceneEntity;
+            self.name_seen = true;
+        } else if (std.mem.eql(u8, key, "kind")) {
+            const kind = stringValue(value) orelse return ProjectError.InvalidSceneEntity;
+            self.kind_seen = true;
+            self.kind_cube = std.mem.eql(u8, kind, "cube");
+        } else if (std.mem.eql(u8, key, "position")) {
+            self.cube.position = try readVec3(value);
+        } else if (std.mem.eql(u8, key, "rotation")) {
+            self.cube.rotation = try readVec3(value);
+        } else if (std.mem.eql(u8, key, "scale")) {
+            self.cube.scale = try readVec3(value);
+        } else if (std.mem.eql(u8, key, "color")) {
+            self.cube.color = try readVec3(value);
+        } else if (std.mem.eql(u8, key, "spin")) {
+            self.cube.spin = try readVec3(value);
+        } else {
+            return ProjectError.InvalidSceneEntity;
+        }
+    }
+};
+
+fn stringValue(value: []const u8) ?[]const u8 {
+    if (value.len < 2 or value[0] != '"' or value[value.len - 1] != '"') {
+        return null;
+    }
+    return value[1 .. value.len - 1];
+}
+
+fn readVec3(value: []const u8) ![3]f32 {
+    if (value.len < 5 or value[0] != '[' or value[value.len - 1] != ']') {
+        return ProjectError.InvalidSceneNumber;
+    }
+
+    var result: [3]f32 = undefined;
+    var count: usize = 0;
+    var parts = std.mem.splitScalar(u8, value[1 .. value.len - 1], ',');
+    while (parts.next()) |part| {
+        if (count >= result.len) {
+            return ProjectError.InvalidSceneNumber;
+        }
+        const trimmed = std.mem.trim(u8, part, " \t\r");
+        if (trimmed.len == 0) {
+            return ProjectError.InvalidSceneNumber;
+        }
+        result[count] = std.fmt.parseFloat(f32, trimmed) catch return ProjectError.InvalidSceneNumber;
+        count += 1;
+    }
+
+    if (count != result.len) {
+        return ProjectError.InvalidSceneNumber;
+    }
+    return result;
 }
 
 fn readRequiredString(allocator: std.mem.Allocator, contents: []const u8, key: []const u8) !?[]const u8 {
@@ -157,6 +322,33 @@ fn readRequiredString(allocator: std.mem.Allocator, contents: []const u8, key: [
         const trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len == 0 or trimmed[0] == '#') {
             continue;
+        }
+
+        const eq_index = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
+        const found_key = std.mem.trim(u8, trimmed[0..eq_index], " \t");
+        if (!std.mem.eql(u8, found_key, key)) {
+            continue;
+        }
+
+        const value = std.mem.trim(u8, trimmed[eq_index + 1 ..], " \t");
+        if (value.len < 2 or value[0] != '"' or value[value.len - 1] != '"') {
+            return null;
+        }
+        return try decodeTomlBasicString(allocator, value[1 .. value.len - 1]);
+    }
+
+    return null;
+}
+
+fn readRequiredRootString(allocator: std.mem.Allocator, contents: []const u8, key: []const u8) !?[]const u8 {
+    var lines = std.mem.splitScalar(u8, contents, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0 or trimmed[0] == '#') {
+            continue;
+        }
+        if (trimmed[0] == '[') {
+            break;
         }
 
         const eq_index = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
@@ -265,6 +457,30 @@ fn readRequiredInt(contents: []const u8, key: []const u8) ?u32 {
     return null;
 }
 
+fn readRequiredRootInt(contents: []const u8, key: []const u8) ?u32 {
+    var lines = std.mem.splitScalar(u8, contents, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0 or trimmed[0] == '#') {
+            continue;
+        }
+        if (trimmed[0] == '[') {
+            break;
+        }
+
+        const eq_index = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
+        const found_key = std.mem.trim(u8, trimmed[0..eq_index], " \t");
+        if (!std.mem.eql(u8, found_key, key)) {
+            continue;
+        }
+
+        const value = std.mem.trim(u8, trimmed[eq_index + 1 ..], " \t");
+        return std.fmt.parseInt(u32, value, 10) catch null;
+    }
+
+    return null;
+}
+
 fn isSafeProjectRelativePath(path: []const u8) bool {
     if (path.len == 0 or std.fs.path.isAbsolute(path) or std.mem.indexOfScalar(u8, path, '\\') != null) {
         return false;
@@ -315,6 +531,58 @@ test "checkProject validates a project directory" {
 
     try std.testing.expectEqualStrings("Game", result.project.name);
     try std.testing.expectEqualStrings(default_scene_path, result.project.default_scene);
+}
+
+test "loadDefaultScene reads cube entities from scene data" {
+    const root_path = ".zig-cache/test-load-scene-data";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+
+    const result = try checkProject(io, std.testing.allocator, root_path);
+    defer freeProject(std.testing.allocator, result.project);
+
+    const scene = try loadDefaultScene(io, std.testing.allocator, result.project);
+    defer freeScene(std.testing.allocator, scene);
+
+    try std.testing.expectEqualStrings("Main", scene.name);
+    try std.testing.expectEqual(@as(usize, 1), scene.cubes.len);
+    try std.testing.expectEqual(@as(f32, 0.56), scene.cubes[0].color[1]);
+}
+
+test "checkProject rejects invalid scene numeric data" {
+    const root_path = ".zig-cache/test-invalid-scene-number";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+
+    try root_dir.writeFile(io, .{
+        .sub_path = default_scene_path,
+        .data =
+        \\name = "Main"
+        \\version = 1
+        \\
+        \\[[entities]]
+        \\id = "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001"
+        \\name = "Bad Cube"
+        \\kind = "cube"
+        \\position = [0.0, nope, 0.0]
+        \\
+        ,
+    });
+
+    try std.testing.expectError(
+        ProjectError.InvalidSceneNumber,
+        checkProject(io, std.testing.allocator, root_path),
+    );
 }
 
 test "initProject escapes project names in metadata" {

@@ -11,8 +11,9 @@ Offscreen demo rendering proves that Machina can initialize the WebGPU backend, 
 
 - Users can run `machina render [path] [output.bmp]` against a valid project.
 - The command validates the project before rendering.
-- The renderer draws one frame of the current built-in demo scene into an offscreen texture.
-- The current demo scene is a colored cube with depth testing and simple directional diffuse shading.
+- The command loads the project's default scene and draws one frame of its cube entities into an offscreen texture.
+- Cube entity position, rotation, scale, color, and spin values come from scene data.
+- Cubes render with depth testing and simple directional diffuse shading.
 - The rendered pixels are copied back to CPU memory and written as a 24-bit BMP file.
 - The command works without a platform window or editor.
 
@@ -20,7 +21,7 @@ Offscreen demo rendering proves that Machina can initialize the WebGPU backend, 
 
 ### 1. Keep offscreen rendering available after headful rendering
 
-**Decision:** The render command writes the current demo scene to an image file without requiring a window surface.
+**Decision:** The render command writes the loaded default scene to an image file without requiring a window surface.
 **Why:** This validates `wgpu-native`, shader compilation, render pipeline creation, command submission, readback, and deterministic artifact output in a way that is useful for tests and agent workflows. It follows ADR-004 and ADR-005.
 **Tradeoff:** It does not prove input, presentation timing, or live interaction.
 

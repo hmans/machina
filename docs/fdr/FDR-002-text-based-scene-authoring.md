@@ -10,8 +10,9 @@ Text-based scene authoring defines how projects describe scenes, entities, compo
 ## Behavior
 
 - Scenes are stored as text files in a documented, schema-validated format.
-- Scene files describe entities, names, hierarchy or relationships, components, and references to assets, scripts, prefabs, and other project resources.
+- Scene files describe entities, names, renderable component data, and eventually hierarchy, references to assets, scripts, prefabs, and other project resources.
 - The initial scene format uses TOML-shaped text files, starting with `scenes/main.scene.toml`.
+- The current renderable entity schema uses `[[entities]]` records with stable text ids, names, `kind = "cube"`, and vector properties for position, rotation, scale, color, and spin.
 - Scene references are forward-slash, project-relative paths and may not escape the project directory.
 - Scene files are stable under repeated editor saves when the scene has not changed.
 - Invalid scene files produce precise diagnostics suitable for command-line and editor display.
@@ -30,6 +31,12 @@ Text-based scene authoring defines how projects describe scenes, entities, compo
 **Decision:** Editor and tool writes should preserve deterministic ordering and formatting where possible.
 **Why:** Clean diffs are central to human review and agentic workflows.
 **Tradeoff:** File writers need deliberate formatting rules instead of naive serialization.
+
+### 3. Start with explicit component-shaped fields
+
+**Decision:** The first renderable entity schema uses named scalar/vector fields rather than embedding ad hoc script code or opaque blobs.
+**Why:** It keeps the data easy to inspect, validate, diff, and edit by agents while leaving room to evolve toward explicit component tables later.
+**Tradeoff:** The schema is intentionally narrow and only supports cube renderables in this slice.
 
 ## Related
 
