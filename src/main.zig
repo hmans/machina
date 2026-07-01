@@ -81,14 +81,14 @@ fn run(
             return 1;
         };
         defer machina.freeProject(allocator, result.project);
-        var live_scene = machina.LiveScene.init(io, std.heap.smp_allocator, &result.project) catch |err| {
+        var live_project = machina.LiveProject.init(io, std.heap.smp_allocator, target_path) catch |err| {
             try printProjectError(stderr, target_path, err);
             return 1;
         };
-        defer live_scene.deinit();
+        defer live_project.deinit();
 
         var reload_context = SceneReloadContext{
-            .live_scene = &live_scene,
+            .live_project = &live_project,
             .stderr = stderr,
             .target_path = target_path,
         };
@@ -99,9 +99,9 @@ fn run(
 
         try stdout.print("Loaded project {s}\n", .{result.project.name});
         try stdout.print("Selected scene: {s}\n", .{result.project.default_scene});
-        try stdout.print("Scene entities: {d}\n", .{live_scene.scene.entityCount()});
+        try stdout.print("Scene entities: {d}\n", .{live_project.scene.entityCount()});
 
-        machina.runDemoWindow(allocator, result.project.name, window_options, live_scene.renderScene()) catch |err| {
+        machina.runDemoWindow(allocator, result.project.name, window_options, live_project.renderScene()) catch |err| {
             try stderr.print("run failed: {s}\n", .{@errorName(err)});
             return 1;
         };
@@ -199,14 +199,14 @@ const ArgumentError = error{
 };
 
 const SceneReloadContext = struct {
-    live_scene: *machina.LiveScene,
+    live_project: *machina.LiveProject,
     stderr: *Io.Writer,
     target_path: []const u8,
 };
 
 fn pollSceneReload(raw_context: *anyopaque) ?machina.RenderScene {
     const context: *SceneReloadContext = @ptrCast(@alignCast(raw_context));
-    const result = context.live_scene.pollDefaultScene() catch |err| {
+    const result = context.live_project.pollLoadedSources() catch |err| {
         printProjectError(context.stderr, context.target_path, err) catch {};
         context.stderr.flush() catch {};
         return null;
@@ -216,11 +216,17 @@ fn pollSceneReload(raw_context: *anyopaque) ?machina.RenderScene {
         .unchanged => return null,
         .reloaded => |info| {
             context.stderr.print(
-                "Reloaded scene: {d} entities, {d} renderable cubes\n",
-                .{ info.entity_count, info.renderable_cube_count },
+                "Reloaded {s}{s}: {s}, {d} entities, {d} renderable cubes\n",
+                .{
+                    if (info.project_reloaded) "project" else "",
+                    if (info.project_reloaded and info.scene_reloaded) " and scene" else "scene",
+                    info.scene_path,
+                    info.entity_count,
+                    info.renderable_cube_count,
+                },
             ) catch {};
             context.stderr.flush() catch {};
-            return context.live_scene.renderScene();
+            return context.live_project.renderScene();
         },
     }
 }
