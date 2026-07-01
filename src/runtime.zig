@@ -617,6 +617,9 @@ pub const World = struct {
         {
             return false;
         }
+        if (!std.math.isFinite(delta_seconds)) {
+            return false;
+        }
 
         for (self.transforms.items, self.spins.items) |*maybe_transform, maybe_spin| {
             const spin = maybe_spin orelse continue;
@@ -895,6 +898,7 @@ test "world rotates transforms through spin component data" {
     try std.testing.expectEqual(@as(f32, 1.2), transform_after.rotation[1]);
     try std.testing.expectEqual(@as(f32, -1.7), transform_after.rotation[2]);
     try std.testing.expect(!world.rotateBySpin("health", spin_component_id, 0.5));
+    try std.testing.expect(!world.rotateBySpin(transform_component_id, spin_component_id, std.math.inf(f32)));
 }
 
 test "type ids distinguish project-local, package, and engine namespaces" {

@@ -259,6 +259,12 @@ fn rotateCallback(
     const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
     const transform_component_id_value = std.mem.span(transform_id orelse return 0);
     const spin_component_id_value = std.mem.span(spin_id orelse return 0);
+    if (!std.math.isFinite(delta_seconds) or
+        delta_seconds > std.math.floatMax(f32) or
+        delta_seconds < -std.math.floatMax(f32))
+    {
+        return 0;
+    }
     if (!program.activeSystemAllowsRotate(transform_component_id_value, spin_component_id_value)) {
         return 0;
     }

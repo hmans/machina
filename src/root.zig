@@ -1426,6 +1426,58 @@ test "LiveProject reloads script runner multiplier" {
     try std.testing.expect(reloaded_delta > base_delta * 2.9);
 }
 
+test "LiveProject recovers after script update produces non-finite rotation delta" {
+    const root_path = ".zig-cache/test-live-script-nonfinite-recovery";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.createDirPath(io, "scripts");
+
+    try root_dir.writeFile(io, .{
+        .sub_path = project_file_name,
+        .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
+    });
+    try writeRotateScript(io, root_dir, "dt");
+
+    var live_project = try LiveProject.init(io, std.testing.allocator, root_path);
+    defer live_project.deinit();
+
+    const entity = live_project.scene.world.findEntityById("018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001") orelse return error.TestExpectedEqual;
+    const start = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    live_project.update(1.0);
+    const after_valid = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    const valid_delta = after_valid.rotation[0] - start.rotation[0];
+    try std.testing.expect(valid_delta > 0.0);
+
+    try writeRotateScript(io, root_dir, "dt / 0");
+    const bad_reload = try live_project.pollLoadedSources();
+    try std.testing.expect(bad_reload.reloaded.scripts_reloaded);
+
+    live_project.update(1.0);
+    const after_bad = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    try std.testing.expect(std.math.isFinite(after_bad.rotation[0]));
+    try std.testing.expect(std.math.isFinite(after_bad.rotation[1]));
+    try std.testing.expect(std.math.isFinite(after_bad.rotation[2]));
+    try std.testing.expectEqual(after_valid.rotation[0], after_bad.rotation[0]);
+    try std.testing.expectEqual(after_valid.rotation[1], after_bad.rotation[1]);
+    try std.testing.expectEqual(after_valid.rotation[2], after_bad.rotation[2]);
+
+    try writeRotateScript(io, root_dir, "dt");
+    const fixed_reload = try live_project.pollLoadedSources();
+    try std.testing.expect(fixed_reload.reloaded.scripts_reloaded);
+
+    live_project.update(1.0);
+    const after_fixed = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    try std.testing.expect(after_fixed.rotation[0] > after_bad.rotation[0]);
+    try std.testing.expect(after_fixed.rotation[1] > after_bad.rotation[1]);
+    try std.testing.expectEqual(after_bad.rotation[2], after_fixed.rotation[2]);
+}
+
 test "LiveProject reloads project metadata and follows default scene changes" {
     const root_path = ".zig-cache/test-live-project-reload";
     const io = Io.Threaded.global_single_threaded.io();
