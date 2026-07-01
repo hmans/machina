@@ -28,8 +28,8 @@ Script ECS registration lets project and package scripts define new component an
 - The current world facade exposes a narrow `world.rotate(...)` operation used by the example `rotate_cubes` system.
 - Script-driven world mutation is checked against the system's declared component access.
 - Non-finite script values that reach host mutation APIs fail the system invocation for that frame instead of corrupting world state.
-- Registration failures produce diagnostics suitable for command-line, editor, and reload surfaces.
-- Script runtime failures keep the last loaded project state active and should surface through interactive and headless diagnostics.
+- Registration failures produce structured diagnostics suitable for command-line, editor, and reload surfaces.
+- Script runtime failures keep the last loaded project state active and surface diagnostics with script path, system id, stage, and message where available.
 
 ## Design Decisions
 
@@ -71,12 +71,12 @@ Script ECS registration lets project and package scripts define new component an
 
 ## Related
 
-- **ADRs:** ADR-006, ADR-008, ADR-009, ADR-010
-- **FDRs:** FDR-004, FDR-009, FDR-010, FDR-012
+- **ADRs:** ADR-006, ADR-008, ADR-009, ADR-010, ADR-011
+- **FDRs:** FDR-004, FDR-009, FDR-010, FDR-012, FDR-013
 
 ## Open Questions
 
 - How will component defaults and migrations be represented in script schemas?
 - Which system phases beyond `update` should be exposed to script-defined systems first?
 - What query and mutation APIs should the world facade expose beyond `world.rotate(...)`?
-- How should script runtime errors be surfaced with file, system id, and stack context?
+- How should script runtime errors include full stack context and source spans?

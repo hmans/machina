@@ -12,3 +12,4 @@
 | [ADR-008](ADR-008-component-system-runtime-model.md) | Component-System Runtime Model | 2026-07-01 |
 | [ADR-009](ADR-009-live-reload-as-a-core-runtime-capability.md) | Live Reload as a Core Runtime Capability | 2026-07-01 |
 | [ADR-010](ADR-010-local-and-qualified-ids-for-script-ecs-extensions.md) | Local and Qualified IDs for Script ECS Extensions | 2026-07-01 |
+| [ADR-011](ADR-011-structured-script-diagnostics.md) | Structured Script Diagnostics | 2026-07-01 |

@@ -60,10 +60,7 @@ fn run(
 
     if (std.mem.eql(u8, command, "check")) {
         const target_path = if (args.len >= 3) args[2] else ".";
-        const result = machina.checkProject(io, allocator, target_path) catch |err| {
-            try printProjectError(stderr, target_path, err);
-            return 1;
-        };
+        const result = try checkProjectForCommand(io, allocator, target_path, stderr) orelse return 1;
         defer machina.freeProject(allocator, result.project);
         try stdout.print("Project OK: {s}\n", .{result.project.name});
         try stdout.print("Default scene: {s}\n", .{result.project.default_scene});
@@ -77,10 +74,7 @@ fn run(
             try printArgumentError(stderr, err);
             return 1;
         };
-        const result = machina.checkProject(io, allocator, target_path) catch |err| {
-            try printProjectError(stderr, target_path, err);
-            return 1;
-        };
+        const result = try checkProjectForCommand(io, allocator, target_path, stderr) orelse return 1;
         defer machina.freeProject(allocator, result.project);
         var live_project = machina.LiveProject.init(io, std.heap.smp_allocator, target_path) catch |err| {
             try printProjectError(stderr, target_path, err);
@@ -120,10 +114,7 @@ fn run(
     if (std.mem.eql(u8, command, "render")) {
         const target_path = if (args.len >= 3) args[2] else ".";
         const output_path = if (args.len >= 4) args[3] else "zig-out/machina-cube.bmp";
-        const result = machina.checkProject(io, allocator, target_path) catch |err| {
-            try printProjectError(stderr, target_path, err);
-            return 1;
-        };
+        const result = try checkProjectForCommand(io, allocator, target_path, stderr) orelse return 1;
         defer machina.freeProject(allocator, result.project);
         const scene = machina.loadDefaultScene(io, allocator, result.project) catch |err| {
             try printProjectError(stderr, target_path, err);
@@ -143,10 +134,7 @@ fn run(
     if (std.mem.eql(u8, command, "render-test")) {
         const target_path = if (args.len >= 3) args[2] else ".";
         const output_path = if (args.len >= 4) args[3] else "zig-out/machina-render-test.bmp";
-        const result = machina.checkProject(io, allocator, target_path) catch |err| {
-            try printProjectError(stderr, target_path, err);
-            return 1;
-        };
+        const result = try checkProjectForCommand(io, allocator, target_path, stderr) orelse return 1;
         defer machina.freeProject(allocator, result.project);
         const scene = machina.loadDefaultScene(io, allocator, result.project) catch |err| {
             try printProjectError(stderr, target_path, err);
@@ -186,6 +174,26 @@ fn run(
     return 1;
 }
 
+fn checkProjectForCommand(
+    io: Io,
+    allocator: std.mem.Allocator,
+    target_path: []const u8,
+    stderr: *Io.Writer,
+) !?machina.CheckResult {
+    var result = machina.checkProjectDetailed(io, allocator, target_path) catch |err| {
+        try printProjectError(stderr, target_path, err);
+        return null;
+    };
+    switch (result) {
+        .ok => |ok| return ok,
+        .invalid => |*diagnostic| {
+            defer diagnostic.deinit(allocator);
+            try printScriptDiagnostic(stderr, target_path, diagnostic.*);
+            return null;
+        },
+    }
+}
+
 fn printHelp(writer: *Io.Writer) !void {
     try writer.writeAll(
         \\machina - agent-native game engine
@@ -217,6 +225,9 @@ fn pollSceneReload(raw_context: *anyopaque) ?machina.RenderScene {
     const context: *SceneReloadContext = @ptrCast(@alignCast(raw_context));
     const result = context.live_project.pollLoadedSources() catch |err| {
         printProjectError(context.stderr, context.target_path, err) catch {};
+        if (context.live_project.lastDiagnostic()) |diagnostic| {
+            printScriptDiagnostic(context.stderr, context.target_path, diagnostic.*) catch {};
+        }
         context.stderr.flush() catch {};
         return null;
     };
@@ -246,6 +257,10 @@ fn pollSceneReload(raw_context: *anyopaque) ?machina.RenderScene {
 fn stepLiveProject(raw_context: *anyopaque, delta_seconds: f32) void {
     const context: *SceneReloadContext = @ptrCast(@alignCast(raw_context));
     context.live_project.update(delta_seconds);
+    if (context.live_project.lastDiagnostic()) |diagnostic| {
+        printScriptDiagnostic(context.stderr, context.target_path, diagnostic.*) catch {};
+        context.stderr.flush() catch {};
+    }
 }
 
 fn parseWindowOptions(args: []const []const u8) ArgumentError!machina.WindowOptions {
@@ -313,6 +328,17 @@ fn printProjectError(writer: *Io.Writer, root_path: []const u8, err: anyerror) !
         else => "unexpected project error",
     };
     try writer.print("{s}: {s}\n", .{ root_path, message });
+}
+
+fn printScriptDiagnostic(writer: *Io.Writer, root_path: []const u8, diagnostic: machina.ScriptDiagnostic) !void {
+    try writer.print("{s}: {s}", .{ root_path, diagnostic.stage.label() });
+    if (diagnostic.path) |path| {
+        try writer.print(" in {s}", .{path});
+    }
+    if (diagnostic.system_id) |system_id| {
+        try writer.print(" system {s}", .{system_id});
+    }
+    try writer.print(": {s}\n", .{diagnostic.message});
 }
 
 fn projectNameFromPath(path: []const u8) []const u8 {

@@ -32,6 +32,7 @@ pub const TypeIdError = runtime.TypeIdError;
 pub const RegistryError = runtime.RegistryError;
 pub const ScriptError = script.ScriptError;
 pub const ScriptProgram = script.Program;
+pub const ScriptDiagnostic = script.Diagnostic;
 pub const validateTypeId = runtime.validateTypeId;
 pub const validateProjectTypeId = runtime.validateProjectTypeId;
 pub const validatePackageTypeId = runtime.validatePackageTypeId;
@@ -69,6 +70,11 @@ pub const Diagnostic = struct {
 
 pub const CheckResult = struct {
     project: Project,
+};
+
+pub const CheckDetailedResult = union(enum) {
+    ok: CheckResult,
+    invalid: ScriptDiagnostic,
 };
 
 const SourceFileStamp = struct {
@@ -116,6 +122,7 @@ pub const LiveProject = struct {
     last_failed_scene_stamp: ?SourceFileStamp = null,
     last_failed_script_index: ?usize = null,
     last_failed_script_stamp: ?SourceFileStamp = null,
+    last_diagnostic: ?ScriptDiagnostic = null,
 
     pub fn init(io: Io, allocator: std.mem.Allocator, root_path: []const u8) !LiveProject {
         const project = try loadProject(io, allocator, root_path);
@@ -150,6 +157,7 @@ pub const LiveProject = struct {
     }
 
     pub fn deinit(self: *LiveProject) void {
+        self.clearLastDiagnostic();
         freeLoadedSources(self.allocator, self.script_sources);
         self.scripts.deinit();
         freeScene(self.allocator, self.scene);
@@ -162,7 +170,23 @@ pub const LiveProject = struct {
     }
 
     pub fn update(self: *LiveProject, delta_seconds: f32) void {
-        _ = self.scripts.update(&self.scene.world, delta_seconds);
+        self.clearLastDiagnostic();
+        if (!self.scripts.update(&self.scene.world, delta_seconds)) {
+            if (self.scripts.last_diagnostic) |diagnostic| {
+                self.last_diagnostic = cloneScriptDiagnostic(self.allocator, diagnostic) catch null;
+            }
+        }
+    }
+
+    pub fn lastDiagnostic(self: *const LiveProject) ?*const ScriptDiagnostic {
+        return if (self.last_diagnostic) |*diagnostic| diagnostic else null;
+    }
+
+    fn clearLastDiagnostic(self: *LiveProject) void {
+        if (self.last_diagnostic) |*diagnostic| {
+            diagnostic.deinit(self.allocator);
+            self.last_diagnostic = null;
+        }
     }
 
     pub fn pollLoadedSources(self: *LiveProject) !ReloadResult {
@@ -228,13 +252,21 @@ pub const LiveProject = struct {
     }
 
     fn reloadProject(self: *LiveProject, project_stamp: SourceFileStamp) !ReloadResult {
+        self.clearLastDiagnostic();
         const next_project = try loadProject(self.io, self.allocator, self.root_path);
         errdefer freeProject(self.allocator, next_project);
 
         const next_scene = try loadDefaultScene(self.io, self.allocator, next_project);
         errdefer freeScene(self.allocator, next_scene);
 
-        var next_scripts = try loadProjectScripts(self.io, self.allocator, next_project);
+        const next_scripts_result = try loadProjectScriptsDetailed(self.io, self.allocator, next_project);
+        var next_scripts = switch (next_scripts_result) {
+            .program => |program| program,
+            .diagnostic => |diagnostic| {
+                self.last_diagnostic = diagnostic;
+                return ProjectError.InvalidScript;
+            },
+        };
         errdefer next_scripts.deinit();
 
         const next_script_sources = try statProjectScripts(self.io, self.allocator, next_project);
@@ -275,6 +307,7 @@ pub const LiveProject = struct {
     }
 
     fn reloadScene(self: *LiveProject, scene_stamp: SourceFileStamp) !ReloadResult {
+        self.clearLastDiagnostic();
         const next_scene = try loadDefaultScene(self.io, self.allocator, self.project);
         const info = ReloadInfo{
             .project_reloaded = false,
@@ -296,7 +329,15 @@ pub const LiveProject = struct {
     }
 
     fn reloadScripts(self: *LiveProject, changed_index: usize, script_stamp: SourceFileStamp) !ReloadResult {
-        var next_scripts = try loadProjectScripts(self.io, self.allocator, self.project);
+        self.clearLastDiagnostic();
+        const next_scripts_result = try loadProjectScriptsDetailed(self.io, self.allocator, self.project);
+        var next_scripts = switch (next_scripts_result) {
+            .program => |program| program,
+            .diagnostic => |diagnostic| {
+                self.last_diagnostic = diagnostic;
+                return ProjectError.InvalidScript;
+            },
+        };
         errdefer next_scripts.deinit();
 
         const info = ReloadInfo{
@@ -396,6 +437,17 @@ pub fn initProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8, 
 }
 
 pub fn checkProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8) !CheckResult {
+    var result = try checkProjectDetailed(io, allocator, root_path);
+    switch (result) {
+        .ok => |ok| return ok,
+        .invalid => |*diagnostic| {
+            diagnostic.deinit(allocator);
+            return ProjectError.InvalidScript;
+        },
+    }
+}
+
+pub fn checkProjectDetailed(io: Io, allocator: std.mem.Allocator, root_path: []const u8) !CheckDetailedResult {
     const project = try loadProject(io, allocator, root_path);
     errdefer freeProject(allocator, project);
     const cwd = Io.Dir.cwd();
@@ -409,10 +461,16 @@ pub fn checkProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8)
     const scene = try loadSceneFile(io, allocator, root_dir, project.default_scene);
     defer freeScene(allocator, scene);
 
-    var scripts = try loadProjectScripts(io, allocator, project);
-    defer scripts.deinit();
+    var scripts_result = try loadProjectScriptsDetailed(io, allocator, project);
+    switch (scripts_result) {
+        .program => |*scripts| scripts.deinit(),
+        .diagnostic => |diagnostic| {
+            freeProject(allocator, project);
+            return .{ .invalid = diagnostic };
+        },
+    }
 
-    return .{ .project = project };
+    return .{ .ok = .{ .project = project } };
 }
 
 pub fn freeProject(allocator: std.mem.Allocator, project: Project) void {
@@ -551,11 +609,22 @@ fn loadProjectFile(io: Io, allocator: std.mem.Allocator, root_path: []const u8, 
 }
 
 pub fn loadProjectScripts(io: Io, allocator: std.mem.Allocator, project: Project) !ScriptProgram {
+    var result = try loadProjectScriptsDetailed(io, allocator, project);
+    switch (result) {
+        .program => |program| return program,
+        .diagnostic => |*diagnostic| {
+            diagnostic.deinit(allocator);
+            return ProjectError.InvalidScript;
+        },
+    }
+}
+
+pub fn loadProjectScriptsDetailed(io: Io, allocator: std.mem.Allocator, project: Project) !script.LoadResult {
     const cwd = Io.Dir.cwd();
     const root_dir = try cwd.openDir(io, project.root_path, .{});
     defer root_dir.close(io);
 
-    return script.loadProjectProgram(io, allocator, root_dir, project.scripts) catch |err| switch (err) {
+    return script.loadProjectProgramDetailed(io, allocator, root_dir, project.scripts) catch |err| switch (err) {
         error.FileNotFound => ProjectError.MissingScript,
         error.InvalidFieldName,
         error.DuplicateComponentField,
@@ -571,6 +640,19 @@ pub fn loadProjectScripts(io: Io, allocator: std.mem.Allocator, project: Project
         error.CyclicSystemOrder,
         => ProjectError.InvalidScript,
         else => err,
+    };
+}
+
+fn cloneScriptDiagnostic(allocator: std.mem.Allocator, diagnostic: ScriptDiagnostic) !ScriptDiagnostic {
+    const path = if (diagnostic.path) |path_value| try allocator.dupe(u8, path_value) else null;
+    errdefer if (path) |path_value| allocator.free(path_value);
+    const system_id = if (diagnostic.system_id) |system_id_value| try allocator.dupe(u8, system_id_value) else null;
+    errdefer if (system_id) |system_id_value| allocator.free(system_id_value);
+    return .{
+        .stage = diagnostic.stage,
+        .path = path,
+        .system_id = system_id,
+        .message = try allocator.dupe(u8, diagnostic.message),
     };
 }
 
@@ -1194,6 +1276,39 @@ test "checkProject rejects invalid script declarations" {
     try std.testing.expectError(ProjectError.InvalidScript, checkProject(io, std.testing.allocator, root_path));
 }
 
+test "checkProjectDetailed returns script diagnostics" {
+    const root_path = ".zig-cache/test-invalid-project-script-diagnostic";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.createDirPath(io, "scripts");
+
+    try root_dir.writeFile(io, .{
+        .sub_path = project_file_name,
+        .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
+    });
+    try root_dir.writeFile(io, .{
+        .sub_path = "scripts/gameplay.luau",
+        .data = "ecs.system(\"broken\", { run = function(world, dt) world.rotate( end })",
+    });
+
+    var result = try checkProjectDetailed(io, std.testing.allocator, root_path);
+    switch (result) {
+        .ok => return error.TestExpectedEqual,
+        .invalid => |*diagnostic| {
+            defer diagnostic.deinit(std.testing.allocator);
+            try std.testing.expectEqual(script.DiagnosticStage.load, diagnostic.stage);
+            try std.testing.expectEqualStrings("scripts/gameplay.luau", diagnostic.path orelse return error.TestExpectedEqual);
+            try std.testing.expect(diagnostic.message.len > 0);
+        },
+    }
+}
+
 test "LiveProject reloads changed active scene and keeps last good state on failure" {
     const root_path = ".zig-cache/test-live-scene-reload";
     const io = Io.Threaded.global_single_threaded.io();
@@ -1341,6 +1456,9 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     });
 
     try std.testing.expectError(ProjectError.InvalidScript, live_project.pollLoadedSources());
+    const diagnostic = live_project.lastDiagnostic() orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(script.DiagnosticStage.registration, diagnostic.stage);
+    try std.testing.expectEqualStrings("scripts/gameplay.luau", diagnostic.path orelse return error.TestExpectedEqual);
     try std.testing.expect(live_project.scripts.registry.findComponent("mood") != null);
     try std.testing.expectEqual(@as(usize, 2), live_project.scripts.schedule.systemCount());
     try std.testing.expectEqual(ReloadResult.unchanged, try live_project.pollLoadedSources());
@@ -1460,6 +1578,10 @@ test "LiveProject recovers after script update produces non-finite rotation delt
 
     live_project.update(1.0);
     const after_bad = (try live_project.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    const diagnostic = live_project.lastDiagnostic() orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(script.DiagnosticStage.runtime, diagnostic.stage);
+    try std.testing.expectEqualStrings("scripts/gameplay.luau", diagnostic.path orelse return error.TestExpectedEqual);
+    try std.testing.expectEqualStrings("rotate_cubes", diagnostic.system_id orelse return error.TestExpectedEqual);
     try std.testing.expect(std.math.isFinite(after_bad.rotation[0]));
     try std.testing.expect(std.math.isFinite(after_bad.rotation[1]));
     try std.testing.expect(std.math.isFinite(after_bad.rotation[2]));

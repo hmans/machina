@@ -12,14 +12,77 @@ pub const ScriptError = runtime.RegistryError || runtime.ScheduleError || std.me
     UnknownSystemPhase,
 };
 
+pub const DiagnosticStage = enum {
+    load,
+    registration,
+    schedule,
+    runtime,
+
+    pub fn label(self: DiagnosticStage) []const u8 {
+        return switch (self) {
+            .load => "script load",
+            .registration => "script registration",
+            .schedule => "script schedule",
+            .runtime => "script runtime",
+        };
+    }
+};
+
+pub const Diagnostic = struct {
+    stage: DiagnosticStage,
+    path: ?[]const u8 = null,
+    system_id: ?[]const u8 = null,
+    message: []const u8,
+
+    pub fn deinit(self: *Diagnostic, allocator: std.mem.Allocator) void {
+        if (self.path) |path| {
+            allocator.free(path);
+        }
+        if (self.system_id) |system_id| {
+            allocator.free(system_id);
+        }
+        allocator.free(self.message);
+        self.* = undefined;
+    }
+};
+
+pub const LoadResult = union(enum) {
+    program: Program,
+    diagnostic: Diagnostic,
+};
+
+const ScriptOrigin = struct {
+    index: usize,
+    id: []const u8,
+    path: []const u8,
+    runner_ref: u32 = 0,
+
+    fn deinit(self: ScriptOrigin, allocator: std.mem.Allocator) void {
+        allocator.free(self.id);
+        allocator.free(self.path);
+    }
+};
+
 pub const Program = struct {
     allocator: std.mem.Allocator,
     registry: runtime.ComponentRegistry,
     schedule: runtime.SystemSchedule,
     vm: *c.machina_luau,
     active_system: ?*const runtime.ScheduledSystem = null,
+    component_origins: std.ArrayList(ScriptOrigin) = .empty,
+    system_origins: std.ArrayList(ScriptOrigin) = .empty,
+    last_diagnostic: ?Diagnostic = null,
 
     pub fn deinit(self: *Program) void {
+        self.clearLastDiagnostic();
+        for (self.system_origins.items) |origin| {
+            origin.deinit(self.allocator);
+        }
+        self.system_origins.deinit(self.allocator);
+        for (self.component_origins.items) |origin| {
+            origin.deinit(self.allocator);
+        }
+        self.component_origins.deinit(self.allocator);
         self.schedule.deinit();
         self.registry.deinit();
         c.machina_luau_destroy(self.vm);
@@ -27,6 +90,7 @@ pub const Program = struct {
     }
 
     pub fn update(self: *Program, world: *runtime.World, delta_seconds: f32) bool {
+        self.clearLastDiagnostic();
         c.machina_luau_set_callback_context(self.vm, self);
 
         var ok = true;
@@ -41,6 +105,9 @@ pub const Program = struct {
                     .luau => |runner_ref| {
                         self.active_system = system;
                         const system_ok = c.machina_luau_call_system(self.vm, runner_ref, world, delta_seconds) != 0;
+                        if (!system_ok and self.last_diagnostic == null) {
+                            self.setRuntimeDiagnostic(system.*, runner_ref) catch {};
+                        }
                         self.active_system = null;
                         ok = ok and system_ok;
                     },
@@ -60,6 +127,32 @@ pub const Program = struct {
         return containsString(definition.reads, spin_component_id_value) and
             containsString(definition.writes, transform_component_id_value);
     }
+
+    pub fn clearLastDiagnostic(self: *Program) void {
+        if (self.last_diagnostic) |*diagnostic| {
+            diagnostic.deinit(self.allocator);
+            self.last_diagnostic = null;
+        }
+    }
+
+    fn setRuntimeDiagnostic(self: *Program, system: runtime.ScheduledSystem, runner_ref: u32) !void {
+        const origin = self.findSystemOrigin(system.id, runner_ref);
+        self.last_diagnostic = try makeDiagnostic(self.allocator, .{
+            .stage = .runtime,
+            .path = if (origin) |found| found.path else null,
+            .system_id = system.id,
+            .message = lastLuauError(self.vm),
+        });
+    }
+
+    fn findSystemOrigin(self: Program, system_id: []const u8, runner_ref: u32) ?ScriptOrigin {
+        for (self.system_origins.items) |origin| {
+            if (origin.runner_ref == runner_ref or std.mem.eql(u8, origin.id, system_id)) {
+                return origin;
+            }
+        }
+        return null;
+    }
 };
 
 pub fn loadProjectProgram(
@@ -68,18 +161,48 @@ pub fn loadProjectProgram(
     root_dir: Io.Dir,
     script_paths: []const []const u8,
 ) !Program {
+    var result = try loadProjectProgramDetailed(io, allocator, root_dir, script_paths);
+    switch (result) {
+        .program => |program| return program,
+        .diagnostic => |*diagnostic| {
+            diagnostic.deinit(allocator);
+            return ScriptError.InvalidScript;
+        },
+    }
+}
+
+pub fn loadProjectProgramDetailed(
+    io: Io,
+    allocator: std.mem.Allocator,
+    root_dir: Io.Dir,
+    script_paths: []const []const u8,
+) !LoadResult {
     var program = try initProgram(allocator);
     errdefer program.deinit();
 
     for (script_paths) |script_path| {
         const contents = try root_dir.readFileAlloc(io, script_path, allocator, .limited(256 * 1024));
         defer allocator.free(contents);
-        try loadChunk(&program, script_path, contents);
+        if (try loadChunk(&program, script_path, contents)) |diagnostic| {
+            program.deinit();
+            return .{ .diagnostic = diagnostic };
+        }
     }
 
-    try registerDeclaredTypes(&program);
-    program.schedule = try buildUpdateSchedule(allocator, program.registry);
-    return program;
+    registerDeclaredTypes(&program) catch |err| {
+        const diagnostic = try registrationDiagnostic(&program, err);
+        program.deinit();
+        return .{ .diagnostic = diagnostic };
+    };
+    program.schedule = buildUpdateSchedule(allocator, program.registry) catch |err| {
+        const diagnostic = try makeDiagnostic(allocator, .{
+            .stage = .schedule,
+            .message = @errorName(err),
+        });
+        program.deinit();
+        return .{ .diagnostic = diagnostic };
+    };
+    return .{ .program = program };
 }
 
 pub fn loadSourceProgram(
@@ -89,7 +212,11 @@ pub fn loadSourceProgram(
 ) !Program {
     var program = try initProgram(allocator);
     errdefer program.deinit();
-    try loadChunk(&program, chunk_name, source);
+    if (try loadChunk(&program, chunk_name, source)) |diagnostic| {
+        var owned_diagnostic = diagnostic;
+        owned_diagnostic.deinit(allocator);
+        return ScriptError.InvalidScript;
+    }
     try registerDeclaredTypes(&program);
     program.schedule = try buildUpdateSchedule(allocator, program.registry);
     return program;
@@ -123,13 +250,22 @@ fn initProgram(allocator: std.mem.Allocator) !Program {
     };
 }
 
-fn loadChunk(program: *Program, chunk_name: []const u8, source: []const u8) !void {
+fn loadChunk(program: *Program, chunk_name: []const u8, source: []const u8) !?Diagnostic {
+    const component_start = c.machina_luau_component_count(program.vm);
+    const system_start = c.machina_luau_system_count(program.vm);
     const chunk_name_z = try program.allocator.dupeZ(u8, chunk_name);
     defer program.allocator.free(chunk_name_z);
 
     if (c.machina_luau_load(program.vm, chunk_name_z.ptr, source.ptr, source.len) == 0) {
-        return ScriptError.InvalidScript;
+        return try makeDiagnostic(program.allocator, .{
+            .stage = .load,
+            .path = chunk_name,
+            .message = lastLuauError(program.vm),
+        });
     }
+
+    try recordOrigins(program, chunk_name, component_start, system_start);
+    return null;
 }
 
 fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
@@ -206,6 +342,86 @@ fn registerDeclaredTypes(program: *Program) ScriptError!void {
             .runner = if (runner_ref == 0) .none else .{ .luau = runner_ref },
         });
     }
+}
+
+fn recordOrigins(program: *Program, path: []const u8, component_start: usize, system_start: usize) !void {
+    const component_count = c.machina_luau_component_count(program.vm);
+    for (component_start..component_count) |component_index| {
+        const id = try spanC(c.machina_luau_component_id(program.vm, component_index));
+        const owned_id = try program.allocator.dupe(u8, id);
+        errdefer program.allocator.free(owned_id);
+        const owned_path = try program.allocator.dupe(u8, path);
+        errdefer program.allocator.free(owned_path);
+        try program.component_origins.append(program.allocator, .{
+            .index = component_index,
+            .id = owned_id,
+            .path = owned_path,
+        });
+    }
+
+    const system_count = c.machina_luau_system_count(program.vm);
+    for (system_start..system_count) |system_index| {
+        const id = try spanC(c.machina_luau_system_id(program.vm, system_index));
+        const owned_id = try program.allocator.dupe(u8, id);
+        errdefer program.allocator.free(owned_id);
+        const owned_path = try program.allocator.dupe(u8, path);
+        errdefer program.allocator.free(owned_path);
+        try program.system_origins.append(program.allocator, .{
+            .index = system_index,
+            .id = owned_id,
+            .path = owned_path,
+            .runner_ref = c.machina_luau_system_runner_ref(program.vm, system_index),
+        });
+    }
+}
+
+fn registrationDiagnostic(program: *Program, err: anyerror) !Diagnostic {
+    const message = @errorName(err);
+    if (program.system_origins.items.len > 0) {
+        const origin = program.system_origins.items[program.system_origins.items.len - 1];
+        return makeDiagnostic(program.allocator, .{
+            .stage = .registration,
+            .path = origin.path,
+            .system_id = origin.id,
+            .message = message,
+        });
+    }
+    if (program.component_origins.items.len > 0) {
+        const origin = program.component_origins.items[program.component_origins.items.len - 1];
+        return makeDiagnostic(program.allocator, .{
+            .stage = .registration,
+            .path = origin.path,
+            .message = message,
+        });
+    }
+    return makeDiagnostic(program.allocator, .{
+        .stage = .registration,
+        .message = message,
+    });
+}
+
+const DiagnosticDraft = struct {
+    stage: DiagnosticStage,
+    path: ?[]const u8 = null,
+    system_id: ?[]const u8 = null,
+    message: []const u8,
+};
+
+fn makeDiagnostic(allocator: std.mem.Allocator, draft: DiagnosticDraft) !Diagnostic {
+    const path = if (draft.path) |path_value| try allocator.dupe(u8, path_value) else null;
+    errdefer if (path) |path_value| allocator.free(path_value);
+    const system_id = if (draft.system_id) |system_id_value| try allocator.dupe(u8, system_id_value) else null;
+    errdefer if (system_id) |system_id_value| allocator.free(system_id_value);
+    return .{
+        .stage = draft.stage,
+        .path = path,
+        .system_id = system_id,
+        .message = try allocator.dupe(u8, draft.message),
+    };
+}
+
+fn lastLuauError(vm: *c.machina_luau) []const u8 {
+    return std.mem.span(c.machina_luau_last_error(vm));
 }
 
 fn readSystemReads(allocator: std.mem.Allocator, vm: *c.machina_luau, system_index: usize) !std.ArrayList([]const u8) {
