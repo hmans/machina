@@ -26,7 +26,10 @@ pub const FieldType = runtime.FieldType;
 pub const SystemDefinition = runtime.SystemDefinition;
 pub const TypeIdError = runtime.TypeIdError;
 pub const RegistryError = runtime.RegistryError;
-pub const validateExternalTypeId = runtime.validateExternalTypeId;
+pub const validateTypeId = runtime.validateTypeId;
+pub const validateProjectTypeId = runtime.validateProjectTypeId;
+pub const validatePackageTypeId = runtime.validatePackageTypeId;
+pub const validateEngineTypeId = runtime.validateEngineTypeId;
 pub const verifyRenderBmp = render_verify.verifyBmp;
 
 pub const Project = struct {

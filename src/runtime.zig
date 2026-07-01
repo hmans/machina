@@ -47,9 +47,10 @@ pub const SystemDefinition = struct {
     after: []const []const u8 = &.{},
 };
 
-const RegistrationOwner = enum {
+const RegistrationContext = enum {
     engine,
-    external,
+    project,
+    package,
 };
 
 pub const ComponentRegistry = struct {
@@ -76,16 +77,24 @@ pub const ComponentRegistry = struct {
         self.* = .{ .allocator = allocator };
     }
 
-    pub fn registerComponent(self: *ComponentRegistry, definition: ComponentDefinition) !void {
-        return self.registerComponentAs(.external, definition);
+    pub fn registerProjectComponent(self: *ComponentRegistry, definition: ComponentDefinition) !void {
+        return self.registerComponentAs(.project, definition);
+    }
+
+    pub fn registerPackageComponent(self: *ComponentRegistry, definition: ComponentDefinition) !void {
+        return self.registerComponentAs(.package, definition);
     }
 
     pub fn registerEngineComponent(self: *ComponentRegistry, definition: ComponentDefinition) !void {
         return self.registerComponentAs(.engine, definition);
     }
 
-    pub fn registerSystem(self: *ComponentRegistry, definition: SystemDefinition) !void {
-        return self.registerSystemAs(.external, definition);
+    pub fn registerProjectSystem(self: *ComponentRegistry, definition: SystemDefinition) !void {
+        return self.registerSystemAs(.project, definition);
+    }
+
+    pub fn registerPackageSystem(self: *ComponentRegistry, definition: SystemDefinition) !void {
+        return self.registerSystemAs(.package, definition);
     }
 
     pub fn registerEngineSystem(self: *ComponentRegistry, definition: SystemDefinition) !void {
@@ -118,8 +127,8 @@ pub const ComponentRegistry = struct {
         return null;
     }
 
-    fn registerComponentAs(self: *ComponentRegistry, owner: RegistrationOwner, definition: ComponentDefinition) !void {
-        try validateTypeIdForOwner(definition.id, owner);
+    fn registerComponentAs(self: *ComponentRegistry, context: RegistrationContext, definition: ComponentDefinition) !void {
+        try validateTypeIdForContext(definition.id, context);
         for (definition.fields, 0..) |field, index| {
             try validateFieldName(field.name);
             for (definition.fields[0..index]) |prior_field| {
@@ -141,9 +150,9 @@ pub const ComponentRegistry = struct {
         try self.components.append(self.allocator, owned);
     }
 
-    fn registerSystemAs(self: *ComponentRegistry, owner: RegistrationOwner, definition: SystemDefinition) !void {
-        try validateTypeIdForOwner(definition.id, owner);
-        try self.validateSystemAccess(definition);
+    fn registerSystemAs(self: *ComponentRegistry, context: RegistrationContext, definition: SystemDefinition) !void {
+        try validateTypeIdForContext(definition.id, context);
+        try self.validateSystemAccess(definition, context);
 
         if (self.findSystem(definition.id)) |existing| {
             if (systemDefinitionsEqual(existing.*, definition)) {
@@ -157,9 +166,9 @@ pub const ComponentRegistry = struct {
         try self.systems.append(self.allocator, owned);
     }
 
-    fn validateSystemAccess(self: ComponentRegistry, definition: SystemDefinition) !void {
+    fn validateSystemAccess(self: ComponentRegistry, definition: SystemDefinition, context: RegistrationContext) !void {
         for (definition.reads) |component_id| {
-            try validateTypeId(component_id);
+            try validateReferenceTypeIdForContext(component_id, context);
             if (self.findComponent(component_id) == null) {
                 return RegistryError.UnknownComponentType;
             }
@@ -169,7 +178,7 @@ pub const ComponentRegistry = struct {
         }
 
         for (definition.writes) |component_id| {
-            try validateTypeId(component_id);
+            try validateReferenceTypeIdForContext(component_id, context);
             if (self.findComponent(component_id) == null) {
                 return RegistryError.UnknownComponentType;
             }
@@ -179,10 +188,10 @@ pub const ComponentRegistry = struct {
         }
 
         for (definition.before) |system_id| {
-            try validateTypeId(system_id);
+            try validateReferenceTypeIdForContext(system_id, context);
         }
         for (definition.after) |system_id| {
-            try validateTypeId(system_id);
+            try validateReferenceTypeIdForContext(system_id, context);
         }
     }
 
@@ -461,26 +470,50 @@ pub const RenderableCubeIterator = struct {
 };
 
 pub fn validateTypeId(id: []const u8) TypeIdError!void {
-    var segment_count: usize = 0;
-    var segments = std.mem.splitScalar(u8, id, '.');
-    while (segments.next()) |segment| {
-        try validateIdentifierSegment(segment);
-        segment_count += 1;
-    }
+    _ = try validateTypeIdShape(id);
+}
 
+pub fn validateProjectTypeId(id: []const u8) TypeIdError!void {
+    try validateTypeId(id);
+    if (isEngineTypeId(id)) {
+        return TypeIdError.ReservedTypeId;
+    }
+}
+
+pub fn validatePackageTypeId(id: []const u8) TypeIdError!void {
+    const segment_count = try validateTypeIdShape(id);
     if (segment_count < 2) {
         return TypeIdError.InvalidTypeId;
     }
-}
-
-pub fn validateExternalTypeId(id: []const u8) TypeIdError!void {
-    try validateTypeIdForOwner(id, .external);
-}
-
-fn validateTypeIdForOwner(id: []const u8, owner: RegistrationOwner) TypeIdError!void {
-    try validateTypeId(id);
-    if (owner == .external and isEngineTypeId(id)) {
+    if (isEngineTypeId(id)) {
         return TypeIdError.ReservedTypeId;
+    }
+}
+
+pub fn validateEngineTypeId(id: []const u8) TypeIdError!void {
+    try validateTypeId(id);
+    if (!std.mem.startsWith(u8, id, engine_namespace ++ ".")) {
+        return TypeIdError.ReservedTypeId;
+    }
+}
+
+fn validateTypeIdForContext(id: []const u8, context: RegistrationContext) TypeIdError!void {
+    switch (context) {
+        .engine => try validateEngineTypeId(id),
+        .project => try validateProjectTypeId(id),
+        .package => try validatePackageTypeId(id),
+    }
+}
+
+fn validateReferenceTypeIdForContext(id: []const u8, context: RegistrationContext) TypeIdError!void {
+    switch (context) {
+        .engine, .project => try validateTypeId(id),
+        .package => {
+            const segment_count = try validateTypeIdShape(id);
+            if (segment_count < 2) {
+                return TypeIdError.InvalidTypeId;
+            }
+        },
     }
 }
 
@@ -498,6 +531,20 @@ fn validateIdentifierSegment(segment: []const u8) TypeIdError!void {
             return TypeIdError.InvalidTypeId;
         }
     }
+}
+
+fn validateTypeIdShape(id: []const u8) TypeIdError!usize {
+    var segment_count: usize = 0;
+    var segments = std.mem.splitScalar(u8, id, '.');
+    while (segments.next()) |segment| {
+        try validateIdentifierSegment(segment);
+        segment_count += 1;
+    }
+
+    if (segment_count == 0) {
+        return TypeIdError.InvalidTypeId;
+    }
+    return segment_count;
 }
 
 fn isEngineTypeId(id: []const u8) bool {
@@ -587,16 +634,22 @@ test "world rejects duplicate entity ids" {
     try std.testing.expectError(WorldError.DuplicateEntityId, world.createEntity("entity-1", "Two"));
 }
 
-test "type ids require explicit dotted lowercase namespaces" {
-    try validateExternalTypeId("com.acme.health");
-    try validateExternalTypeId("game.health");
-    try validateExternalTypeId("local_project.hit_points");
+test "type ids distinguish project-local, package, and engine namespaces" {
+    try validateProjectTypeId("health");
+    try validateProjectTypeId("inventory_item");
+    try validateProjectTypeId("com.acme.health");
+    try validateProjectTypeId("game.health");
+    try validatePackageTypeId("com.acme.health");
+    try validateEngineTypeId("machina.transform");
 
-    try std.testing.expectError(TypeIdError.InvalidTypeId, validateExternalTypeId("health"));
-    try std.testing.expectError(TypeIdError.InvalidTypeId, validateExternalTypeId("Com.Acme.Health"));
-    try std.testing.expectError(TypeIdError.InvalidTypeId, validateExternalTypeId("com.acme-health"));
-    try std.testing.expectError(TypeIdError.InvalidTypeId, validateExternalTypeId("com..health"));
-    try std.testing.expectError(TypeIdError.ReservedTypeId, validateExternalTypeId("machina.transform"));
+    try std.testing.expectError(TypeIdError.InvalidTypeId, validateProjectTypeId("Com.Acme.Health"));
+    try std.testing.expectError(TypeIdError.InvalidTypeId, validateProjectTypeId("com.acme-health"));
+    try std.testing.expectError(TypeIdError.InvalidTypeId, validateProjectTypeId("com..health"));
+    try std.testing.expectError(TypeIdError.InvalidTypeId, validatePackageTypeId("health"));
+    try std.testing.expectError(TypeIdError.ReservedTypeId, validateProjectTypeId("machina.transform"));
+    try std.testing.expectError(TypeIdError.ReservedTypeId, validatePackageTypeId("machina.transform"));
+    try std.testing.expectError(TypeIdError.ReservedTypeId, validateEngineTypeId("health"));
+    try std.testing.expectError(TypeIdError.ReservedTypeId, validateEngineTypeId("com.acme.health"));
 }
 
 test "component registry allows reload-identical components and rejects incompatible duplicates" {
@@ -607,13 +660,13 @@ test "component registry allows reload-identical components and rejects incompat
         .{ .name = "current", .value_type = .float },
         .{ .name = "max", .value_type = .float },
     };
-    try registry.registerComponent(.{
-        .id = "com.acme.health",
+    try registry.registerProjectComponent(.{
+        .id = "health",
         .version = 1,
         .fields = &fields,
     });
-    try registry.registerComponent(.{
-        .id = "com.acme.health",
+    try registry.registerProjectComponent(.{
+        .id = "health",
         .version = 1,
         .fields = &fields,
     });
@@ -624,8 +677,8 @@ test "component registry allows reload-identical components and rejects incompat
         .{ .name = "current", .value_type = .int },
         .{ .name = "max", .value_type = .float },
     };
-    try std.testing.expectError(RegistryError.DuplicateComponentType, registry.registerComponent(.{
-        .id = "com.acme.health",
+    try std.testing.expectError(RegistryError.DuplicateComponentType, registry.registerProjectComponent(.{
+        .id = "health",
         .version = 1,
         .fields = &incompatible_fields,
     }));
@@ -639,18 +692,30 @@ test "component registry rejects duplicate field names" {
         .{ .name = "current", .value_type = .float },
         .{ .name = "current", .value_type = .int },
     };
-    try std.testing.expectError(RegistryError.DuplicateComponentField, registry.registerComponent(.{
+    try std.testing.expectError(RegistryError.DuplicateComponentField, registry.registerProjectComponent(.{
         .id = "com.acme.health",
         .version = 1,
         .fields = &fields,
     }));
 }
 
-test "component registry reserves machina namespace for engine registrations" {
+test "component registry separates project, package, and engine registrations" {
     var registry = ComponentRegistry.init(std.testing.allocator);
     defer registry.deinit();
 
-    try std.testing.expectError(RegistryError.ReservedTypeId, registry.registerComponent(.{
+    try registry.registerProjectComponent(.{
+        .id = "health",
+        .version = 1,
+    });
+    try std.testing.expectError(RegistryError.InvalidTypeId, registry.registerPackageComponent(.{
+        .id = "mana",
+        .version = 1,
+    }));
+    try registry.registerPackageComponent(.{
+        .id = "com.acme.mana",
+        .version = 1,
+    });
+    try std.testing.expectError(RegistryError.ReservedTypeId, registry.registerProjectComponent(.{
         .id = "machina.transform",
         .version = 1,
     }));
@@ -659,43 +724,55 @@ test "component registry reserves machina namespace for engine registrations" {
         .id = "machina.transform",
         .version = 1,
     });
-    try std.testing.expectEqual(@as(usize, 1), registry.componentCount());
+    try std.testing.expectEqual(@as(usize, 3), registry.componentCount());
 }
 
 test "system registry validates component access and reload-compatible definitions" {
     var registry = ComponentRegistry.init(std.testing.allocator);
     defer registry.deinit();
 
-    try registry.registerComponent(.{ .id = "com.acme.health", .version = 1 });
+    try registry.registerProjectComponent(.{ .id = "health", .version = 1 });
+    try registry.registerPackageComponent(.{ .id = "com.acme.mana", .version = 1 });
     try registry.registerEngineComponent(.{ .id = "machina.transform", .version = 1 });
 
-    const reads = [_][]const u8{ "machina.transform", "com.acme.health" };
-    const writes = [_][]const u8{"com.acme.health"};
-    const after = [_][]const u8{"machina.input"};
-    try registry.registerSystem(.{
-        .id = "com.acme.health_regen",
+    const reads = [_][]const u8{ "machina.transform", "health" };
+    const writes = [_][]const u8{"health"};
+    const after = [_][]const u8{"input"};
+    try registry.registerProjectSystem(.{
+        .id = "health_regen",
         .reads = &reads,
         .writes = &.{},
         .after = &after,
     });
-    try registry.registerSystem(.{
-        .id = "com.acme.health_regen",
+    try registry.registerProjectSystem(.{
+        .id = "health_regen",
         .reads = &reads,
         .writes = &.{},
         .after = &after,
     });
     try std.testing.expectEqual(@as(usize, 1), registry.systemCount());
 
-    try std.testing.expectError(RegistryError.UnknownComponentType, registry.registerSystem(.{
+    const package_reads = [_][]const u8{"com.acme.mana"};
+    try registry.registerPackageSystem(.{
+        .id = "com.acme.mana_regen",
+        .reads = &package_reads,
+    });
+    try std.testing.expectEqual(@as(usize, 2), registry.systemCount());
+
+    try std.testing.expectError(RegistryError.UnknownComponentType, registry.registerProjectSystem(.{
         .id = "com.acme.missing_reader",
         .reads = &.{"com.acme.missing"},
     }));
-    try std.testing.expectError(RegistryError.DuplicateSystemAccess, registry.registerSystem(.{
+    try std.testing.expectError(RegistryError.InvalidTypeId, registry.registerPackageSystem(.{
+        .id = "com.acme.bad_local_access",
+        .reads = &.{"health"},
+    }));
+    try std.testing.expectError(RegistryError.DuplicateSystemAccess, registry.registerProjectSystem(.{
         .id = "com.acme.bad_access",
         .reads = &reads,
         .writes = &writes,
     }));
-    try std.testing.expectError(RegistryError.ReservedTypeId, registry.registerSystem(.{
+    try std.testing.expectError(RegistryError.ReservedTypeId, registry.registerProjectSystem(.{
         .id = "machina.script_system",
     }));
 }

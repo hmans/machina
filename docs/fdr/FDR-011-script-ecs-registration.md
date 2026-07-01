@@ -9,10 +9,10 @@ Script ECS registration lets project and package scripts define new component an
 
 ## Behavior
 
-- Scripts can register component types with explicit dotted ids.
-- Scripts can register system types with explicit dotted ids.
+- Project scripts can register component and system types with project-local ids or qualified ids.
+- Package scripts can register component and system types only with qualified ids.
 - Engine-owned ids use the reserved `machina.*` namespace.
-- Project and package scripts must choose their own non-reserved namespaces; Machina does not infer a default project namespace.
+- Machina does not infer a default project namespace.
 - Duplicate registration with an identical definition is accepted as reload-compatible.
 - Duplicate registration with an incompatible definition fails validation.
 - Systems declare the component types they read and write.
@@ -21,11 +21,11 @@ Script ECS registration lets project and package scripts define new component an
 
 ## Design Decisions
 
-### 1. Require explicit namespaces
+### 1. Distinguish local and package ids
 
-**Decision:** Script-defined component and system ids must be explicit dotted ids, and `machina.*` is reserved for engine-owned types.
-**Why:** Explicit ids make package boundaries, scene references, diagnostics, and reload behavior stable. It follows ADR-010.
-**Tradeoff:** New projects must choose a namespace instead of relying on a built-in default.
+**Decision:** Project code may use single-segment local ids or qualified ids, while package code must use qualified ids. `machina.*` is reserved for engine-owned types.
+**Why:** Local ids keep project authoring lightweight, while qualified ids make package boundaries, scene references, diagnostics, and reload behavior stable. It follows ADR-010.
+**Tradeoff:** Moving a local project component into a reusable package requires an explicit id migration.
 
 ### 2. Treat registration as schema definition
 

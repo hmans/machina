@@ -14,7 +14,7 @@ The entity component runtime is the shared low-level model for game state. It gi
 - Systems operate over component queries rather than over renderer-specific or script-owned object lists.
 - Scene files author entity and component data as text.
 - Scripts can query, add, update, and remove supported components through the scripting API.
-- Scripts can register new component and system types with explicit non-reserved dotted ids.
+- Scripts can register new component and system types with project-local or qualified non-reserved ids.
 - Engine-owned and script-defined systems can participate in the runtime lifecycle once scheduling rules exist.
 - Invalid, duplicate, or unsupported entity/component data produces diagnostics suitable for command-line and editor display.
 
@@ -38,11 +38,11 @@ The entity component runtime is the shared low-level model for game state. It gi
 **Why:** This keeps script behavior reloadable, testable, and consistent with text scene data. It follows ADR-006 and ADR-008.
 **Tradeoff:** Some low-level power is intentionally hidden until the API has clear safety and lifecycle rules.
 
-### 4. Require explicit script extension ids
+### 4. Distinguish local and qualified script extension ids
 
-**Decision:** Script-defined component and system types use explicit dotted ids, with `machina.*` reserved for engine-owned types.
-**Why:** Component and system references need to be stable across scenes, packages, reloads, and diagnostics. It follows ADR-010.
-**Tradeoff:** Projects must choose a namespace before registering script-defined ECS types.
+**Decision:** Script-defined component and system types use project-local single-segment ids or qualified dotted ids, with `machina.*` reserved for engine-owned types.
+**Why:** Component and system references need to be ergonomic in local projects and stable across packages, reloads, and diagnostics. It follows ADR-010.
+**Tradeoff:** Promoting a local type into a reusable package requires an explicit id migration.
 
 ## Related
 
