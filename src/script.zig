@@ -2,37 +2,97 @@ const std = @import("std");
 const Io = std.Io;
 const runtime = @import("runtime.zig");
 
-pub const ScriptError = runtime.RegistryError || std.mem.Allocator.Error || error{
+const c = @cImport({
+    @cInclude("luau_bridge.h");
+});
+
+pub const ScriptError = runtime.RegistryError || runtime.ScheduleError || std.mem.Allocator.Error || error{
     InvalidScript,
-    UnsupportedScript,
     UnknownFieldType,
     UnknownSystemPhase,
 };
 
-pub fn loadProjectRegistry(
+pub const Program = struct {
+    allocator: std.mem.Allocator,
+    registry: runtime.ComponentRegistry,
+    schedule: runtime.SystemSchedule,
+    vm: *c.machina_luau,
+    active_system: ?*const runtime.ScheduledSystem = null,
+
+    pub fn deinit(self: *Program) void {
+        self.schedule.deinit();
+        self.registry.deinit();
+        c.machina_luau_destroy(self.vm);
+        self.* = undefined;
+    }
+
+    pub fn update(self: *Program, world: *runtime.World, delta_seconds: f32) bool {
+        c.machina_luau_set_callback_context(self.vm, self);
+
+        var ok = true;
+        for (self.schedule.batches) |batch| {
+            if (batch.phase != .update) {
+                continue;
+            }
+
+            for (batch.systems) |*system| {
+                switch (system.runner) {
+                    .none => {},
+                    .luau => |runner_ref| {
+                        self.active_system = system;
+                        const system_ok = c.machina_luau_call_system(self.vm, runner_ref, world, delta_seconds) != 0;
+                        self.active_system = null;
+                        ok = ok and system_ok;
+                    },
+                }
+            }
+        }
+        return ok;
+    }
+
+    fn activeSystemAllowsRotate(self: Program, transform_component_id_value: []const u8, spin_component_id_value: []const u8) bool {
+        const active_system = self.active_system orelse return false;
+        if (active_system.registry_index >= self.registry.systems.items.len) {
+            return false;
+        }
+
+        const definition = self.registry.systems.items[active_system.registry_index];
+        return containsString(definition.reads, spin_component_id_value) and
+            containsString(definition.writes, transform_component_id_value);
+    }
+};
+
+pub fn loadProjectProgram(
     io: Io,
     allocator: std.mem.Allocator,
     root_dir: Io.Dir,
     script_paths: []const []const u8,
-) !runtime.ComponentRegistry {
-    var registry = runtime.ComponentRegistry.init(allocator);
-    errdefer registry.deinit();
-
-    try registerEngineTypes(&registry);
+) !Program {
+    var program = try initProgram(allocator);
+    errdefer program.deinit();
 
     for (script_paths) |script_path| {
         const contents = try root_dir.readFileAlloc(io, script_path, allocator, .limited(256 * 1024));
         defer allocator.free(contents);
-
-        var parser = DeclarationParser{
-            .allocator = allocator,
-            .registry = &registry,
-            .source = contents,
-        };
-        try parser.parse();
+        try loadChunk(&program, script_path, contents);
     }
 
-    return registry;
+    try registerDeclaredTypes(&program);
+    program.schedule = try buildUpdateSchedule(allocator, program.registry);
+    return program;
+}
+
+pub fn loadSourceProgram(
+    allocator: std.mem.Allocator,
+    chunk_name: []const u8,
+    source: []const u8,
+) !Program {
+    var program = try initProgram(allocator);
+    errdefer program.deinit();
+    try loadChunk(&program, chunk_name, source);
+    try registerDeclaredTypes(&program);
+    program.schedule = try buildUpdateSchedule(allocator, program.registry);
+    return program;
 }
 
 pub fn buildUpdateSchedule(
@@ -40,6 +100,36 @@ pub fn buildUpdateSchedule(
     registry: runtime.ComponentRegistry,
 ) !runtime.SystemSchedule {
     return registry.buildSchedule(allocator, .update);
+}
+
+fn initProgram(allocator: std.mem.Allocator) !Program {
+    const callbacks = c.machina_luau_callbacks{
+        .rotate = rotateCallback,
+    };
+    const vm = c.machina_luau_create(callbacks) orelse return ScriptError.InvalidScript;
+
+    var registry = runtime.ComponentRegistry.init(allocator);
+    errdefer {
+        registry.deinit();
+        c.machina_luau_destroy(vm);
+    }
+    try registerEngineTypes(&registry);
+
+    return .{
+        .allocator = allocator,
+        .registry = registry,
+        .schedule = .{ .allocator = allocator, .batches = &.{} },
+        .vm = vm,
+    };
+}
+
+fn loadChunk(program: *Program, chunk_name: []const u8, source: []const u8) !void {
+    const chunk_name_z = try program.allocator.dupeZ(u8, chunk_name);
+    defer program.allocator.free(chunk_name_z);
+
+    if (c.machina_luau_load(program.vm, chunk_name_z.ptr, source.ptr, source.len) == 0) {
+        return ScriptError.InvalidScript;
+    }
 }
 
 fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
@@ -73,321 +163,107 @@ fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
     });
 }
 
-const DeclarationParser = struct {
-    allocator: std.mem.Allocator,
-    registry: *runtime.ComponentRegistry,
-    source: []const u8,
-    index: usize = 0,
-
-    fn parse(self: *DeclarationParser) ScriptError!void {
-        while (true) {
-            self.skipTrivia();
-            if (self.isEof()) {
-                return;
-            }
-            try self.parseDeclaration();
-        }
-    }
-
-    fn parseDeclaration(self: *DeclarationParser) ScriptError!void {
-        try self.expectLiteral("ecs.");
-        const declaration = try self.parseIdentifier();
-        try self.expectByte('(');
-        const id = try self.parseString();
-        try self.expectByte(',');
-
-        if (std.mem.eql(u8, declaration, "component")) {
-            try self.parseComponent(id);
-        } else if (std.mem.eql(u8, declaration, "system")) {
-            try self.parseSystem(id);
-        } else {
-            return ScriptError.UnsupportedScript;
-        }
-
-        try self.expectByte(')');
-        _ = self.consumeByte(';');
-    }
-
-    fn parseComponent(self: *DeclarationParser, id: []const u8) ScriptError!void {
-        var version: u32 = 1;
+fn registerDeclaredTypes(program: *Program) ScriptError!void {
+    const component_count = c.machina_luau_component_count(program.vm);
+    for (0..component_count) |component_index| {
         var fields: std.ArrayList(runtime.ComponentFieldDefinition) = .empty;
-        defer fields.deinit(self.allocator);
+        defer fields.deinit(program.allocator);
 
-        try self.expectByte('{');
-        while (true) {
-            self.skipTrivia();
-            if (self.consumeByte('}')) {
-                break;
-            }
-
-            const key = try self.parseIdentifier();
-            try self.expectByte('=');
-
-            if (std.mem.eql(u8, key, "version")) {
-                version = try self.parseU32();
-            } else if (std.mem.eql(u8, key, "fields")) {
-                try self.parseFieldTable(&fields);
-            } else {
-                return ScriptError.UnsupportedScript;
-            }
-
-            try self.consumeSeparatorOrEnd();
+        const field_count = c.machina_luau_component_field_count(program.vm, component_index);
+        for (0..field_count) |field_index| {
+            try fields.append(program.allocator, .{
+                .name = try spanC(c.machina_luau_component_field_name(program.vm, component_index, field_index)),
+                .value_type = try parseFieldType(try spanC(c.machina_luau_component_field_type(program.vm, component_index, field_index))),
+            });
         }
 
-        try self.registry.registerProjectComponent(.{
-            .id = id,
-            .version = version,
+        try program.registry.registerProjectComponent(.{
+            .id = try spanC(c.machina_luau_component_id(program.vm, component_index)),
+            .version = c.machina_luau_component_version(program.vm, component_index),
             .fields = fields.items,
         });
     }
 
-    fn parseSystem(self: *DeclarationParser, id: []const u8) ScriptError!void {
-        var phase: runtime.SystemPhase = .update;
-        var reads: std.ArrayList([]const u8) = .empty;
-        var writes: std.ArrayList([]const u8) = .empty;
-        var before: std.ArrayList([]const u8) = .empty;
-        var after: std.ArrayList([]const u8) = .empty;
-        var runner: runtime.SystemRunner = .none;
-        defer reads.deinit(self.allocator);
-        defer writes.deinit(self.allocator);
-        defer before.deinit(self.allocator);
-        defer after.deinit(self.allocator);
+    const system_count = c.machina_luau_system_count(program.vm);
+    for (0..system_count) |system_index| {
+        var reads = try readSystemReads(program.allocator, program.vm, system_index);
+        defer reads.deinit(program.allocator);
+        var writes = try readSystemWrites(program.allocator, program.vm, system_index);
+        defer writes.deinit(program.allocator);
+        var before = try readSystemBefore(program.allocator, program.vm, system_index);
+        defer before.deinit(program.allocator);
+        var after = try readSystemAfter(program.allocator, program.vm, system_index);
+        defer after.deinit(program.allocator);
 
-        try self.expectByte('{');
-        while (true) {
-            self.skipTrivia();
-            if (self.consumeByte('}')) {
-                break;
-            }
-
-            const key = try self.parseIdentifier();
-            try self.expectByte('=');
-
-            if (std.mem.eql(u8, key, "phase")) {
-                phase = try parseSystemPhase(try self.parseString());
-            } else if (std.mem.eql(u8, key, "reads")) {
-                try self.parseStringList(&reads);
-            } else if (std.mem.eql(u8, key, "writes")) {
-                try self.parseStringList(&writes);
-            } else if (std.mem.eql(u8, key, "before")) {
-                try self.parseStringList(&before);
-            } else if (std.mem.eql(u8, key, "after")) {
-                try self.parseStringList(&after);
-            } else if (std.mem.eql(u8, key, "run")) {
-                runner = try self.parseRunFunction();
-            } else {
-                return ScriptError.UnsupportedScript;
-            }
-
-            try self.consumeSeparatorOrEnd();
-        }
-
-        try validateRunnerAccess(runner, reads.items, writes.items);
-        try self.registry.registerProjectSystem(.{
-            .id = id,
-            .phase = phase,
+        const runner_ref = c.machina_luau_system_runner_ref(program.vm, system_index);
+        try program.registry.registerProjectSystem(.{
+            .id = try spanC(c.machina_luau_system_id(program.vm, system_index)),
+            .phase = try parseSystemPhase(try spanC(c.machina_luau_system_phase(program.vm, system_index))),
             .reads = reads.items,
             .writes = writes.items,
             .before = before.items,
             .after = after.items,
-            .runner = runner,
+            .runner = if (runner_ref == 0) .none else .{ .luau = runner_ref },
         });
     }
+}
 
-    fn parseRunFunction(self: *DeclarationParser) ScriptError!runtime.SystemRunner {
-        try self.expectLiteral("function");
-        try self.expectByte('(');
-        try self.expectLiteral("world");
-        try self.expectByte(',');
-        try self.expectLiteral("dt");
-        try self.expectByte(')');
-
-        try self.expectLiteral("world.rotate");
-        try self.expectByte('(');
-        const transform_id = try self.parseString();
-        try self.expectByte(',');
-        const spin_id = try self.parseString();
-        try self.expectByte(',');
-        const multiplier = try self.parseDeltaExpression();
-        try self.expectByte(')');
-        _ = self.consumeByte(';');
-
-        try self.expectLiteral("end");
-
-        if (std.mem.eql(u8, transform_id, runtime.transform_component_id) and
-            std.mem.eql(u8, spin_id, runtime.spin_component_id))
-        {
-            return .{ .rotate_by_spin = multiplier };
-        }
-        return ScriptError.UnsupportedScript;
+fn readSystemReads(allocator: std.mem.Allocator, vm: *c.machina_luau, system_index: usize) !std.ArrayList([]const u8) {
+    var values: std.ArrayList([]const u8) = .empty;
+    errdefer values.deinit(allocator);
+    for (0..c.machina_luau_system_reads_count(vm, system_index)) |item_index| {
+        try values.append(allocator, try spanC(c.machina_luau_system_reads_item(vm, system_index, item_index)));
     }
+    return values;
+}
 
-    fn parseDeltaExpression(self: *DeclarationParser) ScriptError!f32 {
-        try self.expectLiteral("dt");
-        self.skipTrivia();
-        if (!self.consumeByte('*')) {
-            return 1.0;
-        }
-        return self.parseF32();
+fn readSystemWrites(allocator: std.mem.Allocator, vm: *c.machina_luau, system_index: usize) !std.ArrayList([]const u8) {
+    var values: std.ArrayList([]const u8) = .empty;
+    errdefer values.deinit(allocator);
+    for (0..c.machina_luau_system_writes_count(vm, system_index)) |item_index| {
+        try values.append(allocator, try spanC(c.machina_luau_system_writes_item(vm, system_index, item_index)));
     }
+    return values;
+}
 
-    fn parseFieldTable(
-        self: *DeclarationParser,
-        fields: *std.ArrayList(runtime.ComponentFieldDefinition),
-    ) ScriptError!void {
-        try self.expectByte('{');
-        while (true) {
-            self.skipTrivia();
-            if (self.consumeByte('}')) {
-                return;
-            }
-
-            const field_name = try self.parseIdentifier();
-            try self.expectByte('=');
-            const field_type = try parseFieldType(try self.parseString());
-            try fields.append(self.allocator, .{
-                .name = field_name,
-                .value_type = field_type,
-            });
-            try self.consumeSeparatorOrEnd();
-        }
+fn readSystemBefore(allocator: std.mem.Allocator, vm: *c.machina_luau, system_index: usize) !std.ArrayList([]const u8) {
+    var values: std.ArrayList([]const u8) = .empty;
+    errdefer values.deinit(allocator);
+    for (0..c.machina_luau_system_before_count(vm, system_index)) |item_index| {
+        try values.append(allocator, try spanC(c.machina_luau_system_before_item(vm, system_index, item_index)));
     }
+    return values;
+}
 
-    fn parseStringList(self: *DeclarationParser, values: *std.ArrayList([]const u8)) ScriptError!void {
-        try self.expectByte('{');
-        while (true) {
-            self.skipTrivia();
-            if (self.consumeByte('}')) {
-                return;
-            }
-
-            try values.append(self.allocator, try self.parseString());
-            try self.consumeSeparatorOrEnd();
-        }
+fn readSystemAfter(allocator: std.mem.Allocator, vm: *c.machina_luau, system_index: usize) !std.ArrayList([]const u8) {
+    var values: std.ArrayList([]const u8) = .empty;
+    errdefer values.deinit(allocator);
+    for (0..c.machina_luau_system_after_count(vm, system_index)) |item_index| {
+        try values.append(allocator, try spanC(c.machina_luau_system_after_item(vm, system_index, item_index)));
     }
+    return values;
+}
 
-    fn parseIdentifier(self: *DeclarationParser) ScriptError![]const u8 {
-        self.skipTrivia();
-        if (self.isEof() or !isIdentifierStart(self.source[self.index])) {
-            return ScriptError.InvalidScript;
-        }
+fn spanC(value: ?[*:0]const u8) ScriptError![]const u8 {
+    return std.mem.span(value orelse return ScriptError.InvalidScript);
+}
 
-        const start = self.index;
-        self.index += 1;
-        while (!self.isEof() and isIdentifierContinue(self.source[self.index])) {
-            self.index += 1;
-        }
-        return self.source[start..self.index];
+fn rotateCallback(
+    raw_context: ?*anyopaque,
+    raw_world: ?*anyopaque,
+    transform_id: ?[*:0]const u8,
+    spin_id: ?[*:0]const u8,
+    delta_seconds: f64,
+) callconv(.c) c_int {
+    const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
+    const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
+    const transform_component_id_value = std.mem.span(transform_id orelse return 0);
+    const spin_component_id_value = std.mem.span(spin_id orelse return 0);
+    if (!program.activeSystemAllowsRotate(transform_component_id_value, spin_component_id_value)) {
+        return 0;
     }
-
-    fn parseString(self: *DeclarationParser) ScriptError![]const u8 {
-        self.skipTrivia();
-        if (self.isEof() or self.source[self.index] != '"') {
-            return ScriptError.InvalidScript;
-        }
-        self.index += 1;
-        const start = self.index;
-        while (!self.isEof() and self.source[self.index] != '"') : (self.index += 1) {
-            if (self.source[self.index] == '\\') {
-                return ScriptError.UnsupportedScript;
-            }
-        }
-        if (self.isEof()) {
-            return ScriptError.InvalidScript;
-        }
-        const value = self.source[start..self.index];
-        self.index += 1;
-        return value;
-    }
-
-    fn parseU32(self: *DeclarationParser) ScriptError!u32 {
-        self.skipTrivia();
-        const start = self.index;
-        while (!self.isEof() and std.ascii.isDigit(self.source[self.index])) {
-            self.index += 1;
-        }
-        if (start == self.index) {
-            return ScriptError.InvalidScript;
-        }
-        return std.fmt.parseInt(u32, self.source[start..self.index], 10) catch ScriptError.InvalidScript;
-    }
-
-    fn parseF32(self: *DeclarationParser) ScriptError!f32 {
-        self.skipTrivia();
-        const start = self.index;
-        if (!self.isEof() and (self.source[self.index] == '+' or self.source[self.index] == '-')) {
-            self.index += 1;
-        }
-        var saw_digit = false;
-        while (!self.isEof() and std.ascii.isDigit(self.source[self.index])) {
-            self.index += 1;
-            saw_digit = true;
-        }
-        if (!self.isEof() and self.source[self.index] == '.') {
-            self.index += 1;
-            while (!self.isEof() and std.ascii.isDigit(self.source[self.index])) {
-                self.index += 1;
-                saw_digit = true;
-            }
-        }
-        if (!saw_digit) {
-            return ScriptError.InvalidScript;
-        }
-        return std.fmt.parseFloat(f32, self.source[start..self.index]) catch ScriptError.InvalidScript;
-    }
-
-    fn expectLiteral(self: *DeclarationParser, literal: []const u8) ScriptError!void {
-        self.skipTrivia();
-        if (!std.mem.startsWith(u8, self.source[self.index..], literal)) {
-            return ScriptError.InvalidScript;
-        }
-        self.index += literal.len;
-    }
-
-    fn expectByte(self: *DeclarationParser, byte: u8) ScriptError!void {
-        self.skipTrivia();
-        if (!self.consumeByte(byte)) {
-            return ScriptError.InvalidScript;
-        }
-    }
-
-    fn consumeByte(self: *DeclarationParser, byte: u8) bool {
-        self.skipTrivia();
-        if (self.isEof() or self.source[self.index] != byte) {
-            return false;
-        }
-        self.index += 1;
-        return true;
-    }
-
-    fn consumeSeparatorOrEnd(self: *DeclarationParser) ScriptError!void {
-        self.skipTrivia();
-        _ = self.consumeByte(',');
-        _ = self.consumeByte(';');
-    }
-
-    fn skipTrivia(self: *DeclarationParser) void {
-        while (!self.isEof()) {
-            const byte = self.source[self.index];
-            if (byte == ' ' or byte == '\t' or byte == '\n' or byte == '\r') {
-                self.index += 1;
-                continue;
-            }
-            if (byte == '-' and self.index + 1 < self.source.len and self.source[self.index + 1] == '-') {
-                self.index += 2;
-                while (!self.isEof() and self.source[self.index] != '\n') {
-                    self.index += 1;
-                }
-                continue;
-            }
-            return;
-        }
-    }
-
-    fn isEof(self: DeclarationParser) bool {
-        return self.index >= self.source.len;
-    }
-};
+    return if (world.rotateBySpin(transform_component_id_value, spin_component_id_value, @floatCast(delta_seconds))) 1 else 0;
+}
 
 fn parseFieldType(value: []const u8) ScriptError!runtime.FieldType {
     if (std.mem.eql(u8, value, "boolean") or std.mem.eql(u8, value, "bool")) {
@@ -421,21 +297,6 @@ fn parseSystemPhase(value: []const u8) ScriptError!runtime.SystemPhase {
     return ScriptError.UnknownSystemPhase;
 }
 
-fn validateRunnerAccess(
-    runner: runtime.SystemRunner,
-    reads: []const []const u8,
-    writes: []const []const u8,
-) ScriptError!void {
-    switch (runner) {
-        .none => {},
-        .rotate_by_spin => {
-            if (!containsString(reads, runtime.spin_component_id) or !containsString(writes, runtime.transform_component_id)) {
-                return ScriptError.InvalidScript;
-            }
-        },
-    }
-}
-
 fn containsString(values: []const []const u8, needle: []const u8) bool {
     for (values) |value| {
         if (std.mem.eql(u8, value, needle)) {
@@ -445,23 +306,8 @@ fn containsString(values: []const []const u8, needle: []const u8) bool {
     return false;
 }
 
-fn isIdentifierStart(byte: u8) bool {
-    return std.ascii.isAlphabetic(byte) or byte == '_';
-}
-
-fn isIdentifierContinue(byte: u8) bool {
-    return isIdentifierStart(byte) or std.ascii.isDigit(byte);
-}
-
-test "script declarations register components and systems" {
-    var registry = runtime.ComponentRegistry.init(std.testing.allocator);
-    defer registry.deinit();
-    try registerEngineTypes(&registry);
-
-    var parser = DeclarationParser{
-        .allocator = std.testing.allocator,
-        .registry = &registry,
-        .source =
+test "luau declarations register components and executable systems" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
         \\ecs.component("health", {
         \\  fields = {
         \\    current = "f32",
@@ -474,38 +320,54 @@ test "script declarations register components and systems" {
         \\  reads = { "machina.spin" },
         \\  writes = { "machina.transform" },
         \\  run = function(world, dt)
-        \\    world.rotate("machina.transform", "machina.spin", dt * 2.5)
+        \\    world.rotate("machina.transform", "machina.spin", dt * (1 + 1.5))
         \\  end,
         \\})
-        ,
-    };
-    try parser.parse();
+    );
+    defer program.deinit();
 
-    try std.testing.expect(registry.findComponent("health") != null);
-    const system = registry.findSystem("rotate_cubes") orelse return error.TestExpectedEqual;
-    try std.testing.expectEqual(@as(f32, 2.5), system.runner.rotate_by_spin);
+    try std.testing.expect(program.registry.findComponent("health") != null);
+    const system = program.registry.findSystem("rotate_cubes") orelse return error.TestExpectedEqual;
+    try std.testing.expect(system.runner.luau != 0);
+
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+    const entity = try world.createEntity("spinner", "Spinner");
+    try world.setTransform(entity, .{});
+    try world.setSpin(entity, .{ .angular_velocity = .{ 1.0, 0.0, 0.0 } });
+
+    try std.testing.expect(program.update(&world, 0.5));
+    const transform = (try world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(f32, 1.25), transform.rotation[0]);
 }
 
-test "script runner body must match declared access" {
-    var registry = runtime.ComponentRegistry.init(std.testing.allocator);
-    defer registry.deinit();
-    try registerEngineTypes(&registry);
-
-    var parser = DeclarationParser{
-        .allocator = std.testing.allocator,
-        .registry = &registry,
-        .source =
-        \\ecs.system("rotate_cubes", {
+test "luau world mutation requires declared system access" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
+        \\ecs.component("health", {
+        \\  fields = {
+        \\    current = "f32",
+        \\  },
+        \\})
+        \\
+        \\ecs.system("bad_rotate", {
         \\  reads = { "machina.spin" },
         \\  writes = { "health" },
         \\  run = function(world, dt)
         \\    world.rotate("machina.transform", "machina.spin", dt)
         \\  end,
         \\})
-        ,
-    };
+    );
+    defer program.deinit();
 
-    try std.testing.expectError(ScriptError.InvalidScript, parser.parse());
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+    const entity = try world.createEntity("spinner", "Spinner");
+    try world.setTransform(entity, .{});
+    try world.setSpin(entity, .{ .angular_velocity = .{ 1.0, 0.0, 0.0 } });
+
+    try std.testing.expect(!program.update(&world, 1.0));
+    const transform = (try world.getTransform(entity)) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(f32, 0.0), transform.rotation[0]);
 }
 
 test "update schedule batches read-only systems and separates write conflicts" {

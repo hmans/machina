@@ -31,6 +31,7 @@ pub const ScheduleError = runtime.ScheduleError;
 pub const TypeIdError = runtime.TypeIdError;
 pub const RegistryError = runtime.RegistryError;
 pub const ScriptError = script.ScriptError;
+pub const ScriptProgram = script.Program;
 pub const validateTypeId = runtime.validateTypeId;
 pub const validateProjectTypeId = runtime.validateProjectTypeId;
 pub const validatePackageTypeId = runtime.validatePackageTypeId;
@@ -107,8 +108,7 @@ pub const LiveProject = struct {
     root_path: []const u8,
     project: Project,
     scene: Scene,
-    registry: ComponentRegistry,
-    schedule: SystemSchedule,
+    scripts: ScriptProgram,
     project_source: LoadedSource,
     scene_source: LoadedSource,
     script_sources: []LoadedSource,
@@ -124,11 +124,8 @@ pub const LiveProject = struct {
         const scene = try loadDefaultScene(io, allocator, project);
         errdefer freeScene(allocator, scene);
 
-        var registry = try loadProjectScriptRegistry(io, allocator, project);
-        errdefer registry.deinit();
-
-        var schedule = try buildProjectUpdateSchedule(allocator, registry);
-        errdefer schedule.deinit();
+        var scripts = try loadProjectScripts(io, allocator, project);
+        errdefer scripts.deinit();
 
         const script_sources = try statProjectScripts(io, allocator, project);
         errdefer freeLoadedSources(allocator, script_sources);
@@ -139,8 +136,7 @@ pub const LiveProject = struct {
             .root_path = project.root_path,
             .project = project,
             .scene = scene,
-            .registry = registry,
-            .schedule = schedule,
+            .scripts = scripts,
             .project_source = .{
                 .path = project_file_name,
                 .stamp = try statProjectFile(io, project.root_path),
@@ -155,8 +151,7 @@ pub const LiveProject = struct {
 
     pub fn deinit(self: *LiveProject) void {
         freeLoadedSources(self.allocator, self.script_sources);
-        self.schedule.deinit();
-        self.registry.deinit();
+        self.scripts.deinit();
         freeScene(self.allocator, self.scene);
         freeProject(self.allocator, self.project);
         self.* = undefined;
@@ -167,7 +162,7 @@ pub const LiveProject = struct {
     }
 
     pub fn update(self: *LiveProject, delta_seconds: f32) void {
-        self.scene.world.runUpdateSchedule(self.schedule, delta_seconds);
+        _ = self.scripts.update(&self.scene.world, delta_seconds);
     }
 
     pub fn pollLoadedSources(self: *LiveProject) !ReloadResult {
@@ -239,11 +234,8 @@ pub const LiveProject = struct {
         const next_scene = try loadDefaultScene(self.io, self.allocator, next_project);
         errdefer freeScene(self.allocator, next_scene);
 
-        var next_registry = try loadProjectScriptRegistry(self.io, self.allocator, next_project);
-        errdefer next_registry.deinit();
-
-        var next_schedule = try buildProjectUpdateSchedule(self.allocator, next_registry);
-        errdefer next_schedule.deinit();
+        var next_scripts = try loadProjectScripts(self.io, self.allocator, next_project);
+        errdefer next_scripts.deinit();
 
         const next_script_sources = try statProjectScripts(self.io, self.allocator, next_project);
         errdefer freeLoadedSources(self.allocator, next_script_sources);
@@ -258,19 +250,17 @@ pub const LiveProject = struct {
             .entity_count = next_scene.entityCount(),
             .renderable_cube_count = next_scene.renderableCubeCount(),
             .script_count = next_project.scripts.len,
-            .system_batch_count = next_schedule.batchCount(),
+            .system_batch_count = next_scripts.schedule.batchCount(),
         };
 
         freeLoadedSources(self.allocator, self.script_sources);
-        self.schedule.deinit();
-        self.registry.deinit();
+        self.scripts.deinit();
         freeScene(self.allocator, self.scene);
         freeProject(self.allocator, self.project);
         self.root_path = next_project.root_path;
         self.project = next_project;
         self.scene = next_scene;
-        self.registry = next_registry;
-        self.schedule = next_schedule;
+        self.scripts = next_scripts;
         self.project_source.stamp = project_stamp;
         self.scene_source = .{
             .path = self.project.default_scene,
@@ -295,7 +285,7 @@ pub const LiveProject = struct {
             .entity_count = next_scene.entityCount(),
             .renderable_cube_count = next_scene.renderableCubeCount(),
             .script_count = self.project.scripts.len,
-            .system_batch_count = self.schedule.batchCount(),
+            .system_batch_count = self.scripts.schedule.batchCount(),
         };
 
         freeScene(self.allocator, self.scene);
@@ -306,11 +296,8 @@ pub const LiveProject = struct {
     }
 
     fn reloadScripts(self: *LiveProject, changed_index: usize, script_stamp: SourceFileStamp) !ReloadResult {
-        var next_registry = try loadProjectScriptRegistry(self.io, self.allocator, self.project);
-        errdefer next_registry.deinit();
-
-        var next_schedule = try buildProjectUpdateSchedule(self.allocator, next_registry);
-        errdefer next_schedule.deinit();
+        var next_scripts = try loadProjectScripts(self.io, self.allocator, self.project);
+        errdefer next_scripts.deinit();
 
         const info = ReloadInfo{
             .project_reloaded = false,
@@ -321,13 +308,11 @@ pub const LiveProject = struct {
             .entity_count = self.scene.entityCount(),
             .renderable_cube_count = self.scene.renderableCubeCount(),
             .script_count = self.project.scripts.len,
-            .system_batch_count = next_schedule.batchCount(),
+            .system_batch_count = next_scripts.schedule.batchCount(),
         };
 
-        self.schedule.deinit();
-        self.registry.deinit();
-        self.registry = next_registry;
-        self.schedule = next_schedule;
+        self.scripts.deinit();
+        self.scripts = next_scripts;
         self.script_sources[changed_index].stamp = script_stamp;
         self.last_failed_script_index = null;
         self.last_failed_script_stamp = null;
@@ -424,13 +409,8 @@ pub fn checkProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8)
     const scene = try loadSceneFile(io, allocator, root_dir, project.default_scene);
     defer freeScene(allocator, scene);
 
-    var registry = try loadProjectScriptRegistry(io, allocator, project);
-    defer registry.deinit();
-    var schedule = buildProjectUpdateSchedule(allocator, registry) catch |err| switch (err) {
-        ProjectError.InvalidScript => return ProjectError.InvalidScript,
-        else => return err,
-    };
-    defer schedule.deinit();
+    var scripts = try loadProjectScripts(io, allocator, project);
+    defer scripts.deinit();
 
     return .{ .project = project };
 }
@@ -570,12 +550,12 @@ fn loadProjectFile(io: Io, allocator: std.mem.Allocator, root_path: []const u8, 
     };
 }
 
-pub fn loadProjectScriptRegistry(io: Io, allocator: std.mem.Allocator, project: Project) !ComponentRegistry {
+pub fn loadProjectScripts(io: Io, allocator: std.mem.Allocator, project: Project) !ScriptProgram {
     const cwd = Io.Dir.cwd();
     const root_dir = try cwd.openDir(io, project.root_path, .{});
     defer root_dir.close(io);
 
-    return script.loadProjectRegistry(io, allocator, root_dir, project.scripts) catch |err| switch (err) {
+    return script.loadProjectProgram(io, allocator, root_dir, project.scripts) catch |err| switch (err) {
         error.FileNotFound => ProjectError.MissingScript,
         error.InvalidFieldName,
         error.DuplicateComponentField,
@@ -586,17 +566,10 @@ pub fn loadProjectScriptRegistry(io: Io, allocator: std.mem.Allocator, project: 
         error.InvalidTypeId,
         error.ReservedTypeId,
         error.InvalidScript,
-        error.UnsupportedScript,
         error.UnknownFieldType,
         error.UnknownSystemPhase,
+        error.CyclicSystemOrder,
         => ProjectError.InvalidScript,
-        else => err,
-    };
-}
-
-fn buildProjectUpdateSchedule(allocator: std.mem.Allocator, registry: ComponentRegistry) !SystemSchedule {
-    return script.buildUpdateSchedule(allocator, registry) catch |err| switch (err) {
-        error.CyclicSystemOrder => ProjectError.InvalidScript,
         else => err,
     };
 }
@@ -1182,15 +1155,13 @@ test "checkProject validates script declarations and builds a system schedule" {
     const result = try checkProject(io, std.testing.allocator, root_path);
     defer freeProject(std.testing.allocator, result.project);
 
-    var registry = try loadProjectScriptRegistry(io, std.testing.allocator, result.project);
-    defer registry.deinit();
-    var schedule = try buildProjectUpdateSchedule(std.testing.allocator, registry);
-    defer schedule.deinit();
+    var scripts = try loadProjectScripts(io, std.testing.allocator, result.project);
+    defer scripts.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), result.project.scripts.len);
-    try std.testing.expect(registry.findComponent("health") != null);
-    try std.testing.expect(registry.findSystem("health_regen") != null);
-    try std.testing.expectEqual(@as(usize, 2), schedule.batchCount());
+    try std.testing.expect(scripts.registry.findComponent("health") != null);
+    try std.testing.expect(scripts.registry.findSystem("health_regen") != null);
+    try std.testing.expectEqual(@as(usize, 2), scripts.schedule.batchCount());
 }
 
 test "checkProject rejects invalid script declarations" {
@@ -1322,9 +1293,9 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
 
     var live_project = try LiveProject.init(io, std.testing.allocator, root_path);
     defer live_project.deinit();
-    try std.testing.expect(live_project.registry.findComponent("health") != null);
-    try std.testing.expect(live_project.registry.findComponent("mood") == null);
-    try std.testing.expectEqual(@as(usize, 1), live_project.schedule.systemCount());
+    try std.testing.expect(live_project.scripts.registry.findComponent("health") != null);
+    try std.testing.expect(live_project.scripts.registry.findComponent("mood") == null);
+    try std.testing.expectEqual(@as(usize, 1), live_project.scripts.schedule.systemCount());
 
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
@@ -1355,8 +1326,8 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     try std.testing.expect(!reload.reloaded.project_reloaded);
     try std.testing.expect(!reload.reloaded.scene_reloaded);
     try std.testing.expect(reload.reloaded.scripts_reloaded);
-    try std.testing.expect(live_project.registry.findComponent("mood") != null);
-    try std.testing.expectEqual(@as(usize, 2), live_project.schedule.systemCount());
+    try std.testing.expect(live_project.scripts.registry.findComponent("mood") != null);
+    try std.testing.expectEqual(@as(usize, 2), live_project.scripts.schedule.systemCount());
 
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
@@ -1370,8 +1341,8 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     });
 
     try std.testing.expectError(ProjectError.InvalidScript, live_project.pollLoadedSources());
-    try std.testing.expect(live_project.registry.findComponent("mood") != null);
-    try std.testing.expectEqual(@as(usize, 2), live_project.schedule.systemCount());
+    try std.testing.expect(live_project.scripts.registry.findComponent("mood") != null);
+    try std.testing.expectEqual(@as(usize, 2), live_project.scripts.schedule.systemCount());
     try std.testing.expectEqual(ReloadResult.unchanged, try live_project.pollLoadedSources());
 }
 
@@ -1638,7 +1609,8 @@ test "checkProject rejects unsupported metadata version" {
 
 fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !void {
     var buffer: [512]u8 = undefined;
-    const data = try std.fmt.bufPrint(&buffer,
+    const data = try std.fmt.bufPrint(
+        &buffer,
         \\ecs.system("rotate_cubes", {{
         \\  reads = {{ "machina.spin" }},
         \\  writes = {{ "machina.transform" }},
@@ -1646,7 +1618,7 @@ fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !vo
         \\    world.rotate("machina.transform", "machina.spin", {s})
         \\  end,
         \\}})
-        ,
+    ,
         .{delta_expression},
     );
     try root_dir.writeFile(io, .{

@@ -65,7 +65,7 @@ pub const SystemDefinition = struct {
 
 pub const SystemRunner = union(enum) {
     none,
-    rotate_by_spin: f32,
+    luau: u32,
 };
 
 pub const ScheduledSystem = struct {
@@ -611,25 +611,13 @@ pub const World = struct {
         return self.transforms.items[index];
     }
 
-    pub fn runUpdateSchedule(self: *World, schedule: SystemSchedule, delta_seconds: f32) void {
-        for (schedule.batches) |batch| {
-            if (batch.phase != .update) {
-                continue;
-            }
-            for (batch.systems) |system| {
-                self.runScheduledSystem(system.runner, delta_seconds);
-            }
+    pub fn rotateBySpin(self: *World, transform_component_id_value: []const u8, spin_component_id_value: []const u8, delta_seconds: f32) bool {
+        if (!std.mem.eql(u8, transform_component_id_value, transform_component_id) or
+            !std.mem.eql(u8, spin_component_id_value, spin_component_id))
+        {
+            return false;
         }
-    }
 
-    fn runScheduledSystem(self: *World, runner: SystemRunner, delta_seconds: f32) void {
-        switch (runner) {
-            .none => {},
-            .rotate_by_spin => |multiplier| self.rotateSpinningEntities(delta_seconds * multiplier),
-        }
-    }
-
-    fn rotateSpinningEntities(self: *World, delta_seconds: f32) void {
         for (self.transforms.items, self.spins.items) |*maybe_transform, maybe_spin| {
             const spin = maybe_spin orelse continue;
             if (maybe_transform.*) |*transform| {
@@ -638,6 +626,7 @@ pub const World = struct {
                 transform.rotation[2] += spin.angular_velocity[2] * delta_seconds;
             }
         }
+        return true;
     }
 
     pub fn renderableCubeCount(self: World) usize {
@@ -816,9 +805,9 @@ fn systemDefinitionsEqual(left: SystemDefinition, right: SystemDefinition) bool 
 fn systemRunnersEqual(left: SystemRunner, right: SystemRunner) bool {
     return switch (left) {
         .none => right == .none,
-        .rotate_by_spin => |left_multiplier| switch (right) {
+        .luau => |left_ref| switch (right) {
             .none => false,
-            .rotate_by_spin => |right_multiplier| left_multiplier == right_multiplier,
+            .luau => |right_ref| left_ref == right_ref,
         },
     };
 }
@@ -891,7 +880,7 @@ test "world rejects duplicate entity ids" {
     try std.testing.expectError(WorldError.DuplicateEntityId, world.createEntity("entity-1", "Two"));
 }
 
-test "world update schedule runs scripted rotation runner" {
+test "world rotates transforms through spin component data" {
     var world = World.init(std.testing.allocator);
     defer world.deinit();
 
@@ -899,30 +888,13 @@ test "world update schedule runs scripted rotation runner" {
     try world.setTransform(entity, .{ .rotation = .{ 0.1, 0.2, 0.3 } });
     try world.setSpin(entity, .{ .angular_velocity = .{ 1.0, 2.0, -4.0 } });
 
-    const systems = try std.testing.allocator.alloc(ScheduledSystem, 1);
-    defer std.testing.allocator.free(systems);
-    systems[0] = .{
-        .registry_index = 0,
-        .id = "rotate_cubes",
-        .runner = .{ .rotate_by_spin = 1.0 },
-    };
-    const batches = try std.testing.allocator.alloc(SystemBatch, 1);
-    defer std.testing.allocator.free(batches);
-    batches[0] = .{
-        .phase = .update,
-        .systems = systems,
-    };
-    const schedule = SystemSchedule{
-        .allocator = std.testing.allocator,
-        .batches = batches,
-    };
-
-    world.runUpdateSchedule(schedule, 0.5);
+    try std.testing.expect(world.rotateBySpin(transform_component_id, spin_component_id, 0.5));
 
     const transform_after = (try world.getTransform(entity)) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(f32, 0.6), transform_after.rotation[0]);
     try std.testing.expectEqual(@as(f32, 1.2), transform_after.rotation[1]);
     try std.testing.expectEqual(@as(f32, -1.7), transform_after.rotation[2]);
+    try std.testing.expect(!world.rotateBySpin("health", spin_component_id, 0.5));
 }
 
 test "type ids distinguish project-local, package, and engine namespaces" {

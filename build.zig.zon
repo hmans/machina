@@ -12,6 +12,7 @@
         "build.zig",
         "build.zig.zon",
         "src",
+        "third_party/luau",
         "third_party/wgpu_native_zig",
     },
 }

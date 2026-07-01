@@ -107,7 +107,7 @@ fn run(
         try stdout.print("Scene entities: {d}\n", .{live_project.scene.entityCount()});
         try stdout.print("Scripts: {d}, update batches: {d}\n", .{
             live_project.project.scripts.len,
-            live_project.schedule.batchCount(),
+            live_project.scripts.schedule.batchCount(),
         });
 
         machina.runDemoWindow(allocator, result.project.name, window_options, live_project.renderScene()) catch |err| {
