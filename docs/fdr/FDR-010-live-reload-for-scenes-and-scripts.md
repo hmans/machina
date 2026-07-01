@@ -10,6 +10,7 @@ Live reload lets users, editor tools, and agents change scene and script files w
 ## Behavior
 
 - Interactive runs detect changed scene and script source files.
+- The current implementation polls the default scene during `machina run` and reloads valid scene edits without restarting the window.
 - Reloaded files are parsed and validated before they replace active runtime state.
 - Compatible scene changes patch existing entity/component state using stable entity ids.
 - Script reloads report load, compile, binding, and runtime diagnostics with file and location information where possible.

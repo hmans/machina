@@ -38,10 +38,16 @@ pub const RenderError = error{
 
 pub const WindowOptions = struct {
     max_frames: ?u32 = null,
+    scene_reload: ?SceneReloadHook = null,
 };
 
 pub const Scene = struct {
     world: *const runtime.World,
+};
+
+pub const SceneReloadHook = struct {
+    context: *anyopaque,
+    poll: *const fn (context: *anyopaque) ?Scene,
 };
 
 pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const u8, scene: Scene) !void {
@@ -139,7 +145,7 @@ pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const 
     try write24BitBmp(io, allocator, output_path, mapped[0..output_size]);
 }
 
-pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: WindowOptions, scene: Scene) !void {
+pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: WindowOptions, initial_scene: Scene) !void {
     if (builtin.os.tag != .macos) {
         return RenderError.WindowingUnsupported;
     }
@@ -182,6 +188,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
     defer capabilities.freeMembers();
 
     const surface_format = chooseSurfaceFormat(capabilities) orelse return RenderError.NoSurfaceFormat;
+    var scene = initial_scene;
     var demo = try CubeDemo.create(allocator, gpu.device, gpu.queue, surface_format, scene);
     defer demo.deinit();
 
@@ -213,6 +220,15 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
 
         if (!running) {
             break;
+        }
+
+        if (options.scene_reload) |reload| {
+            if (reload.poll(reload.context)) |reloaded_scene| {
+                const reloaded_demo = try CubeDemo.create(allocator, gpu.device, gpu.queue, surface_format, reloaded_scene);
+                demo.deinit();
+                demo = reloaded_demo;
+                scene = reloaded_scene;
+            }
         }
 
         try configureSurfaceFromWindow(surface, gpu.device, window, surface_format, &width, &height);

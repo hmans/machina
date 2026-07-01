@@ -53,6 +53,72 @@ pub const CheckResult = struct {
     project: Project,
 };
 
+const SceneFileStamp = struct {
+    size: u64,
+    mtime: Io.Timestamp,
+
+    fn eql(self: SceneFileStamp, other: SceneFileStamp) bool {
+        return self.size == other.size and self.mtime.nanoseconds == other.mtime.nanoseconds;
+    }
+};
+
+pub const SceneReloadInfo = struct {
+    entity_count: usize,
+    renderable_cube_count: usize,
+};
+
+pub const SceneReloadResult = union(enum) {
+    unchanged,
+    reloaded: SceneReloadInfo,
+};
+
+pub const LiveScene = struct {
+    io: Io,
+    allocator: std.mem.Allocator,
+    project: *const Project,
+    scene: Scene,
+    last_seen_stamp: SceneFileStamp,
+
+    pub fn init(io: Io, allocator: std.mem.Allocator, project: *const Project) !LiveScene {
+        const scene = try loadDefaultScene(io, allocator, project.*);
+        errdefer freeScene(allocator, scene);
+
+        return .{
+            .io = io,
+            .allocator = allocator,
+            .project = project,
+            .scene = scene,
+            .last_seen_stamp = try statDefaultScene(io, project.*),
+        };
+    }
+
+    pub fn deinit(self: *LiveScene) void {
+        freeScene(self.allocator, self.scene);
+    }
+
+    pub fn renderScene(self: *const LiveScene) RenderScene {
+        return self.scene.renderScene();
+    }
+
+    pub fn pollDefaultScene(self: *LiveScene) !SceneReloadResult {
+        const stamp = try statDefaultScene(self.io, self.project.*);
+        if (stamp.eql(self.last_seen_stamp)) {
+            return .unchanged;
+        }
+
+        self.last_seen_stamp = stamp;
+        const next_scene = try loadDefaultScene(self.io, self.allocator, self.project.*);
+        const info = SceneReloadInfo{
+            .entity_count = next_scene.entityCount(),
+            .renderable_cube_count = next_scene.renderableCubeCount(),
+        };
+
+        freeScene(self.allocator, self.scene);
+        self.scene = next_scene;
+        return .{ .reloaded = info };
+    }
+};
+
 pub const ProjectError = error{
     AlreadyExists,
     InvalidProject,
@@ -156,6 +222,21 @@ pub fn loadDefaultScene(io: Io, allocator: std.mem.Allocator, project: Project) 
     defer root_dir.close(io);
 
     return loadSceneFile(io, allocator, root_dir, project.default_scene);
+}
+
+fn statDefaultScene(io: Io, project: Project) !SceneFileStamp {
+    const cwd = Io.Dir.cwd();
+    const root_dir = try cwd.openDir(io, project.root_path, .{});
+    defer root_dir.close(io);
+
+    const stat = root_dir.statFile(io, project.default_scene, .{}) catch |err| switch (err) {
+        error.FileNotFound => return ProjectError.MissingDefaultScene,
+        else => return err,
+    };
+    return .{
+        .size = stat.size,
+        .mtime = stat.mtime,
+    };
 }
 
 pub fn freeScene(allocator: std.mem.Allocator, scene: Scene) void {
@@ -656,6 +737,73 @@ test "checkProject rejects duplicate scene entity ids" {
         ProjectError.DuplicateSceneEntityId,
         checkProject(io, std.testing.allocator, root_path),
     );
+}
+
+test "LiveScene reloads changed default scene and keeps last good state on failure" {
+    const root_path = ".zig-cache/test-live-scene-reload";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+
+    const result = try checkProject(io, std.testing.allocator, root_path);
+    defer freeProject(std.testing.allocator, result.project);
+
+    var live_scene = try LiveScene.init(io, std.testing.allocator, &result.project);
+    defer live_scene.deinit();
+    try std.testing.expectEqual(@as(usize, 1), live_scene.scene.entityCount());
+    try std.testing.expectEqual(SceneReloadResult.unchanged, try live_scene.pollDefaultScene());
+
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+
+    try root_dir.writeFile(io, .{
+        .sub_path = default_scene_path,
+        .data =
+        \\name = "Main"
+        \\version = 1
+        \\
+        \\[[entities]]
+        \\id = "one"
+        \\name = "One"
+        \\kind = "cube"
+        \\
+        \\[[entities]]
+        \\id = "two"
+        \\name = "Two"
+        \\kind = "cube"
+        \\
+        ,
+    });
+
+    const reload = try live_scene.pollDefaultScene();
+    try std.testing.expectEqual(@as(usize, 2), reload.reloaded.entity_count);
+    try std.testing.expectEqual(@as(usize, 2), live_scene.scene.entityCount());
+
+    try root_dir.writeFile(io, .{
+        .sub_path = default_scene_path,
+        .data =
+        \\name = "Main"
+        \\version = 1
+        \\
+        \\[[entities]]
+        \\id = "same"
+        \\name = "One"
+        \\kind = "cube"
+        \\
+        \\[[entities]]
+        \\id = "same"
+        \\name = "Two"
+        \\kind = "cube"
+        \\
+        ,
+    });
+
+    try std.testing.expectError(ProjectError.DuplicateSceneEntityId, live_scene.pollDefaultScene());
+    try std.testing.expectEqual(@as(usize, 2), live_scene.scene.entityCount());
+    try std.testing.expectEqual(SceneReloadResult.unchanged, try live_scene.pollDefaultScene());
 }
 
 test "initProject escapes project names in metadata" {

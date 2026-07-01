@@ -72,7 +72,7 @@ fn run(
 
     if (std.mem.eql(u8, command, "run")) {
         const target_path = if (args.len >= 3) args[2] else ".";
-        const window_options = parseWindowOptions(args[3..]) catch |err| {
+        var window_options = parseWindowOptions(args[3..]) catch |err| {
             try printArgumentError(stderr, err);
             return 1;
         };
@@ -81,17 +81,27 @@ fn run(
             return 1;
         };
         defer machina.freeProject(allocator, result.project);
-        const scene = machina.loadDefaultScene(io, allocator, result.project) catch |err| {
+        var live_scene = machina.LiveScene.init(io, std.heap.smp_allocator, &result.project) catch |err| {
             try printProjectError(stderr, target_path, err);
             return 1;
         };
-        defer machina.freeScene(allocator, scene);
+        defer live_scene.deinit();
+
+        var reload_context = SceneReloadContext{
+            .live_scene = &live_scene,
+            .stderr = stderr,
+            .target_path = target_path,
+        };
+        window_options.scene_reload = .{
+            .context = &reload_context,
+            .poll = pollSceneReload,
+        };
 
         try stdout.print("Loaded project {s}\n", .{result.project.name});
         try stdout.print("Selected scene: {s}\n", .{result.project.default_scene});
-        try stdout.print("Scene entities: {d}\n", .{scene.entityCount()});
+        try stdout.print("Scene entities: {d}\n", .{live_scene.scene.entityCount()});
 
-        machina.runDemoWindow(allocator, result.project.name, window_options, scene.renderScene()) catch |err| {
+        machina.runDemoWindow(allocator, result.project.name, window_options, live_scene.renderScene()) catch |err| {
             try stderr.print("run failed: {s}\n", .{@errorName(err)});
             return 1;
         };
@@ -187,6 +197,33 @@ const ArgumentError = error{
     InvalidFrames,
     UnknownArgument,
 };
+
+const SceneReloadContext = struct {
+    live_scene: *machina.LiveScene,
+    stderr: *Io.Writer,
+    target_path: []const u8,
+};
+
+fn pollSceneReload(raw_context: *anyopaque) ?machina.RenderScene {
+    const context: *SceneReloadContext = @ptrCast(@alignCast(raw_context));
+    const result = context.live_scene.pollDefaultScene() catch |err| {
+        printProjectError(context.stderr, context.target_path, err) catch {};
+        context.stderr.flush() catch {};
+        return null;
+    };
+
+    switch (result) {
+        .unchanged => return null,
+        .reloaded => |info| {
+            context.stderr.print(
+                "Reloaded scene: {d} entities, {d} renderable cubes\n",
+                .{ info.entity_count, info.renderable_cube_count },
+            ) catch {};
+            context.stderr.flush() catch {};
+            return context.live_scene.renderScene();
+        },
+    }
+}
 
 fn parseWindowOptions(args: []const []const u8) ArgumentError!machina.WindowOptions {
     var options = machina.WindowOptions{};
