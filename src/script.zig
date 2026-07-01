@@ -71,13 +71,6 @@ fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
         .version = 1,
         .fields = &spin_fields,
     });
-
-    try registry.registerEngineSystem(.{
-        .id = runtime.rotate_system_id,
-        .phase = .update,
-        .reads = &.{runtime.spin_component_id},
-        .writes = &.{runtime.transform_component_id},
-    });
 }
 
 const DeclarationParser = struct {
@@ -154,6 +147,7 @@ const DeclarationParser = struct {
         var writes: std.ArrayList([]const u8) = .empty;
         var before: std.ArrayList([]const u8) = .empty;
         var after: std.ArrayList([]const u8) = .empty;
+        var runner: runtime.SystemRunner = .none;
         defer reads.deinit(self.allocator);
         defer writes.deinit(self.allocator);
         defer before.deinit(self.allocator);
@@ -180,7 +174,7 @@ const DeclarationParser = struct {
             } else if (std.mem.eql(u8, key, "after")) {
                 try self.parseStringList(&after);
             } else if (std.mem.eql(u8, key, "run")) {
-                return ScriptError.UnsupportedScript;
+                runner = try self.parseRunFunction();
             } else {
                 return ScriptError.UnsupportedScript;
             }
@@ -188,6 +182,7 @@ const DeclarationParser = struct {
             try self.consumeSeparatorOrEnd();
         }
 
+        try validateRunnerAccess(runner, reads.items, writes.items);
         try self.registry.registerProjectSystem(.{
             .id = id,
             .phase = phase,
@@ -195,7 +190,36 @@ const DeclarationParser = struct {
             .writes = writes.items,
             .before = before.items,
             .after = after.items,
+            .runner = runner,
         });
+    }
+
+    fn parseRunFunction(self: *DeclarationParser) ScriptError!runtime.SystemRunner {
+        try self.expectLiteral("function");
+        try self.expectByte('(');
+        try self.expectLiteral("world");
+        try self.expectByte(',');
+        try self.expectLiteral("dt");
+        try self.expectByte(')');
+
+        try self.expectLiteral("world.rotate");
+        try self.expectByte('(');
+        const transform_id = try self.parseString();
+        try self.expectByte(',');
+        const spin_id = try self.parseString();
+        try self.expectByte(',');
+        try self.expectLiteral("dt");
+        try self.expectByte(')');
+        _ = self.consumeByte(';');
+
+        try self.expectLiteral("end");
+
+        if (std.mem.eql(u8, transform_id, runtime.transform_component_id) and
+            std.mem.eql(u8, spin_id, runtime.spin_component_id))
+        {
+            return .rotate_by_spin;
+        }
+        return ScriptError.UnsupportedScript;
     }
 
     fn parseFieldTable(
@@ -364,6 +388,30 @@ fn parseSystemPhase(value: []const u8) ScriptError!runtime.SystemPhase {
     return ScriptError.UnknownSystemPhase;
 }
 
+fn validateRunnerAccess(
+    runner: runtime.SystemRunner,
+    reads: []const []const u8,
+    writes: []const []const u8,
+) ScriptError!void {
+    switch (runner) {
+        .none => {},
+        .rotate_by_spin => {
+            if (!containsString(reads, runtime.spin_component_id) or !containsString(writes, runtime.transform_component_id)) {
+                return ScriptError.InvalidScript;
+            }
+        },
+    }
+}
+
+fn containsString(values: []const []const u8, needle: []const u8) bool {
+    for (values) |value| {
+        if (std.mem.eql(u8, value, needle)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 fn isIdentifierStart(byte: u8) bool {
     return std.ascii.isAlphabetic(byte) or byte == '_';
 }
@@ -388,17 +436,43 @@ test "script declarations register components and systems" {
         \\  },
         \\})
         \\
-        \\ecs.system("health_regen", {
+        \\ecs.system("rotate_cubes", {
         \\  phase = "update",
-        \\  reads = { "machina.transform" },
-        \\  writes = { "health" },
+        \\  reads = { "machina.spin" },
+        \\  writes = { "machina.transform" },
+        \\  run = function(world, dt)
+        \\    world.rotate("machina.transform", "machina.spin", dt)
+        \\  end,
         \\})
         ,
     };
     try parser.parse();
 
     try std.testing.expect(registry.findComponent("health") != null);
-    try std.testing.expect(registry.findSystem("health_regen") != null);
+    const system = registry.findSystem("rotate_cubes") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(runtime.SystemRunner.rotate_by_spin, system.runner);
+}
+
+test "script runner body must match declared access" {
+    var registry = runtime.ComponentRegistry.init(std.testing.allocator);
+    defer registry.deinit();
+    try registerEngineTypes(&registry);
+
+    var parser = DeclarationParser{
+        .allocator = std.testing.allocator,
+        .registry = &registry,
+        .source =
+        \\ecs.system("rotate_cubes", {
+        \\  reads = { "machina.spin" },
+        \\  writes = { "health" },
+        \\  run = function(world, dt)
+        \\    world.rotate("machina.transform", "machina.spin", dt)
+        \\  end,
+        \\})
+        ,
+    };
+
+    try std.testing.expectError(ScriptError.InvalidScript, parser.parse());
 }
 
 test "update schedule batches read-only systems and separates write conflicts" {
@@ -425,7 +499,7 @@ test "update schedule batches read-only systems and separates write conflicts" {
     defer schedule.deinit();
 
     try std.testing.expectEqual(@as(usize, 2), schedule.batchCount());
-    try std.testing.expectEqual(@as(usize, 4), schedule.systemCount());
+    try std.testing.expectEqual(@as(usize, 3), schedule.systemCount());
     try std.testing.expectEqual(@as(usize, 2), schedule.batches[0].systems.len);
-    try std.testing.expectEqual(@as(usize, 2), schedule.batches[1].systems.len);
+    try std.testing.expectEqual(@as(usize, 1), schedule.batches[1].systems.len);
 }

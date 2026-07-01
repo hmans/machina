@@ -27,7 +27,6 @@ const engine_namespace = "machina";
 pub const transform_component_id = "machina.transform";
 pub const cube_renderer_component_id = "machina.render.cube";
 pub const spin_component_id = "machina.spin";
-pub const rotate_system_id = "machina.rotate";
 
 pub const FieldType = enum {
     boolean,
@@ -61,11 +60,18 @@ pub const SystemDefinition = struct {
     writes: []const []const u8 = &.{},
     before: []const []const u8 = &.{},
     after: []const []const u8 = &.{},
+    runner: SystemRunner = .none,
+};
+
+pub const SystemRunner = enum {
+    none,
+    rotate_by_spin,
 };
 
 pub const ScheduledSystem = struct {
     registry_index: usize,
     id: []const u8,
+    runner: SystemRunner,
 };
 
 pub const SystemBatch = struct {
@@ -264,6 +270,7 @@ pub const ComponentRegistry = struct {
                 systems[batch_index] = .{
                     .registry_index = registry_index,
                     .id = try allocator.dupe(u8, self.systems.items[registry_index].id),
+                    .runner = self.systems.items[registry_index].runner,
                 };
                 copied_system_count += 1;
             }
@@ -410,6 +417,7 @@ pub const ComponentRegistry = struct {
             .writes = writes,
             .before = before,
             .after = after,
+            .runner = definition.runner,
         };
     }
 
@@ -609,14 +617,15 @@ pub const World = struct {
                 continue;
             }
             for (batch.systems) |system| {
-                self.runEngineSystem(system.id, delta_seconds);
+                self.runScheduledSystem(system.runner, delta_seconds);
             }
         }
     }
 
-    fn runEngineSystem(self: *World, system_id: []const u8, delta_seconds: f32) void {
-        if (std.mem.eql(u8, system_id, rotate_system_id)) {
-            self.rotateSpinningEntities(delta_seconds);
+    fn runScheduledSystem(self: *World, runner: SystemRunner, delta_seconds: f32) void {
+        switch (runner) {
+            .none => {},
+            .rotate_by_spin => self.rotateSpinningEntities(delta_seconds),
         }
     }
 
@@ -797,6 +806,7 @@ fn componentDefinitionsEqual(left: ComponentDefinition, right: ComponentDefiniti
 
 fn systemDefinitionsEqual(left: SystemDefinition, right: SystemDefinition) bool {
     return std.mem.eql(u8, left.id, right.id) and left.phase == right.phase and
+        left.runner == right.runner and
         stringListsEqual(left.reads, right.reads) and
         stringListsEqual(left.writes, right.writes) and
         stringListsEqual(left.before, right.before) and
@@ -871,7 +881,7 @@ test "world rejects duplicate entity ids" {
     try std.testing.expectError(WorldError.DuplicateEntityId, world.createEntity("entity-1", "Two"));
 }
 
-test "world update schedule runs built-in rotation system" {
+test "world update schedule runs scripted rotation runner" {
     var world = World.init(std.testing.allocator);
     defer world.deinit();
 
@@ -883,7 +893,8 @@ test "world update schedule runs built-in rotation system" {
     defer std.testing.allocator.free(systems);
     systems[0] = .{
         .registry_index = 0,
-        .id = rotate_system_id,
+        .id = "rotate_cubes",
+        .runner = .rotate_by_spin,
     };
     const batches = try std.testing.allocator.alloc(SystemBatch, 1);
     defer std.testing.allocator.free(batches);

@@ -1324,7 +1324,7 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     defer live_project.deinit();
     try std.testing.expect(live_project.registry.findComponent("health") != null);
     try std.testing.expect(live_project.registry.findComponent("mood") == null);
-    try std.testing.expectEqual(@as(usize, 2), live_project.schedule.systemCount());
+    try std.testing.expectEqual(@as(usize, 1), live_project.schedule.systemCount());
 
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
@@ -1356,7 +1356,7 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     try std.testing.expect(!reload.reloaded.scene_reloaded);
     try std.testing.expect(reload.reloaded.scripts_reloaded);
     try std.testing.expect(live_project.registry.findComponent("mood") != null);
-    try std.testing.expectEqual(@as(usize, 3), live_project.schedule.systemCount());
+    try std.testing.expectEqual(@as(usize, 2), live_project.schedule.systemCount());
 
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
@@ -1371,7 +1371,7 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
 
     try std.testing.expectError(ProjectError.InvalidScript, live_project.pollLoadedSources());
     try std.testing.expect(live_project.registry.findComponent("mood") != null);
-    try std.testing.expectEqual(@as(usize, 3), live_project.schedule.systemCount());
+    try std.testing.expectEqual(@as(usize, 2), live_project.schedule.systemCount());
     try std.testing.expectEqual(ReloadResult.unchanged, try live_project.pollLoadedSources());
 }
 
@@ -1383,6 +1383,26 @@ test "LiveProject update runs the scheduled rotation system" {
     defer cwd.deleteTree(io, root_path) catch {};
 
     try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.createDirPath(io, "scripts");
+
+    try root_dir.writeFile(io, .{
+        .sub_path = project_file_name,
+        .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
+    });
+    try root_dir.writeFile(io, .{
+        .sub_path = "scripts/gameplay.luau",
+        .data =
+        \\ecs.system("rotate_cubes", {
+        \\  reads = { "machina.spin" },
+        \\  writes = { "machina.transform" },
+        \\  run = function(world, dt)
+        \\    world.rotate("machina.transform", "machina.spin", dt)
+        \\  end,
+        \\})
+        ,
+    });
 
     var live_project = try LiveProject.init(io, std.testing.allocator, root_path);
     defer live_project.deinit();

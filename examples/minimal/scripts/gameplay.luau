@@ -11,10 +11,19 @@ ecs.component("mood", {
   },
 })
 
+ecs.system("rotate_cubes", {
+  phase = "update",
+  reads = { "machina.spin" },
+  writes = { "machina.transform" },
+  run = function(world, dt)
+    world.rotate("machina.transform", "machina.spin", dt)
+  end,
+})
+
 ecs.system("observe_cubes", {
   phase = "update",
   reads = { "machina.transform", "machina.render.cube" },
-  after = { "machina.rotate" },
+  after = { "rotate_cubes" },
 })
 
 ecs.system("observe_health", {
