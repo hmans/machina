@@ -59,13 +59,7 @@ fn run(
     }
 
     if (std.mem.eql(u8, command, "check")) {
-        const target_path = if (args.len >= 3) args[2] else ".";
-        const result = try checkProjectForCommand(io, allocator, target_path, stderr) orelse return 1;
-        defer machina.freeProject(allocator, result.project);
-        try stdout.print("Project OK: {s}\n", .{result.project.name});
-        try stdout.print("Default scene: {s}\n", .{result.project.default_scene});
-        try stdout.print("Scripts: {d}\n", .{result.project.scripts.len});
-        return 0;
+        return try checkCommand(io, allocator, args[2..], stdout, stderr);
     }
 
     if (std.mem.eql(u8, command, "run")) {
@@ -174,6 +168,60 @@ fn run(
     return 1;
 }
 
+const CheckOutputFormat = enum {
+    text,
+    json,
+};
+
+const CheckOptions = struct {
+    target_path: []const u8 = ".",
+    format: CheckOutputFormat = .text,
+};
+
+fn checkCommand(
+    io: Io,
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    stdout: *Io.Writer,
+    stderr: *Io.Writer,
+) !u8 {
+    const options = parseCheckOptions(args) catch |err| {
+        try printArgumentError(stderr, err);
+        return 1;
+    };
+
+    var result = machina.checkProjectDetailed(io, allocator, options.target_path) catch |err| {
+        switch (options.format) {
+            .text => try printProjectError(stderr, options.target_path, err),
+            .json => try printProjectErrorJson(stdout, options.target_path, err),
+        }
+        return 1;
+    };
+
+    switch (result) {
+        .ok => |ok| {
+            defer machina.freeProject(allocator, ok.project);
+            switch (options.format) {
+                .text => {
+                    try stdout.print("Project OK: {s}\n", .{ok.project.name});
+                    try stdout.print("Default scene: {s}\n", .{ok.project.default_scene});
+                    try stdout.print("Scripts: {d}\n", .{ok.project.scripts.len});
+                },
+                .json => try printCheckOkJson(stdout, ok.project),
+            }
+            return 0;
+        },
+        .invalid => |*diagnostic| {
+            defer diagnostic.deinit(allocator);
+            switch (options.format) {
+                .text => try printScriptDiagnostic(stderr, options.target_path, diagnostic.*),
+                .json => try printScriptDiagnosticJson(stdout, options.target_path, diagnostic.*),
+            }
+            return 1;
+        },
+    }
+}
+
 fn checkProjectForCommand(
     io: Io,
     allocator: std.mem.Allocator,
@@ -202,7 +250,7 @@ fn printHelp(writer: *Io.Writer) !void {
         \\  machina --version
         \\  machina help
         \\  machina init [path]
-        \\  machina check [path]
+        \\  machina check [path] [--format text|json]
         \\  machina run [path] [--frames N]
         \\  machina render [path] [output.bmp]
         \\  machina render-test [path] [output.bmp]
@@ -212,6 +260,7 @@ fn printHelp(writer: *Io.Writer) !void {
 
 const ArgumentError = error{
     InvalidFrames,
+    InvalidFormat,
     UnknownArgument,
 };
 
@@ -286,10 +335,51 @@ fn parseWindowOptions(args: []const []const u8) ArgumentError!machina.WindowOpti
     return options;
 }
 
+fn parseCheckOptions(args: []const []const u8) ArgumentError!CheckOptions {
+    var options = CheckOptions{};
+    var saw_path = false;
+    var index: usize = 0;
+    while (index < args.len) : (index += 1) {
+        const arg = args[index];
+        if (std.mem.eql(u8, arg, "--format")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.InvalidFormat;
+            }
+            options.format = try parseCheckOutputFormat(args[index]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--format=")) {
+            options.format = try parseCheckOutputFormat(arg["--format=".len..]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--")) {
+            return ArgumentError.UnknownArgument;
+        }
+        if (saw_path) {
+            return ArgumentError.UnknownArgument;
+        }
+        options.target_path = arg;
+        saw_path = true;
+    }
+    return options;
+}
+
+fn parseCheckOutputFormat(value: []const u8) ArgumentError!CheckOutputFormat {
+    if (std.mem.eql(u8, value, "text")) {
+        return .text;
+    }
+    if (std.mem.eql(u8, value, "json")) {
+        return .json;
+    }
+    return ArgumentError.InvalidFormat;
+}
+
 fn printArgumentError(writer: *Io.Writer, err: ArgumentError) !void {
     const message = switch (err) {
         ArgumentError.InvalidFrames => "--frames expects a positive integer",
-        ArgumentError.UnknownArgument => "unknown run argument",
+        ArgumentError.InvalidFormat => "--format expects text or json",
+        ArgumentError.UnknownArgument => "unknown argument",
     };
     try writer.print("{s}\n", .{message});
 }
@@ -311,7 +401,11 @@ fn expectedColorGroups(scene: machina.Scene) usize {
 }
 
 fn printProjectError(writer: *Io.Writer, root_path: []const u8, err: anyerror) !void {
-    const message = switch (err) {
+    try writer.print("{s}: {s}\n", .{ root_path, projectErrorMessage(err) });
+}
+
+fn projectErrorMessage(err: anyerror) []const u8 {
+    return switch (err) {
         machina.ProjectError.AlreadyExists => "project already exists",
         machina.ProjectError.InvalidProject => "not a valid Machina project",
         machina.ProjectError.MissingProjectFile => "missing project.machina.toml",
@@ -327,7 +421,6 @@ fn printProjectError(writer: *Io.Writer, root_path: []const u8, err: anyerror) !
         machina.ProjectError.InvalidScript => "invalid script",
         else => "unexpected project error",
     };
-    try writer.print("{s}: {s}\n", .{ root_path, message });
 }
 
 fn printScriptDiagnostic(writer: *Io.Writer, root_path: []const u8, diagnostic: machina.ScriptDiagnostic) !void {
@@ -338,7 +431,88 @@ fn printScriptDiagnostic(writer: *Io.Writer, root_path: []const u8, diagnostic: 
     if (diagnostic.system_id) |system_id| {
         try writer.print(" system {s}", .{system_id});
     }
+    if (diagnostic.start) |start| {
+        try writer.print(":{d}", .{start.line});
+        if (start.column) |column| {
+            try writer.print(":{d}", .{column});
+        }
+    }
     try writer.print(": {s}\n", .{diagnostic.message});
+}
+
+fn printCheckOkJson(writer: *Io.Writer, project: machina.Project) !void {
+    try writer.writeAll("{\"ok\":true,\"project\":{\"name\":");
+    try writeJsonString(writer, project.name);
+    try writer.writeAll(",\"default_scene\":");
+    try writeJsonString(writer, project.default_scene);
+    try writer.print(",\"scripts\":{d}", .{project.scripts.len});
+    try writer.writeAll("}}\n");
+}
+
+fn printProjectErrorJson(writer: *Io.Writer, root_path: []const u8, err: anyerror) !void {
+    try writer.writeAll("{\"ok\":false,\"error\":");
+    try writeJsonString(writer, @errorName(err));
+    try writer.writeAll(",\"root\":");
+    try writeJsonString(writer, root_path);
+    try writer.writeAll(",\"message\":");
+    try writeJsonString(writer, projectErrorMessage(err));
+    try writer.writeAll("}\n");
+}
+
+fn printScriptDiagnosticJson(writer: *Io.Writer, root_path: []const u8, diagnostic: machina.ScriptDiagnostic) !void {
+    try writer.writeAll("{\"ok\":false,\"diagnostic\":{");
+    try writer.writeAll("\"stage\":");
+    try writeJsonString(writer, @tagName(diagnostic.stage));
+    try writer.writeAll(",\"root\":");
+    try writeJsonString(writer, root_path);
+    if (diagnostic.path) |path| {
+        try writer.writeAll(",\"path\":");
+        try writeJsonString(writer, path);
+    }
+    if (diagnostic.system_id) |system_id| {
+        try writer.writeAll(",\"system_id\":");
+        try writeJsonString(writer, system_id);
+    }
+    if (diagnostic.start) |start| {
+        try writer.writeAll(",\"start\":");
+        try printDiagnosticPositionJson(writer, start);
+    }
+    if (diagnostic.end) |end| {
+        try writer.writeAll(",\"end\":");
+        try printDiagnosticPositionJson(writer, end);
+    }
+    try writer.writeAll(",\"message\":");
+    try writeJsonString(writer, diagnostic.message);
+    try writer.writeAll("}}\n");
+}
+
+fn printDiagnosticPositionJson(writer: *Io.Writer, position: machina.ScriptDiagnosticPosition) !void {
+    try writer.print("{{\"line\":{d}", .{position.line});
+    if (position.column) |column| {
+        try writer.print(",\"column\":{d}", .{column});
+    }
+    try writer.writeAll("}");
+}
+
+fn writeJsonString(writer: *Io.Writer, value: []const u8) !void {
+    try writer.writeByte('"');
+    for (value) |byte| {
+        switch (byte) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => {
+                if (byte < 0x20) {
+                    try writer.print("\\u{x:0>4}", .{byte});
+                } else {
+                    try writer.writeByte(byte);
+                }
+            },
+        }
+    }
+    try writer.writeByte('"');
 }
 
 fn projectNameFromPath(path: []const u8) []const u8 {
@@ -361,4 +535,23 @@ test "projectNameFromPath uses final path segment" {
     try std.testing.expectEqualStrings("demo", projectNameFromPath("games/demo"));
     try std.testing.expectEqualStrings("demo", projectNameFromPath("games/demo/"));
     try std.testing.expectEqualStrings("Machina Project", projectNameFromPath("."));
+}
+
+test "parseCheckOptions accepts path and json format" {
+    const args = [_][]const u8{ "examples/minimal", "--format=json" };
+    const options = try parseCheckOptions(&args);
+    try std.testing.expectEqualStrings("examples/minimal", options.target_path);
+    try std.testing.expectEqual(CheckOutputFormat.json, options.format);
+}
+
+test "parseCheckOptions accepts format before path" {
+    const args = [_][]const u8{ "--format", "json", "examples/minimal" };
+    const options = try parseCheckOptions(&args);
+    try std.testing.expectEqualStrings("examples/minimal", options.target_path);
+    try std.testing.expectEqual(CheckOutputFormat.json, options.format);
+}
+
+test "parseCheckOptions rejects unknown format" {
+    const args = [_][]const u8{"--format=yaml"};
+    try std.testing.expectError(ArgumentError.InvalidFormat, parseCheckOptions(&args));
 }

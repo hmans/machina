@@ -13,10 +13,11 @@ Script diagnostics report Luau and script-ECS failures in a form that humans, co
 - Live script reload can report why a changed script failed while keeping the last known good script program active.
 - Runtime system failures can report the failing system id and source script path when available.
 - Diagnostics identify the failure stage as load, registration, schedule, or runtime.
+- Diagnostics can include source positions. Syntax and runtime errors use Luau-reported line numbers when available; script ECS declarations use the line where the declaration function was called.
 - Diagnostics include a human-readable message from Luau or the engine validation layer.
 - Successful subsequent operations clear stale live diagnostics.
 - Command-line commands render diagnostics as text.
-- The diagnostic model is intended for future editor panels and machine-readable output.
+- `machina check` can render diagnostics as JSON for editor panels, automation, and agent workflows.
 
 ## Design Decisions
 
@@ -38,11 +39,17 @@ Script diagnostics report Luau and script-ECS failures in a form that humans, co
 **Why:** Live reload should be repairable in place. This follows ADR-009 and ADR-011.
 **Tradeoff:** The runtime must retain diagnostic state separately from active game state.
 
-### 4. Start with path and system identity before full source spans
+### 4. Start with line-level positions before full source spans
 
-**Decision:** Initial diagnostics include script path, system id when relevant, stage, and message, but not precise line and column spans yet.
-**Why:** These fields unblock the current debugging loop and establish the ownership model. Source ranges and stack traces can extend the same structure later.
-**Tradeoff:** Syntax errors still rely on Luau's message text for line details until source location fields are promoted.
+**Decision:** Diagnostics include source line numbers when the engine can derive them, while columns and multi-line ranges remain optional.
+**Why:** Line-level locations unblock editor navigation and agent repair loops without requiring a full Luau source map pipeline yet.
+**Tradeoff:** Some diagnostics still point at the declaration or failing line rather than the exact expression or token.
+
+### 5. Provide JSON through project validation first
+
+**Decision:** Machine-readable diagnostics are exposed through `machina check --format=json` before interactive run/reload output.
+**Why:** Project validation is the stable headless surface used by agents, tests, and editor integrations. Live run output can stay optimized for human stderr until the editor API is clearer.
+**Tradeoff:** Interactive reload diagnostics are not yet emitted as structured events.
 
 ## Related
 
@@ -52,5 +59,5 @@ Script diagnostics report Luau and script-ECS failures in a form that humans, co
 ## Open Questions
 
 - What stable diagnostic codes should Machina expose for editor and agent tooling?
-- How should Luau stack traces and source spans be represented?
-- Should headless commands support JSON diagnostics output?
+- How should Luau stack traces and full source ranges be represented?
+- Should interactive live reload expose structured diagnostic events in addition to stderr text?

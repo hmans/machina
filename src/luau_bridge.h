@@ -32,6 +32,7 @@ const char* machina_luau_last_error(const machina_luau* vm);
 size_t machina_luau_component_count(const machina_luau* vm);
 const char* machina_luau_component_id(const machina_luau* vm, size_t component_index);
 uint32_t machina_luau_component_version(const machina_luau* vm, size_t component_index);
+int machina_luau_component_line(const machina_luau* vm, size_t component_index);
 size_t machina_luau_component_field_count(const machina_luau* vm, size_t component_index);
 const char* machina_luau_component_field_name(const machina_luau* vm, size_t component_index, size_t field_index);
 const char* machina_luau_component_field_type(const machina_luau* vm, size_t component_index, size_t field_index);
@@ -40,6 +41,7 @@ size_t machina_luau_system_count(const machina_luau* vm);
 const char* machina_luau_system_id(const machina_luau* vm, size_t system_index);
 const char* machina_luau_system_phase(const machina_luau* vm, size_t system_index);
 uint32_t machina_luau_system_runner_ref(const machina_luau* vm, size_t system_index);
+int machina_luau_system_line(const machina_luau* vm, size_t system_index);
 
 size_t machina_luau_system_reads_count(const machina_luau* vm, size_t system_index);
 const char* machina_luau_system_reads_item(const machina_luau* vm, size_t system_index, size_t item_index);

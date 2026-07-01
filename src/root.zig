@@ -33,6 +33,7 @@ pub const RegistryError = runtime.RegistryError;
 pub const ScriptError = script.ScriptError;
 pub const ScriptProgram = script.Program;
 pub const ScriptDiagnostic = script.Diagnostic;
+pub const ScriptDiagnosticPosition = script.DiagnosticPosition;
 pub const validateTypeId = runtime.validateTypeId;
 pub const validateProjectTypeId = runtime.validateProjectTypeId;
 pub const validatePackageTypeId = runtime.validatePackageTypeId;
@@ -652,6 +653,8 @@ fn cloneScriptDiagnostic(allocator: std.mem.Allocator, diagnostic: ScriptDiagnos
         .stage = diagnostic.stage,
         .path = path,
         .system_id = system_id,
+        .start = diagnostic.start,
+        .end = diagnostic.end,
         .message = try allocator.dupe(u8, diagnostic.message),
     };
 }
@@ -1304,6 +1307,7 @@ test "checkProjectDetailed returns script diagnostics" {
             defer diagnostic.deinit(std.testing.allocator);
             try std.testing.expectEqual(script.DiagnosticStage.load, diagnostic.stage);
             try std.testing.expectEqualStrings("scripts/gameplay.luau", diagnostic.path orelse return error.TestExpectedEqual);
+            try std.testing.expectEqual(@as(u32, 1), (diagnostic.start orelse return error.TestExpectedEqual).line);
             try std.testing.expect(diagnostic.message.len > 0);
         },
     }
@@ -1459,6 +1463,7 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     const diagnostic = live_project.lastDiagnostic() orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(script.DiagnosticStage.registration, diagnostic.stage);
     try std.testing.expectEqualStrings("scripts/gameplay.luau", diagnostic.path orelse return error.TestExpectedEqual);
+    try std.testing.expectEqual(@as(u32, 1), (diagnostic.start orelse return error.TestExpectedEqual).line);
     try std.testing.expect(live_project.scripts.registry.findComponent("mood") != null);
     try std.testing.expectEqual(@as(usize, 2), live_project.scripts.schedule.systemCount());
     try std.testing.expectEqual(ReloadResult.unchanged, try live_project.pollLoadedSources());
@@ -1582,6 +1587,7 @@ test "LiveProject recovers after script update produces non-finite rotation delt
     try std.testing.expectEqual(script.DiagnosticStage.runtime, diagnostic.stage);
     try std.testing.expectEqualStrings("scripts/gameplay.luau", diagnostic.path orelse return error.TestExpectedEqual);
     try std.testing.expectEqualStrings("rotate_cubes", diagnostic.system_id orelse return error.TestExpectedEqual);
+    try std.testing.expect((diagnostic.start orelse return error.TestExpectedEqual).line > 0);
     try std.testing.expect(std.math.isFinite(after_bad.rotation[0]));
     try std.testing.expect(std.math.isFinite(after_bad.rotation[1]));
     try std.testing.expect(std.math.isFinite(after_bad.rotation[2]));

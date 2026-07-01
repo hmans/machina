@@ -19,6 +19,7 @@ struct ComponentDecl
 {
     std::string id;
     uint32_t version = 1;
+    int line = 0;
     std::vector<ComponentField> fields;
 };
 
@@ -31,6 +32,7 @@ struct SystemDecl
     std::vector<std::string> before;
     std::vector<std::string> after;
     uint32_t runner_ref = 0;
+    int line = 0;
 };
 
 struct machina_luau
@@ -75,6 +77,14 @@ static bool read_optional_string_field(lua_State* state, int table_index, const 
     out->assign(value, len);
     lua_pop(state, 1);
     return true;
+}
+
+static int caller_line(lua_State* state)
+{
+    lua_Debug ar;
+    if (lua_getinfo(state, 1, "l", &ar) && ar.currentline > 0)
+        return ar.currentline;
+    return 0;
 }
 
 static uint32_t read_optional_u32_field(lua_State* state, int table_index, const char* key, uint32_t fallback)
@@ -130,6 +140,7 @@ static int ecs_component(lua_State* state)
     machina_luau* vm = vm_from_upvalue(state);
     ComponentDecl component;
     component.id = check_string(state, 1);
+    component.line = caller_line(state);
 
     if (!lua_isnoneornil(state, 2))
     {
@@ -168,6 +179,7 @@ static int ecs_system(lua_State* state)
     machina_luau* vm = vm_from_upvalue(state);
     SystemDecl system;
     system.id = check_string(state, 1);
+    system.line = caller_line(state);
 
     if (!lua_isnoneornil(state, 2))
     {
@@ -317,6 +329,11 @@ uint32_t machina_luau_component_version(const machina_luau* vm, size_t component
     return vm && component_index < vm->components.size() ? vm->components[component_index].version : 1;
 }
 
+int machina_luau_component_line(const machina_luau* vm, size_t component_index)
+{
+    return vm && component_index < vm->components.size() ? vm->components[component_index].line : 0;
+}
+
 size_t machina_luau_component_field_count(const machina_luau* vm, size_t component_index)
 {
     return vm && component_index < vm->components.size() ? vm->components[component_index].fields.size() : 0;
@@ -354,6 +371,11 @@ const char* machina_luau_system_phase(const machina_luau* vm, size_t system_inde
 uint32_t machina_luau_system_runner_ref(const machina_luau* vm, size_t system_index)
 {
     return vm && system_index < vm->systems.size() ? vm->systems[system_index].runner_ref : 0;
+}
+
+int machina_luau_system_line(const machina_luau* vm, size_t system_index)
+{
+    return vm && system_index < vm->systems.size() ? vm->systems[system_index].line : 0;
 }
 
 static size_t string_list_count(const std::vector<std::string>* values)

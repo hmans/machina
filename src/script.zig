@@ -32,6 +32,8 @@ pub const Diagnostic = struct {
     stage: DiagnosticStage,
     path: ?[]const u8 = null,
     system_id: ?[]const u8 = null,
+    start: ?DiagnosticPosition = null,
+    end: ?DiagnosticPosition = null,
     message: []const u8,
 
     pub fn deinit(self: *Diagnostic, allocator: std.mem.Allocator) void {
@@ -46,6 +48,11 @@ pub const Diagnostic = struct {
     }
 };
 
+pub const DiagnosticPosition = struct {
+    line: u32,
+    column: ?u32 = null,
+};
+
 pub const LoadResult = union(enum) {
     program: Program,
     diagnostic: Diagnostic,
@@ -55,6 +62,7 @@ const ScriptOrigin = struct {
     index: usize,
     id: []const u8,
     path: []const u8,
+    start: ?DiagnosticPosition = null,
     runner_ref: u32 = 0,
 
     fn deinit(self: ScriptOrigin, allocator: std.mem.Allocator) void {
@@ -137,11 +145,14 @@ pub const Program = struct {
 
     fn setRuntimeDiagnostic(self: *Program, system: runtime.ScheduledSystem, runner_ref: u32) !void {
         const origin = self.findSystemOrigin(system.id, runner_ref);
+        const message = lastLuauError(self.vm);
+        const location = parseLuauDiagnosticPosition(message) orelse if (origin) |found| found.start else null;
         self.last_diagnostic = try makeDiagnostic(self.allocator, .{
             .stage = .runtime,
             .path = if (origin) |found| found.path else null,
             .system_id = system.id,
-            .message = lastLuauError(self.vm),
+            .start = location,
+            .message = message,
         });
     }
 
@@ -257,10 +268,12 @@ fn loadChunk(program: *Program, chunk_name: []const u8, source: []const u8) !?Di
     defer program.allocator.free(chunk_name_z);
 
     if (c.machina_luau_load(program.vm, chunk_name_z.ptr, source.ptr, source.len) == 0) {
+        const message = lastLuauError(program.vm);
         return try makeDiagnostic(program.allocator, .{
             .stage = .load,
             .path = chunk_name,
-            .message = lastLuauError(program.vm),
+            .start = parseLuauDiagnosticPosition(message),
+            .message = message,
         });
     }
 
@@ -347,31 +360,39 @@ fn registerDeclaredTypes(program: *Program) ScriptError!void {
 fn recordOrigins(program: *Program, path: []const u8, component_start: usize, system_start: usize) !void {
     const component_count = c.machina_luau_component_count(program.vm);
     for (component_start..component_count) |component_index| {
-        const id = try spanC(c.machina_luau_component_id(program.vm, component_index));
-        const owned_id = try program.allocator.dupe(u8, id);
-        errdefer program.allocator.free(owned_id);
-        const owned_path = try program.allocator.dupe(u8, path);
-        errdefer program.allocator.free(owned_path);
-        try program.component_origins.append(program.allocator, .{
-            .index = component_index,
-            .id = owned_id,
-            .path = owned_path,
-        });
+        {
+            const id = try spanC(c.machina_luau_component_id(program.vm, component_index));
+            const owned_id = try program.allocator.dupe(u8, id);
+            errdefer program.allocator.free(owned_id);
+            const owned_path = try program.allocator.dupe(u8, path);
+            errdefer program.allocator.free(owned_path);
+            const line = c.machina_luau_component_line(program.vm, component_index);
+            try program.component_origins.append(program.allocator, .{
+                .index = component_index,
+                .id = owned_id,
+                .path = owned_path,
+                .start = diagnosticPositionFromLine(line),
+            });
+        }
     }
 
     const system_count = c.machina_luau_system_count(program.vm);
     for (system_start..system_count) |system_index| {
-        const id = try spanC(c.machina_luau_system_id(program.vm, system_index));
-        const owned_id = try program.allocator.dupe(u8, id);
-        errdefer program.allocator.free(owned_id);
-        const owned_path = try program.allocator.dupe(u8, path);
-        errdefer program.allocator.free(owned_path);
-        try program.system_origins.append(program.allocator, .{
-            .index = system_index,
-            .id = owned_id,
-            .path = owned_path,
-            .runner_ref = c.machina_luau_system_runner_ref(program.vm, system_index),
-        });
+        {
+            const id = try spanC(c.machina_luau_system_id(program.vm, system_index));
+            const owned_id = try program.allocator.dupe(u8, id);
+            errdefer program.allocator.free(owned_id);
+            const owned_path = try program.allocator.dupe(u8, path);
+            errdefer program.allocator.free(owned_path);
+            const line = c.machina_luau_system_line(program.vm, system_index);
+            try program.system_origins.append(program.allocator, .{
+                .index = system_index,
+                .id = owned_id,
+                .path = owned_path,
+                .start = diagnosticPositionFromLine(line),
+                .runner_ref = c.machina_luau_system_runner_ref(program.vm, system_index),
+            });
+        }
     }
 }
 
@@ -383,6 +404,7 @@ fn registrationDiagnostic(program: *Program, err: anyerror) !Diagnostic {
             .stage = .registration,
             .path = origin.path,
             .system_id = origin.id,
+            .start = origin.start,
             .message = message,
         });
     }
@@ -391,6 +413,7 @@ fn registrationDiagnostic(program: *Program, err: anyerror) !Diagnostic {
         return makeDiagnostic(program.allocator, .{
             .stage = .registration,
             .path = origin.path,
+            .start = origin.start,
             .message = message,
         });
     }
@@ -404,6 +427,8 @@ const DiagnosticDraft = struct {
     stage: DiagnosticStage,
     path: ?[]const u8 = null,
     system_id: ?[]const u8 = null,
+    start: ?DiagnosticPosition = null,
+    end: ?DiagnosticPosition = null,
     message: []const u8,
 };
 
@@ -416,12 +441,48 @@ fn makeDiagnostic(allocator: std.mem.Allocator, draft: DiagnosticDraft) !Diagnos
         .stage = draft.stage,
         .path = path,
         .system_id = system_id,
+        .start = draft.start,
+        .end = draft.end,
         .message = try allocator.dupe(u8, draft.message),
     };
 }
 
 fn lastLuauError(vm: *c.machina_luau) []const u8 {
     return std.mem.span(c.machina_luau_last_error(vm));
+}
+
+fn diagnosticPositionFromLine(line: c_int) ?DiagnosticPosition {
+    if (line <= 0) {
+        return null;
+    }
+    return .{ .line = @intCast(line) };
+}
+
+fn parseLuauDiagnosticPosition(message: []const u8) ?DiagnosticPosition {
+    var index = std.mem.indexOfScalar(u8, message, ':') orelse return null;
+    while (index + 1 < message.len) {
+        const number_start = index + 1;
+        if (!std.ascii.isDigit(message[number_start])) {
+            index = std.mem.indexOfScalarPos(u8, message, index + 1, ':') orelse return null;
+            continue;
+        }
+
+        var number_end = number_start;
+        while (number_end < message.len and std.ascii.isDigit(message[number_end])) {
+            number_end += 1;
+        }
+        if (number_end >= message.len or message[number_end] != ':') {
+            index = std.mem.indexOfScalarPos(u8, message, number_end, ':') orelse return null;
+            continue;
+        }
+
+        const line = std.fmt.parseInt(u32, message[number_start..number_end], 10) catch return null;
+        if (line == 0) {
+            return null;
+        }
+        return .{ .line = line };
+    }
+    return null;
 }
 
 fn readSystemReads(allocator: std.mem.Allocator, vm: *c.machina_luau, system_index: usize) !std.ArrayList([]const u8) {
