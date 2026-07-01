@@ -10,11 +10,13 @@ The engine should encourage project authors and coding agents to think in entiti
 
 ## Decision
 
-Machina will use an ECS-ish component-system runtime model in the low-level engine.
+Machina will use an ECS-oriented component-system runtime model in the low-level engine.
 
 The core runtime owns entity identity, component storage, component validation, system scheduling, and query/mutation APIs. Scenes serialize entity and component data as text. Scripts interact with game state through a supported component/system API instead of directly owning authoritative scene structure.
 
-"ECS-ish" means Machina commits to component-oriented data and system-oriented behavior without yet committing to a specific storage layout, archetype design, scheduler, or third-party ECS library.
+Storage starts as sparse column tables: one table per component type, dense entity rows per table, sparse entity-to-row lookup, and typed SoA columns per component field. This supports engine and Luau-registered schemas without requiring native structs for every component.
+
+Machina does not yet commit to chunked archetypes, a third-party ECS library, or a final scheduler implementation.
 
 ## Consequences
 
@@ -22,4 +24,4 @@ Scenes, scripts, tests, editor tooling, and agent workflows get one shared menta
 
 The engine must design stable component schemas, diagnostics, migration behavior, and script bindings. It also needs discipline to prevent subsystem-specific state from bypassing the component model.
 
-Deferring the exact ECS storage strategy keeps early implementation flexible, but it requires explicit follow-up work before performance-sensitive systems arrive.
+The sparse SoA table layout gives early systems a real ECS data path, but it still requires explicit follow-up work for structural mutation, component removal, chunking/archetypes, migration, and parallel iteration.

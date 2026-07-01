@@ -21,7 +21,7 @@ Projects have a `project.machina.toml` file, a default scene path, and an option
 
 Rendering uses `wgpu-native`. Headful rendering currently uses SDL3 on macOS via Homebrew paths in `build.zig`; offscreen rendering writes BMP artifacts and is the preferred automation surface.
 
-The intended low-level runtime model is ECS-ish: stable entity identity, structured components, systems over component queries, and a scripting API that exposes those concepts directly. `src/runtime.zig` owns the current `World`, component registry, and system schedule planning. Scene loading builds a world, scripts register ECS component/system types, and rendering queries renderable components from that world.
+The low-level runtime model is ECS-oriented: stable entity identity, structured components, systems over component queries, and a scripting API that exposes those concepts directly. `src/runtime.zig` owns the current `World`, component registry, and system schedule planning. Component storage is columnar per component type: each component table has dense entity rows, a sparse entity-to-row index, and typed SoA field columns. Scene loading builds a world, scripts register ECS component/system types, and rendering queries renderable components from that world.
 
 Luau is the target scripting language. The current implementation parses a constrained Luau declaration surface for `ecs.component(...)` and `ecs.system(...)`, stores real Luau system callbacks, and runs them through the native scheduler. The example project declares a project-local `spin` component and rotates cubes with a Luau system that queries `world.query("machina.transform", "spin")`, reads vector fields with `entity.get_vec3(...)`, and writes vector fields with `entity.set_vec3(...)`. Keep the public API system-first: scripts declare component access, and the native engine owns scheduling, validation, reload transactions, and future parallelization.
 
@@ -33,7 +33,7 @@ Live reload is a core runtime capability. `machina run` currently uses a `LivePr
 - Prefer small vertical slices that leave `main` working.
 - Update ADRs when changing architecture or backend choices.
 - Update FDRs when changing feature behavior, command behavior, scene schema, or validation semantics.
-- Route runtime state through the ECS-ish world instead of introducing renderer-specific or script-owned side channels.
+- Route runtime state through the ECS world instead of introducing renderer-specific or script-owned side channels.
 - Script-defined ECS component and system types use explicit ids. Single lowercase ASCII identifier segments are project-local, qualified dotted ids are for packages/libraries, and `machina.*` is engine-owned. Machina does not infer a default project namespace.
 - Keep script behavior system-first. Do not introduce arbitrary per-object script callbacks that bypass the component registry or native scheduler.
 - Systems must declare phase plus read/write component access before they can participate in scheduling.

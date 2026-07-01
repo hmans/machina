@@ -13,7 +13,8 @@ The entity component runtime is the shared low-level model for game state. It gi
 - Components hold structured data and are validated against engine-owned or script-registered schemas.
 - Systems operate over component queries rather than over renderer-specific or script-owned object lists.
 - Scene files author entity and component data as text component tables.
-- The runtime world stores component instances in generic schema-shaped storage rather than renderer-specific side arrays.
+- The runtime world stores component instances in per-component column tables rather than renderer-specific side arrays.
+- Each component table owns dense entity rows, a sparse entity-to-row index, and typed SoA field columns derived from engine or script schemas.
 - Scripts can query entities by component set and mutate supported component fields through the scripting API.
 - Scripts can register new component and system types with project-local or qualified non-reserved ids.
 - Engine-owned and script-defined systems declare phases, read/write component access, and optional before/after ordering relationships.
@@ -29,11 +30,11 @@ The entity component runtime is the shared low-level model for game state. It gi
 **Why:** A shared component-system model keeps scene data, scripting, validation, and editor inspection aligned. It follows ADR-008.
 **Tradeoff:** The engine needs component schema and API design earlier than a hardcoded demo renderer would.
 
-### 2. Store component instances in the runtime world
+### 2. Store component instances in sparse column tables
 
-**Decision:** The runtime world owns generic component instances keyed by entity and component id. Engine helpers such as renderable cube iteration are adapters over component queries.
-**Why:** Real component storage removes renderer-specific side channels and lets scenes, scripts, tests, and future editor tools inspect the same state. It follows ADR-008.
-**Tradeoff:** The current storage is correctness-oriented and not yet an archetype or sparse-set design; performance layout remains future work.
+**Decision:** The runtime world owns one table per component type. A table stores entity handles densely, maps entity indexes back to table rows sparsely, and stores each component field in its own typed column.
+**Why:** SoA columns give systems and renderer adapters a real ECS storage shape while still supporting runtime-created Luau component schemas. It follows ADR-008.
+**Tradeoff:** This is not yet chunked archetype storage, and query planning is still simple. Structural mutation, removal, migration, and parallel iteration need follow-up design.
 
 ### 3. Expose a safe ECS facade to scripts
 

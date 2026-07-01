@@ -537,15 +537,161 @@ pub const ComponentFieldValue = struct {
     value: ComponentValue,
 };
 
-const ComponentInstance = struct {
+const ComponentColumnValues = union(FieldType) {
+    boolean: std.ArrayList(bool),
+    int: std.ArrayList(i32),
+    float: std.ArrayList(f32),
+    vec3: std.ArrayList([3]f32),
+    string: std.ArrayList([]const u8),
+
+    fn init(value: ComponentValue) ComponentColumnValues {
+        return switch (value) {
+            .boolean => .{ .boolean = .empty },
+            .int => .{ .int = .empty },
+            .float => .{ .float = .empty },
+            .vec3 => .{ .vec3 = .empty },
+            .string => .{ .string = .empty },
+        };
+    }
+
+    fn deinit(self: *ComponentColumnValues, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .boolean => |*values| values.deinit(allocator),
+            .int => |*values| values.deinit(allocator),
+            .float => |*values| values.deinit(allocator),
+            .vec3 => |*values| values.deinit(allocator),
+            .string => |*values| {
+                for (values.items) |value| {
+                    allocator.free(value);
+                }
+                values.deinit(allocator);
+            },
+        }
+    }
+
+    fn appendCopy(self: *ComponentColumnValues, allocator: std.mem.Allocator, value: ComponentValue) WorldError!void {
+        switch (self.*) {
+            .boolean => |*values| switch (value) {
+                .boolean => |payload| try values.append(allocator, payload),
+                else => return WorldError.InvalidFieldType,
+            },
+            .int => |*values| switch (value) {
+                .int => |payload| try values.append(allocator, payload),
+                else => return WorldError.InvalidFieldType,
+            },
+            .float => |*values| switch (value) {
+                .float => |payload| try values.append(allocator, payload),
+                else => return WorldError.InvalidFieldType,
+            },
+            .vec3 => |*values| switch (value) {
+                .vec3 => |payload| try values.append(allocator, payload),
+                else => return WorldError.InvalidFieldType,
+            },
+            .string => |*values| switch (value) {
+                .string => |payload| {
+                    const owned = try allocator.dupe(u8, payload);
+                    errdefer allocator.free(owned);
+                    try values.append(allocator, owned);
+                },
+                else => return WorldError.InvalidFieldType,
+            },
+        }
+    }
+
+    fn setCopy(self: *ComponentColumnValues, allocator: std.mem.Allocator, row: usize, value: ComponentValue) WorldError!void {
+        switch (self.*) {
+            .boolean => |*values| switch (value) {
+                .boolean => |payload| values.items[row] = payload,
+                else => return WorldError.InvalidFieldType,
+            },
+            .int => |*values| switch (value) {
+                .int => |payload| values.items[row] = payload,
+                else => return WorldError.InvalidFieldType,
+            },
+            .float => |*values| switch (value) {
+                .float => |payload| values.items[row] = payload,
+                else => return WorldError.InvalidFieldType,
+            },
+            .vec3 => |*values| switch (value) {
+                .vec3 => |payload| values.items[row] = payload,
+                else => return WorldError.InvalidFieldType,
+            },
+            .string => |*values| switch (value) {
+                .string => |payload| {
+                    const owned = try allocator.dupe(u8, payload);
+                    allocator.free(values.items[row]);
+                    values.items[row] = owned;
+                },
+                else => return WorldError.InvalidFieldType,
+            },
+        }
+    }
+
+    fn popValue(self: *ComponentColumnValues, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .boolean => |*values| _ = values.pop(),
+            .int => |*values| _ = values.pop(),
+            .float => |*values| _ = values.pop(),
+            .vec3 => |*values| _ = values.pop(),
+            .string => |*values| {
+                const value = values.pop().?;
+                allocator.free(value);
+            },
+        }
+    }
+
+    fn valueAt(self: ComponentColumnValues, row: usize) ComponentValue {
+        return switch (self) {
+            .boolean => |values| .{ .boolean = values.items[row] },
+            .int => |values| .{ .int = values.items[row] },
+            .float => |values| .{ .float = values.items[row] },
+            .vec3 => |values| .{ .vec3 = values.items[row] },
+            .string => |values| .{ .string = values.items[row] },
+        };
+    }
+
+    fn valueType(self: ComponentColumnValues) FieldType {
+        return switch (self) {
+            .boolean => .boolean,
+            .int => .int,
+            .float => .float,
+            .vec3 => .vec3,
+            .string => .string,
+        };
+    }
+};
+
+const ComponentColumn = struct {
+    name: []const u8,
+    values: ComponentColumnValues,
+
+    fn deinit(self: *ComponentColumn, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        self.values.deinit(allocator);
+    }
+};
+
+const ComponentTable = struct {
     id: []const u8,
-    fields: []ComponentFieldValue,
+    entities: std.ArrayList(EntityHandle) = .empty,
+    rows_by_entity: std.ArrayList(?usize) = .empty,
+    columns: []ComponentColumn = &.{},
+
+    fn deinit(self: *ComponentTable, allocator: std.mem.Allocator) void {
+        allocator.free(self.id);
+        for (self.columns) |*column| {
+            column.deinit(allocator);
+        }
+        allocator.free(self.columns);
+        self.rows_by_entity.deinit(allocator);
+        self.entities.deinit(allocator);
+    }
 };
 
 pub const World = struct {
     allocator: std.mem.Allocator,
     entities: std.ArrayList(Entity) = .empty,
-    components: std.ArrayList(std.ArrayList(ComponentInstance)) = .empty,
+    component_tables: std.ArrayList(ComponentTable) = .empty,
 
     pub fn init(allocator: std.mem.Allocator) World {
         return .{ .allocator = allocator };
@@ -557,10 +703,10 @@ pub const World = struct {
             allocator.free(stored_entity.id);
             allocator.free(stored_entity.name);
         }
-        for (self.components.items) |*entity_components| {
-            self.freeComponentList(entity_components);
+        for (self.component_tables.items) |*component_table| {
+            component_table.deinit(allocator);
         }
-        self.components.deinit(allocator);
+        self.component_tables.deinit(allocator);
         self.entities.deinit(allocator);
         self.* = .{ .allocator = allocator };
     }
@@ -582,7 +728,16 @@ pub const World = struct {
         });
         errdefer _ = self.entities.pop();
 
-        try self.components.append(self.allocator, .empty);
+        var grown_tables: usize = 0;
+        errdefer {
+            for (self.component_tables.items[0..grown_tables]) |*table| {
+                _ = table.rows_by_entity.pop();
+            }
+        }
+        for (self.component_tables.items) |*table| {
+            try table.rows_by_entity.append(self.allocator, null);
+            grown_tables += 1;
+        }
 
         return handle;
     }
@@ -644,24 +799,19 @@ pub const World = struct {
 
     pub fn setComponent(self: *World, handle: EntityHandle, component_id: []const u8, fields: []const ComponentFieldValue) WorldError!void {
         const index = try self.componentIndex(handle);
-        const owned = try self.copyComponentInstance(component_id, fields);
-        errdefer self.freeComponentInstance(owned);
-
-        const entity_components = &self.components.items[index];
-        for (entity_components.items, 0..) |component, component_index| {
-            if (std.mem.eql(u8, component.id, component_id)) {
-                self.freeComponentInstance(component);
-                entity_components.items[component_index] = owned;
-                return;
-            }
+        const table_index = try self.ensureComponentTable(component_id, fields);
+        const table = &self.component_tables.items[table_index];
+        if (table.rows_by_entity.items[index]) |row| {
+            try self.updateComponentRow(table, row, fields);
+        } else {
+            try self.appendComponentRow(table, handle, index, fields);
         }
-
-        try entity_components.append(self.allocator, owned);
     }
 
     pub fn hasComponent(self: World, handle: EntityHandle, component_id: []const u8) WorldError!bool {
         const index = try self.componentIndex(handle);
-        return self.findComponentInList(self.components.items[index].items, component_id) != null;
+        const table = self.findComponentTable(component_id) orelse return false;
+        return table.rows_by_entity.items[index] != null;
     }
 
     pub fn hasComponents(self: World, handle: EntityHandle, component_ids: []const []const u8) WorldError!bool {
@@ -674,8 +824,9 @@ pub const World = struct {
     }
 
     pub fn queryNext(self: World, component_ids: []const []const u8, cursor: *usize) ?EntityHandle {
-        while (cursor.* < self.entities.items.len) : (cursor.* += 1) {
-            const handle = EntityHandle{ .index = @intCast(cursor.*) };
+        const driver = self.queryDriverTable(component_ids) orelse return null;
+        while (cursor.* < driver.entities.items.len) : (cursor.* += 1) {
+            const handle = driver.entities.items[cursor.*];
             if (self.hasComponents(handle, component_ids) catch false) {
                 cursor.* += 1;
                 return handle;
@@ -685,9 +836,9 @@ pub const World = struct {
     }
 
     pub fn getVec3(self: World, handle: EntityHandle, component_id: []const u8, field_name: []const u8) WorldError![3]f32 {
-        const field = try self.findField(handle, component_id, field_name);
-        return switch (field.value) {
-            .vec3 => |value| value,
+        const value = try self.getFieldValue(handle, component_id, field_name);
+        return switch (value) {
+            .vec3 => |payload| payload,
             else => WorldError.InvalidFieldType,
         };
     }
@@ -696,11 +847,7 @@ pub const World = struct {
         if (!std.math.isFinite(value[0]) or !std.math.isFinite(value[1]) or !std.math.isFinite(value[2])) {
             return WorldError.InvalidFieldType;
         }
-        const field = try self.findMutableField(handle, component_id, field_name);
-        switch (field.value) {
-            .vec3 => field.value = .{ .vec3 = value },
-            else => return WorldError.InvalidFieldType,
-        }
+        try self.setFieldValue(handle, component_id, field_name, .{ .vec3 = value });
     }
 
     pub fn renderableCubeCount(self: World) usize {
@@ -751,106 +898,183 @@ pub const World = struct {
         return index;
     }
 
-    fn findField(self: World, handle: EntityHandle, component_id: []const u8, field_name: []const u8) WorldError!*const ComponentFieldValue {
-        const index = try self.componentIndex(handle);
-        const component = self.findComponentInList(self.components.items[index].items, component_id) orelse return WorldError.UnknownComponent;
-        for (component.fields) |*field| {
-            if (std.mem.eql(u8, field.name, field_name)) {
-                return field;
-            }
-        }
-        return WorldError.UnknownField;
-    }
-
-    fn findMutableField(self: *World, handle: EntityHandle, component_id: []const u8, field_name: []const u8) WorldError!*ComponentFieldValue {
-        const index = try self.componentIndex(handle);
-        const entity_components = &self.components.items[index];
-        for (entity_components.items) |*component| {
-            if (!std.mem.eql(u8, component.id, component_id)) {
-                continue;
-            }
-            for (component.fields) |*field| {
-                if (std.mem.eql(u8, field.name, field_name)) {
-                    return field;
-                }
-            }
-            return WorldError.UnknownField;
-        }
-        return WorldError.UnknownComponent;
-    }
-
-    fn findComponentInList(self: World, components: []const ComponentInstance, component_id: []const u8) ?*const ComponentInstance {
-        _ = self;
-        for (components) |*component| {
-            if (std.mem.eql(u8, component.id, component_id)) {
-                return component;
+    fn findComponentTable(self: World, component_id: []const u8) ?*const ComponentTable {
+        for (self.component_tables.items) |*table| {
+            if (std.mem.eql(u8, table.id, component_id)) {
+                return table;
             }
         }
         return null;
     }
 
-    fn copyComponentInstance(self: World, component_id: []const u8, fields: []const ComponentFieldValue) !ComponentInstance {
+    fn findMutableComponentTable(self: *World, component_id: []const u8) ?*ComponentTable {
+        for (self.component_tables.items) |*table| {
+            if (std.mem.eql(u8, table.id, component_id)) {
+                return table;
+            }
+        }
+        return null;
+    }
+
+    fn queryDriverTable(self: World, component_ids: []const []const u8) ?*const ComponentTable {
+        if (component_ids.len == 0) {
+            return null;
+        }
+
+        var driver: ?*const ComponentTable = null;
+        for (component_ids) |component_id| {
+            const table = self.findComponentTable(component_id) orelse return null;
+            if (driver == null or table.entities.items.len < driver.?.entities.items.len) {
+                driver = table;
+            }
+        }
+        return driver;
+    }
+
+    fn getFieldValue(self: World, handle: EntityHandle, component_id: []const u8, field_name: []const u8) WorldError!ComponentValue {
+        const index = try self.componentIndex(handle);
+        const table = self.findComponentTable(component_id) orelse return WorldError.UnknownComponent;
+        const row = table.rows_by_entity.items[index] orelse return WorldError.UnknownComponent;
+        const column = findColumn(table.*, field_name) orelse return WorldError.UnknownField;
+        return column.values.valueAt(row);
+    }
+
+    fn setFieldValue(self: *World, handle: EntityHandle, component_id: []const u8, field_name: []const u8, value: ComponentValue) WorldError!void {
+        const index = try self.componentIndex(handle);
+        const table = self.findMutableComponentTable(component_id) orelse return WorldError.UnknownComponent;
+        const row = table.rows_by_entity.items[index] orelse return WorldError.UnknownComponent;
+        const column = findMutableColumn(table, field_name) orelse return WorldError.UnknownField;
+        try column.values.setCopy(self.allocator, row, value);
+    }
+
+    fn ensureComponentTable(self: *World, component_id: []const u8, fields: []const ComponentFieldValue) WorldError!usize {
+        for (self.component_tables.items, 0..) |*table, index| {
+            if (std.mem.eql(u8, table.id, component_id)) {
+                try validateComponentTableFields(table.*, fields);
+                return index;
+            }
+        }
+
+        var table = try self.createComponentTable(component_id, fields);
+        errdefer table.deinit(self.allocator);
+        try self.component_tables.append(self.allocator, table);
+        return self.component_tables.items.len - 1;
+    }
+
+    fn createComponentTable(self: World, component_id: []const u8, fields: []const ComponentFieldValue) WorldError!ComponentTable {
         const owned_id = try self.allocator.dupe(u8, component_id);
         errdefer self.allocator.free(owned_id);
-        const owned_fields = try self.allocator.alloc(ComponentFieldValue, fields.len);
-        errdefer self.allocator.free(owned_fields);
 
-        var copied_count: usize = 0;
+        const columns = try self.allocator.alloc(ComponentColumn, fields.len);
+        errdefer self.allocator.free(columns);
+
+        var initialized_columns: usize = 0;
         errdefer {
-            for (owned_fields[0..copied_count]) |field| {
-                self.freeFieldValue(field);
+            for (columns[0..initialized_columns]) |*column| {
+                column.deinit(self.allocator);
             }
         }
 
         for (fields, 0..) |field, index| {
-            const owned_name = try self.allocator.dupe(u8, field.name);
-            const owned_value = self.copyValue(field.value) catch |err| {
-                self.allocator.free(owned_name);
-                return err;
+            if (findFieldValue(fields[0..index], field.name) != null) {
+                return WorldError.UnknownField;
+            }
+            columns[index] = .{
+                .name = try self.allocator.dupe(u8, field.name),
+                .values = ComponentColumnValues.init(field.value),
             };
-            owned_fields[index] = .{
-                .name = owned_name,
-                .value = owned_value,
-            };
-            copied_count += 1;
+            initialized_columns += 1;
         }
 
-        return .{ .id = owned_id, .fields = owned_fields };
-    }
+        var rows_by_entity: std.ArrayList(?usize) = .empty;
+        errdefer rows_by_entity.deinit(self.allocator);
+        try rows_by_entity.ensureTotalCapacity(self.allocator, self.entities.items.len);
+        for (0..self.entities.items.len) |_| {
+            try rows_by_entity.append(self.allocator, null);
+        }
 
-    fn copyValue(self: World, value: ComponentValue) !ComponentValue {
-        return switch (value) {
-            .string => |string| .{ .string = try self.allocator.dupe(u8, string) },
-            .boolean => |boolean| .{ .boolean = boolean },
-            .int => |int| .{ .int = int },
-            .float => |float| .{ .float = float },
-            .vec3 => |vec3| .{ .vec3 = vec3 },
+        return .{
+            .id = owned_id,
+            .rows_by_entity = rows_by_entity,
+            .columns = columns,
         };
     }
 
-    fn freeComponentList(self: World, components: *std.ArrayList(ComponentInstance)) void {
-        for (components.items) |component| {
-            self.freeComponentInstance(component);
+    fn appendComponentRow(self: *World, table: *ComponentTable, handle: EntityHandle, entity_index: usize, fields: []const ComponentFieldValue) WorldError!void {
+        try validateComponentTableFields(table.*, fields);
+
+        const row = table.entities.items.len;
+        try table.entities.append(self.allocator, handle);
+        errdefer _ = table.entities.pop();
+        table.rows_by_entity.items[entity_index] = row;
+
+        var appended_columns: usize = 0;
+        errdefer {
+            for (table.columns[0..appended_columns]) |*column| {
+                column.values.popValue(self.allocator);
+            }
+            table.rows_by_entity.items[entity_index] = null;
         }
-        components.deinit(self.allocator);
+
+        for (table.columns) |*column| {
+            const field = findFieldValue(fields, column.name) orelse return WorldError.UnknownField;
+            try column.values.appendCopy(self.allocator, field.value);
+            appended_columns += 1;
+        }
     }
 
-    fn freeComponentInstance(self: World, component: ComponentInstance) void {
-        self.allocator.free(component.id);
-        for (component.fields) |field| {
-            self.freeFieldValue(field);
-        }
-        self.allocator.free(component.fields);
-    }
-
-    fn freeFieldValue(self: World, field: ComponentFieldValue) void {
-        self.allocator.free(field.name);
-        switch (field.value) {
-            .string => |string| self.allocator.free(string),
-            else => {},
+    fn updateComponentRow(self: *World, table: *ComponentTable, row: usize, fields: []const ComponentFieldValue) WorldError!void {
+        try validateComponentTableFields(table.*, fields);
+        for (table.columns) |*column| {
+            const field = findFieldValue(fields, column.name) orelse return WorldError.UnknownField;
+            try column.values.setCopy(self.allocator, row, field.value);
         }
     }
 };
+
+fn findFieldValue(fields: []const ComponentFieldValue, field_name: []const u8) ?ComponentFieldValue {
+    for (fields) |field| {
+        if (std.mem.eql(u8, field.name, field_name)) {
+            return field;
+        }
+    }
+    return null;
+}
+
+fn findColumn(table: ComponentTable, field_name: []const u8) ?*const ComponentColumn {
+    for (table.columns) |*column| {
+        if (std.mem.eql(u8, column.name, field_name)) {
+            return column;
+        }
+    }
+    return null;
+}
+
+fn findMutableColumn(table: *ComponentTable, field_name: []const u8) ?*ComponentColumn {
+    for (table.columns) |*column| {
+        if (std.mem.eql(u8, column.name, field_name)) {
+            return column;
+        }
+    }
+    return null;
+}
+
+fn validateComponentTableFields(table: ComponentTable, fields: []const ComponentFieldValue) WorldError!void {
+    if (fields.len != table.columns.len) {
+        return WorldError.UnknownField;
+    }
+
+    for (table.columns) |column| {
+        const field = findFieldValue(fields, column.name) orelse return WorldError.UnknownField;
+        if (std.meta.activeTag(field.value) != column.values.valueType()) {
+            return WorldError.InvalidFieldType;
+        }
+    }
+
+    for (fields) |field| {
+        _ = findColumn(table, field.name) orelse return WorldError.UnknownField;
+    }
+}
 
 pub const RenderableCubeIterator = struct {
     world: *const World,
@@ -1085,6 +1309,53 @@ test "world queries and mutates component field storage" {
     try std.testing.expectEqual(@as(f32, -1.7), transform_after.rotation[2]);
     try std.testing.expectError(WorldError.UnknownComponent, world.getVec3(entity, "stamina", "value"));
     try std.testing.expectError(WorldError.InvalidFieldType, world.setVec3(entity, transform_component_id, "rotation", .{ std.math.inf(f32), 0.0, 0.0 }));
+}
+
+test "world stores component fields in sparse SoA tables" {
+    var world = World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const untagged = try world.createEntity("untagged", "Untagged");
+    const plain = try world.createEntity("plain", "Plain");
+    const spinner = try world.createEntity("spinner", "Spinner");
+    try world.setTransform(plain, .{ .position = .{ -1.0, 0.0, 0.0 } });
+    try world.setTransform(spinner, .{
+        .position = .{ 1.0, 2.0, 3.0 },
+        .rotation = .{ 0.1, 0.2, 0.3 },
+        .scale = .{ 2.0, 2.0, 2.0 },
+    });
+    try world.setSpin(spinner, .{ .angular_velocity = .{ 0.0, 1.0, 0.0 } });
+
+    const transform_table = world.findComponentTable(transform_component_id) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 2), transform_table.entities.items.len);
+    try std.testing.expectEqual(plain.index, transform_table.entities.items[0].index);
+    try std.testing.expectEqual(spinner.index, transform_table.entities.items[1].index);
+    try std.testing.expectEqual(@as(usize, 3), transform_table.rows_by_entity.items.len);
+    try std.testing.expect(transform_table.rows_by_entity.items[untagged.index] == null);
+    try std.testing.expectEqual(@as(usize, 1), transform_table.rows_by_entity.items[spinner.index] orelse return error.TestExpectedEqual);
+
+    const rotation_column = findColumn(transform_table.*, "rotation") orelse return error.TestExpectedEqual;
+    const rotation_values = switch (rotation_column.values) {
+        .vec3 => |values| values,
+        else => return error.TestExpectedEqual,
+    };
+    try std.testing.expectEqual(@as(usize, 2), rotation_values.items.len);
+    try std.testing.expectEqual(@as(f32, 0.2), rotation_values.items[1][1]);
+
+    var cursor: usize = 0;
+    const query = [_][]const u8{ transform_component_id, spin_component_id };
+    try std.testing.expectEqual(spinner.index, (world.queryNext(&query, &cursor) orelse return error.TestExpectedEqual).index);
+    try std.testing.expectEqual(@as(usize, 1), cursor);
+
+    try world.setVec3(spinner, transform_component_id, "rotation", .{ 0.5, 0.6, 0.7 });
+    const updated_table = world.findComponentTable(transform_component_id) orelse return error.TestExpectedEqual;
+    const updated_rotation_column = findColumn(updated_table.*, "rotation") orelse return error.TestExpectedEqual;
+    const updated_rotation_values = switch (updated_rotation_column.values) {
+        .vec3 => |values| values,
+        else => return error.TestExpectedEqual,
+    };
+    try std.testing.expectEqual(@as(usize, 2), updated_table.entities.items.len);
+    try std.testing.expectEqual(@as(f32, 0.6), updated_rotation_values.items[1][1]);
 }
 
 test "type ids distinguish project-local, package, and engine namespaces" {
