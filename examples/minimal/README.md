@@ -6,5 +6,6 @@ check, and load.
 ```sh
 mise machina check examples/minimal
 mise machina run examples/minimal
+mise machina run examples/minimal --frames 120
 mise machina render examples/minimal zig-out/minimal-triangle.bmp
 ```

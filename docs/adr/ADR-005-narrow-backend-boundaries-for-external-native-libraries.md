@@ -14,6 +14,8 @@ Machina wraps external native libraries behind narrow, engine-owned backend boun
 
 External APIs may be used directly inside backend modules, but public engine systems expose Machina-owned types, handles, diagnostics, and lifecycle rules. Backends are replaceable implementation details unless a future ADR explicitly promotes an external API to a public engine contract.
 
+The initial headful rendering path follows this rule by using SDL3 only inside the renderer/window backend to create a native window and provide a platform surface to `wgpu-native`.
+
 ## Consequences
 
 Core engine systems remain more stable when dependencies change. The codebase is easier to test with fake or headless backends.

@@ -9,3 +9,4 @@
 | [FDR-005](FDR-005-engine-ui-primitives.md) | Engine UI Primitives | Planned | 2026-07-01 |
 | [FDR-006](FDR-006-asset-import-and-cache.md) | Asset Import and Cache | Planned | 2026-07-01 |
 | [FDR-007](FDR-007-offscreen-triangle-rendering.md) | Offscreen Triangle Rendering | Active | 2026-07-01 |
+| [FDR-008](FDR-008-headful-triangle-window.md) | Headful Triangle Window | Active | 2026-07-01 |

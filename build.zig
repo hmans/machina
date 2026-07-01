@@ -30,6 +30,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     linkWgpuPlatform(exe, target);
+    linkWindowPlatform(exe, target);
 
     b.installArtifact(exe);
 
@@ -45,12 +46,14 @@ pub fn build(b: *std.Build) void {
         .root_module = machina_mod,
     });
     linkWgpuPlatform(mod_tests, target);
+    linkWindowPlatform(mod_tests, target);
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
     });
     linkWgpuPlatform(exe_tests, target);
+    linkWindowPlatform(exe_tests, target);
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
     const test_step = b.step("test", "Run tests");
@@ -63,5 +66,13 @@ fn linkWgpuPlatform(compile: *std.Build.Step.Compile, target: std.Build.Resolved
         compile.root_module.linkFramework("Foundation", .{});
         compile.root_module.linkFramework("QuartzCore", .{});
         compile.root_module.linkFramework("Metal", .{});
+    }
+}
+
+fn linkWindowPlatform(compile: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
+    if (target.result.os.tag == .macos) {
+        compile.root_module.addIncludePath(.{ .cwd_relative = "/opt/homebrew/include" });
+        compile.root_module.addLibraryPath(.{ .cwd_relative = "/opt/homebrew/lib" });
+        compile.root_module.linkSystemLibrary("SDL3", .{});
     }
 }

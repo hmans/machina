@@ -72,6 +72,10 @@ fn run(
 
     if (std.mem.eql(u8, command, "run")) {
         const target_path = if (args.len >= 3) args[2] else ".";
+        const window_options = parseWindowOptions(args[3..]) catch |err| {
+            try printArgumentError(stderr, err);
+            return 1;
+        };
         const result = machina.checkProject(io, allocator, target_path) catch |err| {
             try printProjectError(stderr, target_path, err);
             return 1;
@@ -79,6 +83,11 @@ fn run(
         defer machina.freeProject(allocator, result.project);
         try stdout.print("Loaded project {s}\n", .{result.project.name});
         try stdout.print("Selected scene: {s}\n", .{result.project.default_scene});
+
+        machina.runTriangleWindow(allocator, result.project.name, window_options) catch |err| {
+            try stderr.print("run failed: {s}\n", .{@errorName(err)});
+            return 1;
+        };
         return 0;
     }
 
@@ -114,10 +123,46 @@ fn printHelp(writer: *Io.Writer) !void {
         \\  machina help
         \\  machina init [path]
         \\  machina check [path]
-        \\  machina run [path]
+        \\  machina run [path] [--frames N]
         \\  machina render [path] [output.bmp]
         \\
     );
+}
+
+const ArgumentError = error{
+    InvalidFrames,
+    UnknownArgument,
+};
+
+fn parseWindowOptions(args: []const []const u8) ArgumentError!machina.WindowOptions {
+    var options = machina.WindowOptions{};
+    var index: usize = 0;
+    while (index < args.len) : (index += 1) {
+        const arg = args[index];
+        if (std.mem.eql(u8, arg, "--frames")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.InvalidFrames;
+            }
+            options.max_frames = std.fmt.parseInt(u32, args[index], 10) catch return ArgumentError.InvalidFrames;
+            if (options.max_frames.? == 0) {
+                return ArgumentError.InvalidFrames;
+            }
+            continue;
+        }
+
+        return ArgumentError.UnknownArgument;
+    }
+
+    return options;
+}
+
+fn printArgumentError(writer: *Io.Writer, err: ArgumentError) !void {
+    const message = switch (err) {
+        ArgumentError.InvalidFrames => "--frames expects a positive integer",
+        ArgumentError.UnknownArgument => "unknown run argument",
+    };
+    try writer.print("{s}\n", .{message});
 }
 
 fn printProjectError(writer: *Io.Writer, root_path: []const u8, err: anyerror) !void {

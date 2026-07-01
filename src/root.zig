@@ -7,6 +7,8 @@ pub const project_file_name = "project.machina.toml";
 pub const default_scene_path = "scenes/main.scene.toml";
 
 pub const renderTriangleBmp = render.renderTriangleBmp;
+pub const runTriangleWindow = render.runTriangleWindow;
+pub const WindowOptions = render.WindowOptions;
 
 pub const Project = struct {
     root_path: []const u8,
