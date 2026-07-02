@@ -11,7 +11,7 @@ Machina is an experimental, text-first game engine written in Zig. The engine is
 - `src/render_verify.zig` owns offscreen BMP verification.
 - `src/shaders/` contains WGSL shaders embedded into the binary.
 - `examples/minimal/` is the canonical smoke-test project.
-- `examples/batching/` demonstrates automatic renderer batching with many text-authored entities sharing geometry/material keys.
+- `examples/batching/` demonstrates automatic renderer batching with many Luau-animated text-authored entities sharing geometry/material keys.
 - `tests/projects/` contains game-shaped project fixtures used only by automated tests. Each runnable fixture has a `test.machina.toml` manifest with frames, timestep, and ECS field assertions.
 - `docs/adr/` records architectural decisions.
 - `docs/fdr/` records feature behavior and product/implementation decisions.

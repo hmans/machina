@@ -1,4 +1,4 @@
-name = "Batching Demo"
+name = "Batching Animation"
 version = 1
 default_scene = "scenes/main.scene.toml"
 scripts = ["scripts/gameplay.luau"]

@@ -43,8 +43,9 @@ analyze() {
 
 cd "${repo_root}"
 
-analyze examples/minimal/scripts/gameplay.luau
-analyze examples/showcase/scripts/gameplay.luau
+while IFS= read -r script; do
+  analyze "${script}"
+done < <(find examples tests/projects -path '*/scripts/*.luau' -type f | sort)
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT

@@ -14,7 +14,7 @@ Render batching lets Machina draw many scene-authored entities that share the sa
 - Each render batch preserves per-entity transform and material color through instance data.
 - The render schedule queues one internal draw command per batch, not one command per renderable entity.
 - Legacy cube renderables participate in batching after being normalized to box geometry and material data.
-- The batching demo example contains many independent scene entities that collapse into a small number of render batches.
+- The batching demo example contains many independent animated scene entities that collapse into a small number of render batches.
 - Offscreen render verification covers the batching demo as part of the standard test suite.
 
 ## Design Decisions
