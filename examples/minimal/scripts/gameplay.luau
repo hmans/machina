@@ -16,6 +16,7 @@ ecs.system("autorotate", {
   phase = "update",
   query = RotatingCubes,
   writes = ecs.refs(Transform),
+  
   run = function(world, dt)
     for _entity, transform, spin in RotatingCubes:iter(world) do
       transform.rotation = {
