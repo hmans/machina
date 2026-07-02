@@ -1,18 +1,17 @@
 --!strict
 
-type Spin = {
-  angular_velocity: MachinaVec3,
-}
 
 local Transform = ecs.component<<MachinaTransform>>("machina.transform")
 local RenderCube = ecs.component<<MachinaRenderCube>>("machina.render.cube")
-local Spin = ecs.component<<Spin>>("spin", {
+local AutoRotate = ecs.component<<{
+  angular_velocity: MachinaVec3,
+}>>("spin", {
   fields = ecs.fields({
     angular_velocity = "vec3",
   }),
 })
 
-local RotatingCubes = ecs.query(Transform, Spin)
+local RotatingCubes = ecs.query(Transform, AutoRotate)
 local RenderedCubes = ecs.query(Transform, RenderCube)
 
 ecs.system("autorotate", {
