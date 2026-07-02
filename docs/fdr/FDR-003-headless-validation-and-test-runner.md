@@ -5,12 +5,14 @@
 
 ## Overview
 
-The headless validation and test runner lets users, CI systems, and agents check project correctness without opening a window. It validates project metadata, script ECS declarations, the default scene, and exposes machine-readable validation details for editor and agent workflows.
+The headless validation and test runner lets users, CI systems, and agents check project correctness and script behavior without opening a window. It validates project metadata, script ECS declarations, the default scene, runs deterministic update frames, and exposes machine-readable validation details for editor and agent workflows.
 
 ## Behavior
 
 - `machina check [path]` validates project metadata, project scripts, script-declared ECS types, update schedule construction, and the default scene.
 - `machina check [path] --format=json` reports project metadata and the validated update schedule batches, including system ids, runner kinds, read/write sets, and before/after ordering declarations.
+- `machina step [path] [--frames N] [--dt seconds]` loads the default scene, runs the update schedule headlessly for the requested frame count, and reports final scene and simulation counts.
+- `machina step [path] --format=json` reports project metadata, final scene summary, simulation summary, schedule batches, and structured runtime diagnostics when a system fails.
 - `machina render-test [path] [output.bmp]` renders the default scene offscreen, reads the output image back, and verifies BMP shape, foreground coverage, visible components, and expected warm/cool color groups for automation.
 - Future headless test commands can exercise scene and script live reload deterministically.
 - Users can run project validation without initializing graphical presentation.
@@ -38,9 +40,15 @@ The headless validation and test runner lets users, CI systems, and agents check
 **Why:** Offscreen rendering is easier to run in agent and CI workflows, and parsing the output artifact can catch regressions like missing foreground content or collapsed multi-object renders.
 **Tradeoff:** Pixel analysis is still coarse and does not replace future golden-image or semantic render tests.
 
+### 4. Add deterministic stepping before full test scripting
+
+**Decision:** The first script behavior test surface runs a fixed number of update frames with an explicit timestep and reports summaries instead of introducing a full test DSL.
+**Why:** Agents and CI need a small, reliable way to prove script systems mutate ECS state and surface runtime diagnostics. This follows ADR-003 and ADR-006.
+**Tradeoff:** Assertions over arbitrary world fields still live in external tests or future tooling rather than in project-authored test files.
+
 ## Related
 
-- **ADRs:** ADR-001, ADR-003, ADR-005, ADR-009
+- **ADRs:** ADR-001, ADR-003, ADR-005, ADR-006, ADR-009
 - **FDRs:** FDR-001, FDR-002, FDR-004, FDR-006, FDR-010
 
 ## Open Questions

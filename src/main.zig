@@ -62,6 +62,10 @@ fn run(
         return try checkCommand(io, allocator, args[2..], stdout, stderr);
     }
 
+    if (std.mem.eql(u8, command, "step")) {
+        return try stepCommand(io, allocator, args[2..], stdout, stderr);
+    }
+
     if (std.mem.eql(u8, command, "run")) {
         const target_path = if (args.len >= 3) args[2] else ".";
         var window_options = parseWindowOptions(args[3..]) catch |err| {
@@ -178,6 +182,13 @@ const CheckOptions = struct {
     format: CheckOutputFormat = .text,
 };
 
+const StepCommandOptions = struct {
+    target_path: []const u8 = ".",
+    frames: u32 = 1,
+    delta_seconds: f32 = 1.0 / 60.0,
+    format: CheckOutputFormat = .text,
+};
+
 fn checkCommand(
     io: Io,
     allocator: std.mem.Allocator,
@@ -226,6 +237,58 @@ fn checkCommand(
     }
 }
 
+fn stepCommand(
+    io: Io,
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    stdout: *Io.Writer,
+    stderr: *Io.Writer,
+) !u8 {
+    const options = parseStepOptions(args) catch |err| {
+        try printArgumentError(stderr, err);
+        return 1;
+    };
+
+    const result = machina.stepProjectDetailed(io, allocator, options.target_path, .{
+        .frames = options.frames,
+        .delta_seconds = options.delta_seconds,
+    }) catch |err| {
+        switch (options.format) {
+            .text => try printProjectError(stderr, options.target_path, err),
+            .json => try printProjectErrorJson(stdout, options.target_path, err),
+        }
+        return 1;
+    };
+    defer machina.freeStepDetailedResult(allocator, result);
+
+    switch (result) {
+        .ok => |ok| {
+            switch (options.format) {
+                .text => try printStepOkText(stdout, ok),
+                .json => try printStepOkJson(stdout, ok),
+            }
+            return 0;
+        },
+        .runtime_error => |failure| {
+            switch (options.format) {
+                .text => {
+                    try printStepFailureText(stderr, options.target_path, failure);
+                    try printScriptDiagnostic(stderr, options.target_path, failure.diagnostic);
+                },
+                .json => try printStepFailureJson(stdout, options.target_path, failure),
+            }
+            return 1;
+        },
+        .invalid => |diagnostic| {
+            switch (options.format) {
+                .text => try printScriptDiagnostic(stderr, options.target_path, diagnostic),
+                .json => try printScriptDiagnosticJson(stdout, options.target_path, diagnostic),
+            }
+            return 1;
+        },
+    }
+}
+
 fn checkProjectForCommand(
     io: Io,
     allocator: std.mem.Allocator,
@@ -255,6 +318,7 @@ fn printHelp(writer: *Io.Writer) !void {
         \\  machina help
         \\  machina init [path]
         \\  machina check [path] [--format text|json]
+        \\  machina step [path] [--frames N] [--dt seconds] [--format text|json]
         \\  machina run [path] [--frames N]
         \\  machina render [path] [output.bmp]
         \\  machina render-test [path] [output.bmp]
@@ -263,6 +327,7 @@ fn printHelp(writer: *Io.Writer) !void {
 }
 
 const ArgumentError = error{
+    InvalidDelta,
     InvalidFrames,
     InvalidFormat,
     UnknownArgument,
@@ -369,6 +434,76 @@ fn parseCheckOptions(args: []const []const u8) ArgumentError!CheckOptions {
     return options;
 }
 
+fn parseStepOptions(args: []const []const u8) ArgumentError!StepCommandOptions {
+    var options = StepCommandOptions{};
+    var saw_path = false;
+    var index: usize = 0;
+    while (index < args.len) : (index += 1) {
+        const arg = args[index];
+        if (std.mem.eql(u8, arg, "--frames")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.InvalidFrames;
+            }
+            options.frames = try parseFrameCount(args[index]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--frames=")) {
+            options.frames = try parseFrameCount(arg["--frames=".len..]);
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--dt")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.InvalidDelta;
+            }
+            options.delta_seconds = try parseDeltaSeconds(args[index]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--dt=")) {
+            options.delta_seconds = try parseDeltaSeconds(arg["--dt=".len..]);
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--format")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.InvalidFormat;
+            }
+            options.format = try parseCheckOutputFormat(args[index]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--format=")) {
+            options.format = try parseCheckOutputFormat(arg["--format=".len..]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--")) {
+            return ArgumentError.UnknownArgument;
+        }
+        if (saw_path) {
+            return ArgumentError.UnknownArgument;
+        }
+        options.target_path = arg;
+        saw_path = true;
+    }
+    return options;
+}
+
+fn parseFrameCount(value: []const u8) ArgumentError!u32 {
+    const frames = std.fmt.parseInt(u32, value, 10) catch return ArgumentError.InvalidFrames;
+    if (frames == 0) {
+        return ArgumentError.InvalidFrames;
+    }
+    return frames;
+}
+
+fn parseDeltaSeconds(value: []const u8) ArgumentError!f32 {
+    const delta_seconds = std.fmt.parseFloat(f32, value) catch return ArgumentError.InvalidDelta;
+    if (!std.math.isFinite(delta_seconds) or delta_seconds <= 0.0) {
+        return ArgumentError.InvalidDelta;
+    }
+    return delta_seconds;
+}
+
 fn parseCheckOutputFormat(value: []const u8) ArgumentError!CheckOutputFormat {
     if (std.mem.eql(u8, value, "text")) {
         return .text;
@@ -381,6 +516,7 @@ fn parseCheckOutputFormat(value: []const u8) ArgumentError!CheckOutputFormat {
 
 fn printArgumentError(writer: *Io.Writer, err: ArgumentError) !void {
     const message = switch (err) {
+        ArgumentError.InvalidDelta => "--dt expects a positive finite number",
         ArgumentError.InvalidFrames => "--frames expects a positive integer",
         ArgumentError.InvalidFormat => "--format expects text or json",
         ArgumentError.UnknownArgument => "unknown argument",
@@ -444,16 +580,93 @@ fn printScriptDiagnostic(writer: *Io.Writer, root_path: []const u8, diagnostic: 
     try writer.print(": {s}\n", .{diagnostic.message});
 }
 
+fn printStepOkText(writer: *Io.Writer, ok: machina.StepOk) !void {
+    try writer.print("Step OK: {s}\n", .{ok.project.name});
+    try writer.print("Scene: {s}\n", .{ok.scene.name});
+    try writer.print("Frames: {d}/{d}, dt: {d}\n", .{
+        ok.summary.completed_frames,
+        ok.summary.frames,
+        ok.summary.delta_seconds,
+    });
+    try writer.print("Entities: {d}, components: {d}, renderable cubes: {d}\n", .{
+        ok.scene.entityCount(),
+        ok.scene.componentInstanceCount(),
+        ok.scene.renderableCubeCount(),
+    });
+    try writer.print("Update batches: {d}, systems: {d}\n", .{
+        ok.schedule.batchCount(),
+        ok.schedule.systemCount(),
+    });
+}
+
+fn printStepFailureText(writer: *Io.Writer, root_path: []const u8, failure: machina.StepRuntimeError) !void {
+    try writer.print("{s}: step failed after {d}/{d} frames, dt: {d}\n", .{
+        root_path,
+        failure.summary.completed_frames,
+        failure.summary.frames,
+        failure.summary.delta_seconds,
+    });
+}
+
 fn printCheckOkJson(writer: *Io.Writer, result: machina.CheckResult) !void {
-    const project = result.project;
-    try writer.writeAll("{\"ok\":true,\"project\":{\"name\":");
+    try writer.writeAll("{\"ok\":true,\"project\":");
+    try printProjectSummaryJson(writer, result.project);
+    try writer.writeAll(",\"schedule\":");
+    try printCheckScheduleJson(writer, result.schedule);
+    try writer.writeAll("}\n");
+}
+
+fn printStepOkJson(writer: *Io.Writer, ok: machina.StepOk) !void {
+    try writer.writeAll("{\"ok\":true,\"project\":");
+    try printProjectSummaryJson(writer, ok.project);
+    try writer.writeAll(",\"scene\":");
+    try printSceneSummaryJson(writer, ok.scene);
+    try writer.writeAll(",\"simulation\":");
+    try printStepSummaryJson(writer, ok.summary);
+    try writer.writeAll(",\"schedule\":");
+    try printCheckScheduleJson(writer, ok.schedule);
+    try writer.writeAll("}\n");
+}
+
+fn printStepFailureJson(writer: *Io.Writer, root_path: []const u8, failure: machina.StepRuntimeError) !void {
+    try writer.writeAll("{\"ok\":false,\"project\":");
+    try printProjectSummaryJson(writer, failure.project);
+    try writer.writeAll(",\"scene\":");
+    try printSceneSummaryJson(writer, failure.scene);
+    try writer.writeAll(",\"simulation\":");
+    try printStepSummaryJson(writer, failure.summary);
+    try writer.writeAll(",\"schedule\":");
+    try printCheckScheduleJson(writer, failure.schedule);
+    try writer.writeAll(",\"diagnostic\":");
+    try printScriptDiagnosticObjectJson(writer, root_path, failure.diagnostic);
+    try writer.writeAll("}\n");
+}
+
+fn printProjectSummaryJson(writer: *Io.Writer, project: machina.Project) !void {
+    try writer.writeAll("{\"name\":");
     try writeJsonString(writer, project.name);
     try writer.writeAll(",\"default_scene\":");
     try writeJsonString(writer, project.default_scene);
     try writer.print(",\"scripts\":{d}", .{project.scripts.len});
-    try writer.writeAll("},\"schedule\":");
-    try printCheckScheduleJson(writer, result.schedule);
-    try writer.writeAll("}\n");
+    try writer.writeAll("}");
+}
+
+fn printSceneSummaryJson(writer: *Io.Writer, scene: machina.Scene) !void {
+    try writer.writeAll("{\"name\":");
+    try writeJsonString(writer, scene.name);
+    try writer.print(",\"entities\":{d},\"component_instances\":{d},\"renderable_cubes\":{d}}}", .{
+        scene.entityCount(),
+        scene.componentInstanceCount(),
+        scene.renderableCubeCount(),
+    });
+}
+
+fn printStepSummaryJson(writer: *Io.Writer, summary: machina.StepSummary) !void {
+    try writer.print("{{\"frames\":{d},\"completed_frames\":{d},\"dt\":{d}}}", .{
+        summary.frames,
+        summary.completed_frames,
+        summary.delta_seconds,
+    });
 }
 
 fn printCheckScheduleJson(writer: *Io.Writer, schedule: machina.CheckSchedule) !void {
@@ -516,7 +729,13 @@ fn printProjectErrorJson(writer: *Io.Writer, root_path: []const u8, err: anyerro
 }
 
 fn printScriptDiagnosticJson(writer: *Io.Writer, root_path: []const u8, diagnostic: machina.ScriptDiagnostic) !void {
-    try writer.writeAll("{\"ok\":false,\"diagnostic\":{");
+    try writer.writeAll("{\"ok\":false,\"diagnostic\":");
+    try printScriptDiagnosticObjectJson(writer, root_path, diagnostic);
+    try writer.writeAll("}\n");
+}
+
+fn printScriptDiagnosticObjectJson(writer: *Io.Writer, root_path: []const u8, diagnostic: machina.ScriptDiagnostic) !void {
+    try writer.writeAll("{");
     try writer.writeAll("\"stage\":");
     try writeJsonString(writer, @tagName(diagnostic.stage));
     try writer.writeAll(",\"root\":");
@@ -539,7 +758,7 @@ fn printScriptDiagnosticJson(writer: *Io.Writer, root_path: []const u8, diagnost
     }
     try writer.writeAll(",\"message\":");
     try writeJsonString(writer, diagnostic.message);
-    try writer.writeAll("}}\n");
+    try writer.writeAll("}");
 }
 
 fn printDiagnosticPositionJson(writer: *Io.Writer, position: machina.ScriptDiagnosticPosition) !void {
@@ -612,6 +831,20 @@ test "parseCheckOptions rejects unknown format" {
     try std.testing.expectError(ArgumentError.InvalidFormat, parseCheckOptions(&args));
 }
 
+test "parseStepOptions accepts path frames dt and json format" {
+    const args = [_][]const u8{ "examples/minimal", "--frames=60", "--dt", "0.016", "--format=json" };
+    const options = try parseStepOptions(&args);
+    try std.testing.expectEqualStrings("examples/minimal", options.target_path);
+    try std.testing.expectEqual(@as(u32, 60), options.frames);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.016), options.delta_seconds, 0.000001);
+    try std.testing.expectEqual(CheckOutputFormat.json, options.format);
+}
+
+test "parseStepOptions rejects invalid dt" {
+    const args = [_][]const u8{ "--dt", "inf" };
+    try std.testing.expectError(ArgumentError.InvalidDelta, parseStepOptions(&args));
+}
+
 test "printCheckOkJson includes schedule summary" {
     var buffer: [1024]u8 = undefined;
     var writer = Io.Writer.fixed(&buffer);
@@ -646,6 +879,59 @@ test "printCheckOkJson includes schedule summary" {
 
     try std.testing.expectEqualStrings(
         "{\"ok\":true,\"project\":{\"name\":\"Minimal\",\"default_scene\":\"scenes/main.scene.toml\",\"scripts\":1},\"schedule\":{\"batches\":[{\"phase\":\"update\",\"systems\":[{\"id\":\"autorotate\",\"phase\":\"update\",\"runner\":\"luau\",\"reads\":[\"spin\"],\"writes\":[\"machina.transform\"],\"before\":[],\"after\":[]}]}]}}\n",
+        writer.buffered(),
+    );
+}
+
+test "printStepOkJson includes simulation and scene summary" {
+    var output_buffer: [1536]u8 = undefined;
+    var writer = Io.Writer.fixed(&output_buffer);
+
+    var scene = machina.Scene{
+        .name = "Main",
+        .world = machina.World.init(std.testing.allocator),
+    };
+    defer scene.world.deinit();
+    const entity = try scene.world.createEntity("entity-1", "Entity");
+    try scene.world.setTransform(entity, .{});
+    try scene.world.setSpin(entity, .{ .angular_velocity = .{ 1.0, 0.0, 0.0 } });
+
+    const scripts = [_][]const u8{"scripts/gameplay.luau"};
+    const reads = [_][]const u8{"spin"};
+    const writes = [_][]const u8{"machina.transform"};
+    const system = machina.CheckSystemSummary{
+        .id = "autorotate",
+        .phase = .update,
+        .runner = .luau,
+        .reads = &reads,
+        .writes = &writes,
+    };
+    const systems = [_]machina.CheckSystemSummary{system};
+    const batch = machina.CheckScheduleBatch{
+        .phase = .update,
+        .systems = &systems,
+    };
+    const batches = [_]machina.CheckScheduleBatch{batch};
+    const ok = machina.StepOk{
+        .project = .{
+            .root_path = "examples/minimal",
+            .name = "Minimal",
+            .default_scene = "scenes/main.scene.toml",
+            .scripts = &scripts,
+        },
+        .scene = scene,
+        .schedule = .{ .batches = &batches },
+        .summary = .{
+            .frames = 2,
+            .completed_frames = 2,
+            .delta_seconds = 0.5,
+        },
+    };
+
+    try printStepOkJson(&writer, ok);
+
+    try std.testing.expectEqualStrings(
+        "{\"ok\":true,\"project\":{\"name\":\"Minimal\",\"default_scene\":\"scenes/main.scene.toml\",\"scripts\":1},\"scene\":{\"name\":\"Main\",\"entities\":1,\"component_instances\":2,\"renderable_cubes\":0},\"simulation\":{\"frames\":2,\"completed_frames\":2,\"dt\":0.5},\"schedule\":{\"batches\":[{\"phase\":\"update\",\"systems\":[{\"id\":\"autorotate\",\"phase\":\"update\",\"runner\":\"luau\",\"reads\":[\"spin\"],\"writes\":[\"machina.transform\"],\"before\":[],\"after\":[]}]}]}}\n",
         writer.buffered(),
     );
 }

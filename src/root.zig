@@ -59,6 +59,10 @@ pub const Scene = struct {
         return self.world.entityCount();
     }
 
+    pub fn componentInstanceCount(self: Scene) usize {
+        return self.world.componentInstanceCount();
+    }
+
     pub fn renderableCubeCount(self: Scene) usize {
         return self.world.renderableCubeCount();
     }
@@ -113,6 +117,38 @@ pub const CheckSchedule = struct {
         }
         return count;
     }
+};
+
+pub const StepOptions = struct {
+    frames: u32 = 1,
+    delta_seconds: f32 = 1.0 / 60.0,
+};
+
+pub const StepSummary = struct {
+    frames: u32,
+    completed_frames: u32,
+    delta_seconds: f32,
+};
+
+pub const StepOk = struct {
+    project: Project,
+    scene: Scene,
+    schedule: CheckSchedule,
+    summary: StepSummary,
+};
+
+pub const StepRuntimeError = struct {
+    project: Project,
+    scene: Scene,
+    schedule: CheckSchedule,
+    summary: StepSummary,
+    diagnostic: ScriptDiagnostic,
+};
+
+pub const StepDetailedResult = union(enum) {
+    ok: StepOk,
+    runtime_error: StepRuntimeError,
+    invalid: ScriptDiagnostic,
 };
 
 const SourceFileStamp = struct {
@@ -518,9 +554,101 @@ pub fn checkProjectDetailed(io: Io, allocator: std.mem.Allocator, root_path: []c
     }
 }
 
+pub fn stepProjectDetailed(
+    io: Io,
+    allocator: std.mem.Allocator,
+    root_path: []const u8,
+    options: StepOptions,
+) !StepDetailedResult {
+    const project = try loadProject(io, allocator, root_path);
+    errdefer freeProject(allocator, project);
+    const cwd = Io.Dir.cwd();
+    const root_dir = try cwd.openDir(io, project.root_path, .{});
+    defer root_dir.close(io);
+
+    if (!fileExists(io, root_dir, project.default_scene)) {
+        return ProjectError.MissingDefaultScene;
+    }
+
+    const scripts_result = try loadProjectScriptsDetailed(io, allocator, project);
+    var scripts = switch (scripts_result) {
+        .program => |program| program,
+        .diagnostic => |diagnostic| {
+            freeProject(allocator, project);
+            return .{ .invalid = diagnostic };
+        },
+    };
+    defer scripts.deinit();
+
+    var scene = try loadSceneFile(io, allocator, root_dir, project.default_scene, scripts.registry);
+    errdefer freeScene(allocator, scene);
+
+    const schedule = try cloneCheckSchedule(allocator, scripts.registry, scripts.schedule);
+    errdefer freeCheckSchedule(allocator, schedule);
+
+    var completed_frames: u32 = 0;
+    while (completed_frames < options.frames) {
+        if (!scripts.update(&scene.world, options.delta_seconds)) {
+            const diagnostic = if (scripts.last_diagnostic) |found|
+                try cloneScriptDiagnostic(allocator, found)
+            else
+                try makeSyntheticRuntimeDiagnostic(allocator, "script runtime failed without diagnostic");
+            return .{ .runtime_error = .{
+                .project = project,
+                .scene = scene,
+                .schedule = schedule,
+                .summary = .{
+                    .frames = options.frames,
+                    .completed_frames = completed_frames,
+                    .delta_seconds = options.delta_seconds,
+                },
+                .diagnostic = diagnostic,
+            } };
+        }
+        completed_frames += 1;
+    }
+
+    return .{ .ok = .{
+        .project = project,
+        .scene = scene,
+        .schedule = schedule,
+        .summary = .{
+            .frames = options.frames,
+            .completed_frames = completed_frames,
+            .delta_seconds = options.delta_seconds,
+        },
+    } };
+}
+
 pub fn freeCheckResult(allocator: std.mem.Allocator, result: CheckResult) void {
     freeProject(allocator, result.project);
     freeCheckSchedule(allocator, result.schedule);
+}
+
+pub fn freeStepDetailedResult(allocator: std.mem.Allocator, result: StepDetailedResult) void {
+    switch (result) {
+        .ok => |ok| freeStepOk(allocator, ok),
+        .runtime_error => |runtime_error| {
+            var diagnostic = runtime_error.diagnostic;
+            diagnostic.deinit(allocator);
+            freeStepOk(allocator, .{
+                .project = runtime_error.project,
+                .scene = runtime_error.scene,
+                .schedule = runtime_error.schedule,
+                .summary = runtime_error.summary,
+            });
+        },
+        .invalid => |diagnostic| {
+            var owned = diagnostic;
+            owned.deinit(allocator);
+        },
+    }
+}
+
+fn freeStepOk(allocator: std.mem.Allocator, ok: StepOk) void {
+    freeCheckSchedule(allocator, ok.schedule);
+    freeScene(allocator, ok.scene);
+    freeProject(allocator, ok.project);
 }
 
 pub fn freeProject(allocator: std.mem.Allocator, project: Project) void {
@@ -825,6 +953,13 @@ fn cloneScriptDiagnostic(allocator: std.mem.Allocator, diagnostic: ScriptDiagnos
         .start = diagnostic.start,
         .end = diagnostic.end,
         .message = try allocator.dupe(u8, diagnostic.message),
+    };
+}
+
+fn makeSyntheticRuntimeDiagnostic(allocator: std.mem.Allocator, message: []const u8) !ScriptDiagnostic {
+    return .{
+        .stage = .runtime,
+        .message = try allocator.dupe(u8, message),
     };
 }
 
@@ -1997,6 +2132,95 @@ test "LiveProject update runs the scheduled rotation system" {
     try std.testing.expect(after.rotation[0] > before.rotation[0]);
     try std.testing.expect(after.rotation[1] > before.rotation[1]);
     try std.testing.expectEqual(before.rotation[2], after.rotation[2]);
+}
+
+test "stepProjectDetailed runs requested frames headlessly" {
+    const root_path = ".zig-cache/test-step-project";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.createDirPath(io, "scripts");
+
+    try root_dir.writeFile(io, .{
+        .sub_path = project_file_name,
+        .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
+    });
+    try writeSpinnerScene(io, root_dir);
+    try writeRotateScript(io, root_dir, "dt");
+
+    const result = try stepProjectDetailed(io, std.testing.allocator, root_path, .{
+        .frames = 2,
+        .delta_seconds = 0.5,
+    });
+    defer freeStepDetailedResult(std.testing.allocator, result);
+
+    switch (result) {
+        .ok => |ok| {
+            try std.testing.expectEqual(@as(u32, 2), ok.summary.frames);
+            try std.testing.expectEqual(@as(u32, 2), ok.summary.completed_frames);
+            try std.testing.expectEqual(@as(usize, 1), ok.scene.entityCount());
+            try std.testing.expectEqual(@as(usize, 2), ok.scene.componentInstanceCount());
+            try std.testing.expectEqual(@as(usize, 1), ok.schedule.systemCount());
+
+            const entity = ok.scene.world.findEntityById("018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001") orelse return error.TestExpectedEqual;
+            const transform = (try ok.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+            try std.testing.expectApproxEqAbs(@as(f32, 1.0), transform.rotation[0], 0.0001);
+            try std.testing.expectApproxEqAbs(@as(f32, 1.0), transform.rotation[1], 0.0001);
+            try std.testing.expectEqual(@as(f32, 0.0), transform.rotation[2]);
+        },
+        else => return error.TestExpectedEqual,
+    }
+}
+
+test "stepProjectDetailed returns runtime diagnostics and final world state" {
+    const root_path = ".zig-cache/test-step-project-runtime-diagnostic";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.createDirPath(io, "scripts");
+
+    try root_dir.writeFile(io, .{
+        .sub_path = project_file_name,
+        .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
+    });
+    try writeSpinnerScene(io, root_dir);
+    try writeRotateScript(io, root_dir, "dt / 0");
+
+    const result = try stepProjectDetailed(io, std.testing.allocator, root_path, .{
+        .frames = 3,
+        .delta_seconds = 1.0,
+    });
+    defer freeStepDetailedResult(std.testing.allocator, result);
+
+    switch (result) {
+        .runtime_error => |failure| {
+            try std.testing.expectEqual(@as(u32, 3), failure.summary.frames);
+            try std.testing.expectEqual(@as(u32, 0), failure.summary.completed_frames);
+            try std.testing.expectEqual(script.DiagnosticStage.runtime, failure.diagnostic.stage);
+            try std.testing.expectEqualStrings("rotate_cubes", failure.diagnostic.system_id orelse return error.TestExpectedEqual);
+            try std.testing.expect(std.mem.indexOf(u8, failure.diagnostic.message, "machina.transform.rotation") != null);
+
+            const entity = failure.scene.world.findEntityById("018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001") orelse return error.TestExpectedEqual;
+            const transform = (try failure.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+            try std.testing.expect(std.math.isFinite(transform.rotation[0]));
+            try std.testing.expect(std.math.isFinite(transform.rotation[1]));
+            try std.testing.expect(std.math.isFinite(transform.rotation[2]));
+            try std.testing.expectEqual(@as(f32, 0.0), transform.rotation[0]);
+            try std.testing.expectEqual(@as(f32, 0.0), transform.rotation[1]);
+            try std.testing.expectEqual(@as(f32, 0.0), transform.rotation[2]);
+        },
+        else => return error.TestExpectedEqual,
+    }
 }
 
 test "LiveProject reloads script runner multiplier" {

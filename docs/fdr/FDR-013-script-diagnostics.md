@@ -18,7 +18,8 @@ Script diagnostics report Luau and script-ECS failures in a form that humans, co
 - Diagnostics include a human-readable message from Luau, the engine validation layer, or the host ECS access bridge.
 - Successful subsequent operations clear stale live diagnostics.
 - Command-line commands render diagnostics as text.
-- `machina check` can render diagnostics as JSON for editor panels, automation, and agent workflows.
+- `machina check` can render validation diagnostics as JSON for editor panels, automation, and agent workflows.
+- `machina step` can render runtime system diagnostics as JSON alongside the final scene and simulation summaries.
 
 ## Design Decisions
 
@@ -46,10 +47,10 @@ Script diagnostics report Luau and script-ECS failures in a form that humans, co
 **Why:** Line-level locations unblock editor navigation and agent repair loops without requiring a full Luau source map pipeline yet.
 **Tradeoff:** Some diagnostics still point at the declaration or failing line rather than the exact expression or token.
 
-### 5. Provide JSON through project validation first
+### 5. Provide JSON through headless command surfaces
 
-**Decision:** Machine-readable diagnostics are exposed through `machina check --format=json` before interactive run/reload output.
-**Why:** Project validation is the stable headless surface used by agents, tests, and editor integrations. Live run output can stay optimized for human stderr until the editor API is clearer.
+**Decision:** Machine-readable diagnostics are exposed through `machina check --format=json` and `machina step --format=json` before interactive run/reload output.
+**Why:** Project validation and deterministic stepping are stable headless surfaces used by agents, tests, and editor integrations. Live run output can stay optimized for human stderr until the editor API is clearer.
 **Tradeoff:** Interactive reload diagnostics are not yet emitted as structured events.
 
 ### 6. Prefer host-authored runtime access messages
@@ -61,7 +62,7 @@ Script diagnostics report Luau and script-ECS failures in a form that humans, co
 ## Related
 
 - **ADRs:** ADR-001, ADR-006, ADR-009, ADR-011
-- **FDRs:** FDR-010, FDR-011
+- **FDRs:** FDR-003, FDR-010, FDR-011
 
 ## Open Questions
 

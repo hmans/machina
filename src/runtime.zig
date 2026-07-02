@@ -746,6 +746,14 @@ pub const World = struct {
         return self.entities.items.len;
     }
 
+    pub fn componentInstanceCount(self: World) usize {
+        var count: usize = 0;
+        for (self.component_tables.items) |table| {
+            count += table.entities.items.len;
+        }
+        return count;
+    }
+
     pub fn entity(self: World, handle: EntityHandle) WorldError!Entity {
         const index = handle.index;
         if (index >= self.entities.items.len) {
