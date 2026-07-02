@@ -85,6 +85,15 @@ pub const SystemRunner = union(enum) {
     luau: u32,
 };
 
+pub const SystemProfileSnapshot = struct {
+    id: []const u8,
+    phase: SystemPhase,
+    sample_count: u32,
+    window_size: u32,
+    last_ns: u64,
+    rolling_average_ns: u64,
+};
+
 pub const ScheduledSystem = struct {
     registry_index: usize,
     id: []const u8,

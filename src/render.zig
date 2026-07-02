@@ -35,6 +35,8 @@ const render_interact_ui_system_id = "machina.render.interact_ui";
 const render_prepare_ui_system_id = "machina.render.prepare_ui";
 const render_queue_ui_system_id = "machina.render.queue_ui";
 const render_draw_meshes_system_id = "machina.render.draw_meshes";
+const editor_system_profile_max_rows = 8;
+const editor_system_profile_id_chars = 28;
 
 pub const RenderError = error{
     NoAdapter,
@@ -77,7 +79,7 @@ pub const SceneReloadHook = struct {
 
 pub const FrameUpdateHook = struct {
     context: *anyopaque,
-    step: *const fn (context: *anyopaque, delta_seconds: f32, input: FrameInput) void,
+    step: *const fn (context: *anyopaque, delta_seconds: f32, input: *FrameInput) void,
 };
 
 pub const PointerInput = struct {
@@ -99,6 +101,7 @@ pub const FrameInput = struct {
     debug_overlay_visible: bool = false,
     editor_toggle_pressed: bool = false,
     fps: f32 = 0.0,
+    system_profiles: []const runtime.SystemProfileSnapshot = &.{},
 
     fn beginFrame(self: *FrameInput) void {
         self.pointer.beginFrame();
@@ -355,7 +358,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
 
         const delta_seconds: f32 = 0.025;
         if (options.frame_update) |frame_update| {
-            frame_update.step(frame_update.context, delta_seconds, input);
+            frame_update.step(frame_update.context, delta_seconds, &input);
         }
 
         try configureSurfaceFromWindow(surface, gpu.device, window, surface_format, &width, &height);
@@ -910,20 +913,31 @@ fn extractDebugOverlayInto(
     world: *runtime.World,
     input: FrameInput,
 ) RenderError!void {
+    const profile_rows = @min(input.system_profiles.len, editor_system_profile_max_rows);
+    const has_profiles = input.system_profiles.len > 0;
+    const panel_width: f32 = if (has_profiles) 604.0 else 144.0;
+    var panel_height: f32 = 52.0;
+    if (has_profiles) {
+        panel_height = 84.0 + @as(f32, @floatFromInt(profile_rows)) * 18.0;
+        if (input.system_profiles.len > profile_rows) {
+            panel_height += 18.0;
+        }
+    }
+
     const canvas = world.createEntity("machina.editor.debug.canvas", "Editor Debug Canvas") catch |err| return mapWorldError(err);
     world.setUiCanvas(canvas) catch |err| return mapWorldError(err);
 
     const panel = world.createEntity("machina.editor.debug.panel", "Editor Debug Panel") catch |err| return mapWorldError(err);
     world.setUiRect(panel, .{
         .position = .{ 12.0, 12.0, 0.0 },
-        .size = .{ 144.0, 52.0, 0.0 },
+        .size = .{ panel_width, panel_height, 0.0 },
         .color = .{ 0.059, 0.09, 0.165 },
     }) catch |err| return mapWorldError(err);
 
     const accent = world.createEntity("machina.editor.debug.accent", "Editor Debug Accent") catch |err| return mapWorldError(err);
     world.setUiRect(accent, .{
         .position = .{ 12.0, 12.0, 0.0 },
-        .size = .{ 144.0, 4.0, 0.0 },
+        .size = .{ panel_width, 4.0, 0.0 },
         .color = .{ 0.056, 0.749, 0.823 },
     }) catch |err| return mapWorldError(err);
 
@@ -933,14 +947,97 @@ fn extractDebugOverlayInto(
     const label = world.createEntity("machina.editor.debug.fps", "Editor Debug FPS") catch |err| return mapWorldError(err);
     world.setUiText(label, .{
         .position = .{ 28.0, 22.0, 0.0 },
-        .size = 2.0,
+        .size = 1.0,
         .color = .{ 0.93, 0.969, 1.0 },
         .value = fps_text,
     }) catch |err| return mapWorldError(err);
+
+    if (!has_profiles) {
+        return;
+    }
+
+    const header_text = formatSystemProfileHeader(allocator, input.system_profiles) catch return RenderError.OutOfMemory;
+    defer allocator.free(header_text);
+    const header = world.createEntity("machina.editor.debug.systems.header", "Editor Debug Systems Header") catch |err| return mapWorldError(err);
+    world.setUiText(header, .{
+        .position = .{ 28.0, 58.0, 0.0 },
+        .size = 0.5,
+        .color = .{ 0.56, 0.737, 0.949 },
+        .value = header_text,
+    }) catch |err| return mapWorldError(err);
+
+    for (input.system_profiles[0..profile_rows], 0..) |profile, index| {
+        const line_text = formatSystemProfileLine(allocator, profile) catch return RenderError.OutOfMemory;
+        defer allocator.free(line_text);
+        const row_id = std.fmt.allocPrint(allocator, "machina.editor.debug.systems.row.{d}", .{index}) catch return RenderError.OutOfMemory;
+        defer allocator.free(row_id);
+        const row = world.createEntity(row_id, "Editor Debug System Row") catch |err| return mapWorldError(err);
+        world.setUiText(row, .{
+            .position = .{ 28.0, 78.0 + @as(f32, @floatFromInt(index)) * 18.0, 0.0 },
+            .size = 0.5,
+            .color = .{ 0.889, 0.949, 0.992 },
+            .value = line_text,
+        }) catch |err| return mapWorldError(err);
+    }
+
+    if (input.system_profiles.len > profile_rows) {
+        const overflow_text = std.fmt.allocPrint(allocator, "... {d} more systems", .{input.system_profiles.len - profile_rows}) catch return RenderError.OutOfMemory;
+        defer allocator.free(overflow_text);
+        const overflow = world.createEntity("machina.editor.debug.systems.overflow", "Editor Debug Systems Overflow") catch |err| return mapWorldError(err);
+        world.setUiText(overflow, .{
+            .position = .{ 28.0, 78.0 + @as(f32, @floatFromInt(profile_rows)) * 18.0, 0.0 },
+            .size = 0.5,
+            .color = .{ 0.56, 0.737, 0.949 },
+            .value = overflow_text,
+        }) catch |err| return mapWorldError(err);
+    }
 }
 
 fn formatFpsLabel(allocator: std.mem.Allocator, fps: f32) error{OutOfMemory}![]const u8 {
     return std.fmt.allocPrint(allocator, "FPS {d}", .{roundedFps(fps)});
+}
+
+fn formatSystemProfileHeader(allocator: std.mem.Allocator, profiles: []const runtime.SystemProfileSnapshot) error{OutOfMemory}![]const u8 {
+    const window_size = if (profiles.len == 0) 0 else profiles[0].window_size;
+    return std.fmt.allocPrint(allocator, "SYSTEMS {d}  AVG {d}F", .{ profiles.len, window_size });
+}
+
+fn formatSystemProfileLine(allocator: std.mem.Allocator, profile: runtime.SystemProfileSnapshot) error{OutOfMemory}![]const u8 {
+    const phase = systemPhaseLabel(profile.phase);
+    const id_prefix = if (profile.id.len > editor_system_profile_id_chars)
+        profile.id[0 .. editor_system_profile_id_chars - 3]
+    else
+        profile.id;
+    const ellipsis = if (profile.id.len > editor_system_profile_id_chars) "..." else "";
+
+    if (profile.sample_count == 0) {
+        return std.fmt.allocPrint(allocator, "{s} {s}{s} AVG -- LAST --", .{
+            phase,
+            id_prefix,
+            ellipsis,
+        });
+    }
+
+    return std.fmt.allocPrint(allocator, "{s} {s}{s} AVG {d} US LAST {d} US", .{
+        phase,
+        id_prefix,
+        ellipsis,
+        nsToMicrosRounded(profile.rolling_average_ns),
+        nsToMicrosRounded(profile.last_ns),
+    });
+}
+
+fn systemPhaseLabel(phase: runtime.SystemPhase) []const u8 {
+    return switch (phase) {
+        .startup => "startup",
+        .update => "update",
+        .fixed_update => "fixed",
+        .render => "render",
+    };
+}
+
+fn nsToMicrosRounded(ns: u64) u64 {
+    return (ns + 500) / 1000;
 }
 
 fn roundedFps(fps: f32) i32 {
@@ -2746,6 +2843,61 @@ test "debug overlay extracts FPS label when visible" {
 
     try state.queueUiDraw();
     try std.testing.expectEqual(@as(usize, 1), state.uiDrawCommandCount());
+}
+
+test "debug overlay extracts system profile rows when available" {
+    var scene_world = runtime.World.init(std.testing.allocator);
+    defer scene_world.deinit();
+
+    const profiles = [_]runtime.SystemProfileSnapshot{
+        .{
+            .id = "spawn_initial",
+            .phase = .startup,
+            .sample_count = 0,
+            .window_size = 120,
+            .last_ns = 0,
+            .rolling_average_ns = 0,
+        },
+        .{
+            .id = "rotate_cubes",
+            .phase = .update,
+            .sample_count = 3,
+            .window_size = 120,
+            .last_ns = 123_400,
+            .rolling_average_ns = 56_700,
+        },
+    };
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+    try state.extractSceneWithInput(.{ .world = &scene_world }, .{
+        .debug_overlay_visible = true,
+        .fps = 60.0,
+        .system_profiles = &profiles,
+    });
+
+    try std.testing.expectEqual(@as(usize, 2), state.world.uiRectCount());
+    try std.testing.expectEqual(@as(usize, 4), state.world.uiTextCount());
+
+    var saw_header = false;
+    var saw_startup = false;
+    var saw_update = false;
+    var texts = state.world.uiTexts();
+    while (texts.next()) |text| {
+        if (std.mem.indexOf(u8, text.value, "SYSTEMS 2  AVG 120F") != null) {
+            saw_header = true;
+        }
+        if (std.mem.indexOf(u8, text.value, "startup spawn_initial AVG -- LAST --") != null) {
+            saw_startup = true;
+        }
+        if (std.mem.indexOf(u8, text.value, "update rotate_cubes AVG 57 US LAST 123 US") != null) {
+            saw_update = true;
+        }
+    }
+
+    try std.testing.expect(saw_header);
+    try std.testing.expect(saw_startup);
+    try std.testing.expect(saw_update);
 }
 
 test "UI vertex builder reflects button interaction state" {

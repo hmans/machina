@@ -43,6 +43,7 @@ pub const FieldType = runtime.FieldType;
 pub const SystemDefinition = runtime.SystemDefinition;
 pub const SystemPhase = runtime.SystemPhase;
 pub const SystemSchedule = runtime.SystemSchedule;
+pub const SystemProfileSnapshot = runtime.SystemProfileSnapshot;
 pub const ScheduleError = runtime.ScheduleError;
 pub const TypeIdError = runtime.TypeIdError;
 pub const RegistryError = runtime.RegistryError;
@@ -262,6 +263,10 @@ pub const LiveProject = struct {
 
     pub fn renderScene(self: *const LiveProject) RenderScene {
         return self.scene.renderScene();
+    }
+
+    pub fn systemProfileSnapshots(self: *LiveProject) []const SystemProfileSnapshot {
+        return self.scripts.systemProfileSnapshots();
     }
 
     pub fn update(self: *LiveProject, delta_seconds: f32) void {

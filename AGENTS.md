@@ -8,7 +8,7 @@ Machina is an experimental, text-first game engine written in Zig. The engine is
 - Fully ECS based. The ECS is exposed to scripts. Users can author new component types and systems in Luau, and the engine will schedule them with native systems.
 - Projects are split into scenes, which are mostly collections of entities, persisted as .toml files.
 - Run your project by running `machina run` in your project directory.
-- Press Ctrl+Tab in a headful run to toggle the engine UI overlay; `machina run --editor` shows it by default. The first editor/debug overlay shows FPS.
+- Press Ctrl+Tab in a headful run to toggle the engine UI overlay; `machina run --editor` shows it by default. The editor/debug overlay shows FPS and live script system timings.
 
 Please add to this list as needed.
 
@@ -57,7 +57,7 @@ Rendering and UI:
 - Button markers derive ECS interaction state for hovered, held, and pressed visuals.
 - Command buttons emit transient `machina.ui.command_event` components before update systems run.
 - Headful runs can generate an engine-owned debug overlay in the render ECS world.
-- The debug overlay is hidden by default, `machina run --editor` shows it on startup, Ctrl+Tab toggles it, and the initial panel shows FPS over the scene.
+- The debug overlay is hidden by default, `machina run --editor` shows it on startup, Ctrl+Tab toggles it, and the current panel shows FPS plus script system timing rows when a live project provides profiling data.
 - The renderer owns an internal render world and render-phase schedule built with the same `runtime.World`, component registry, and scheduler implementation as game worlds.
 - Matching geometry and shadow-state renderables are automatically grouped into instanced render batches below the scene authoring surface.
 - Current base color is per-instance and should not split batches.
@@ -72,6 +72,7 @@ ECS runtime:
 - Scene loading builds a world, scripts register ECS component/system types, and rendering queries renderable components from that world.
 - Script systems can spawn/despawn entities and add/remove components through the ECS facade.
 - Structural mutations must respect declared write access.
+- Script system runtime profiling is collected at the scheduler dispatch boundary and exposed as rolling per-system snapshots for editor UI.
 
 Luau scripting:
 

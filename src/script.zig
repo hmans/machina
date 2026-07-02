@@ -6,6 +6,8 @@ const c = @cImport({
     @cInclude("luau_bridge.h");
 });
 
+pub const system_profile_window_frames: usize = 120;
+
 pub const ScriptError = runtime.RegistryError || runtime.ScheduleError || std.mem.Allocator.Error || error{
     InvalidScript,
     UnknownFieldType,
@@ -71,6 +73,48 @@ const ScriptOrigin = struct {
     }
 };
 
+const SystemProfileState = struct {
+    id: []const u8,
+    phase: runtime.SystemPhase,
+    samples_ns: [system_profile_window_frames]u64 = [_]u64{0} ** system_profile_window_frames,
+    sample_count: usize = 0,
+    next_sample: usize = 0,
+    total_ns: u64 = 0,
+    last_ns: u64 = 0,
+
+    fn deinit(self: *SystemProfileState, allocator: std.mem.Allocator) void {
+        allocator.free(self.id);
+        self.* = undefined;
+    }
+
+    fn record(self: *SystemProfileState, duration_ns: u64) void {
+        if (self.sample_count < system_profile_window_frames) {
+            self.samples_ns[self.next_sample] = duration_ns;
+            self.sample_count += 1;
+            self.total_ns += duration_ns;
+        } else {
+            self.total_ns -= self.samples_ns[self.next_sample];
+            self.samples_ns[self.next_sample] = duration_ns;
+            self.total_ns += duration_ns;
+        }
+
+        self.next_sample = (self.next_sample + 1) % system_profile_window_frames;
+        self.last_ns = duration_ns;
+    }
+
+    fn snapshot(self: SystemProfileState) runtime.SystemProfileSnapshot {
+        const average_ns = if (self.sample_count == 0) 0 else self.total_ns / self.sample_count;
+        return .{
+            .id = self.id,
+            .phase = self.phase,
+            .sample_count = @intCast(self.sample_count),
+            .window_size = @intCast(system_profile_window_frames),
+            .last_ns = self.last_ns,
+            .rolling_average_ns = average_ns,
+        };
+    }
+};
+
 pub const Program = struct {
     allocator: std.mem.Allocator,
     registry: runtime.ComponentRegistry,
@@ -79,12 +123,17 @@ pub const Program = struct {
     active_system: ?*const runtime.ScheduledSystem = null,
     component_origins: std.ArrayList(ScriptOrigin) = .empty,
     system_origins: std.ArrayList(ScriptOrigin) = .empty,
+    system_profiles: std.ArrayList(SystemProfileState) = .empty,
+    system_profile_snapshots: std.ArrayList(runtime.SystemProfileSnapshot) = .empty,
     last_diagnostic: ?Diagnostic = null,
     host_error: ?[:0]u8 = null,
 
     pub fn deinit(self: *Program) void {
         self.clearHostError();
         self.clearLastDiagnostic();
+        self.clearSystemProfiles();
+        self.system_profile_snapshots.deinit(self.allocator);
+        self.system_profiles.deinit(self.allocator);
         for (self.system_origins.items) |origin| {
             origin.deinit(self.allocator);
         }
@@ -107,6 +156,14 @@ pub const Program = struct {
         return self.runPhase(world, .update, delta_seconds);
     }
 
+    pub fn systemProfileSnapshots(self: *Program) []const runtime.SystemProfileSnapshot {
+        self.system_profile_snapshots.clearRetainingCapacity();
+        for (self.system_profiles.items) |profile| {
+            self.system_profile_snapshots.appendAssumeCapacity(profile.snapshot());
+        }
+        return self.system_profile_snapshots.items;
+    }
+
     fn runPhase(self: *Program, world: *runtime.World, phase: runtime.SystemPhase, delta_seconds: f32) bool {
         self.clearLastDiagnostic();
         self.clearHostError();
@@ -120,11 +177,13 @@ pub const Program = struct {
 
             for (batch.systems) |*system| {
                 switch (system.runner) {
-                    .none => {},
+                    .none => self.recordSystemDuration(system.*, phase, 0),
                     .luau => |runner_ref| {
                         self.clearHostError();
                         self.active_system = system;
+                        const started_ns = monotonicTimestampNs();
                         const system_ok = c.machina_luau_call_system(self.vm, runner_ref, world, delta_seconds) != 0;
+                        self.recordSystemDuration(system.*, phase, elapsedNanosecondsSince(started_ns));
                         if (!system_ok and self.last_diagnostic == null) {
                             self.setRuntimeDiagnostic(system.*, runner_ref) catch {};
                         }
@@ -136,6 +195,41 @@ pub const Program = struct {
             }
         }
         return ok;
+    }
+
+    fn initializeSystemProfiles(self: *Program) !void {
+        self.clearSystemProfiles();
+        self.system_profile_snapshots.clearRetainingCapacity();
+
+        const system_count = self.schedule.systemCount();
+        try self.system_profiles.ensureTotalCapacity(self.allocator, system_count);
+        try self.system_profile_snapshots.ensureTotalCapacity(self.allocator, system_count);
+
+        for (self.schedule.batches) |batch| {
+            for (batch.systems) |system| {
+                const owned_id = try self.allocator.dupe(u8, system.id);
+                self.system_profiles.appendAssumeCapacity(.{
+                    .id = owned_id,
+                    .phase = batch.phase,
+                });
+            }
+        }
+    }
+
+    fn clearSystemProfiles(self: *Program) void {
+        for (self.system_profiles.items) |*profile| {
+            profile.deinit(self.allocator);
+        }
+        self.system_profiles.clearRetainingCapacity();
+    }
+
+    fn recordSystemDuration(self: *Program, system: runtime.ScheduledSystem, phase: runtime.SystemPhase, duration_ns: u64) void {
+        for (self.system_profiles.items) |*profile| {
+            if (profile.phase == phase and std.mem.eql(u8, profile.id, system.id)) {
+                profile.record(duration_ns);
+                return;
+            }
+        }
     }
 
     fn activeSystemAllowsRead(self: Program, component_id: []const u8) bool {
@@ -207,6 +301,19 @@ pub const Program = struct {
     }
 };
 
+fn elapsedNanosecondsSince(started_ns: i128) u64 {
+    const elapsed_ns = monotonicTimestampNs() - started_ns;
+    if (elapsed_ns <= 0) {
+        return 0;
+    }
+    return @intCast(@min(elapsed_ns, std.math.maxInt(u64)));
+}
+
+fn monotonicTimestampNs() i128 {
+    const io = Io.Threaded.global_single_threaded.io();
+    return Io.Timestamp.now(io, .awake).nanoseconds;
+}
+
 pub fn loadProjectProgram(
     io: Io,
     allocator: std.mem.Allocator,
@@ -254,6 +361,7 @@ pub fn loadProjectProgramDetailed(
         program.deinit();
         return .{ .diagnostic = diagnostic };
     };
+    try program.initializeSystemProfiles();
     return .{ .program = program };
 }
 
@@ -271,6 +379,7 @@ pub fn loadSourceProgram(
     }
     try registerDeclaredTypes(&program);
     program.schedule = try buildRuntimeSchedule(allocator, program.registry);
+    try program.initializeSystemProfiles();
     return program;
 }
 
@@ -1176,6 +1285,14 @@ test "luau declarations register components and executable systems" {
     try std.testing.expectEqualStrings("spin", system.reads[0]);
     try std.testing.expectEqual(@as(usize, 1), system.writes.len);
     try std.testing.expectEqualStrings("machina.transform", system.writes[0]);
+    {
+        const profiles = program.systemProfileSnapshots();
+        try std.testing.expectEqual(@as(usize, 1), profiles.len);
+        try std.testing.expectEqualStrings("rotate_cubes", profiles[0].id);
+        try std.testing.expectEqual(runtime.SystemPhase.update, profiles[0].phase);
+        try std.testing.expectEqual(@as(u32, 0), profiles[0].sample_count);
+        try std.testing.expectEqual(@as(u32, system_profile_window_frames), profiles[0].window_size);
+    }
 
     var world = runtime.World.init(std.testing.allocator);
     defer world.deinit();
@@ -1186,6 +1303,12 @@ test "luau declarations register components and executable systems" {
     try std.testing.expect(program.update(&world, 0.5));
     const transform = (try world.getTransform(entity)) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(f32, 1.25), transform.rotation[0]);
+    {
+        const profiles = program.systemProfileSnapshots();
+        try std.testing.expectEqual(@as(usize, 1), profiles.len);
+        try std.testing.expectEqual(@as(u32, 1), profiles[0].sample_count);
+        try std.testing.expectEqual(profiles[0].last_ns, profiles[0].rolling_average_ns);
+    }
 }
 
 test "luau systems can spawn despawn add and remove components" {

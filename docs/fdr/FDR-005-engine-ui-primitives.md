@@ -18,6 +18,8 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - Headful runs can toggle the engine-owned editor/debug overlay with Ctrl+Tab.
 - Headful runs hide the engine-owned editor/debug overlay by default; `machina run --editor` starts with it visible.
 - The first engine-owned editor/debug overlay displays current FPS over the rendered scene.
+- When a live project provides script system profiling data, the editor/debug overlay lists active systems with their phase, rolling average runtime over the current profiling window, and last sample runtime.
+- The first system performance view caps visible rows and reports that additional systems exist instead of providing scrolling.
 - UI can be used for runtime diagnostics before a full editor exists.
 - UI definitions that are part of projects or tools follow the text-first project model.
 - The UI overlay renders after 3D scene content.
@@ -66,6 +68,12 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 **Why:** This gives scripts and future editor systems a simple ECS-native way to react to UI without embedding callbacks in scene data.
 **Tradeoff:** The current event shape is intentionally small and does not yet model bubbling, capture, disabled state, modifiers, or typed payloads.
 
+### 8. Profile systems at the scheduler boundary
+
+**Decision:** The first editor performance table uses timings captured around scheduled script system dispatch and renders them through the engine-owned overlay.
+**Why:** Measuring at the scheduler boundary keeps the data tied to declared ECS systems and works for human and agent debugging without script instrumentation. It follows ADR-006, ADR-007, and ADR-008.
+**Tradeoff:** The first slice reports script system wall time only. It does not yet include renderer-internal systems, GPU time, parallel worker timing, flame charts, sorting, or scrollable inspection.
+
 ## Related
 
 - **ADRs:** ADR-001, ADR-004, ADR-007, ADR-008, ADR-013
@@ -78,3 +86,4 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - When should focus and text input become active behavior?
 - What layout primitives are needed before editor panels become practical?
 - What text editing capability is needed before the editor becomes practical?
+- How should the editor expose large system lists, sorting, and drill-down timing history?
