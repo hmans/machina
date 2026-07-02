@@ -28,9 +28,11 @@ Script ECS registration lets project and package scripts define new component an
 - Script-authored systems can provide Luau `run` callbacks that execute during the native update schedule.
 - Script system callbacks receive an engine-provided world facade instead of direct component storage ownership.
 - `ecs.component(...)` returns a typed component handle.
-- Scripts use `ecs.refs(...)` to erase typed component handles into dependency declarations for system `reads` and `writes`.
-- Scripts pass typed component handles to `world.query(...)`.
-- The preferred world facade exposes `world.query(...)` for component-set iteration and returns the entity plus component proxies for the requested components.
+- Scripts use `ecs.query(...)` to create reusable typed query objects from component handles.
+- Systems may attach a query object; unwritten query components become inferred read access.
+- Scripts use `ecs.refs(...)` to erase typed component handles into explicit `reads` or `writes` declarations when needed.
+- The preferred runtime loop calls `Query:iter(world)` and receives the entity plus component proxies for the requested components.
+- The lower-level `world.query(...)` loop remains available for compatibility and debugging.
 - Low-level entity vector accessors remain available for compatibility and debugging.
 - Script-driven world mutation is checked against the system's declared component access.
 - Non-finite script values that reach host mutation APIs fail the system invocation for that frame instead of corrupting world state.
@@ -69,11 +71,11 @@ Script ECS registration lets project and package scripts define new component an
 **Why:** Running real Luau keeps script behavior honest, reloadable, and compatible with editor tooling while preserving native ownership of ECS storage and scheduling. Narrow host APIs prevent scripts from bypassing validation while the ECS query/mutation model matures.
 **Tradeoff:** Each host API must be designed, typed, validated, and diagnosed explicitly before scripts can use it.
 
-### 6. Prefer typed component handles for script queries
+### 6. Prefer typed query objects for script iteration
 
-**Decision:** `ecs.component(...)` returns an opaque typed component handle, `world.query(...)` accepts handles and yields component proxies in the same order as the query, and `ecs.refs(...)` erases handles into id refs for system access declarations.
-**Why:** Typed handles let Luau generics connect component ids to component shapes without relying on raw string literals. Erasing handles at the access-declaration boundary keeps mixed dependency lists ergonomic while preserving typed query results. This gives scripts useful editor diagnostics without forcing loop-variable annotations. It follows ADR-006 and ADR-008.
-**Tradeoff:** Scripts use a helper for `reads` and `writes` instead of raw handle arrays, and scalar fields still need additional proxy support beyond the initial `vec3` path.
+**Decision:** `ecs.component(...)` returns an opaque typed component handle, `ecs.query(...)` turns one or more handles into a reusable query object, systems can attach that query object, and runtime loops iterate it through the world facade.
+**Why:** Query objects keep the component set explicit, reusable, and easy for Luau tooling to type while avoiding repeated string or handle lists inside hot loops. Inferring reads from the query object lets scripts describe the common "iterate these components" case once, while explicit writes still keep scheduling honest. It follows ADR-006 and ADR-008.
+**Tradeoff:** Script authors introduce a named query before system registration, and the typed editor surface supports a practical maximum query arity rather than arbitrary compile-time tuple lengths.
 
 ### 7. Vendor the initial Luau runtime behind the scripting boundary
 

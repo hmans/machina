@@ -59,13 +59,14 @@ local Spin = ecs.component<<Spin>>("spin", {
     angular_velocity = "vec3",
   },
 })
+local RotatingCubes = ecs.query(Transform, Spin)
 
 ecs.system("typed_query", {
   phase = "update",
-  reads = ecs.refs(Spin),
+  query = RotatingCubes,
   writes = ecs.refs(Transform),
   run = function(world, dt)
-    for _entity, transform, spin in world.query(Transform, Spin) do
+    for _entity, transform, spin in RotatingCubes:iter(world) do
       local _rotation: MachinaVec3 = transform.rotation
       local _angular_speed: number = spin.angular_velocity[1] * dt
       transform.rotation = {
@@ -92,12 +93,13 @@ local Spin = ecs.component<<Spin>>("spin", {
     angular_velocity = "vec3",
   },
 })
+local RotatingCubes = ecs.query(Transform, Spin)
 
 ecs.system("typed_query", {
-  reads = ecs.refs(Spin),
+  query = RotatingCubes,
   writes = ecs.refs(Transform),
   run = function(world, dt)
-    for _entity, transform, _spin in world.query(Transform, Spin) do
+    for _entity, transform, _spin in RotatingCubes:iter(world) do
       local _bad: string = transform.rotation
     end
   end,

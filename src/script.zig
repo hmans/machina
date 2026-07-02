@@ -666,13 +666,14 @@ test "luau declarations register components and executable systems" {
         \\    angular_velocity = "vec3",
         \\  },
         \\})
+        \\local RotatingCubes = ecs.query(Transform, Spin)
         \\
         \\ecs.system("rotate_cubes", {
         \\  phase = "update",
-        \\  reads = ecs.refs(Spin),
+        \\  query = RotatingCubes,
         \\  writes = ecs.refs(Transform),
         \\  run = function(world, dt)
-        \\    for _entity, transform, spin in world.query(Transform, Spin) do
+        \\    for _entity, transform, spin in RotatingCubes:iter(world) do
         \\      transform.rotation = {
         \\        transform.rotation[1] + spin.angular_velocity[1] * dt * (1 + 1.5),
         \\        transform.rotation[2] + spin.angular_velocity[2] * dt * (1 + 1.5),
@@ -687,6 +688,10 @@ test "luau declarations register components and executable systems" {
     try std.testing.expect(program.registry.findComponent("spin") != null);
     const system = program.registry.findSystem("rotate_cubes") orelse return error.TestExpectedEqual;
     try std.testing.expect(system.runner.luau != 0);
+    try std.testing.expectEqual(@as(usize, 1), system.reads.len);
+    try std.testing.expectEqualStrings("spin", system.reads[0]);
+    try std.testing.expectEqual(@as(usize, 1), system.writes.len);
+    try std.testing.expectEqualStrings("machina.transform", system.writes[0]);
 
     var world = runtime.World.init(std.testing.allocator);
     defer world.deinit();
@@ -745,6 +750,47 @@ test "luau refs helper erases component handles for system declarations" {
     try std.testing.expectEqualStrings("spin", system.reads[2]);
 }
 
+test "luau query objects infer system reads from unwritten query components" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
+        \\--!strict
+        \\
+        \\type Spin = {
+        \\  angular_velocity: MachinaVec3,
+        \\}
+        \\
+        \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
+        \\local RenderCube = ecs.component<<MachinaRenderCube>>("machina.render.cube")
+        \\local Spin = ecs.component<<Spin>>("spin", {
+        \\  fields = {
+        \\    angular_velocity = "vec3",
+        \\  },
+        \\})
+        \\local RotatingCubes = ecs.query(Transform, Spin, RenderCube)
+        \\
+        \\ecs.system("rotate_cubes", {
+        \\  query = RotatingCubes,
+        \\  writes = ecs.refs(Transform),
+        \\})
+    );
+    defer program.deinit();
+
+    const system = program.registry.findSystem("rotate_cubes") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 2), system.reads.len);
+    try std.testing.expectEqualStrings("spin", system.reads[0]);
+    try std.testing.expectEqualStrings("machina.render.cube", system.reads[1]);
+    try std.testing.expectEqual(@as(usize, 1), system.writes.len);
+    try std.testing.expectEqualStrings("machina.transform", system.writes[0]);
+}
+
+test "luau query objects reject duplicate component refs" {
+    try std.testing.expectError(ScriptError.InvalidScript, loadSourceProgram(std.testing.allocator, "test.luau",
+        \\--!strict
+        \\
+        \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
+        \\local _BadQuery = ecs.query(Transform, Transform)
+    ));
+}
+
 test "luau world mutation requires declared system access" {
     var program = try loadSourceProgram(std.testing.allocator, "test.luau",
         \\--!strict
@@ -763,12 +809,13 @@ test "luau world mutation requires declared system access" {
         \\})
         \\
         \\local Marker = ecs.component<<Marker>>("marker", {})
+        \\local RotatingCubes = ecs.query(Transform, Spin)
         \\
         \\ecs.system("bad_rotate", {
-        \\  reads = ecs.refs(Transform, Spin),
+        \\  query = RotatingCubes,
         \\  writes = ecs.refs(Marker),
         \\  run = function(world, dt)
-        \\    for _entity, transform, spin in world.query(Transform, Spin) do
+        \\    for _entity, transform, spin in RotatingCubes:iter(world) do
         \\      transform.rotation = { dt, 0, 0 }
         \\    end
         \\  end,
@@ -805,12 +852,13 @@ test "luau world query requires declared component access" {
         \\})
         \\
         \\local Marker = ecs.component<<Marker>>("marker", {})
+        \\local Markers = ecs.query(Marker)
         \\
         \\ecs.system("bad_query", {
         \\  reads = ecs.refs(Spin),
         \\  writes = ecs.refs(Transform),
         \\  run = function(world, dt)
-        \\    for entity, marker in world.query(Marker) do
+        \\    for entity, marker in Markers:iter(world) do
         \\      entity.set_vec3("machina.transform", "rotation", { dt, 0, 0 })
         \\    end
         \\  end,

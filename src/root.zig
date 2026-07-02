@@ -1505,13 +1505,15 @@ test "checkProject validates script declarations and builds a system schedule" {
         \\    angular_velocity = "vec3",
         \\  },
         \\})
+        \\local Spinners = ecs.query(Spin)
+        \\local RenderedCubes = ecs.query(Transform, RenderCube)
         \\
         \\ecs.system("observe_spin", {
-        \\  reads = ecs.refs(Spin),
+        \\  query = Spinners,
         \\})
         \\
         \\ecs.system("observe_cubes", {
-        \\  reads = ecs.refs(Transform, RenderCube),
+        \\  query = RenderedCubes,
         \\  after = { "observe_spin" },
         \\})
         ,
@@ -1707,9 +1709,10 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
         \\    angular_velocity = "vec3",
         \\  },
         \\})
+        \\local Spinners = ecs.query(Spin)
         \\
         \\ecs.system("observe_spin", {
-        \\  reads = ecs.refs(Spin),
+        \\  query = Spinners,
         \\})
         ,
     });
@@ -1744,13 +1747,15 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
         \\    enabled = "boolean",
         \\  },
         \\})
+        \\local Spinners = ecs.query(Spin)
+        \\local Markers = ecs.query(Marker)
         \\
         \\ecs.system("observe_spin", {
-        \\  reads = ecs.refs(Spin),
+        \\  query = Spinners,
         \\})
         \\
         \\ecs.system("observe_marker", {
-        \\  reads = ecs.refs(Marker),
+        \\  query = Markers,
         \\})
         ,
     });
@@ -1815,12 +1820,13 @@ test "LiveProject update runs the scheduled rotation system" {
         \\    angular_velocity = "vec3",
         \\  },
         \\})
+        \\local RotatingCubes = ecs.query(Transform, Spin)
         \\
         \\ecs.system("rotate_cubes", {
-        \\  reads = ecs.refs(Spin),
+        \\  query = RotatingCubes,
         \\  writes = ecs.refs(Transform),
         \\  run = function(world, dt)
-        \\    for _entity, transform, spin in world.query(Transform, Spin) do
+        \\    for _entity, transform, spin in RotatingCubes:iter(world) do
         \\      transform.rotation = {
         \\        transform.rotation[1] + spin.angular_velocity[1] * dt,
         \\        transform.rotation[2] + spin.angular_velocity[2] * dt,
@@ -2155,12 +2161,13 @@ fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !vo
         \\    angular_velocity = "vec3",
         \\  }},
         \\}})
+        \\local RotatingCubes = ecs.query(Transform, Spin)
         \\
         \\ecs.system("rotate_cubes", {{
-        \\  reads = ecs.refs(Spin),
+        \\  query = RotatingCubes,
         \\  writes = ecs.refs(Transform),
         \\  run = function(world, dt)
-        \\    for _entity, transform, spin in world.query(Transform, Spin) do
+        \\    for _entity, transform, spin in RotatingCubes:iter(world) do
         \\      transform.rotation = {{
         \\        transform.rotation[1] + spin.angular_velocity[1] * ({s}),
         \\        transform.rotation[2] + spin.angular_velocity[2] * ({s}),

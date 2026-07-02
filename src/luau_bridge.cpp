@@ -157,6 +157,16 @@ static std::vector<std::string> read_string_array(lua_State* state, int table_in
     return values;
 }
 
+static std::vector<std::string> read_refs_array_field(lua_State* state, int table_index, const char* key)
+{
+    lua_getfield(state, table_index, key);
+    luaL_checktype(state, -1, LUA_TTABLE);
+    const int refs_index = lua_absindex(state, -1);
+    std::vector<std::string> values = read_string_array(state, refs_index);
+    lua_pop(state, 1);
+    return values;
+}
+
 static std::vector<std::string> read_optional_string_array_field(lua_State* state, int table_index, const char* key)
 {
     lua_getfield(state, table_index, key);
@@ -171,6 +181,60 @@ static std::vector<std::string> read_optional_string_array_field(lua_State* stat
     std::vector<std::string> values = read_string_array(state, array_index);
     lua_pop(state, 1);
     return values;
+}
+
+static void check_query_refs(lua_State* state, const std::vector<std::string>& values);
+
+static std::vector<std::string> read_optional_query_refs_field(lua_State* state, int table_index, const char* key)
+{
+    lua_getfield(state, table_index, key);
+    if (lua_isnil(state, -1))
+    {
+        lua_pop(state, 1);
+        return {};
+    }
+
+    luaL_checktype(state, -1, LUA_TTABLE);
+    const int query_index = lua_absindex(state, -1);
+    std::vector<std::string> values = read_refs_array_field(state, query_index, "refs");
+    check_query_refs(state, values);
+    lua_pop(state, 1);
+    return values;
+}
+
+static bool string_list_contains(const std::vector<std::string>& values, const std::string& needle)
+{
+    for (const std::string& value : values)
+    {
+        if (value == needle)
+            return true;
+    }
+    return false;
+}
+
+static void check_query_refs(lua_State* state, const std::vector<std::string>& values)
+{
+    if (values.empty())
+        luaL_error(state, "query expects at least one component id");
+
+    for (size_t index = 0; index < values.size(); ++index)
+    {
+        for (size_t prior = 0; prior < index; ++prior)
+        {
+            if (values[prior] == values[index])
+                luaL_error(state, "query contains duplicate component id '%s'", values[index].c_str());
+        }
+    }
+}
+
+static void append_query_reads(SystemDecl& system, const std::vector<std::string>& query_refs)
+{
+    for (const std::string& id : query_refs)
+    {
+        if (string_list_contains(system.writes, id) || string_list_contains(system.reads, id))
+            continue;
+        system.reads.push_back(id);
+    }
 }
 
 static int ecs_component(lua_State* state)
@@ -232,6 +296,47 @@ static int ecs_refs(lua_State* state)
     return 1;
 }
 
+static int query_iterator(lua_State* state);
+static int query_object_iter(lua_State* state);
+
+static void push_query_object(lua_State* state, machina_luau* vm, const std::vector<std::string>& component_ids)
+{
+    lua_newtable(state);
+
+    lua_createtable(state, static_cast<int>(component_ids.size()), 0);
+    for (size_t index = 0; index < component_ids.size(); ++index)
+    {
+        const std::string& id = component_ids[index];
+        lua_pushlstring(state, id.c_str(), id.size());
+        lua_rawseti(state, -2, static_cast<int>(index + 1));
+    }
+    lua_setreadonly(state, -1, 1);
+    lua_setfield(state, -2, "refs");
+
+    lua_pushlightuserdata(state, vm);
+    lua_pushcclosure(state, query_object_iter, "ecs.query.iter", 1);
+    lua_setfield(state, -2, "iter");
+
+    lua_setreadonly(state, -1, 1);
+}
+
+static int ecs_query(lua_State* state)
+{
+    machina_luau* vm = vm_from_upvalue(state);
+    const int component_count = lua_gettop(state);
+    if (component_count <= 0)
+        luaL_error(state, "ecs.query expects at least one component id");
+
+    std::vector<std::string> component_ids;
+    component_ids.reserve(component_count);
+    for (int index = 1; index <= component_count; ++index)
+        component_ids.push_back(check_component_id(state, index));
+    check_query_refs(state, component_ids);
+
+    push_query_object(state, vm, component_ids);
+    return 1;
+}
+
 static int ecs_system(lua_State* state)
 {
     machina_luau* vm = vm_from_upvalue(state);
@@ -246,6 +351,7 @@ static int ecs_system(lua_State* state)
         read_optional_string_field(state, definition_index, "phase", &system.phase);
         system.reads = read_optional_string_array_field(state, definition_index, "reads");
         system.writes = read_optional_string_array_field(state, definition_index, "writes");
+        append_query_reads(system, read_optional_query_refs_field(state, definition_index, "query"));
         system.before = read_optional_string_array_field(state, definition_index, "before");
         system.after = read_optional_string_array_field(state, definition_index, "after");
 
@@ -375,6 +481,16 @@ static void push_component_proxy(lua_State* state, machina_luau* vm, uint32_t en
     lua_setmetatable(state, -2);
 }
 
+static void push_query_iterator(lua_State* state, machina_luau* vm, const std::vector<std::string>& component_ids)
+{
+    void* storage = lua_newuserdatadtor(state, sizeof(QueryState), query_state_dtor);
+    QueryState* query = new (storage) QueryState();
+    query->vm = vm;
+    query->component_ids = component_ids;
+
+    lua_pushcclosure(state, query_iterator, "query.iterator", 1);
+}
+
 static int query_iterator(lua_State* state)
 {
     QueryState* query = query_state_from_upvalue(state);
@@ -407,6 +523,22 @@ static int query_iterator(lua_State* state)
     return static_cast<int>(1 + query->component_ids.size());
 }
 
+static int query_object_iter(lua_State* state)
+{
+    machina_luau* vm = vm_from_upvalue(state);
+    luaL_checktype(state, 1, LUA_TTABLE);
+    if (lua_isnoneornil(state, 2))
+        luaL_error(state, "query:iter expects a world");
+
+    const int query_index = lua_absindex(state, 1);
+    std::vector<std::string> component_ids = read_refs_array_field(state, query_index, "refs");
+    if (component_ids.empty())
+        luaL_error(state, "query:iter expects at least one component id");
+
+    push_query_iterator(state, vm, component_ids);
+    return 1;
+}
+
 static int world_query(lua_State* state)
 {
     machina_luau* vm = vm_from_upvalue(state);
@@ -432,6 +564,10 @@ static void install_ecs(lua_State* state, machina_luau* vm)
     lua_pushlightuserdata(state, vm);
     lua_pushcclosure(state, ecs_component, "ecs.component", 1);
     lua_setfield(state, -2, "component");
+
+    lua_pushlightuserdata(state, vm);
+    lua_pushcclosure(state, ecs_query, "ecs.query", 1);
+    lua_setfield(state, -2, "query");
 
     lua_pushcclosure(state, ecs_refs, "ecs.refs", 0);
     lua_setfield(state, -2, "refs");

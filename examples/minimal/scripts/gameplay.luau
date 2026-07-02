@@ -12,12 +12,15 @@ local Spin = ecs.component<<Spin>>("spin", {
   },
 })
 
+local RotatingCubes = ecs.query(Transform, Spin)
+local RenderedCubes = ecs.query(Transform, RenderCube)
+
 ecs.system("autorotate", {
   phase = "update",
-  reads = ecs.refs(Spin),
+  query = RotatingCubes,
   writes = ecs.refs(Transform),
   run = function(world, dt)
-    for _entity, transform, spin in world.query(Transform, Spin) do
+    for _entity, transform, spin in RotatingCubes:iter(world) do
       transform.rotation = {
         transform.rotation[1] + spin.angular_velocity[1] * dt,
         transform.rotation[2] + spin.angular_velocity[2] * dt,
@@ -29,6 +32,6 @@ ecs.system("autorotate", {
 
 ecs.system("observe_cubes", {
   phase = "update",
-  reads = ecs.refs(Transform, RenderCube),
+  query = RenderedCubes,
   after = { "autorotate" },
 })
