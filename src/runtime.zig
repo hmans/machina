@@ -1779,11 +1779,20 @@ pub const RenderableCubeIterator = struct {
     index: usize = 0,
 
     pub fn next(self: *RenderableCubeIterator) ?RenderableCube {
-        const count = self.world.renderableCubeCount();
-        while (self.index < count) : (self.index += 1) {
-            const cube = self.world.renderableCubeAt(self.index) orelse continue;
+        while (self.index < self.world.entityCount()) {
+            const handle = EntityHandle{ .index = @intCast(self.index) };
             self.index += 1;
-            return cube;
+            const mesh = self.world.renderableMeshAtEntity(handle) orelse continue;
+            return .{
+                .entity = mesh.entity,
+                .id = mesh.id,
+                .name = mesh.name,
+                .position = mesh.position,
+                .rotation = mesh.rotation,
+                .scale = mesh.scale,
+                .color = mesh.base_color,
+                .spin = mesh.spin,
+            };
         }
         return null;
     }
@@ -1794,11 +1803,10 @@ pub const RenderableMeshIterator = struct {
     index: usize = 0,
 
     pub fn next(self: *RenderableMeshIterator) ?RenderableMesh {
-        const count = self.world.renderableMeshCount();
-        while (self.index < count) : (self.index += 1) {
-            const mesh = self.world.renderableMeshAt(self.index) orelse continue;
+        while (self.index < self.world.entityCount()) {
+            const handle = EntityHandle{ .index = @intCast(self.index) };
             self.index += 1;
-            return mesh;
+            return self.world.renderableMeshAtEntity(handle) orelse continue;
         }
         return null;
     }
@@ -1809,11 +1817,10 @@ pub const UiRectIterator = struct {
     index: usize = 0,
 
     pub fn next(self: *UiRectIterator) ?UiRect {
-        const count = self.world.uiRectCount();
-        while (self.index < count) : (self.index += 1) {
-            const rect = self.world.uiRectAt(self.index) orelse continue;
+        while (self.index < self.world.entityCount()) {
+            const handle = EntityHandle{ .index = @intCast(self.index) };
             self.index += 1;
-            return rect;
+            return self.world.uiRectAtEntity(handle) orelse continue;
         }
         return null;
     }
@@ -1824,11 +1831,10 @@ pub const UiTextIterator = struct {
     index: usize = 0,
 
     pub fn next(self: *UiTextIterator) ?UiText {
-        const count = self.world.uiTextCount();
-        while (self.index < count) : (self.index += 1) {
-            const text = self.world.uiTextAt(self.index) orelse continue;
+        while (self.index < self.world.entityCount()) {
+            const handle = EntityHandle{ .index = @intCast(self.index) };
             self.index += 1;
-            return text;
+            return self.world.uiTextAtEntity(handle) orelse continue;
         }
         return null;
     }

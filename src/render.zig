@@ -991,9 +991,13 @@ fn mapGeometryError(err: anyerror) RenderError {
 
 const BatchPlan = struct {
     allocator: std.mem.Allocator,
+    renderables: []runtime.RenderableMesh,
     batches: []BatchPlanEntry,
 
     fn build(allocator: std.mem.Allocator, world: *const runtime.World) RenderError!BatchPlan {
+        var renderables: std.ArrayList(runtime.RenderableMesh) = .empty;
+        errdefer renderables.deinit(allocator);
+
         var builds: std.ArrayList(BatchBuild) = .empty;
         errdefer {
             for (builds.items) |*pending_batch| {
@@ -1002,9 +1006,10 @@ const BatchPlan = struct {
             builds.deinit(allocator);
         }
 
-        const mesh_count = world.renderableMeshCount();
-        for (0..mesh_count) |render_index| {
-            const renderable = world.renderableMeshAt(render_index) orelse return RenderError.InvalidScene;
+        var meshes = world.renderableMeshes();
+        while (meshes.next()) |renderable| {
+            const render_index = renderables.items.len;
+            renderables.append(allocator, renderable) catch return RenderError.OutOfMemory;
             const geometry_key = GeometryKey.fromRenderable(renderable) orelse return RenderError.InvalidScene;
             const shadow_key = ShadowKey.fromRenderable(renderable);
 
@@ -1028,6 +1033,9 @@ const BatchPlan = struct {
             builds.items[index].render_indices.append(allocator, render_index) catch return RenderError.OutOfMemory;
         }
 
+        const renderable_slice = renderables.toOwnedSlice(allocator) catch return RenderError.OutOfMemory;
+        errdefer allocator.free(renderable_slice);
+
         const batches = allocator.alloc(BatchPlanEntry, builds.items.len) catch return RenderError.OutOfMemory;
         var copied: usize = 0;
         errdefer {
@@ -1049,6 +1057,7 @@ const BatchPlan = struct {
         builds.deinit(allocator);
         return .{
             .allocator = allocator,
+            .renderables = renderable_slice,
             .batches = batches,
         };
     }
@@ -1059,8 +1068,10 @@ const BatchPlan = struct {
             allocator.free(entry.render_indices);
         }
         allocator.free(self.batches);
+        allocator.free(self.renderables);
         self.* = .{
             .allocator = allocator,
+            .renderables = &.{},
             .batches = &.{},
         };
     }
@@ -1422,7 +1433,10 @@ const MeshDemo = struct {
             defer self.allocator.free(instances);
 
             for (entry.render_indices, 0..) |render_index, instance_index| {
-                const mesh = self.render_state.world.renderableMeshAt(render_index) orelse return RenderError.InvalidScene;
+                if (render_index >= plan.renderables.len) {
+                    return RenderError.InvalidScene;
+                }
+                const mesh = plan.renderables[render_index];
                 instances[instance_index] = try instanceAttributes(.{
                     .width = config.width,
                     .height = config.height,

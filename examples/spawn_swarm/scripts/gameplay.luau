@@ -54,9 +54,9 @@ ecs.system("spawn_swarm", {
   run = function(world, _dt)
     local floor = world.spawn("swarm-floor", "Swarm Floor")
     floor:add(Transform, {
-      position = { 0.0, -1.18, -0.25 },
+      position = { 0.0, -1.25, -0.35 },
       rotation = { 0.0, 0.0, 0.0 },
-      scale = { 9.5, 1.0, 6.2 },
+      scale = { 15.5, 1.0, 10.2 },
     })
     floor:add(Geometry, {
       primitive = "plane",
@@ -68,21 +68,22 @@ ecs.system("spawn_swarm", {
     })
     floor:add(ShadowReceiver)
 
-    for ring = 1, 5 do
-      local members = 18 + ring * 6
-      local ring_radius = 0.7 + ring * 0.54
+    local index = 0
+    for ring = 1, 8 do
+      local members = 36 + ring * 14
+      local ring_radius = 0.65 + ring * 0.48
       for slot = 1, members do
-        local index = (ring - 1) * 48 + slot
+        index += 1
         local angle = (slot / members) * math.pi * 2.0 + ring * 0.23
-        local lift = -0.64 + ring * 0.38
+        local lift = -0.76 + ring * 0.3
         local home = {
           math.cos(angle) * ring_radius * 1.18,
-          lift + math.sin(slot * 0.61) * 0.2,
+          lift + math.sin(slot * 0.61) * 0.24,
           -0.7 + math.sin(angle) * ring_radius * 0.82 + math.sin(angle * 2.0) * 0.18,
         }
         local primitive, segments, rings = primitiveFor(index)
         local entity = world.spawn("swarm-" .. tostring(index), "Swarm " .. tostring(index))
-        local scale = 0.1 + ring * 0.012
+        local scale = 0.074 + ring * 0.006
 
         entity:add(Transform, {
           position = home,
@@ -101,8 +102,8 @@ ecs.system("spawn_swarm", {
         entity:add(SwarmMotion, {
           home = home,
           phase = ring * 0.71 + slot * 0.19,
-          orbit_radius = 0.16 + ring * 0.035,
-          speed = 0.72 + ring * 0.05 + (slot % 5) * 0.025,
+          orbit_radius = 0.12 + ring * 0.028,
+          speed = 0.64 + ring * 0.035 + (slot % 7) * 0.018,
         })
       end
     end

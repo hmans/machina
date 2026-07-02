@@ -17,6 +17,7 @@ Render batching lets Machina draw many scene-authored entities that share compat
 - The render schedule queues one internal draw command per batch, not one command per renderable entity.
 - Legacy cube renderables participate in batching after being normalized to box geometry and material data.
 - The batching demo example contains many independent animated scene entities that collapse into a small number of render batches.
+- The spawn swarm example contains hundreds of script-spawned renderables while still collapsing into a few render batches.
 - Offscreen render verification covers the batching demo as part of the standard test suite.
 - Headless benchmark output reports renderable and render-batch counts so batching regressions are visible without opening a window.
 
@@ -39,6 +40,12 @@ Render batching lets Machina draw many scene-authored entities that share compat
 **Decision:** Batches are planned during render preparation and queued as internal render-world draw command entities.
 **Why:** Renderer data flow should keep using Machina's shared ECS scheduler instead of reintroducing an ad hoc object list. This follows ADR-013.
 **Tradeoff:** GPU buffers remain renderer-owned side resources until Machina has explicit native/internal component storage for non-serializable values.
+
+### 4. Plan batches from a one-pass renderable snapshot
+
+**Decision:** Render preparation snapshots the frame's renderable data once and builds batch membership from that snapshot.
+**Why:** Large ECS-authored scenes should scale with the number of renderables, not with repeated world scans per renderable or per instance. This keeps automatic batching practical for script-spawned scenes.
+**Tradeoff:** The renderer owns a short-lived per-frame copy of renderable data during preparation.
 
 ## Related
 

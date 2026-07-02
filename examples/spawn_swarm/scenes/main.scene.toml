@@ -6,12 +6,12 @@ id = "swarm-camera"
 name = "Swarm Camera"
 
 [entities.components."machina.transform"]
-position = [0.0, 3.0, 11.2]
-rotation = [-0.28, 0.0, 0.0]
+position = [0.0, 4.1, 14.2]
+rotation = [-0.31, 0.0, 0.0]
 scale = [1.0, 1.0, 1.0]
 
 [entities.components."machina.camera"]
-fov_y_degrees = 58.0
+fov_y_degrees = 62.0
 near = 0.1
 far = 100.0
 
