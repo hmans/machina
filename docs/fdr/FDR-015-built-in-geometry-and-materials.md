@@ -16,7 +16,7 @@ Built-in geometry and materials let projects render simple 3D forms from text-au
 - Renderable entities use `machina.transform`, geometry, and material component data.
 - Existing `machina.render.cube` entities remain valid and render as box geometry with an inline base-color material.
 - Generated geometry provides normals for the existing directional lighting model.
-- Renderables with matching built-in geometry parameters and matching material base colors can share one instanced render batch.
+- Renderables with matching built-in geometry parameters and compatible pipeline-affecting render state can share one instanced render batch; base color is carried per instance.
 - The showcase example renders multiple built-in primitive types through the geometry/material path.
 
 ## Design Decisions

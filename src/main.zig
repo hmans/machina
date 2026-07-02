@@ -66,6 +66,10 @@ fn run(
         return try stepCommand(io, allocator, args[2..], stdout, stderr);
     }
 
+    if (std.mem.eql(u8, command, "bench")) {
+        return try benchCommand(io, allocator, args[2..], stdout, stderr);
+    }
+
     if (std.mem.eql(u8, command, "test")) {
         return try testCommand(io, allocator, args[2..], stdout, stderr);
     }
@@ -206,6 +210,32 @@ const StepCommandOptions = struct {
     format: CheckOutputFormat = .text,
 };
 
+const BenchCommandOptions = struct {
+    target_path: []const u8 = ".",
+    frames: u32 = 240,
+    delta_seconds: f32 = 1.0 / 60.0,
+    format: CheckOutputFormat = .text,
+};
+
+const BenchResult = struct {
+    project_name: []const u8,
+    scene_name: []const u8,
+    frames: u32,
+    delta_seconds: f32,
+    startup_ns: u64,
+    update_ns: u64,
+    entity_count: usize,
+    component_instance_count: usize,
+    renderable_count: usize,
+    render_batch_count: usize,
+    ui_rect_count: usize,
+    ui_text_count: usize,
+
+    fn nsPerFrame(self: BenchResult) u64 {
+        return if (self.frames == 0) 0 else self.update_ns / @as(u64, self.frames);
+    }
+};
+
 const TestCommandOptions = struct {
     target_path: []const u8 = "tests/projects",
     format: CheckOutputFormat = .text,
@@ -311,6 +341,83 @@ fn stepCommand(
     }
 }
 
+fn benchCommand(
+    io: Io,
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    stdout: *Io.Writer,
+    stderr: *Io.Writer,
+) !u8 {
+    const options = parseBenchOptions(args) catch |err| {
+        try printArgumentError(stderr, err);
+        return 1;
+    };
+
+    var live_project = machina.LiveProject.init(io, std.heap.smp_allocator, options.target_path) catch |err| {
+        switch (options.format) {
+            .text => try printProjectError(stderr, options.target_path, err),
+            .json => try printProjectErrorJson(stdout, options.target_path, err),
+        }
+        return 1;
+    };
+    defer live_project.deinit();
+
+    const startup_start = Io.Clock.awake.now(io).nanoseconds;
+    if (!live_project.runStartup()) {
+        if (live_project.lastDiagnostic()) |diagnostic| {
+            switch (options.format) {
+                .text => try printScriptDiagnostic(stderr, options.target_path, diagnostic.*),
+                .json => try printScriptDiagnosticJson(stdout, options.target_path, diagnostic.*),
+            }
+        }
+        return 1;
+    }
+    const startup_ns: u64 = @intCast(Io.Clock.awake.now(io).nanoseconds - startup_start);
+
+    const update_start = Io.Clock.awake.now(io).nanoseconds;
+    var completed_frames: u32 = 0;
+    while (completed_frames < options.frames) : (completed_frames += 1) {
+        live_project.update(options.delta_seconds);
+        if (live_project.lastDiagnostic()) |diagnostic| {
+            switch (options.format) {
+                .text => try printScriptDiagnostic(stderr, options.target_path, diagnostic.*),
+                .json => try printScriptDiagnosticJson(stdout, options.target_path, diagnostic.*),
+            }
+            return 1;
+        }
+    }
+    const update_ns: u64 = @intCast(Io.Clock.awake.now(io).nanoseconds - update_start);
+
+    const render_stats = machina.renderStats(allocator, live_project.renderScene()) catch |err| {
+        switch (options.format) {
+            .text => try stderr.print("bench render stats failed: {s}\n", .{@errorName(err)}),
+            .json => try printProjectErrorJson(stdout, options.target_path, err),
+        }
+        return 1;
+    };
+
+    const result = BenchResult{
+        .project_name = live_project.project.name,
+        .scene_name = live_project.scene.name,
+        .frames = options.frames,
+        .delta_seconds = options.delta_seconds,
+        .startup_ns = startup_ns,
+        .update_ns = update_ns,
+        .entity_count = live_project.scene.entityCount(),
+        .component_instance_count = live_project.scene.componentInstanceCount(),
+        .renderable_count = render_stats.renderables,
+        .render_batch_count = render_stats.render_batches,
+        .ui_rect_count = render_stats.ui_rects,
+        .ui_text_count = render_stats.ui_texts,
+    };
+
+    switch (options.format) {
+        .text => try printBenchOkText(stdout, result),
+        .json => try printBenchOkJson(stdout, result),
+    }
+    return 0;
+}
+
 fn testCommand(
     io: Io,
     allocator: std.mem.Allocator,
@@ -408,6 +515,7 @@ fn printHelp(writer: *Io.Writer) !void {
         \\  machina init [path]
         \\  machina check [path] [--format text|json]
         \\  machina step [path] [--frames N] [--dt seconds] [--format text|json]
+        \\  machina bench [path] [--frames N] [--dt seconds] [--format text|json]
         \\  machina test [tests-path|project-path] [--format text|json]
         \\  machina run [path] [--frames N]
         \\  machina render [path] [output.bmp]
@@ -526,6 +634,60 @@ fn parseCheckOptions(args: []const []const u8) ArgumentError!CheckOptions {
 
 fn parseStepOptions(args: []const []const u8) ArgumentError!StepCommandOptions {
     var options = StepCommandOptions{};
+    var saw_path = false;
+    var index: usize = 0;
+    while (index < args.len) : (index += 1) {
+        const arg = args[index];
+        if (std.mem.eql(u8, arg, "--frames")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.InvalidFrames;
+            }
+            options.frames = try parseFrameCount(args[index]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--frames=")) {
+            options.frames = try parseFrameCount(arg["--frames=".len..]);
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--dt")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.InvalidDelta;
+            }
+            options.delta_seconds = try parseDeltaSeconds(args[index]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--dt=")) {
+            options.delta_seconds = try parseDeltaSeconds(arg["--dt=".len..]);
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--format")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.InvalidFormat;
+            }
+            options.format = try parseCheckOutputFormat(args[index]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--format=")) {
+            options.format = try parseCheckOutputFormat(arg["--format=".len..]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--")) {
+            return ArgumentError.UnknownArgument;
+        }
+        if (saw_path) {
+            return ArgumentError.UnknownArgument;
+        }
+        options.target_path = arg;
+        saw_path = true;
+    }
+    return options;
+}
+
+fn parseBenchOptions(args: []const []const u8) ArgumentError!BenchCommandOptions {
+    var options = BenchCommandOptions{};
     var saw_path = false;
     var index: usize = 0;
     while (index < args.len) : (index += 1) {
@@ -1310,6 +1472,29 @@ fn printStepOkText(writer: *Io.Writer, ok: machina.StepOk) !void {
     });
 }
 
+fn printBenchOkText(writer: *Io.Writer, result: BenchResult) !void {
+    const startup_ms = @as(f64, @floatFromInt(result.startup_ns)) / 1_000_000.0;
+    const update_ms = @as(f64, @floatFromInt(result.update_ns)) / 1_000_000.0;
+    const ns_per_frame = result.nsPerFrame();
+    const ms_per_frame = @as(f64, @floatFromInt(ns_per_frame)) / 1_000_000.0;
+
+    try writer.print("Benchmark OK: {s}\n", .{result.project_name});
+    try writer.print("Scene: {s}\n", .{result.scene_name});
+    try writer.print("Frames: {d}, dt: {d}\n", .{ result.frames, result.delta_seconds });
+    try writer.print("Startup: {d} ms\n", .{startup_ms});
+    try writer.print("Update: {d} ms total, {d} ms/frame\n", .{ update_ms, ms_per_frame });
+    try writer.print("Entities: {d}, components: {d}, renderables: {d}, render batches: {d}\n", .{
+        result.entity_count,
+        result.component_instance_count,
+        result.renderable_count,
+        result.render_batch_count,
+    });
+    try writer.print("UI: {d} rects, {d} text runs\n", .{
+        result.ui_rect_count,
+        result.ui_text_count,
+    });
+}
+
 fn printStepFailureText(writer: *Io.Writer, root_path: []const u8, failure: machina.StepRuntimeError) !void {
     try writer.print("{s}: step failed after {d}/{d} frames, dt: {d}\n", .{
         root_path,
@@ -1546,6 +1731,30 @@ fn printStepFailureJson(writer: *Io.Writer, root_path: []const u8, failure: mach
     try writer.writeAll("}\n");
 }
 
+fn printBenchOkJson(writer: *Io.Writer, result: BenchResult) !void {
+    try writer.writeAll("{\"ok\":true,\"project\":{\"name\":");
+    try writeJsonString(writer, result.project_name);
+    try writer.writeAll("},\"scene\":{\"name\":");
+    try writeJsonString(writer, result.scene_name);
+    try writer.print(",\"entities\":{d},\"component_instances\":{d},\"renderables\":{d},\"render_batches\":{d},\"ui_rects\":{d},\"ui_texts\":{d}", .{
+        result.entity_count,
+        result.component_instance_count,
+        result.renderable_count,
+        result.render_batch_count,
+        result.ui_rect_count,
+        result.ui_text_count,
+    });
+    try writer.writeAll("},\"benchmark\":{");
+    try writer.print("\"frames\":{d},\"dt\":{d},\"startup_ns\":{d},\"update_ns\":{d},\"ns_per_frame\":{d}", .{
+        result.frames,
+        result.delta_seconds,
+        result.startup_ns,
+        result.update_ns,
+        result.nsPerFrame(),
+    });
+    try writer.writeAll("}}\n");
+}
+
 fn printProjectSummaryJson(writer: *Io.Writer, project: machina.Project) !void {
     try writer.writeAll("{\"name\":");
     try writeJsonString(writer, project.name);
@@ -1747,6 +1956,15 @@ test "parseStepOptions accepts path frames dt and json format" {
 test "parseStepOptions rejects invalid dt" {
     const args = [_][]const u8{ "--dt", "inf" };
     try std.testing.expectError(ArgumentError.InvalidDelta, parseStepOptions(&args));
+}
+
+test "parseBenchOptions accepts path frames dt and json format" {
+    const args = [_][]const u8{ "examples/spawn_swarm", "--frames=120", "--dt", "0.016", "--format=json" };
+    const options = try parseBenchOptions(&args);
+    try std.testing.expectEqualStrings("examples/spawn_swarm", options.target_path);
+    try std.testing.expectEqual(@as(u32, 120), options.frames);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.016), options.delta_seconds, 0.000001);
+    try std.testing.expectEqual(CheckOutputFormat.json, options.format);
 }
 
 test "parseTestOptions defaults to tests/projects" {

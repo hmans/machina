@@ -9,7 +9,6 @@ local ShadowReceiver = ecs.component<<MachinaShadowReceiver>>("machina.shadow.re
 local SwarmMotion = ecs.component("swarm_motion", {
   fields = ecs.fields({
     home = "vec3",
-    velocity = "vec3",
     phase = "f32",
     orbit_radius = "f32",
     speed = "f32",
@@ -101,11 +100,6 @@ ecs.system("spawn_swarm", {
         entity:add(ShadowCaster)
         entity:add(SwarmMotion, {
           home = home,
-          velocity = {
-            math.sin(angle) * 0.22,
-            math.cos(slot * 0.37) * 0.08,
-            math.cos(angle) * 0.18,
-          },
           phase = ring * 0.71 + slot * 0.19,
           orbit_radius = 0.16 + ring * 0.035,
           speed = 0.72 + ring * 0.05 + (slot % 5) * 0.025,
@@ -118,7 +112,7 @@ ecs.system("spawn_swarm", {
 ecs.system("animate_swarm", {
   phase = "update",
   query = Swarm,
-  writes = ecs.refs(Transform, SwarmMotion),
+  writes = ecs.refs(Transform),
   run = function(world, dt)
     elapsed += dt
 
@@ -127,15 +121,10 @@ ecs.system("animate_swarm", {
       local orbit_x = math.cos(t) * motion.orbit_radius
       local orbit_z = math.sin(t * 0.91) * motion.orbit_radius
       local bob = math.sin(t * 1.7) * 0.18
-      local drift = {
-        motion.velocity[1] * dt,
-        motion.velocity[2] * dt,
-        motion.velocity[3] * dt,
-      }
       local next_position = {
-        motion.home[1] + orbit_x + drift[1],
-        motion.home[2] + bob + drift[2],
-        motion.home[3] + orbit_z + drift[3],
+        motion.home[1] + orbit_x,
+        motion.home[2] + bob,
+        motion.home[3] + orbit_z,
       }
 
       transform.position = next_position
@@ -143,12 +132,6 @@ ecs.system("animate_swarm", {
         transform.rotation[1] + dt * (0.55 + motion.speed * 0.35),
         transform.rotation[2] + dt * (0.9 + motion.orbit_radius),
         transform.rotation[3] + dt * (0.25 + math.sin(t) * 0.2),
-      }
-
-      motion.velocity = {
-        motion.velocity[1] * 0.985 + (motion.home[1] - next_position[1]) * dt * 0.22,
-        motion.velocity[2] * 0.965 + (motion.home[2] - next_position[2]) * dt * 0.18,
-        motion.velocity[3] * 0.985 + (motion.home[3] - next_position[3]) * dt * 0.22,
       }
     end
   end,

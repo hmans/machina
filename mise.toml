@@ -7,7 +7,7 @@ run = "zig build"
 
 [tasks.test]
 description = "Run the full Machina test suite"
-run = "zig build test && zig build && ./zig-out/bin/machina test tests/projects && ./zig-out/bin/machina render-test examples/minimal zig-out/minimal-render-test.bmp && ./zig-out/bin/machina render-test examples/batching zig-out/batching-render-test.bmp && ./zig-out/bin/machina render-test examples/ui_overlay zig-out/ui-overlay-render-test.bmp && ./zig-out/bin/machina render-test examples/spawning zig-out/spawning-render-test.bmp && ./zig-out/bin/machina render-test examples/spawn_swarm zig-out/spawn-swarm-render-test.bmp"
+run = "zig build test && zig build && ./zig-out/bin/machina test tests/projects && ./zig-out/bin/machina bench examples/spawn_swarm --frames 60 --format=json && ./zig-out/bin/machina render-test examples/minimal zig-out/minimal-render-test.bmp && ./zig-out/bin/machina render-test examples/batching zig-out/batching-render-test.bmp && ./zig-out/bin/machina render-test examples/ui_overlay zig-out/ui-overlay-render-test.bmp && ./zig-out/bin/machina render-test examples/spawning zig-out/spawning-render-test.bmp && ./zig-out/bin/machina render-test examples/spawn_swarm zig-out/spawn-swarm-render-test.bmp"
 
 [tasks.luau-check]
 description = "Run Luau editor type checks"
@@ -16,6 +16,10 @@ run = "bash tools/check-luau-types.sh"
 [tasks.render-test]
 description = "Render and verify example scenes"
 run = "mise machina render-test examples/minimal zig-out/minimal-render-test.bmp && mise machina render-test examples/batching zig-out/batching-render-test.bmp && mise machina render-test examples/ui_overlay zig-out/ui-overlay-render-test.bmp && mise machina render-test examples/spawning zig-out/spawning-render-test.bmp && mise machina render-test examples/spawn_swarm zig-out/spawn-swarm-render-test.bmp"
+
+[tasks.bench]
+description = "Run headless Machina benchmarks"
+run = "mise machina bench examples/spawn_swarm --frames 240"
 
 [tasks.machina]
 description = "Build and run the machina CLI"

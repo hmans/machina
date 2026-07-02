@@ -52,6 +52,13 @@ pub const RenderError = error{
     InvalidScene,
 };
 
+pub const Stats = struct {
+    renderables: usize,
+    render_batches: usize,
+    ui_rects: usize,
+    ui_texts: usize,
+};
+
 pub const WindowOptions = struct {
     max_frames: ?u32 = null,
     scene_reload: ?SceneReloadHook = null,
@@ -95,6 +102,22 @@ pub const FrameInput = struct {
         self.f1_pressed = false;
     }
 };
+
+pub fn stats(allocator: std.mem.Allocator, scene: Scene) RenderError!Stats {
+    var state = try RenderEcsState.init(allocator);
+    defer state.deinit();
+
+    try state.extractScene(scene);
+    var plan = try BatchPlan.build(allocator, &state.world);
+    defer plan.deinit();
+
+    return .{
+        .renderables = state.world.renderableMeshCount(),
+        .render_batches = plan.batches.len,
+        .ui_rects = state.world.uiRectCount(),
+        .ui_texts = state.world.uiTextCount(),
+    };
+}
 
 const UiButtonState = struct {
     hovered: bool = false,
@@ -983,13 +1006,11 @@ const BatchPlan = struct {
         for (0..mesh_count) |render_index| {
             const renderable = world.renderableMeshAt(render_index) orelse return RenderError.InvalidScene;
             const geometry_key = GeometryKey.fromRenderable(renderable) orelse return RenderError.InvalidScene;
-            const material_key = MaterialKey.fromRenderable(renderable);
             const shadow_key = ShadowKey.fromRenderable(renderable);
 
             var batch_index: ?usize = null;
             for (builds.items, 0..) |pending_batch, index| {
                 if (pending_batch.geometry_key.eql(geometry_key) and
-                    pending_batch.material_key.eql(material_key) and
                     pending_batch.shadow_key.eql(shadow_key))
                 {
                     batch_index = index;
@@ -1000,7 +1021,6 @@ const BatchPlan = struct {
             const index = batch_index orelse blk: {
                 try builds.append(allocator, .{
                     .geometry_key = geometry_key,
-                    .material_key = material_key,
                     .shadow_key = shadow_key,
                 });
                 break :blk builds.items.len - 1;
@@ -1020,7 +1040,6 @@ const BatchPlan = struct {
         for (builds.items, 0..) |*pending_batch, index| {
             batches[index] = .{
                 .geometry_key = pending_batch.geometry_key,
-                .material_key = pending_batch.material_key,
                 .shadow_key = pending_batch.shadow_key,
                 .render_indices = pending_batch.render_indices.toOwnedSlice(allocator) catch return RenderError.OutOfMemory,
             };
@@ -1049,7 +1068,6 @@ const BatchPlan = struct {
 
 const BatchBuild = struct {
     geometry_key: GeometryKey,
-    material_key: MaterialKey,
     shadow_key: ShadowKey,
     render_indices: std.ArrayList(usize) = .empty,
 
@@ -1060,7 +1078,6 @@ const BatchBuild = struct {
 
 const BatchPlanEntry = struct {
     geometry_key: GeometryKey,
-    material_key: MaterialKey,
     shadow_key: ShadowKey,
     render_indices: []usize,
 };
@@ -1551,7 +1568,6 @@ const MeshDemo = struct {
 
 const BatchResources = struct {
     geometry_key: GeometryKey,
-    material_key: MaterialKey,
     shadow_key: ShadowKey,
     vertex_buffer: *wgpu.Buffer,
     index_buffer: *wgpu.Buffer,
@@ -1597,7 +1613,6 @@ const BatchResources = struct {
 
         return .{
             .geometry_key = entry.geometry_key,
-            .material_key = entry.material_key,
             .shadow_key = entry.shadow_key,
             .vertex_buffer = vertex_buffer,
             .index_buffer = index_buffer,
@@ -1615,7 +1630,6 @@ const BatchResources = struct {
             return false;
         }
         return self.geometry_key.eql(entry.geometry_key) and
-            self.material_key.eql(entry.material_key) and
             self.shadow_key.eql(entry.shadow_key) and
             self.instance_count == @as(u32, @intCast(entry.render_indices.len));
     }
@@ -1642,20 +1656,6 @@ const GeometryKey = struct {
 
     fn eql(self: GeometryKey, other: GeometryKey) bool {
         return self.primitive == other.primitive and self.segments == other.segments and self.rings == other.rings;
-    }
-};
-
-const MaterialKey = struct {
-    base_color: [3]f32,
-
-    fn fromRenderable(renderable: runtime.RenderableMesh) MaterialKey {
-        return .{ .base_color = renderable.base_color };
-    }
-
-    fn eql(self: MaterialKey, other: MaterialKey) bool {
-        return self.base_color[0] == other.base_color[0] and
-            self.base_color[1] == other.base_color[1] and
-            self.base_color[2] == other.base_color[2];
     }
 };
 
@@ -2420,14 +2420,14 @@ test "render ECS extracts scene data and queues mesh draw commands" {
     try std.testing.expectEqual(@as(usize, 1), state.uiDrawCommandCount());
 }
 
-test "batch plan groups matching geometry and material renderables" {
+test "batch plan groups matching geometry and shadow state with per-instance color" {
     var scene_world = runtime.World.init(std.testing.allocator);
     defer scene_world.deinit();
 
     try addBatchTestRenderable(&scene_world, "blue-box-a", "box", 0, 0, .{ -1.6, 0.0, 0.0 }, .{ 0.08, 0.42, 1.0 }, .{ .casts_shadow = true });
     try addBatchTestRenderable(&scene_world, "gold-sphere", "uv_sphere", 16, 8, .{ 0.0, 0.0, 0.0 }, .{ 1.0, 0.56, 0.1 }, .{});
     try addBatchTestRenderable(&scene_world, "blue-box-b", "box", 0, 0, .{ 1.6, 0.0, 0.0 }, .{ 0.08, 0.42, 1.0 }, .{ .casts_shadow = true });
-    try addBatchTestRenderable(&scene_world, "red-box", "box", 0, 0, .{ 0.0, 1.2, 0.0 }, .{ 0.95, 0.12, 0.18 }, .{});
+    try addBatchTestRenderable(&scene_world, "red-box", "box", 0, 0, .{ 0.0, 1.2, 0.0 }, .{ 0.95, 0.12, 0.18 }, .{ .casts_shadow = true });
     try addBatchTestRenderable(&scene_world, "blue-box-receiver", "box", 0, 0, .{ 0.0, -1.2, 0.0 }, .{ 0.08, 0.42, 1.0 }, .{ .receives_shadow = true });
 
     var state = try RenderEcsState.init(std.testing.allocator);
@@ -2437,30 +2437,45 @@ test "batch plan groups matching geometry and material renderables" {
     var plan = try BatchPlan.build(std.testing.allocator, &state.world);
     defer plan.deinit();
 
-    try std.testing.expectEqual(@as(usize, 4), plan.batches.len);
+    try std.testing.expectEqual(@as(usize, 3), plan.batches.len);
     try std.testing.expectEqual(geometry.Primitive.box, plan.batches[0].geometry_key.primitive);
     try std.testing.expect(plan.batches[0].shadow_key.casts_shadow);
     try std.testing.expect(!plan.batches[0].shadow_key.receives_shadow);
-    try std.testing.expectEqual(@as(usize, 2), plan.batches[0].render_indices.len);
+    try std.testing.expectEqual(@as(usize, 3), plan.batches[0].render_indices.len);
     try std.testing.expectEqual(@as(usize, 0), plan.batches[0].render_indices[0]);
     try std.testing.expectEqual(@as(usize, 2), plan.batches[0].render_indices[1]);
+    try std.testing.expectEqual(@as(usize, 3), plan.batches[0].render_indices[2]);
 
     try std.testing.expectEqual(geometry.Primitive.uv_sphere, plan.batches[1].geometry_key.primitive);
     try std.testing.expectEqual(@as(usize, 1), plan.batches[1].render_indices.len);
     try std.testing.expectEqual(@as(usize, 1), plan.batches[1].render_indices[0]);
 
     try std.testing.expectEqual(geometry.Primitive.box, plan.batches[2].geometry_key.primitive);
+    try std.testing.expect(!plan.batches[2].shadow_key.casts_shadow);
+    try std.testing.expect(plan.batches[2].shadow_key.receives_shadow);
     try std.testing.expectEqual(@as(usize, 1), plan.batches[2].render_indices.len);
-    try std.testing.expectEqual(@as(usize, 3), plan.batches[2].render_indices[0]);
-
-    try std.testing.expectEqual(geometry.Primitive.box, plan.batches[3].geometry_key.primitive);
-    try std.testing.expect(!plan.batches[3].shadow_key.casts_shadow);
-    try std.testing.expect(plan.batches[3].shadow_key.receives_shadow);
-    try std.testing.expectEqual(@as(usize, 1), plan.batches[3].render_indices.len);
-    try std.testing.expectEqual(@as(usize, 4), plan.batches[3].render_indices[0]);
+    try std.testing.expectEqual(@as(usize, 4), plan.batches[2].render_indices[0]);
 
     try state.queueBatchDraws(plan.batches.len);
-    try std.testing.expectEqual(@as(usize, 4), state.drawCommandCount());
+    try std.testing.expectEqual(@as(usize, 3), state.drawCommandCount());
+}
+
+test "render stats reports mesh renderables and planned batches" {
+    var scene_world = runtime.World.init(std.testing.allocator);
+    defer scene_world.deinit();
+
+    try addBatchTestRenderable(&scene_world, "blue-box-a", "box", 0, 0, .{ -1.6, 0.0, 0.0 }, .{ 0.08, 0.42, 1.0 }, .{ .casts_shadow = true });
+    try addBatchTestRenderable(&scene_world, "gold-sphere", "uv_sphere", 16, 8, .{ 0.0, 0.0, 0.0 }, .{ 1.0, 0.56, 0.1 }, .{});
+    try addBatchTestRenderable(&scene_world, "blue-box-b", "box", 0, 0, .{ 1.6, 0.0, 0.0 }, .{ 0.08, 0.42, 1.0 }, .{ .casts_shadow = true });
+    try addBatchTestRenderable(&scene_world, "red-box", "box", 0, 0, .{ 0.0, 1.2, 0.0 }, .{ 0.95, 0.12, 0.18 }, .{ .casts_shadow = true });
+    try addBatchTestRenderable(&scene_world, "blue-box-receiver", "box", 0, 0, .{ 0.0, -1.2, 0.0 }, .{ 0.08, 0.42, 1.0 }, .{ .receives_shadow = true });
+
+    const result = try stats(std.testing.allocator, .{ .world = &scene_world });
+
+    try std.testing.expectEqual(@as(usize, 5), result.renderables);
+    try std.testing.expectEqual(@as(usize, 3), result.render_batches);
+    try std.testing.expectEqual(@as(usize, 0), result.ui_rects);
+    try std.testing.expectEqual(@as(usize, 0), result.ui_texts);
 }
 
 test "UI vertex builder expands rects and fixed pixel text" {

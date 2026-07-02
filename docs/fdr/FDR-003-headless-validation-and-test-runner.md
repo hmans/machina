@@ -13,6 +13,8 @@ The headless validation and test runner lets users, CI systems, and agents check
 - `machina check [path] --format=json` reports project metadata and the validated schedule batches, including phases, system ids, runner kinds, read/write sets, and before/after ordering declarations.
 - `machina step [path] [--frames N] [--dt seconds]` loads the default scene, runs startup once, runs the update schedule headlessly for the requested frame count, and reports final scene and simulation counts.
 - `machina step [path] --format=json` reports project metadata, final scene summary, simulation summary, schedule batches, and structured runtime diagnostics when a system fails.
+- `machina bench [path] [--frames N] [--dt seconds]` loads a project once, measures startup and repeated update frames without opening a window, and reports elapsed timing data plus headless render-planning statistics.
+- `machina bench [path] --format=json` reports benchmark timing, renderable count, render batch count, and UI primitive counts for scripts, agents, and CI logs.
 - Automated scenario fixtures live under `tests/projects/` and use complete text-authored Machina projects rather than sharing example projects.
 - `machina test [tests-path|project-path]` discovers text-authored test projects, reads each project's `test.machina.toml`, steps the project headlessly, and checks declared ECS field expectations.
 - `machina test --format=json` reports each project case, simulation summary, per-field expected/actual assertion data, diagnostics, and a suite summary.

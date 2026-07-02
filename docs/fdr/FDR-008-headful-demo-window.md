@@ -16,7 +16,7 @@ Headful demo rendering proves that Machina can create a platform window, hand it
 - Legacy cube entities remain supported and render as box geometry with inline color material data.
 - Camera projection/view data and the first directional light can come from scene data, with compatibility defaults when absent.
 - Each presented frame uses the same internal render ECS world and render-phase schedule as offscreen rendering.
-- Matching geometry/material renderables are drawn through automatic instanced render batches.
+- Renderables with matching geometry and compatible pipeline-affecting render state are drawn through automatic instanced render batches.
 - Renderable meshes render with depth testing, scene-driven directional diffuse shading, and receiver-side shadowing.
 - UI rectangles and text labels render after 3D scene content as an overlay.
 - Users can run `machina run [path] --frames N` to exit after a fixed number of frames for smoke tests and automation.

@@ -11,11 +11,13 @@ pub const project_file_name = "project.machina.toml";
 pub const default_scene_path = "scenes/main.scene.toml";
 
 pub const renderDemoBmp = render.renderDemoBmp;
+pub const renderStats = render.stats;
 pub const runDemoWindow = render.runDemoWindow;
 pub const WindowOptions = render.WindowOptions;
 pub const FrameInput = render.FrameInput;
 pub const PointerInput = render.PointerInput;
 pub const RenderScene = render.Scene;
+pub const RenderStats = render.Stats;
 pub const RenderVerification = render_verify.Verification;
 pub const RenderVerificationOptions = render_verify.VerificationOptions;
 pub const World = runtime.World;

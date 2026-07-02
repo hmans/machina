@@ -36,7 +36,7 @@ Shadow components let scene authors opt renderable entities into casting and rec
 
 **Decision:** Shadow markers are copied into the internal render ECS world and participate in render batch keys.
 **Why:** Caster and receiver behavior affects render passes, so the renderer must not merge entities whose shadow state requires different treatment. This follows FDR-016.
-**Tradeoff:** Some entities with identical geometry/material data may split into separate batches when their shadow flags differ.
+**Tradeoff:** Some entities with identical geometry and per-instance material color may split into separate batches when their shadow flags differ.
 
 ## Related
 
