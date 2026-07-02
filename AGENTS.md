@@ -43,6 +43,8 @@ Live reload is a core runtime capability. `machina run` currently uses a `LivePr
 
 ## Working Rules
 
+- Use Conventional Commits for commit messages.
+- Use Conventional Commits for PR titles. PR bodies should contain a descriptive list of the changes.
 - Keep project and scene data text-based and diffable.
 - Prefer small vertical slices that leave `main` working.
 - Update ADRs when changing architecture or backend choices.
@@ -69,3 +71,4 @@ Live reload is a core runtime capability. `machina run` currently uses a `LivePr
 
 - Use `.agents/skills/machina-render-verification` when changing rendering, shaders, scene-driven render data, or visual test expectations.
 - Use `.agents/skills/machina-script-diagnostics` when changing script diagnostics, Luau bridge error reporting, `machina check` diagnostic output, script reload/runtime failure handling, or editor/agent-facing diagnostic surfaces.
+- Feel free to add or change `machina-*` skills as needed.
