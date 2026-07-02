@@ -289,7 +289,7 @@ fn initProgram(allocator: std.mem.Allocator) !Program {
         registry.deinit();
         c.machina_luau_destroy(vm);
     }
-    try registerEngineTypes(&registry);
+    try runtime.registerEngineComponents(&registry);
 
     return .{
         .allocator = allocator,
@@ -317,51 +317,6 @@ fn loadChunk(program: *Program, chunk_name: []const u8, source: []const u8) !?Di
 
     try recordOrigins(program, chunk_name, component_start, system_start);
     return null;
-}
-
-fn registerEngineTypes(registry: *runtime.ComponentRegistry) !void {
-    const transform_fields = [_]runtime.ComponentFieldDefinition{
-        .{ .name = "position", .value_type = .vec3 },
-        .{ .name = "rotation", .value_type = .vec3 },
-        .{ .name = "scale", .value_type = .vec3 },
-    };
-    try registry.registerEngineComponent(.{
-        .id = runtime.transform_component_id,
-        .version = 1,
-        .fields = &transform_fields,
-    });
-
-    const cube_fields = [_]runtime.ComponentFieldDefinition{
-        .{ .name = "color", .value_type = .vec3 },
-    };
-    try registry.registerEngineComponent(.{
-        .id = runtime.cube_renderer_component_id,
-        .version = 1,
-        .fields = &cube_fields,
-    });
-
-    const camera_fields = [_]runtime.ComponentFieldDefinition{
-        .{ .name = "fov_y_degrees", .value_type = .float },
-        .{ .name = "near", .value_type = .float },
-        .{ .name = "far", .value_type = .float },
-    };
-    try registry.registerEngineComponent(.{
-        .id = runtime.camera_component_id,
-        .version = 1,
-        .fields = &camera_fields,
-    });
-
-    const directional_light_fields = [_]runtime.ComponentFieldDefinition{
-        .{ .name = "direction", .value_type = .vec3 },
-        .{ .name = "color", .value_type = .vec3 },
-        .{ .name = "intensity", .value_type = .float },
-        .{ .name = "ambient", .value_type = .float },
-    };
-    try registry.registerEngineComponent(.{
-        .id = runtime.directional_light_component_id,
-        .version = 1,
-        .fields = &directional_light_fields,
-    });
 }
 
 fn registerDeclaredTypes(program: *Program) ScriptError!void {
@@ -1303,7 +1258,7 @@ test "luau world query requires declared component access" {
 test "update schedule batches read-only systems and separates write conflicts" {
     var registry = runtime.ComponentRegistry.init(std.testing.allocator);
     defer registry.deinit();
-    try registerEngineTypes(&registry);
+    try runtime.registerEngineComponents(&registry);
 
     try registry.registerProjectComponent(.{ .id = "stamina" });
     try registry.registerProjectSystem(.{

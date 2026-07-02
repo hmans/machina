@@ -492,6 +492,51 @@ pub const ComponentRegistry = struct {
     }
 };
 
+pub fn registerEngineComponents(registry: *ComponentRegistry) !void {
+    const transform_fields = [_]ComponentFieldDefinition{
+        .{ .name = "position", .value_type = .vec3 },
+        .{ .name = "rotation", .value_type = .vec3 },
+        .{ .name = "scale", .value_type = .vec3 },
+    };
+    try registry.registerEngineComponent(.{
+        .id = transform_component_id,
+        .version = 1,
+        .fields = &transform_fields,
+    });
+
+    const cube_fields = [_]ComponentFieldDefinition{
+        .{ .name = "color", .value_type = .vec3 },
+    };
+    try registry.registerEngineComponent(.{
+        .id = cube_renderer_component_id,
+        .version = 1,
+        .fields = &cube_fields,
+    });
+
+    const camera_fields = [_]ComponentFieldDefinition{
+        .{ .name = "fov_y_degrees", .value_type = .float },
+        .{ .name = "near", .value_type = .float },
+        .{ .name = "far", .value_type = .float },
+    };
+    try registry.registerEngineComponent(.{
+        .id = camera_component_id,
+        .version = 1,
+        .fields = &camera_fields,
+    });
+
+    const directional_light_fields = [_]ComponentFieldDefinition{
+        .{ .name = "direction", .value_type = .vec3 },
+        .{ .name = "color", .value_type = .vec3 },
+        .{ .name = "intensity", .value_type = .float },
+        .{ .name = "ambient", .value_type = .float },
+    };
+    try registry.registerEngineComponent(.{
+        .id = directional_light_component_id,
+        .version = 1,
+        .fields = &directional_light_fields,
+    });
+}
+
 pub const EntityHandle = struct {
     index: u32,
 };
@@ -1598,6 +1643,23 @@ test "component registry separates project, package, and engine registrations" {
         .version = 1,
     });
     try std.testing.expectEqual(@as(usize, 3), registry.componentCount());
+}
+
+test "engine component schemas are registered from runtime" {
+    var registry = ComponentRegistry.init(std.testing.allocator);
+    defer registry.deinit();
+
+    try registerEngineComponents(&registry);
+
+    try std.testing.expect(registry.findComponent(transform_component_id) != null);
+    try std.testing.expect(registry.findComponent(cube_renderer_component_id) != null);
+    try std.testing.expect(registry.findComponent(camera_component_id) != null);
+    try std.testing.expect(registry.findComponent(directional_light_component_id) != null);
+    try std.testing.expectEqual(@as(usize, 4), registry.componentCount());
+
+    const transform = registry.findComponent(transform_component_id) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 3), transform.fields.len);
+    try std.testing.expectEqual(FieldType.vec3, transform.fields[0].value_type);
 }
 
 test "system registry validates component access and reload-compatible definitions" {

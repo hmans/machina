@@ -19,6 +19,11 @@ const output_extent = wgpu.Extent3D{
 const output_bytes_per_row = 4 * output_width;
 const output_size = output_bytes_per_row * output_height;
 const depth_format = wgpu.TextureFormat.depth24_plus;
+const render_draw_cube_component_id = "machina.render.internal.draw.cube";
+const render_extract_system_id = "machina.render.extract";
+const render_prepare_cubes_system_id = "machina.render.prepare_cubes";
+const render_queue_cubes_system_id = "machina.render.queue_cubes";
+const render_draw_cubes_system_id = "machina.render.draw_cubes";
 
 pub const RenderError = error{
     NoAdapter,
@@ -289,6 +294,88 @@ const DirectionalLightState = struct {
     ambient: f32 = 0.18,
 };
 
+const RenderSystemContext = struct {
+    device: *wgpu.Device,
+    queue: *wgpu.Queue,
+    target_view: *wgpu.TextureView,
+    depth_view: *wgpu.TextureView,
+    frame: FrameConfig,
+};
+
+const RenderEcsState = struct {
+    allocator: std.mem.Allocator,
+    registry: runtime.ComponentRegistry,
+    schedule: runtime.SystemSchedule,
+    world: runtime.World,
+
+    fn init(allocator: std.mem.Allocator) RenderError!RenderEcsState {
+        var registry = runtime.ComponentRegistry.init(allocator);
+        errdefer registry.deinit();
+
+        registerRenderEcsTypes(&registry) catch |err| return mapEngineSetupError(err);
+
+        var schedule = registry.buildSchedule(allocator, .render) catch |err| return mapEngineSetupError(err);
+        errdefer schedule.deinit();
+
+        return .{
+            .allocator = allocator,
+            .registry = registry,
+            .schedule = schedule,
+            .world = runtime.World.init(allocator),
+        };
+    }
+
+    fn deinit(self: *RenderEcsState) void {
+        self.world.deinit();
+        self.schedule.deinit();
+        self.registry.deinit();
+        self.* = undefined;
+    }
+
+    fn extractScene(self: *RenderEcsState, scene: Scene) RenderError!void {
+        var next_world = runtime.World.init(self.allocator);
+        errdefer next_world.deinit();
+
+        var cube_index: usize = 0;
+        var cubes = scene.world.renderableCubes();
+        while (cubes.next()) |cube| {
+            try extractCubeInto(self.allocator, &next_world, cube_index, cube);
+            cube_index += 1;
+        }
+
+        try extractCameraInto(&next_world, try cameraState(scene.world));
+        try extractDirectionalLightInto(&next_world, try directionalLightState(scene.world));
+
+        self.world.deinit();
+        self.world = next_world;
+    }
+
+    fn queueCubeDraws(self: *RenderEcsState) RenderError!void {
+        const count = self.world.renderableCubeCount();
+        for (0..count) |render_index| {
+            if (render_index > std.math.maxInt(i32)) {
+                return RenderError.InvalidScene;
+            }
+            const entity_id = std.fmt.allocPrint(self.allocator, "machina.render.draw.cube.{d}", .{render_index}) catch return RenderError.OutOfMemory;
+            defer self.allocator.free(entity_id);
+
+            const entity = self.world.createEntity(entity_id, "Cube Draw") catch |err| return mapWorldError(err);
+            const fields = [_]runtime.ComponentFieldValue{
+                .{ .name = "render_index", .value = .{ .int = @intCast(render_index) } },
+            };
+            self.world.setComponent(entity, render_draw_cube_component_id, &fields) catch |err| return mapWorldError(err);
+        }
+    }
+
+    fn drawCommandCount(self: RenderEcsState) usize {
+        return self.world.componentInstanceCountFor(render_draw_cube_component_id);
+    }
+
+    fn drawCommandRenderIndex(self: RenderEcsState, entity: runtime.EntityHandle) RenderError!usize {
+        return renderIndexFromDrawEntity(&self.world, entity);
+    }
+};
+
 const GpuContext = struct {
     adapter: *wgpu.Adapter,
     device: *wgpu.Device,
@@ -355,6 +442,138 @@ const DepthTarget = struct {
     }
 };
 
+fn registerRenderEcsTypes(registry: *runtime.ComponentRegistry) !void {
+    try runtime.registerEngineComponents(registry);
+
+    const draw_cube_fields = [_]runtime.ComponentFieldDefinition{
+        .{ .name = "render_index", .value_type = .int },
+    };
+    try registry.registerEngineComponent(.{
+        .id = render_draw_cube_component_id,
+        .version = 1,
+        .fields = &draw_cube_fields,
+    });
+
+    const extract_writes = [_][]const u8{
+        runtime.transform_component_id,
+        runtime.cube_renderer_component_id,
+        runtime.camera_component_id,
+        runtime.directional_light_component_id,
+    };
+    try registry.registerEngineSystem(.{
+        .id = render_extract_system_id,
+        .phase = .render,
+        .writes = &extract_writes,
+    });
+
+    const prepare_reads = [_][]const u8{
+        runtime.transform_component_id,
+        runtime.cube_renderer_component_id,
+    };
+    const after_extract = [_][]const u8{render_extract_system_id};
+    try registry.registerEngineSystem(.{
+        .id = render_prepare_cubes_system_id,
+        .phase = .render,
+        .reads = &prepare_reads,
+        .after = &after_extract,
+    });
+
+    const queue_reads = [_][]const u8{
+        runtime.transform_component_id,
+        runtime.cube_renderer_component_id,
+    };
+    const queue_writes = [_][]const u8{render_draw_cube_component_id};
+    const after_prepare = [_][]const u8{render_prepare_cubes_system_id};
+    try registry.registerEngineSystem(.{
+        .id = render_queue_cubes_system_id,
+        .phase = .render,
+        .reads = &queue_reads,
+        .writes = &queue_writes,
+        .after = &after_prepare,
+    });
+
+    const draw_reads = [_][]const u8{
+        render_draw_cube_component_id,
+        runtime.transform_component_id,
+        runtime.cube_renderer_component_id,
+        runtime.camera_component_id,
+        runtime.directional_light_component_id,
+    };
+    const after_queue = [_][]const u8{render_queue_cubes_system_id};
+    try registry.registerEngineSystem(.{
+        .id = render_draw_cubes_system_id,
+        .phase = .render,
+        .reads = &draw_reads,
+        .after = &after_queue,
+    });
+}
+
+fn extractCubeInto(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    render_index: usize,
+    cube: runtime.RenderableCube,
+) RenderError!void {
+    const entity_id = std.fmt.allocPrint(allocator, "machina.render.extract.cube.{d}", .{render_index}) catch return RenderError.OutOfMemory;
+    defer allocator.free(entity_id);
+
+    const entity = world.createEntity(entity_id, cube.name) catch |err| return mapWorldError(err);
+    world.setTransform(entity, .{
+        .position = cube.position,
+        .rotation = cube.rotation,
+        .scale = cube.scale,
+    }) catch |err| return mapWorldError(err);
+    world.setCubeRenderer(entity, .{
+        .color = cube.color,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractCameraInto(world: *runtime.World, camera: CameraState) RenderError!void {
+    const entity = world.createEntity("machina.render.extract.camera", "Render Camera") catch |err| return mapWorldError(err);
+    world.setTransform(entity, camera.transform) catch |err| return mapWorldError(err);
+    world.setCamera(entity, .{
+        .fov_y_degrees = camera.fov_y_degrees,
+        .near = camera.near,
+        .far = camera.far,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractDirectionalLightInto(world: *runtime.World, light: DirectionalLightState) RenderError!void {
+    const entity = world.createEntity("machina.render.extract.directional_light", "Render Directional Light") catch |err| return mapWorldError(err);
+    world.setDirectionalLight(entity, .{
+        .direction = light.direction,
+        .color = light.color,
+        .intensity = light.intensity,
+        .ambient = light.ambient,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn renderIndexFromDrawEntity(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!usize {
+    const value = world.getComponentFieldValue(entity, render_draw_cube_component_id, "render_index") catch |err| return mapWorldError(err);
+    const render_index = switch (value) {
+        .int => |payload| payload,
+        else => return RenderError.InvalidScene,
+    };
+    if (render_index < 0) {
+        return RenderError.InvalidScene;
+    }
+    return @intCast(render_index);
+}
+
+fn mapEngineSetupError(err: anyerror) RenderError {
+    return switch (err) {
+        error.OutOfMemory => RenderError.OutOfMemory,
+        else => RenderError.InvalidScene,
+    };
+}
+
+fn mapWorldError(err: anyerror) RenderError {
+    return switch (err) {
+        error.OutOfMemory => RenderError.OutOfMemory,
+        else => RenderError.InvalidScene,
+    };
+}
+
 const CubeDemo = struct {
     allocator: std.mem.Allocator,
     pipeline: *wgpu.RenderPipeline,
@@ -362,12 +581,13 @@ const CubeDemo = struct {
     pipeline_layout: *wgpu.PipelineLayout,
     vertex_buffer: *wgpu.Buffer,
     index_buffer: *wgpu.Buffer,
+    render_state: RenderEcsState,
     objects: []ObjectResources,
 
     fn create(
         allocator: std.mem.Allocator,
         device: *wgpu.Device,
-        queue: *wgpu.Queue,
+        _: *wgpu.Queue,
         texture_format: wgpu.TextureFormat,
         scene: Scene,
     ) RenderError!CubeDemo {
@@ -394,21 +614,12 @@ const CubeDemo = struct {
         }) orelse return RenderError.NoDevice;
         errdefer bind_group_layout.release();
 
-        const objects = allocator.alloc(ObjectResources, scene.world.renderableCubeCount()) catch return RenderError.OutOfMemory;
-        errdefer allocator.free(objects);
-        var object_count: usize = 0;
-        errdefer {
-            for (objects[0..object_count]) |*object| {
-                object.deinit();
-            }
-        }
+        var render_state = try RenderEcsState.init(allocator);
+        errdefer render_state.deinit();
+        try render_state.extractScene(scene);
 
-        var cubes = scene.world.renderableCubes();
-        while (cubes.next()) |cube| {
-            const index = object_count;
-            objects[index] = try ObjectResources.create(device, queue, bind_group_layout, cube);
-            object_count += 1;
-        }
+        const objects = allocator.alloc(ObjectResources, 0) catch return RenderError.OutOfMemory;
+        errdefer allocator.free(objects);
 
         const bind_group_layouts = [_]*wgpu.BindGroupLayout{bind_group_layout};
         const pipeline_layout = device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
@@ -428,11 +639,13 @@ const CubeDemo = struct {
             .pipeline_layout = pipeline_layout,
             .vertex_buffer = vertex_buffer,
             .index_buffer = index_buffer,
+            .render_state = render_state,
             .objects = objects,
         };
     }
 
     fn deinit(self: *CubeDemo) void {
+        self.render_state.deinit();
         self.pipeline.release();
         self.pipeline_layout.release();
         self.bind_group_layout.release();
@@ -452,32 +665,97 @@ const CubeDemo = struct {
         depth_view: *wgpu.TextureView,
         config: FrameConfig,
     ) RenderError!void {
-        const camera = try cameraState(config.scene.world);
-        const light = try directionalLightState(config.scene.world);
-        var cubes = config.scene.world.renderableCubes();
+        try self.runRenderSchedule(.{
+            .device = device,
+            .queue = queue,
+            .target_view = target_view,
+            .depth_view = depth_view,
+            .frame = config,
+        });
+    }
+
+    fn runRenderSchedule(self: *CubeDemo, context: RenderSystemContext) RenderError!void {
+        for (self.render_state.schedule.batches) |batch| {
+            for (batch.systems) |system| {
+                if (std.mem.eql(u8, system.id, render_extract_system_id)) {
+                    try self.render_state.extractScene(context.frame.scene);
+                } else if (std.mem.eql(u8, system.id, render_prepare_cubes_system_id)) {
+                    try self.ensureObjectResources(context.device, context.queue);
+                } else if (std.mem.eql(u8, system.id, render_queue_cubes_system_id)) {
+                    try self.render_state.queueCubeDraws();
+                } else if (std.mem.eql(u8, system.id, render_draw_cubes_system_id)) {
+                    try self.drawQueuedCubes(context);
+                } else {
+                    return RenderError.InvalidScene;
+                }
+            }
+        }
+    }
+
+    fn ensureObjectResources(self: *CubeDemo, device: *wgpu.Device, queue: *wgpu.Queue) RenderError!void {
+        const cube_count = self.render_state.world.renderableCubeCount();
+        if (cube_count == self.objects.len) {
+            return;
+        }
+
+        const new_objects = self.allocator.alloc(ObjectResources, cube_count) catch return RenderError.OutOfMemory;
+        var object_count: usize = 0;
+        errdefer {
+            for (new_objects[0..object_count]) |*object| {
+                object.deinit();
+            }
+            self.allocator.free(new_objects);
+        }
+
+        var cubes = self.render_state.world.renderableCubes();
+        while (cubes.next()) |cube| {
+            new_objects[object_count] = try ObjectResources.create(device, queue, self.bind_group_layout, cube);
+            object_count += 1;
+        }
+        if (object_count != cube_count) {
+            return RenderError.InvalidScene;
+        }
+
         for (self.objects) |*object| {
-            const cube = cubes.next() orelse return RenderError.InvalidScene;
+            object.deinit();
+        }
+        self.allocator.free(self.objects);
+        self.objects = new_objects;
+    }
+
+    fn drawQueuedCubes(self: *CubeDemo, context: RenderSystemContext) RenderError!void {
+        const camera = try cameraState(&self.render_state.world);
+        const light = try directionalLightState(&self.render_state.world);
+        var draw_indices: std.ArrayList(usize) = .empty;
+        defer draw_indices.deinit(self.allocator);
+
+        var draw_cursor: usize = 0;
+        const draw_query = [_][]const u8{render_draw_cube_component_id};
+        while (self.render_state.world.queryNext(&draw_query, &draw_cursor)) |draw_entity| {
+            const render_index = try self.render_state.drawCommandRenderIndex(draw_entity);
+            if (render_index >= self.objects.len) {
+                return RenderError.InvalidScene;
+            }
+            const cube = self.render_state.world.renderableCubeAt(render_index) orelse return RenderError.InvalidScene;
             var uniforms = try frameUniforms(.{
-                .width = config.width,
-                .height = config.height,
+                .width = context.frame.width,
+                .height = context.frame.height,
                 .cube = &cube,
                 .camera = camera,
                 .light = light,
             });
-            writeUniforms(queue, object.uniform_buffer, &uniforms);
-        }
-        if (cubes.next() != null) {
-            return RenderError.InvalidScene;
+            writeUniforms(context.queue, self.objects[render_index].uniform_buffer, &uniforms);
+            draw_indices.append(self.allocator, render_index) catch return RenderError.OutOfMemory;
         }
 
-        const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
+        const encoder = context.device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
             .label = wgpu.StringView.fromSlice("Machina cube command encoder"),
         }) orelse return RenderError.NoDevice;
         defer encoder.release();
 
         const color_attachments = [_]wgpu.ColorAttachment{
             .{
-                .view = target_view,
+                .view = context.target_view,
                 .clear_value = .{
                     .r = 0.025,
                     .g = 0.028,
@@ -487,7 +765,7 @@ const CubeDemo = struct {
             },
         };
         const depth_attachment = wgpu.DepthStencilAttachment{
-            .view = depth_view,
+            .view = context.depth_view,
             .depth_load_op = .clear,
             .depth_store_op = .store,
             .depth_clear_value = 1.0,
@@ -498,15 +776,15 @@ const CubeDemo = struct {
             .color_attachments = &color_attachments,
             .depth_stencil_attachment = &depth_attachment,
         }) orelse return RenderError.NoDevice;
+        defer render_pass.release();
         render_pass.setPipeline(self.pipeline);
         render_pass.setVertexBuffer(0, self.vertex_buffer, 0, @sizeOf(@TypeOf(cube_vertices)));
         render_pass.setIndexBuffer(self.index_buffer, .uint16, 0, @sizeOf(@TypeOf(cube_indices)));
-        for (self.objects) |object| {
-            render_pass.setBindGroup(0, object.bind_group, 0, null);
+        for (draw_indices.items) |render_index| {
+            render_pass.setBindGroup(0, self.objects[render_index].bind_group, 0, null);
             render_pass.drawIndexed(cube_indices.len, 1, 0, 0, 0);
         }
         render_pass.end();
-        render_pass.release();
 
         const command_buffer = encoder.finish(&wgpu.CommandBufferDescriptor{
             .label = wgpu.StringView.fromSlice("Machina cube command buffer"),
@@ -514,7 +792,7 @@ const CubeDemo = struct {
         defer command_buffer.release();
 
         const command_buffers = [_]*const wgpu.CommandBuffer{command_buffer};
-        queue.submit(&command_buffers);
+        context.queue.submit(&command_buffers);
     }
 };
 
@@ -895,6 +1173,76 @@ test "camera state falls back only when no camera component exists" {
     try world.setTransform(camera_entity, .{ .position = .{ 0.0, 0.0, 6.0 } });
     const resolved = try cameraState(&world);
     try std.testing.expectEqual(@as(f32, 6.0), resolved.transform.position[2]);
+}
+
+test "render ECS schedule orders extract prepare queue and draw systems" {
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+
+    try std.testing.expectEqual(@as(usize, 4), state.schedule.systemCount());
+    try std.testing.expectEqual(@as(usize, 4), state.schedule.batchCount());
+
+    const expected = [_][]const u8{
+        render_extract_system_id,
+        render_prepare_cubes_system_id,
+        render_queue_cubes_system_id,
+        render_draw_cubes_system_id,
+    };
+    for (expected, state.schedule.batches) |system_id, batch| {
+        try std.testing.expectEqual(runtime.SystemPhase.render, batch.phase);
+        try std.testing.expectEqual(@as(usize, 1), batch.systems.len);
+        try std.testing.expectEqualStrings(system_id, batch.systems[0].id);
+    }
+}
+
+test "render ECS extracts scene data and queues cube draw commands" {
+    var scene_world = runtime.World.init(std.testing.allocator);
+    defer scene_world.deinit();
+
+    const cool_cube = try scene_world.createEntity("cool-cube", "Cool Cube");
+    try scene_world.setTransform(cool_cube, .{
+        .position = .{ -1.0, 0.0, 0.0 },
+        .rotation = .{ 0.1, 0.2, 0.3 },
+    });
+    try scene_world.setCubeRenderer(cool_cube, .{
+        .color = .{ 0.1, 0.5, 1.0 },
+    });
+
+    const warm_cube = try scene_world.createEntity("warm-cube", "Warm Cube");
+    try scene_world.setTransform(warm_cube, .{
+        .position = .{ 1.0, 0.0, 0.0 },
+        .scale = .{ 0.8, 0.8, 0.8 },
+    });
+    try scene_world.setCubeRenderer(warm_cube, .{
+        .color = .{ 1.0, 0.35, 0.12 },
+    });
+
+    const camera = try scene_world.createEntity("camera", "Camera");
+    try scene_world.setTransform(camera, .{ .position = .{ 0.0, 1.0, 7.0 } });
+    try scene_world.setCamera(camera, .{ .fov_y_degrees = 52.0 });
+
+    const light = try scene_world.createEntity("key-light", "Key Light");
+    try scene_world.setDirectionalLight(light, .{ .intensity = 1.25 });
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+    try state.extractScene(.{ .world = &scene_world });
+
+    try std.testing.expectEqual(@as(usize, 4), state.world.entityCount());
+    try std.testing.expectEqual(@as(usize, 2), state.world.renderableCubeCount());
+    try std.testing.expectEqual(@as(f32, 52.0), (state.world.renderCamera() orelse return error.TestExpectedEqual).fov_y_degrees);
+    try std.testing.expectEqual(@as(f32, 1.25), (state.world.renderDirectionalLight() orelse return error.TestExpectedEqual).intensity);
+
+    try state.queueCubeDraws();
+    try std.testing.expectEqual(@as(usize, 2), state.drawCommandCount());
+
+    var cursor: usize = 0;
+    const draw_query = [_][]const u8{render_draw_cube_component_id};
+    const first_draw = state.world.queryNext(&draw_query, &cursor) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 0), try state.drawCommandRenderIndex(first_draw));
+    const second_draw = state.world.queryNext(&draw_query, &cursor) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), try state.drawCommandRenderIndex(second_draw));
+    try std.testing.expect(state.world.queryNext(&draw_query, &cursor) == null);
 }
 
 fn perspective(fovy_radians: f32, aspect: f32, near: f32, far: f32) [16]f32 {

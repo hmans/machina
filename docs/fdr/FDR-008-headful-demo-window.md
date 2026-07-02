@@ -14,6 +14,7 @@ Headful demo rendering proves that Machina can create a platform window, hand it
 - The renderer opens a visible window and presents the project's default scene until the window is closed.
 - Cube entity position, rotation, scale, color, and spin values come from scene data.
 - Camera projection/view data and the first directional light can come from scene data, with compatibility defaults when absent.
+- Each presented frame uses the same internal render ECS world and render-phase schedule as offscreen rendering.
 - Cubes render with depth testing and scene-driven directional diffuse shading.
 - Users can run `machina run [path] --frames N` to exit after a fixed number of frames for smoke tests and automation.
 - `machina render [path] [output.bmp]` remains the headless/offscreen snapshot command.
@@ -38,9 +39,15 @@ Headful demo rendering proves that Machina can create a platform window, hand it
 **Why:** A visible window normally runs until closed, but development agents and CI need a bounded smoke-test path that still initializes the same surface and presentation code.
 **Tradeoff:** The option is an engine-runner concern rather than project data, so it should remain a CLI/runtime flag.
 
+### 4. Share the renderer ECS path with offscreen rendering
+
+**Decision:** Headful rendering extracts, prepares, queues, and draws through the same renderer-owned ECS world and schedule as offscreen rendering.
+**Why:** Visible windows and headless snapshots should exercise the same rendering architecture wherever possible. This follows ADR-013.
+**Tradeoff:** Backend resource lifetime is still managed by the renderer facade until native/internal component storage exists.
+
 ## Related
 
-- **ADRs:** ADR-004, ADR-005
+- **ADRs:** ADR-004, ADR-005, ADR-013
 - **FDRs:** FDR-003, FDR-007, FDR-014
 
 ## Open Questions
