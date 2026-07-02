@@ -1492,18 +1492,24 @@ test "checkProject validates script declarations and builds a system schedule" {
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
-        \\ecs.component("spin", {
+        \\type Spin = {
+        \\  angular_velocity: MachinaVec3,
+        \\}
+        \\
+        \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
+        \\local RenderCube = ecs.component<<MachinaRenderCube>>("machina.render.cube")
+        \\local Spin = ecs.component<<Spin>>("spin", {
         \\  fields = {
         \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
         \\ecs.system("observe_spin", {
-        \\  reads = { "spin" },
+        \\  reads = { Spin },
         \\})
         \\
         \\ecs.system("observe_cubes", {
-        \\  reads = { "machina.transform", "machina.render.cube" },
+        \\  reads = { Transform, RenderCube },
         \\  after = { "observe_spin" },
         \\})
         ,
@@ -1688,14 +1694,18 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
-        \\ecs.component("spin", {
+        \\type Spin = {
+        \\  angular_velocity: MachinaVec3,
+        \\}
+        \\
+        \\local Spin = ecs.component<<Spin>>("spin", {
         \\  fields = {
         \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
         \\ecs.system("observe_spin", {
-        \\  reads = { "spin" },
+        \\  reads = { Spin },
         \\})
         ,
     });
@@ -1709,24 +1719,32 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
-        \\ecs.component("spin", {
+        \\type Spin = {
+        \\  angular_velocity: MachinaVec3,
+        \\}
+        \\
+        \\type Marker = {
+        \\  enabled: boolean,
+        \\}
+        \\
+        \\local Spin = ecs.component<<Spin>>("spin", {
         \\  fields = {
         \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
-        \\ecs.component("marker", {
+        \\local Marker = ecs.component<<Marker>>("marker", {
         \\  fields = {
         \\    enabled = "boolean",
         \\  },
         \\})
         \\
         \\ecs.system("observe_spin", {
-        \\  reads = { "spin" },
+        \\  reads = { Spin },
         \\})
         \\
         \\ecs.system("observe_marker", {
-        \\  reads = { "marker" },
+        \\  reads = { Marker },
         \\})
         ,
     });
@@ -1779,24 +1797,27 @@ test "LiveProject update runs the scheduled rotation system" {
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
-        \\ecs.component("spin", {
+        \\type Spin = {
+        \\  angular_velocity: MachinaVec3,
+        \\}
+        \\
+        \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
+        \\local Spin = ecs.component<<Spin>>("spin", {
         \\  fields = {
         \\    angular_velocity = "vec3",
         \\  },
         \\})
         \\
         \\ecs.system("rotate_cubes", {
-        \\  reads = { "spin" },
-        \\  writes = { "machina.transform" },
+        \\  reads = { Spin },
+        \\  writes = { Transform },
         \\  run = function(world, dt)
-        \\    for entity in world.query("machina.transform", "spin") do
-        \\      local rotation = entity.get_vec3("machina.transform", "rotation")
-        \\      local angular_velocity = entity.get_vec3("spin", "angular_velocity")
-        \\      entity.set_vec3("machina.transform", "rotation", {
-        \\        rotation[1] + angular_velocity[1] * dt,
-        \\        rotation[2] + angular_velocity[2] * dt,
-        \\        rotation[3] + angular_velocity[3] * dt,
-        \\      })
+        \\    for _entity, transform, spin in world.query(Transform, Spin) do
+        \\      transform.rotation = {
+        \\        transform.rotation[1] + spin.angular_velocity[1] * dt,
+        \\        transform.rotation[2] + spin.angular_velocity[2] * dt,
+        \\        transform.rotation[3] + spin.angular_velocity[3] * dt,
+        \\      }
         \\    end
         \\  end,
         \\})
@@ -2111,27 +2132,30 @@ test "checkProject rejects unsupported metadata version" {
 }
 
 fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !void {
-    var buffer: [1024]u8 = undefined;
+    var buffer: [1536]u8 = undefined;
     const data = try std.fmt.bufPrint(
         &buffer,
-        \\ecs.component("spin", {{
+        \\type Spin = {{
+        \\  angular_velocity: MachinaVec3,
+        \\}}
+        \\
+        \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
+        \\local Spin = ecs.component<<Spin>>("spin", {{
         \\  fields = {{
         \\    angular_velocity = "vec3",
         \\  }},
         \\}})
         \\
         \\ecs.system("rotate_cubes", {{
-        \\  reads = {{ "spin" }},
-        \\  writes = {{ "machina.transform" }},
+        \\  reads = {{ Spin }},
+        \\  writes = {{ Transform }},
         \\  run = function(world, dt)
-        \\    for entity in world.query("machina.transform", "spin") do
-        \\      local rotation = entity.get_vec3("machina.transform", "rotation")
-        \\      local angular_velocity = entity.get_vec3("spin", "angular_velocity")
-        \\      entity.set_vec3("machina.transform", "rotation", {{
-        \\        rotation[1] + angular_velocity[1] * ({s}),
-        \\        rotation[2] + angular_velocity[2] * ({s}),
-        \\        rotation[3] + angular_velocity[3] * ({s}),
-        \\      }})
+        \\    for _entity, transform, spin in world.query(Transform, Spin) do
+        \\      transform.rotation = {{
+        \\        transform.rotation[1] + spin.angular_velocity[1] * ({s}),
+        \\        transform.rotation[2] + spin.angular_velocity[2] * ({s}),
+        \\        transform.rotation[3] + spin.angular_velocity[3] * ({s}),
+        \\      }}
         \\    end
         \\  end,
         \\}})

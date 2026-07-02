@@ -1,7 +1,7 @@
 # FDR-011: Script ECS Registration
 
 **Status:** Active
-**Last reviewed:** 2026-07-01
+**Last reviewed:** 2026-07-02
 
 ## Overview
 
@@ -26,7 +26,9 @@ Script ECS registration lets project and package scripts define new component an
 - Systems that only read compatible component sets can share a batch; write conflicts or order dependencies force later batches.
 - Script-authored systems can provide Luau `run` callbacks that execute during the native update schedule.
 - Script system callbacks receive an engine-provided world facade instead of direct component storage ownership.
-- The current world facade exposes `world.query(...)` for component-set iteration and entity vector field accessors `get_vec3(...)` and `set_vec3(...)`.
+- `ecs.component(...)` returns a component handle. Scripts may use handles in system `reads`/`writes` and `world.query(...)` calls.
+- The preferred world facade exposes `world.query(...)` for component-set iteration and returns the entity plus component proxies for the requested components.
+- Low-level entity vector accessors remain available for compatibility and debugging.
 - Script-driven world mutation is checked against the system's declared component access.
 - Non-finite script values that reach host mutation APIs fail the system invocation for that frame instead of corrupting world state.
 - Registration failures produce structured diagnostics suitable for command-line, editor, and reload surfaces.
@@ -64,13 +66,13 @@ Script ECS registration lets project and package scripts define new component an
 **Why:** Running real Luau keeps script behavior honest, reloadable, and compatible with editor tooling while preserving native ownership of ECS storage and scheduling. Narrow host APIs prevent scripts from bypassing validation while the ECS query/mutation model matures.
 **Tradeoff:** Each host API must be designed, typed, validated, and diagnosed explicitly before scripts can use it.
 
-### 6. Start world access with declared queries and vec3 mutation
+### 6. Prefer typed component handles for script queries
 
-**Decision:** Script systems begin runtime access through declared component queries and explicit `vec3` field reads/writes.
-**Why:** This replaces hardcoded gameplay host functions with real component storage while keeping validation and declared read/write access enforceable. It is enough for the rotating cube example and scene-authored project-local `spin` data.
-**Tradeoff:** The API does not yet expose scalar fields, component insertion/removal, query objects, defaults, or richer diagnostics per accessor failure.
+**Decision:** `ecs.component(...)` returns a component handle, and `world.query(...)` accepts handles and yields component proxies in the same order as the query.
+**Why:** Typed handles let Luau generics connect component ids to component shapes without relying on raw string literals. This gives scripts typed query results while preserving engine-owned validation and scheduling. It follows ADR-006 and ADR-008.
+**Tradeoff:** Explicit type instantiation is needed when a script creates a handle, and scalar fields still need additional proxy support beyond the initial `vec3` path.
 
-### 6. Vendor the initial Luau runtime behind the scripting boundary
+### 7. Vendor the initial Luau runtime behind the scripting boundary
 
 **Decision:** Machina vendors the embeddable Luau compiler and VM source subset and wraps it behind a small C ABI bridge.
 **Why:** Homebrew provides Luau command-line tools but not the embeddable library surface Machina needs. Keeping Luau behind the scripting boundary follows ADR-005 and lets the Zig runtime avoid depending on Luau internals directly.
