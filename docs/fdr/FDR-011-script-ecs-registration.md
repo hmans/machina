@@ -15,6 +15,7 @@ Script ECS registration lets project and package scripts define new component an
 - Machina does not infer a default project namespace.
 - Project metadata lists script files in a root-level `scripts = [...]` array.
 - Script files use Luau source files executed by the embedded Luau VM.
+- Project scripts are type-checked as strict Luau in the repository editor configuration.
 - Scripts register component and system definitions through the engine-provided `ecs.component(...)` and `ecs.system(...)` globals.
 - The example project's rotating cube behavior declares `spin` as a project-local component instead of relying on an engine-owned spin type.
 - Duplicate registration with an identical definition is accepted as reload-compatible.
@@ -26,7 +27,9 @@ Script ECS registration lets project and package scripts define new component an
 - Systems that only read compatible component sets can share a batch; write conflicts or order dependencies force later batches.
 - Script-authored systems can provide Luau `run` callbacks that execute during the native update schedule.
 - Script system callbacks receive an engine-provided world facade instead of direct component storage ownership.
-- `ecs.component(...)` returns a component handle. Scripts may use handles in system `reads`/`writes` and `world.query(...)` calls.
+- `ecs.component(...)` returns a typed component handle.
+- Scripts use `ecs.refs(...)` to erase typed component handles into dependency declarations for system `reads` and `writes`.
+- Scripts pass typed component handles to `world.query(...)`.
 - The preferred world facade exposes `world.query(...)` for component-set iteration and returns the entity plus component proxies for the requested components.
 - Low-level entity vector accessors remain available for compatibility and debugging.
 - Script-driven world mutation is checked against the system's declared component access.
@@ -68,9 +71,9 @@ Script ECS registration lets project and package scripts define new component an
 
 ### 6. Prefer typed component handles for script queries
 
-**Decision:** `ecs.component(...)` returns a component handle, and `world.query(...)` accepts handles and yields component proxies in the same order as the query.
-**Why:** Typed handles let Luau generics connect component ids to component shapes without relying on raw string literals. This gives scripts typed query results while preserving engine-owned validation and scheduling. It follows ADR-006 and ADR-008.
-**Tradeoff:** Explicit type instantiation is needed when a script creates a handle, and scalar fields still need additional proxy support beyond the initial `vec3` path.
+**Decision:** `ecs.component(...)` returns an opaque typed component handle, `world.query(...)` accepts handles and yields component proxies in the same order as the query, and `ecs.refs(...)` erases handles into id refs for system access declarations.
+**Why:** Typed handles let Luau generics connect component ids to component shapes without relying on raw string literals. Erasing handles at the access-declaration boundary keeps mixed dependency lists ergonomic while preserving typed query results. This gives scripts useful editor diagnostics without forcing loop-variable annotations. It follows ADR-006 and ADR-008.
+**Tradeoff:** Scripts use a helper for `reads` and `writes` instead of raw handle arrays, and scalar fields still need additional proxy support beyond the initial `vec3` path.
 
 ### 7. Vendor the initial Luau runtime behind the scripting boundary
 

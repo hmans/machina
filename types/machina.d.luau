@@ -13,7 +13,7 @@ export type MachinaFieldType =
 
 export type MachinaComponentDefinition = {
     version: number?,
-    fields: { [string]: MachinaFieldType }?,
+    fields: { [string]: string }?,
 }
 
 export type MachinaSystemPhase = "startup" | "update" | "fixed_update" | "render"
@@ -22,9 +22,13 @@ export type MachinaVec3 = { number }
 
 export type MachinaComponent<T> = {
     id: MachinaComponentId,
+
+    --- Type-only marker used by Luau to preserve component payload types through handles.
+    __machina_component_type: T,
 }
 
 export type MachinaComponentRef = MachinaComponentId | MachinaComponent<any>
+export type MachinaComponentRefs = { MachinaComponentId }
 
 export type MachinaTransform = {
     position: MachinaVec3,
@@ -62,8 +66,8 @@ export type MachinaWorld = {
 
 export type MachinaSystemDefinition = {
     phase: MachinaSystemPhase?,
-    reads: { MachinaComponentRef }?,
-    writes: { MachinaComponentRef }?,
+    reads: MachinaComponentRefs?,
+    writes: MachinaComponentRefs?,
     before: { MachinaSystemId }?,
     after: { MachinaSystemId }?,
     run: ((world: MachinaWorld, delta_seconds: number) -> ())?,
@@ -77,6 +81,9 @@ export type MachinaComponentFunction = <T>(
 export type MachinaEcs = {
     --- Registers a project-local component type or returns a typed handle for an existing component.
     component: MachinaComponentFunction,
+
+    --- Erases typed component handles into component id refs for system read/write declarations.
+    refs: (...MachinaComponentRef) -> MachinaComponentRefs,
 
     --- Registers a project-local system type.
     system: (id: MachinaSystemId, definition: MachinaSystemDefinition) -> (),

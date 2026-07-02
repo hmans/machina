@@ -216,6 +216,22 @@ static int ecs_component(lua_State* state)
     return 1;
 }
 
+static int ecs_refs(lua_State* state)
+{
+    const int count = lua_gettop(state);
+    lua_createtable(state, count, 0);
+
+    for (int index = 1; index <= count; ++index)
+    {
+        const std::string id = check_component_id(state, index);
+        lua_pushlstring(state, id.c_str(), id.size());
+        lua_rawseti(state, -2, index);
+    }
+
+    lua_setreadonly(state, -1, 1);
+    return 1;
+}
+
 static int ecs_system(lua_State* state)
 {
     machina_luau* vm = vm_from_upvalue(state);
@@ -416,6 +432,9 @@ static void install_ecs(lua_State* state, machina_luau* vm)
     lua_pushlightuserdata(state, vm);
     lua_pushcclosure(state, ecs_component, "ecs.component", 1);
     lua_setfield(state, -2, "component");
+
+    lua_pushcclosure(state, ecs_refs, "ecs.refs", 0);
+    lua_setfield(state, -2, "refs");
 
     lua_pushlightuserdata(state, vm);
     lua_pushcclosure(state, ecs_system, "ecs.system", 1);

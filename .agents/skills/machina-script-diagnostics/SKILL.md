@@ -29,7 +29,7 @@ Run the normal script-diagnostics checks:
 
 1. `mise build`
 2. `mise test`
-3. For editor type-surface changes, run `luau-lsp analyze --definitions:machina=types/machina.d.luau examples/minimal/scripts/gameplay.luau` using the installed Luau Language Server binary.
+3. For editor type-surface changes, run `mise luau-check`.
 4. `./zig-out/bin/machina check examples/minimal --format=json`
 5. Create a temporary copy of `examples/minimal`, break `scripts/gameplay.luau`, and verify:
    - text output is human-readable,

@@ -9,6 +9,10 @@ run = "zig build"
 description = "Run Zig tests"
 run = "zig build test"
 
+[tasks.luau-check]
+description = "Run Luau editor type checks"
+run = "bash tools/check-luau-types.sh"
+
 [tasks.render-test]
 description = "Render and verify the minimal example scene"
 run = "mise machina render-test examples/minimal zig-out/minimal-render-test.bmp"

@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+find_luau_lsp() {
+  if [[ -n "${LUAU_LSP_BIN:-}" && -x "${LUAU_LSP_BIN}" ]]; then
+    printf '%s\n' "${LUAU_LSP_BIN}"
+    return
+  fi
+
+  if command -v luau-lsp >/dev/null 2>&1; then
+    command -v luau-lsp
+    return
+  fi
+
+  local extension_dir="${HOME}/.vscode/extensions"
+  if [[ -d "${extension_dir}" ]]; then
+    local candidate
+    candidate="$(find "${extension_dir}" -path '*/johnnymorganz.luau-lsp-*/bin/server' -type f 2>/dev/null | sort | tail -n 1 || true)"
+    if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return
+    fi
+  fi
+
+  printf 'error: luau-lsp not found; set LUAU_LSP_BIN to the Luau Language Server binary\n' >&2
+  exit 1
+}
+
+luau_lsp="$(find_luau_lsp)"
+definitions="${repo_root}/types/machina.d.luau"
+luaurc="${repo_root}/.luaurc"
+
+analyze() {
+  "${luau_lsp}" analyze \
+    --platform=standard \
+    "--definitions:machina=${definitions}" \
+    --base-luaurc "${luaurc}" \
+    "$@"
+}
+
+cd "${repo_root}"
+
+analyze examples/minimal/scripts/gameplay.luau
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "${tmpdir}"' EXIT
+
+valid_script="${tmpdir}/typed-query-valid.luau"
+cat > "${valid_script}" <<'LUA'
+type Spin = {
+  angular_velocity: MachinaVec3,
+}
+
+local Transform = ecs.component<<MachinaTransform>>("machina.transform")
+local Spin = ecs.component<<Spin>>("spin", {
+  fields = {
+    angular_velocity = "vec3",
+  },
+})
+
+ecs.system("typed_query", {
+  phase = "update",
+  reads = ecs.refs(Spin),
+  writes = ecs.refs(Transform),
+  run = function(world, dt)
+    for _entity, transform, spin in world.query(Transform, Spin) do
+      local _rotation: MachinaVec3 = transform.rotation
+      local _angular_speed: number = spin.angular_velocity[1] * dt
+      transform.rotation = {
+        transform.rotation[1] + spin.angular_velocity[1] * dt,
+        transform.rotation[2],
+        transform.rotation[3],
+      }
+    end
+  end,
+})
+LUA
+
+analyze "${valid_script}"
+
+invalid_script="${tmpdir}/typed-query-invalid.luau"
+cat > "${invalid_script}" <<'LUA'
+type Spin = {
+  angular_velocity: MachinaVec3,
+}
+
+local Transform = ecs.component<<MachinaTransform>>("machina.transform")
+local Spin = ecs.component<<Spin>>("spin", {
+  fields = {
+    angular_velocity = "vec3",
+  },
+})
+
+ecs.system("typed_query", {
+  reads = ecs.refs(Spin),
+  writes = ecs.refs(Transform),
+  run = function(world, dt)
+    for _entity, transform, _spin in world.query(Transform, Spin) do
+      local _bad: string = transform.rotation
+    end
+  end,
+})
+LUA
+
+invalid_output="${tmpdir}/typed-query-invalid.out"
+if analyze "${invalid_script}" >"${invalid_output}" 2>&1; then
+  printf 'error: expected invalid typed query fixture to fail Luau analysis\n' >&2
+  exit 1
+fi
+
+if ! grep -q "Expected this to be 'string'" "${invalid_output}"; then
+  printf 'error: invalid typed query fixture failed for an unexpected reason\n' >&2
+  cat "${invalid_output}" >&2
+  exit 1
+fi

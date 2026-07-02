@@ -1,3 +1,5 @@
+--!strict
+
 type Spin = {
   angular_velocity: MachinaVec3,
 }
@@ -12,8 +14,8 @@ local Spin = ecs.component<<Spin>>("spin", {
 
 ecs.system("autorotate", {
   phase = "update",
-  reads = { Spin },
-  writes = { Transform },
+  reads = ecs.refs(Spin),
+  writes = ecs.refs(Transform),
   run = function(world, dt)
     for _entity, transform, spin in world.query(Transform, Spin) do
       transform.rotation = {
@@ -27,6 +29,6 @@ ecs.system("autorotate", {
 
 ecs.system("observe_cubes", {
   phase = "update",
-  reads = { Transform, RenderCube },
+  reads = ecs.refs(Transform, RenderCube),
   after = { "autorotate" },
 })

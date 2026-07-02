@@ -1492,6 +1492,8 @@ test "checkProject validates script declarations and builds a system schedule" {
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
+        \\--!strict
+        \\
         \\type Spin = {
         \\  angular_velocity: MachinaVec3,
         \\}
@@ -1505,11 +1507,11 @@ test "checkProject validates script declarations and builds a system schedule" {
         \\})
         \\
         \\ecs.system("observe_spin", {
-        \\  reads = { Spin },
+        \\  reads = ecs.refs(Spin),
         \\})
         \\
         \\ecs.system("observe_cubes", {
-        \\  reads = { Transform, RenderCube },
+        \\  reads = ecs.refs(Transform, RenderCube),
         \\  after = { "observe_spin" },
         \\})
         ,
@@ -1694,6 +1696,8 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
+        \\--!strict
+        \\
         \\type Spin = {
         \\  angular_velocity: MachinaVec3,
         \\}
@@ -1705,7 +1709,7 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
         \\})
         \\
         \\ecs.system("observe_spin", {
-        \\  reads = { Spin },
+        \\  reads = ecs.refs(Spin),
         \\})
         ,
     });
@@ -1719,6 +1723,8 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
+        \\--!strict
+        \\
         \\type Spin = {
         \\  angular_velocity: MachinaVec3,
         \\}
@@ -1740,11 +1746,11 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
         \\})
         \\
         \\ecs.system("observe_spin", {
-        \\  reads = { Spin },
+        \\  reads = ecs.refs(Spin),
         \\})
         \\
         \\ecs.system("observe_marker", {
-        \\  reads = { Marker },
+        \\  reads = ecs.refs(Marker),
         \\})
         ,
     });
@@ -1797,6 +1803,8 @@ test "LiveProject update runs the scheduled rotation system" {
     try root_dir.writeFile(io, .{
         .sub_path = "scripts/gameplay.luau",
         .data =
+        \\--!strict
+        \\
         \\type Spin = {
         \\  angular_velocity: MachinaVec3,
         \\}
@@ -1809,8 +1817,8 @@ test "LiveProject update runs the scheduled rotation system" {
         \\})
         \\
         \\ecs.system("rotate_cubes", {
-        \\  reads = { Spin },
-        \\  writes = { Transform },
+        \\  reads = ecs.refs(Spin),
+        \\  writes = ecs.refs(Transform),
         \\  run = function(world, dt)
         \\    for _entity, transform, spin in world.query(Transform, Spin) do
         \\      transform.rotation = {
@@ -2135,6 +2143,8 @@ fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !vo
     var buffer: [1536]u8 = undefined;
     const data = try std.fmt.bufPrint(
         &buffer,
+        \\--!strict
+        \\
         \\type Spin = {{
         \\  angular_velocity: MachinaVec3,
         \\}}
@@ -2147,8 +2157,8 @@ fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !vo
         \\}})
         \\
         \\ecs.system("rotate_cubes", {{
-        \\  reads = {{ Spin }},
-        \\  writes = {{ Transform }},
+        \\  reads = ecs.refs(Spin),
+        \\  writes = ecs.refs(Transform),
         \\  run = function(world, dt)
         \\    for _entity, transform, spin in world.query(Transform, Spin) do
         \\      transform.rotation = {{
