@@ -44,6 +44,7 @@ analyze() {
 cd "${repo_root}"
 
 analyze examples/minimal/scripts/gameplay.luau
+analyze examples/showcase/scripts/gameplay.luau
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
