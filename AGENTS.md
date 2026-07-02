@@ -22,6 +22,7 @@ Please add to this list as needed.
 - `src/shaders/` contains WGSL shaders embedded into the binary.
 - `examples/minimal/` is the canonical smoke-test project.
 - `examples/batching/` demonstrates automatic renderer batching with many Luau-animated text-authored entities sharing geometry/material keys.
+- `examples/spawn_swarm/` demonstrates script-spawned swarm entities with startup-authored renderables and update-driven flock motion.
 - `examples/spawning/` demonstrates script-driven entity spawning from an otherwise empty rendered scene.
 - `examples/ui_overlay/` demonstrates the first engine-native UI primitives rendered from text-authored ECS component data.
 - `tests/projects/` contains game-shaped project fixtures used only by automated tests. Each runnable fixture has a `test.machina.toml` manifest with frames, timestep, and ECS field assertions.
