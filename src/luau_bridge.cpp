@@ -47,11 +47,36 @@ struct machina_luau
     std::string last_error;
 };
 
+static const char* ENTITY_PROXY_METATABLE = "machina.entity_proxy";
+static const char* COMPONENT_PROXY_METATABLE = "machina.component_proxy";
+
+struct EntityProxyState
+{
+    machina_luau* vm = nullptr;
+    uint32_t entity = 0;
+};
+
+struct ComponentProxyState
+{
+    machina_luau* vm = nullptr;
+    uint32_t entity = 0;
+    std::string component_id;
+};
+
 struct QueryState
 {
     machina_luau* vm = nullptr;
     std::vector<std::string> component_ids;
+    std::vector<const char*> component_id_ptrs;
     uint32_t cursor = 0;
+
+    void refresh_component_id_ptrs()
+    {
+        component_id_ptrs.clear();
+        component_id_ptrs.reserve(component_ids.size());
+        for (const std::string& id : component_ids)
+            component_id_ptrs.push_back(id.c_str());
+    }
 };
 
 static machina_luau* vm_from_upvalue(lua_State* state)
@@ -130,9 +155,29 @@ static QueryState* query_state_from_upvalue(lua_State* state)
     return static_cast<QueryState*>(lua_touserdata(state, lua_upvalueindex(1)));
 }
 
+static EntityProxyState* entity_proxy_from_upvalue(lua_State* state)
+{
+    return static_cast<EntityProxyState*>(luaL_checkudata(state, lua_upvalueindex(1), ENTITY_PROXY_METATABLE));
+}
+
+static ComponentProxyState* component_proxy_from_arg(lua_State* state, int index)
+{
+    return static_cast<ComponentProxyState*>(luaL_checkudata(state, index, COMPONENT_PROXY_METATABLE));
+}
+
 static void query_state_dtor(void* userdata)
 {
     static_cast<QueryState*>(userdata)->~QueryState();
+}
+
+static void entity_proxy_dtor(void* userdata)
+{
+    static_cast<EntityProxyState*>(userdata)->~EntityProxyState();
+}
+
+static void component_proxy_dtor(void* userdata)
+{
+    static_cast<ComponentProxyState*>(userdata)->~ComponentProxyState();
 }
 
 static bool read_optional_string_field(lua_State* state, int table_index, const char* key, std::string* out)
@@ -573,86 +618,127 @@ static std::vector<machina_luau_component_field_value> read_component_field_valu
     return fields;
 }
 
+static int entity_method_first_arg(lua_State* state)
+{
+    return lua_isuserdata(state, 1) ? 2 : 1;
+}
+
+static int entity_proxy_get_vec3(lua_State* state)
+{
+    EntityProxyState* proxy = entity_proxy_from_upvalue(state);
+    const int first_arg = entity_method_first_arg(state);
+    const char* component_id = luaL_checkstring(state, first_arg);
+    const char* field_name = luaL_checkstring(state, first_arg + 1);
+    float value[3] = {};
+    if (!proxy->vm->callbacks.get_vec3 || !proxy->vm->callbacks.get_vec3(proxy->vm->callback_context, proxy->vm->active_world, proxy->entity, component_id, field_name, value))
+        raise_host_error(state, proxy->vm, "world query get_vec3 access denied or failed");
+    push_vec3(state, value);
+    return 1;
+}
+
+static int entity_proxy_set_vec3(lua_State* state)
+{
+    EntityProxyState* proxy = entity_proxy_from_upvalue(state);
+    const int first_arg = entity_method_first_arg(state);
+    const char* component_id = luaL_checkstring(state, first_arg);
+    const char* field_name = luaL_checkstring(state, first_arg + 1);
+    float value[3] = {};
+    read_vec3(state, first_arg + 2, value);
+    if (!proxy->vm->callbacks.set_vec3 || !proxy->vm->callbacks.set_vec3(proxy->vm->callback_context, proxy->vm->active_world, proxy->entity, component_id, field_name, value))
+        raise_host_error(state, proxy->vm, "world query set_vec3 access denied or failed");
+    return 0;
+}
+
+static int entity_proxy_add(lua_State* state)
+{
+    EntityProxyState* proxy = entity_proxy_from_upvalue(state);
+    const int first_arg = entity_method_first_arg(state);
+    const std::string component_id = check_component_id(state, first_arg);
+    const std::vector<machina_luau_component_field_value> fields = read_component_field_values(state, first_arg + 1);
+    if (!proxy->vm->callbacks.add_component || !proxy->vm->callbacks.add_component(proxy->vm->callback_context, proxy->vm->active_world, proxy->entity, component_id.c_str(), fields.data(), fields.size()))
+        raise_host_error(state, proxy->vm, "entity.add access denied or failed");
+    return 0;
+}
+
+static int entity_proxy_remove(lua_State* state)
+{
+    EntityProxyState* proxy = entity_proxy_from_upvalue(state);
+    const int first_arg = entity_method_first_arg(state);
+    const std::string component_id = check_component_id(state, first_arg);
+    if (!proxy->vm->callbacks.remove_component || !proxy->vm->callbacks.remove_component(proxy->vm->callback_context, proxy->vm->active_world, proxy->entity, component_id.c_str()))
+        raise_host_error(state, proxy->vm, "entity.remove access denied or failed");
+    return 0;
+}
+
+static int entity_proxy_despawn(lua_State* state)
+{
+    EntityProxyState* proxy = entity_proxy_from_upvalue(state);
+    if (!proxy->vm->callbacks.despawn_entity || !proxy->vm->callbacks.despawn_entity(proxy->vm->callback_context, proxy->vm->active_world, proxy->entity))
+        raise_host_error(state, proxy->vm, "entity.despawn access denied or failed");
+    return 0;
+}
+
+static int entity_proxy_index(lua_State* state)
+{
+    luaL_checkudata(state, 1, ENTITY_PROXY_METATABLE);
+    const char* field_name = luaL_checkstring(state, 2);
+    lua_pushvalue(state, 1);
+    if (std::strcmp(field_name, "get_vec3") == 0)
+    {
+        lua_pushcclosure(state, entity_proxy_get_vec3, "entity.get_vec3", 1);
+        return 1;
+    }
+    if (std::strcmp(field_name, "set_vec3") == 0)
+    {
+        lua_pushcclosure(state, entity_proxy_set_vec3, "entity.set_vec3", 1);
+        return 1;
+    }
+    if (std::strcmp(field_name, "add") == 0)
+    {
+        lua_pushcclosure(state, entity_proxy_add, "entity.add", 1);
+        return 1;
+    }
+    if (std::strcmp(field_name, "remove") == 0)
+    {
+        lua_pushcclosure(state, entity_proxy_remove, "entity.remove", 1);
+        return 1;
+    }
+    if (std::strcmp(field_name, "despawn") == 0)
+    {
+        lua_pushcclosure(state, entity_proxy_despawn, "entity.despawn", 1);
+        return 1;
+    }
+    lua_pop(state, 1);
+    lua_pushnil(state);
+    return 1;
+}
+
+static void ensure_entity_proxy_metatable(lua_State* state)
+{
+    if (luaL_newmetatable(state, ENTITY_PROXY_METATABLE))
+    {
+        lua_pushcfunction(state, entity_proxy_index, "entity.__index");
+        lua_setfield(state, -2, "__index");
+        lua_setreadonly(state, -1, 1);
+    }
+}
+
 static void push_entity(lua_State* state, machina_luau* vm, uint32_t entity)
 {
-    lua_newtable(state);
-
-    lua_pushlightuserdata(state, vm);
-    lua_pushinteger(state, entity);
-    lua_pushcclosure(state, [](lua_State* state) -> int {
-        machina_luau* vm = static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
-        const uint32_t entity = static_cast<uint32_t>(lua_tointeger(state, lua_upvalueindex(2)));
-        const char* component_id = luaL_checkstring(state, 1);
-        const char* field_name = luaL_checkstring(state, 2);
-        float value[3] = {};
-        if (!vm->callbacks.get_vec3 || !vm->callbacks.get_vec3(vm->callback_context, vm->active_world, entity, component_id, field_name, value))
-            raise_host_error(state, vm, "world query get_vec3 access denied or failed");
-        push_vec3(state, value);
-        return 1;
-    }, "entity.get_vec3", 2);
-    lua_setfield(state, -2, "get_vec3");
-
-    lua_pushlightuserdata(state, vm);
-    lua_pushinteger(state, entity);
-    lua_pushcclosure(state, [](lua_State* state) -> int {
-        machina_luau* vm = static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
-        const uint32_t entity = static_cast<uint32_t>(lua_tointeger(state, lua_upvalueindex(2)));
-        const char* component_id = luaL_checkstring(state, 1);
-        const char* field_name = luaL_checkstring(state, 2);
-        float value[3] = {};
-        read_vec3(state, 3, value);
-        if (!vm->callbacks.set_vec3 || !vm->callbacks.set_vec3(vm->callback_context, vm->active_world, entity, component_id, field_name, value))
-            raise_host_error(state, vm, "world query set_vec3 access denied or failed");
-        return 0;
-    }, "entity.set_vec3", 2);
-    lua_setfield(state, -2, "set_vec3");
-
-    lua_pushlightuserdata(state, vm);
-    lua_pushinteger(state, entity);
-    lua_pushcclosure(state, [](lua_State* state) -> int {
-        machina_luau* vm = static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
-        const uint32_t entity = static_cast<uint32_t>(lua_tointeger(state, lua_upvalueindex(2)));
-        const int first_arg = lua_istable(state, 1) ? 2 : 1;
-        const std::string component_id = check_component_id(state, first_arg);
-        const std::vector<machina_luau_component_field_value> fields = read_component_field_values(state, first_arg + 1);
-        if (!vm->callbacks.add_component || !vm->callbacks.add_component(vm->callback_context, vm->active_world, entity, component_id.c_str(), fields.data(), fields.size()))
-            raise_host_error(state, vm, "entity.add access denied or failed");
-        return 0;
-    }, "entity.add", 2);
-    lua_setfield(state, -2, "add");
-
-    lua_pushlightuserdata(state, vm);
-    lua_pushinteger(state, entity);
-    lua_pushcclosure(state, [](lua_State* state) -> int {
-        machina_luau* vm = static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
-        const uint32_t entity = static_cast<uint32_t>(lua_tointeger(state, lua_upvalueindex(2)));
-        const int first_arg = lua_istable(state, 1) ? 2 : 1;
-        const std::string component_id = check_component_id(state, first_arg);
-        if (!vm->callbacks.remove_component || !vm->callbacks.remove_component(vm->callback_context, vm->active_world, entity, component_id.c_str()))
-            raise_host_error(state, vm, "entity.remove access denied or failed");
-        return 0;
-    }, "entity.remove", 2);
-    lua_setfield(state, -2, "remove");
-
-    lua_pushlightuserdata(state, vm);
-    lua_pushinteger(state, entity);
-    lua_pushcclosure(state, [](lua_State* state) -> int {
-        machina_luau* vm = static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
-        const uint32_t entity = static_cast<uint32_t>(lua_tointeger(state, lua_upvalueindex(2)));
-        if (!vm->callbacks.despawn_entity || !vm->callbacks.despawn_entity(vm->callback_context, vm->active_world, entity))
-            raise_host_error(state, vm, "entity.despawn access denied or failed");
-        return 0;
-    }, "entity.despawn", 2);
-    lua_setfield(state, -2, "despawn");
-
-    lua_setreadonly(state, -1, 1);
+    void* storage = lua_newuserdatadtor(state, sizeof(EntityProxyState), entity_proxy_dtor);
+    EntityProxyState* proxy = new (storage) EntityProxyState();
+    proxy->vm = vm;
+    proxy->entity = entity;
+    ensure_entity_proxy_metatable(state);
+    lua_setmetatable(state, -2);
 }
 
 static int component_proxy_index(lua_State* state)
 {
-    machina_luau* vm = static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
-    const uint32_t entity = static_cast<uint32_t>(lua_tointeger(state, lua_upvalueindex(2)));
-    const char* component_id = lua_tostring(state, lua_upvalueindex(3));
+    ComponentProxyState* proxy = component_proxy_from_arg(state, 1);
+    machina_luau* vm = proxy->vm;
+    const uint32_t entity = proxy->entity;
+    const char* component_id = proxy->component_id.c_str();
     const char* field_name = luaL_checkstring(state, 2);
 
     if (std::strcmp(field_name, "id") == 0)
@@ -670,9 +756,10 @@ static int component_proxy_index(lua_State* state)
 
 static int component_proxy_newindex(lua_State* state)
 {
-    machina_luau* vm = static_cast<machina_luau*>(lua_tolightuserdata(state, lua_upvalueindex(1)));
-    const uint32_t entity = static_cast<uint32_t>(lua_tointeger(state, lua_upvalueindex(2)));
-    const char* component_id = lua_tostring(state, lua_upvalueindex(3));
+    ComponentProxyState* proxy = component_proxy_from_arg(state, 1);
+    machina_luau* vm = proxy->vm;
+    const uint32_t entity = proxy->entity;
+    const char* component_id = proxy->component_id.c_str();
     const char* field_name = luaL_checkstring(state, 2);
     machina_luau_field_value value = {};
     read_field_value(state, 3, &value);
@@ -681,23 +768,26 @@ static int component_proxy_newindex(lua_State* state)
     return 0;
 }
 
+static void ensure_component_proxy_metatable(lua_State* state)
+{
+    if (luaL_newmetatable(state, COMPONENT_PROXY_METATABLE))
+    {
+        lua_pushcfunction(state, component_proxy_index, "component.__index");
+        lua_setfield(state, -2, "__index");
+        lua_pushcfunction(state, component_proxy_newindex, "component.__newindex");
+        lua_setfield(state, -2, "__newindex");
+        lua_setreadonly(state, -1, 1);
+    }
+}
+
 static void push_component_proxy(lua_State* state, machina_luau* vm, uint32_t entity, const std::string& component_id)
 {
-    lua_newtable(state);
-
-    lua_newtable(state);
-    lua_pushlightuserdata(state, vm);
-    lua_pushinteger(state, entity);
-    lua_pushlstring(state, component_id.c_str(), component_id.size());
-    lua_pushcclosure(state, component_proxy_index, "component.__index", 3);
-    lua_setfield(state, -2, "__index");
-
-    lua_pushlightuserdata(state, vm);
-    lua_pushinteger(state, entity);
-    lua_pushlstring(state, component_id.c_str(), component_id.size());
-    lua_pushcclosure(state, component_proxy_newindex, "component.__newindex", 3);
-    lua_setfield(state, -2, "__newindex");
-
+    void* storage = lua_newuserdatadtor(state, sizeof(ComponentProxyState), component_proxy_dtor);
+    ComponentProxyState* proxy = new (storage) ComponentProxyState();
+    proxy->vm = vm;
+    proxy->entity = entity;
+    proxy->component_id = component_id;
+    ensure_component_proxy_metatable(state);
     lua_setmetatable(state, -2);
 }
 
@@ -707,6 +797,7 @@ static void push_query_iterator(lua_State* state, machina_luau* vm, const std::v
     QueryState* query = new (storage) QueryState();
     query->vm = vm;
     query->component_ids = component_ids;
+    query->refresh_component_id_ptrs();
 
     lua_pushcclosure(state, query_iterator, "query.iterator", 1);
 }
@@ -717,17 +808,12 @@ static int query_iterator(lua_State* state)
     if (!query || !query->vm || !query->vm->callbacks.query_next)
         return 0;
 
-    std::vector<const char*> component_ids;
-    component_ids.reserve(query->component_ids.size());
-    for (const std::string& id : query->component_ids)
-        component_ids.push_back(id.c_str());
-
     uint32_t entity = 0;
     const int status = query->vm->callbacks.query_next(
         query->vm->callback_context,
         query->vm->active_world,
-        component_ids.data(),
-        component_ids.size(),
+        query->component_id_ptrs.data(),
+        query->component_id_ptrs.size(),
         &query->cursor,
         &entity);
     if (status < 0)
@@ -772,6 +858,7 @@ static int world_query(lua_State* state)
     query->component_ids.reserve(component_count);
     for (int index = 1; index <= component_count; ++index)
         query->component_ids.push_back(check_component_id(state, index));
+    query->refresh_component_id_ptrs();
 
     lua_pushcclosure(state, query_iterator, "world.query.iterator", 1);
     return 1;

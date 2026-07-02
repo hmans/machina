@@ -118,21 +118,25 @@ ecs.system("animate_swarm", {
     elapsed += dt
 
     for _entity, transform, motion in Swarm:iter(world) do
-      local t = elapsed * motion.speed + motion.phase
-      local orbit_x = math.cos(t) * motion.orbit_radius
-      local orbit_z = math.sin(t * 0.91) * motion.orbit_radius
+      local home = motion.home
+      local rotation = transform.rotation
+      local speed = motion.speed
+      local orbit_radius = motion.orbit_radius
+      local t = elapsed * speed + motion.phase
+      local orbit_x = math.cos(t) * orbit_radius
+      local orbit_z = math.sin(t * 0.91) * orbit_radius
       local bob = math.sin(t * 1.7) * 0.18
       local next_position = {
-        motion.home[1] + orbit_x,
-        motion.home[2] + bob,
-        motion.home[3] + orbit_z,
+        home[1] + orbit_x,
+        home[2] + bob,
+        home[3] + orbit_z,
       }
 
       transform.position = next_position
       transform.rotation = {
-        transform.rotation[1] + dt * (0.55 + motion.speed * 0.35),
-        transform.rotation[2] + dt * (0.9 + motion.orbit_radius),
-        transform.rotation[3] + dt * (0.25 + math.sin(t) * 0.2),
+        rotation[1] + dt * (0.55 + speed * 0.35),
+        rotation[2] + dt * (0.9 + orbit_radius),
+        rotation[3] + dt * (0.25 + math.sin(t) * 0.2),
       }
     end
   end,
