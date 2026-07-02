@@ -49,14 +49,10 @@ trap 'rm -rf "${tmpdir}"' EXIT
 
 valid_script="${tmpdir}/typed-query-valid.luau"
 cat > "${valid_script}" <<'LUA'
-type Spin = {
-  angular_velocity: MachinaVec3,
-}
-
 local Transform = ecs.component<<MachinaTransform>>("machina.transform")
-local Spin = ecs.component<<Spin>>("spin", {
-  fields = ecs.fields({
-    angular_velocity = "vec3",
+local Spin = ecs.component("spin", {
+  fields = ecs.schema({
+    angular_velocity = ecs.vec3(),
   }),
 })
 local RotatingCubes = ecs.query(Transform, Spin)
@@ -83,14 +79,10 @@ analyze "${valid_script}"
 
 invalid_script="${tmpdir}/typed-query-invalid.luau"
 cat > "${invalid_script}" <<'LUA'
-type Spin = {
-  angular_velocity: MachinaVec3,
-}
-
 local Transform = ecs.component<<MachinaTransform>>("machina.transform")
-local Spin = ecs.component<<Spin>>("spin", {
-  fields = ecs.fields({
-    angular_velocity = "vec3",
+local Spin = ecs.component("spin", {
+  fields = ecs.schema({
+    angular_velocity = ecs.vec3(),
   }),
 })
 local RotatingCubes = ecs.query(Transform, Spin)
@@ -115,6 +107,21 @@ fi
 if ! grep -q "Expected this to be 'string'" "${invalid_output}"; then
   printf 'error: invalid typed query fixture failed for an unexpected reason\n' >&2
   cat "${invalid_output}" >&2
+  exit 1
+fi
+
+invalid_schema_script="${tmpdir}/typed-schema-invalid.luau"
+cat > "${invalid_schema_script}" <<'LUA'
+local _Spin = ecs.component("spin", {
+  fields = ecs.schema({
+    angular_velocity = "vec4",
+  }),
+})
+LUA
+
+invalid_schema_output="${tmpdir}/typed-schema-invalid.out"
+if analyze "${invalid_schema_script}" >"${invalid_schema_output}" 2>&1; then
+  printf 'error: expected invalid schema fixture to fail Luau analysis\n' >&2
   exit 1
 fi
 

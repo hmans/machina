@@ -656,14 +656,10 @@ test "luau declarations register components and executable systems" {
     var program = try loadSourceProgram(std.testing.allocator, "test.luau",
         \\--!strict
         \\
-        \\type Spin = {
-        \\  angular_velocity: MachinaVec3,
-        \\}
-        \\
         \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
-        \\local Spin = ecs.component<<Spin>>("spin", {
-        \\  fields = ecs.fields({
-        \\    angular_velocity = "vec3",
+        \\local Spin = ecs.component("spin", {
+        \\  fields = ecs.schema({
+        \\    angular_velocity = ecs.vec3(),
         \\  }),
         \\})
         \\local RotatingCubes = ecs.query(Transform, Spin)
@@ -743,15 +739,11 @@ test "luau refs helper erases component handles for system declarations" {
     var program = try loadSourceProgram(std.testing.allocator, "test.luau",
         \\--!strict
         \\
-        \\type Spin = {
-        \\  angular_velocity: MachinaVec3,
-        \\}
-        \\
         \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
         \\local RenderCube = ecs.component<<MachinaRenderCube>>("machina.render.cube")
-        \\local Spin = ecs.component<<Spin>>("spin", {
-        \\  fields = ecs.fields({
-        \\    angular_velocity = "vec3",
+        \\local Spin = ecs.component("spin", {
+        \\  fields = ecs.schema({
+        \\    angular_velocity = ecs.vec3(),
         \\  }),
         \\})
         \\
@@ -790,19 +782,53 @@ test "luau fields helper preserves component declaration fields" {
     try std.testing.expectEqual(runtime.FieldType.vec3, spin.fields[0].value_type);
 }
 
+test "luau schema helper infers and preserves component declaration fields" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
+        \\--!strict
+        \\
+        \\local Spin = ecs.component("spin", {
+        \\  fields = ecs.schema({
+        \\    angular_velocity = ecs.vec3(),
+        \\  }),
+        \\})
+        \\local Spinners = ecs.query(Spin)
+        \\
+        \\ecs.system("observe_spin", {
+        \\  query = Spinners,
+        \\})
+    );
+    defer program.deinit();
+
+    const spin = program.registry.findComponent("spin") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), spin.fields.len);
+    try std.testing.expectEqualStrings("angular_velocity", spin.fields[0].name);
+    try std.testing.expectEqual(runtime.FieldType.vec3, spin.fields[0].value_type);
+    const system = program.registry.findSystem("observe_spin") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), system.reads.len);
+    try std.testing.expectEqualStrings("spin", system.reads[0]);
+}
+
+test "luau schema helper rejects non-marker field values" {
+    try std.testing.expectError(ScriptError.InvalidScript, loadSourceProgram(std.testing.allocator, "test.luau",
+        \\--!strict
+        \\
+        \\local _Spin = ecs.component("spin", {
+        \\  fields = ecs.schema({
+        \\    angular_velocity = "vec3",
+        \\  }),
+        \\})
+    ));
+}
+
 test "luau query objects infer system reads from unwritten query components" {
     var program = try loadSourceProgram(std.testing.allocator, "test.luau",
         \\--!strict
         \\
-        \\type Spin = {
-        \\  angular_velocity: MachinaVec3,
-        \\}
-        \\
         \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
         \\local RenderCube = ecs.component<<MachinaRenderCube>>("machina.render.cube")
-        \\local Spin = ecs.component<<Spin>>("spin", {
-        \\  fields = ecs.fields({
-        \\    angular_velocity = "vec3",
+        \\local Spin = ecs.component("spin", {
+        \\  fields = ecs.schema({
+        \\    angular_velocity = ecs.vec3(),
         \\  }),
         \\})
         \\local RotatingCubes = ecs.query(Transform, Spin, RenderCube)
@@ -835,16 +861,12 @@ test "luau world mutation requires declared system access" {
     var program = try loadSourceProgram(std.testing.allocator, "test.luau",
         \\--!strict
         \\
-        \\type Spin = {
-        \\  angular_velocity: MachinaVec3,
-        \\}
-        \\
         \\type Marker = {}
         \\
         \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
-        \\local Spin = ecs.component<<Spin>>("spin", {
-        \\  fields = ecs.fields({
-        \\    angular_velocity = "vec3",
+        \\local Spin = ecs.component("spin", {
+        \\  fields = ecs.schema({
+        \\    angular_velocity = ecs.vec3(),
         \\  }),
         \\})
         \\
@@ -878,16 +900,12 @@ test "luau world query requires declared component access" {
     var program = try loadSourceProgram(std.testing.allocator, "test.luau",
         \\--!strict
         \\
-        \\type Spin = {
-        \\  angular_velocity: MachinaVec3,
-        \\}
-        \\
         \\type Marker = {}
         \\
         \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
-        \\local Spin = ecs.component<<Spin>>("spin", {
-        \\  fields = ecs.fields({
-        \\    angular_velocity = "vec3",
+        \\local Spin = ecs.component("spin", {
+        \\  fields = ecs.schema({
+        \\    angular_velocity = ecs.vec3(),
         \\  }),
         \\})
         \\

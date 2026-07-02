@@ -20,6 +20,13 @@ export type MachinaSystemPhase = "startup" | "update" | "fixed_update" | "render
 
 export type MachinaVec3 = { number }
 
+export type MachinaSchemaValue = MachinaVec3
+
+export type MachinaSchemaComponentDefinition<T> = {
+    version: number?,
+    fields: T,
+}
+
 export type MachinaComponent<T> = {
     id: MachinaComponentId,
 
@@ -112,12 +119,16 @@ export type MachinaSystemDefinition = {
 
 export type MachinaComponentFunction = <T>(
     id: MachinaComponentId,
-    definition: MachinaComponentDefinition?
+    definition: (MachinaComponentDefinition | MachinaSchemaComponentDefinition<T>)?
 ) -> MachinaComponent<T>
 
 export type MachinaFieldsFunction = (
     fields: { [string]: MachinaFieldType }
 ) -> { [string]: MachinaFieldType }
+
+export type MachinaSchemaFunction = <T>(
+    fields: T & { [string]: MachinaSchemaValue }
+) -> T
 
 export type MachinaQueryFunction =
     (<A>(MachinaComponent<A>) -> MachinaQueryObject1<A>)
@@ -137,6 +148,12 @@ export type MachinaEcs = {
 
     --- Validates and preserves typed component field declaration maps.
     fields: MachinaFieldsFunction,
+
+    --- Infers component payload types from schema marker fields.
+    schema: MachinaSchemaFunction,
+
+    --- Declares a vec3 field in an inferred component schema.
+    vec3: () -> MachinaVec3,
 
     --- Erases typed component handles into component id refs for system read/write declarations.
     refs: (...MachinaComponentRef) -> MachinaComponentRefs,

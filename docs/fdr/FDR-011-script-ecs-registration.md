@@ -29,6 +29,7 @@ Script ECS registration lets project and package scripts define new component an
 - Script system callbacks receive an engine-provided world facade instead of direct component storage ownership.
 - `ecs.component(...)` returns a typed component handle.
 - Component handle type-brand metadata supports editor analysis and is not callable gameplay API.
+- Scripts can use `ecs.schema(...)` with field marker helpers to infer component payload types from schema declarations.
 - Scripts use `ecs.fields(...)` to declare component field maps with editor-visible field type validation.
 - Scripts use `ecs.query(...)` to create reusable typed query objects from component handles.
 - Systems may attach a query object; unwritten query components become inferred read access.
@@ -75,9 +76,9 @@ Script ECS registration lets project and package scripts define new component an
 
 ### 6. Prefer typed query objects for script iteration
 
-**Decision:** `ecs.component(...)` returns an opaque typed component handle with guarded type-brand metadata, `ecs.fields(...)` preserves typed field declaration maps, `ecs.query(...)` turns one or more handles into a reusable query object, systems can attach that query object, and runtime loops iterate it through the world facade.
-**Why:** Query objects keep the component set explicit, reusable, and easy for Luau tooling to type while avoiding repeated string or handle lists inside hot loops. The field helper gives Luau enough context to reject invalid field type strings before runtime validation. Inferring reads from the query object lets scripts describe the common "iterate these components" case once, while explicit writes still keep scheduling honest. It follows ADR-006 and ADR-008.
-**Tradeoff:** Script authors introduce a named query before system registration and wrap field maps in a helper. The typed editor surface supports a practical maximum query arity rather than arbitrary compile-time tuple lengths.
+**Decision:** `ecs.component(...)` returns an opaque typed component handle with guarded type-brand metadata, `ecs.schema(...)` can infer component payload types from field marker helpers, `ecs.fields(...)` preserves typed string field maps for explicit declarations, `ecs.query(...)` turns one or more handles into a reusable query object, systems can attach that query object, and runtime loops iterate it through the world facade.
+**Why:** Query objects keep the component set explicit, reusable, and easy for Luau tooling to type while avoiding repeated string or handle lists inside hot loops. Schema markers let common component payload types be inferred from the declaration itself, while the explicit field helper remains available where inference is not expressive enough yet. Inferring reads from the query object lets scripts describe the common "iterate these components" case once, while explicit writes still keep scheduling honest. It follows ADR-006 and ADR-008.
+**Tradeoff:** Script authors introduce a named query before system registration. The typed editor surface supports a practical maximum query arity rather than arbitrary compile-time tuple lengths, and schema inference initially covers Vec3 marker fields while other field types can continue using explicit declarations.
 
 ### 7. Vendor the initial Luau runtime behind the scripting boundary
 

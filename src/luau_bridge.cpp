@@ -77,6 +77,14 @@ static int component_type_brand(lua_State* state)
     return 0;
 }
 
+static void push_schema_marker(lua_State* state, const char* field_type)
+{
+    lua_newtable(state);
+    lua_pushstring(state, field_type);
+    lua_setfield(state, -2, "__machina_schema_field_type");
+    lua_setreadonly(state, -1, 1);
+}
+
 static void push_component_handle(lua_State* state, const std::string& id)
 {
     lua_newtable(state);
@@ -325,6 +333,46 @@ static int ecs_fields(lua_State* state)
     }
 
     lua_setreadonly(state, -1, 1);
+    return 1;
+}
+
+static std::string check_schema_marker_type(lua_State* state, int index)
+{
+    luaL_checktype(state, index, LUA_TTABLE);
+    lua_getfield(state, index, "__machina_schema_field_type");
+    size_t len = 0;
+    const char* value = luaL_checklstring(state, -1, &len);
+    std::string field_type(value, len);
+    lua_pop(state, 1);
+    return field_type;
+}
+
+static int ecs_schema(lua_State* state)
+{
+    luaL_checktype(state, 1, LUA_TTABLE);
+    const int source_index = lua_absindex(state, 1);
+
+    lua_newtable(state);
+    lua_pushnil(state);
+    while (lua_next(state, source_index) != 0)
+    {
+        size_t name_len = 0;
+        const char* name = luaL_checklstring(state, -2, &name_len);
+        const std::string field_type = check_schema_marker_type(state, -1);
+
+        lua_pushlstring(state, name, name_len);
+        lua_pushlstring(state, field_type.c_str(), field_type.size());
+        lua_settable(state, -5);
+        lua_pop(state, 1);
+    }
+
+    lua_setreadonly(state, -1, 1);
+    return 1;
+}
+
+static int ecs_vec3(lua_State* state)
+{
+    push_schema_marker(state, "vec3");
     return 1;
 }
 
@@ -606,6 +654,12 @@ static void install_ecs(lua_State* state, machina_luau* vm)
 
     lua_pushcclosure(state, ecs_fields, "ecs.fields", 0);
     lua_setfield(state, -2, "fields");
+
+    lua_pushcclosure(state, ecs_schema, "ecs.schema", 0);
+    lua_setfield(state, -2, "schema");
+
+    lua_pushcclosure(state, ecs_vec3, "ecs.vec3", 0);
+    lua_setfield(state, -2, "vec3");
 
     lua_pushlightuserdata(state, vm);
     lua_pushcclosure(state, ecs_system, "ecs.system", 1);

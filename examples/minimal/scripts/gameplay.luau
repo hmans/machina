@@ -3,11 +3,9 @@
 
 local Transform = ecs.component<<MachinaTransform>>("machina.transform")
 local RenderCube = ecs.component<<MachinaRenderCube>>("machina.render.cube")
-local AutoRotate = ecs.component<<{
-  angular_velocity: MachinaVec3,
-}>>("spin", {
-  fields = ecs.fields({
-    angular_velocity = "vec3",
+local AutoRotate = ecs.component("spin", {
+  fields = ecs.schema({
+    angular_velocity = ecs.vec3(),
   }),
 })
 
