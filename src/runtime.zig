@@ -1098,6 +1098,14 @@ pub const World = struct {
         };
     }
 
+    pub fn getBoolean(self: World, handle: EntityHandle, component_id: []const u8, field_name: []const u8) WorldError!bool {
+        const value = try self.getFieldValue(handle, component_id, field_name);
+        return switch (value) {
+            .boolean => |payload| payload,
+            else => WorldError.InvalidFieldType,
+        };
+    }
+
     pub fn getInt(self: World, handle: EntityHandle, component_id: []const u8, field_name: []const u8) WorldError!i32 {
         const value = try self.getFieldValue(handle, component_id, field_name);
         return switch (value) {

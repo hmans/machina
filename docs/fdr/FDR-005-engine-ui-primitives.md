@@ -13,7 +13,8 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - Scene entities can define a UI canvas marker, screen-space colored rectangles, fixed-pixel text labels, and button markers.
 - UI rectangles and text labels use screen-space positions and sizes with a top-left origin.
 - The first UI demo uses Tailwind palette colors for a more disciplined visual baseline.
-- Button markers currently provide semantic authoring and button styling; pointer interaction is not active yet.
+- Button markers derive hover, held, and pressed interaction state in headful runs and use that state for button visuals.
+- Headful runs can toggle the current UI overlay with F1.
 - UI can be used for runtime diagnostics before a full editor exists.
 - UI definitions that are part of projects or tools follow the text-first project model.
 - The UI overlay renders after 3D scene content.
@@ -44,6 +45,12 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 **Why:** UI without text is not useful, and a built-in text path avoids making asset import, font atlases, shaping, and localization prerequisites for the first UI milestone.
 **Tradeoff:** The current text path is suitable for diagnostics and examples, not polished editor typography.
 
+### 5. Keep input interaction in the ECS path
+
+**Decision:** Platform input is translated into frame input data, and UI button interaction is derived by render-phase ECS systems.
+**Why:** This keeps UI behavior aligned with the engine-wide ECS model and avoids a separate immediate-mode renderer input channel.
+**Tradeoff:** The first interaction slice supports button state and overlay toggling, but not focus, text input, or script-facing command routing yet.
+
 ## Related
 
 - **ADRs:** ADR-001, ADR-004, ADR-007, ADR-008, ADR-013
@@ -52,6 +59,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 ## Open Questions
 
 - What script-facing API should generate or mutate UI state for runtime tools?
-- When should pointer hover, press, focus, and text input become active behavior?
+- How should button presses route commands into scripts, editor tools, or engine services?
+- When should focus and text input become active behavior?
 - What layout primitives are needed before editor panels become practical?
 - What text editing capability is needed before the editor becomes practical?

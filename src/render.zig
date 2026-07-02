@@ -23,11 +23,15 @@ const output_size = output_bytes_per_row * output_height;
 const depth_format = wgpu.TextureFormat.depth24_plus;
 const shadow_depth_format = wgpu.TextureFormat.depth32_float;
 const shadow_map_size = 1024;
+const render_input_entity_id = "machina.render.input";
+const render_frame_input_component_id = "machina.render.internal.frame.input";
+const render_ui_button_state_component_id = "machina.render.internal.ui.button_state";
 const render_draw_batch_component_id = "machina.render.internal.draw.batch";
 const render_draw_ui_component_id = "machina.render.internal.draw.ui";
 const render_extract_system_id = "machina.render.extract";
 const render_prepare_meshes_system_id = "machina.render.prepare_meshes";
 const render_queue_meshes_system_id = "machina.render.queue_meshes";
+const render_interact_ui_system_id = "machina.render.interact_ui";
 const render_prepare_ui_system_id = "machina.render.prepare_ui";
 const render_queue_ui_system_id = "machina.render.queue_ui";
 const render_draw_meshes_system_id = "machina.render.draw_meshes";
@@ -66,6 +70,36 @@ pub const SceneReloadHook = struct {
 pub const FrameUpdateHook = struct {
     context: *anyopaque,
     step: *const fn (context: *anyopaque, delta_seconds: f32) void,
+};
+
+const PointerInput = struct {
+    position: [2]f32 = .{ 0.0, 0.0 },
+    has_position: bool = false,
+    primary_down: bool = false,
+    primary_pressed: bool = false,
+    primary_released: bool = false,
+
+    fn beginFrame(self: *PointerInput) void {
+        self.primary_pressed = false;
+        self.primary_released = false;
+    }
+};
+
+const FrameInput = struct {
+    pointer: PointerInput = .{},
+    ui_visible: bool = true,
+    f1_pressed: bool = false,
+
+    fn beginFrame(self: *FrameInput) void {
+        self.pointer.beginFrame();
+        self.f1_pressed = false;
+    }
+};
+
+const UiButtonState = struct {
+    hovered: bool = false,
+    held: bool = false,
+    pressed: bool = false,
 };
 
 pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const u8, scene: Scene) !void {
@@ -219,11 +253,37 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
 
     var running = true;
     var frame_count: u32 = 0;
+    var input: FrameInput = .{};
     while (running) {
+        input.beginFrame();
+
         var event: sdl.SDL_Event = undefined;
         while (sdl.SDL_PollEvent(&event)) {
             switch (event.type) {
                 sdl.SDL_EVENT_QUIT => running = false,
+                sdl.SDL_EVENT_KEY_DOWN => {
+                    if (!event.key.repeat and event.key.key == sdl.SDLK_F1) {
+                        input.ui_visible = !input.ui_visible;
+                        input.f1_pressed = true;
+                    }
+                },
+                sdl.SDL_EVENT_MOUSE_MOTION => {
+                    updatePointerFromWindow(&input.pointer, window, event.motion.x, event.motion.y);
+                },
+                sdl.SDL_EVENT_MOUSE_BUTTON_DOWN => {
+                    updatePointerFromWindow(&input.pointer, window, event.button.x, event.button.y);
+                    if (event.button.button == sdl.SDL_BUTTON_LEFT) {
+                        input.pointer.primary_down = true;
+                        input.pointer.primary_pressed = true;
+                    }
+                },
+                sdl.SDL_EVENT_MOUSE_BUTTON_UP => {
+                    updatePointerFromWindow(&input.pointer, window, event.button.x, event.button.y);
+                    if (event.button.button == sdl.SDL_BUTTON_LEFT) {
+                        input.pointer.primary_down = false;
+                        input.pointer.primary_released = true;
+                    }
+                },
                 sdl.SDL_EVENT_WINDOW_RESIZED,
                 sdl.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED,
                 sdl.SDL_EVENT_WINDOW_METAL_VIEW_RESIZED,
@@ -259,6 +319,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
             .width = width,
             .height = height,
             .scene = scene,
+            .input = input,
         });
         instance.processEvents();
 
@@ -277,6 +338,7 @@ const FrameConfig = struct {
     width: u32,
     height: u32,
     scene: Scene,
+    input: FrameInput = .{},
 };
 
 const InstanceConfig = struct {
@@ -340,8 +402,14 @@ const RenderEcsState = struct {
     }
 
     fn extractScene(self: *RenderEcsState, scene: Scene) RenderError!void {
+        try self.extractSceneWithInput(scene, .{});
+    }
+
+    fn extractSceneWithInput(self: *RenderEcsState, scene: Scene, input: FrameInput) RenderError!void {
         var next_world = runtime.World.init(self.allocator);
         errdefer next_world.deinit();
+
+        try setRenderFrameInput(&next_world, input);
 
         var mesh_index: usize = 0;
         var meshes = scene.world.renderableMeshes();
@@ -350,27 +418,29 @@ const RenderEcsState = struct {
             mesh_index += 1;
         }
 
-        var ui_canvas_index: usize = 0;
-        var ui_canvas_cursor: usize = 0;
-        const ui_canvas_query = [_][]const u8{runtime.ui_canvas_component_id};
-        while (scene.world.queryNext(&ui_canvas_query, &ui_canvas_cursor)) |canvas| {
-            const stored_canvas = scene.world.entity(canvas) catch return RenderError.InvalidScene;
-            try extractUiCanvasInto(self.allocator, &next_world, ui_canvas_index, stored_canvas.name);
-            ui_canvas_index += 1;
-        }
+        if (input.ui_visible) {
+            var ui_canvas_index: usize = 0;
+            var ui_canvas_cursor: usize = 0;
+            const ui_canvas_query = [_][]const u8{runtime.ui_canvas_component_id};
+            while (scene.world.queryNext(&ui_canvas_query, &ui_canvas_cursor)) |canvas| {
+                const stored_canvas = scene.world.entity(canvas) catch return RenderError.InvalidScene;
+                try extractUiCanvasInto(self.allocator, &next_world, ui_canvas_index, stored_canvas.name);
+                ui_canvas_index += 1;
+            }
 
-        var ui_rect_index: usize = 0;
-        var ui_rects = scene.world.uiRects();
-        while (ui_rects.next()) |rect| {
-            try extractUiRectInto(self.allocator, &next_world, ui_rect_index, rect);
-            ui_rect_index += 1;
-        }
+            var ui_rect_index: usize = 0;
+            var ui_rects = scene.world.uiRects();
+            while (ui_rects.next()) |rect| {
+                try extractUiRectInto(self.allocator, &next_world, ui_rect_index, rect);
+                ui_rect_index += 1;
+            }
 
-        var ui_text_index: usize = 0;
-        var ui_texts = scene.world.uiTexts();
-        while (ui_texts.next()) |text| {
-            try extractUiTextInto(self.allocator, &next_world, ui_text_index, text);
-            ui_text_index += 1;
+            var ui_text_index: usize = 0;
+            var ui_texts = scene.world.uiTexts();
+            while (ui_texts.next()) |text| {
+                try extractUiTextInto(self.allocator, &next_world, ui_text_index, text);
+                ui_text_index += 1;
+            }
         }
 
         try extractCameraInto(&next_world, try cameraState(scene.world));
@@ -378,6 +448,25 @@ const RenderEcsState = struct {
 
         self.world.deinit();
         self.world = next_world;
+    }
+
+    fn updateUiInteractions(self: *RenderEcsState) RenderError!void {
+        const input = try renderFrameInput(&self.world);
+        if (!input.ui_visible) {
+            return;
+        }
+
+        var cursor: usize = 0;
+        const button_query = [_][]const u8{
+            runtime.ui_rect_component_id,
+            runtime.ui_button_component_id,
+        };
+        while (self.world.queryNext(&button_query, &cursor)) |entity| {
+            const position = self.world.getVec3(entity, runtime.ui_rect_component_id, "position") catch |err| return mapWorldError(err);
+            const size = self.world.getVec3(entity, runtime.ui_rect_component_id, "size") catch |err| return mapWorldError(err);
+            const state = evaluateUiButtonState(input, position, size);
+            try setRenderUiButtonState(&self.world, entity, state);
+        }
     }
 
     fn queueBatchDraws(self: *RenderEcsState, batch_count: usize) RenderError!void {
@@ -527,6 +616,30 @@ const ShadowTarget = struct {
 fn registerRenderEcsTypes(registry: *runtime.ComponentRegistry) !void {
     try runtime.registerEngineComponents(registry);
 
+    const frame_input_fields = [_]runtime.ComponentFieldDefinition{
+        .{ .name = "position", .value_type = .vec3 },
+        .{ .name = "has_position", .value_type = .boolean },
+        .{ .name = "primary_down", .value_type = .boolean },
+        .{ .name = "primary_pressed", .value_type = .boolean },
+        .{ .name = "primary_released", .value_type = .boolean },
+        .{ .name = "ui_visible", .value_type = .boolean },
+        .{ .name = "f1_pressed", .value_type = .boolean },
+    };
+    try registry.registerEngineComponent(.{
+        .id = render_frame_input_component_id,
+        .version = 1,
+        .fields = &frame_input_fields,
+    });
+    const ui_button_state_fields = [_]runtime.ComponentFieldDefinition{
+        .{ .name = "hovered", .value_type = .boolean },
+        .{ .name = "held", .value_type = .boolean },
+        .{ .name = "pressed", .value_type = .boolean },
+    };
+    try registry.registerEngineComponent(.{
+        .id = render_ui_button_state_component_id,
+        .version = 1,
+        .fields = &ui_button_state_fields,
+    });
     const draw_batch_fields = [_]runtime.ComponentFieldDefinition{
         .{ .name = "batch_index", .value_type = .int },
     };
@@ -552,6 +665,7 @@ fn registerRenderEcsTypes(registry: *runtime.ComponentRegistry) !void {
         runtime.ui_rect_component_id,
         runtime.ui_text_component_id,
         runtime.ui_button_component_id,
+        render_frame_input_component_id,
     };
     try registry.registerEngineSystem(.{
         .id = render_extract_system_id,
@@ -591,12 +705,27 @@ fn registerRenderEcsTypes(registry: *runtime.ComponentRegistry) !void {
         .after = &after_prepare,
     });
 
+    const interact_ui_reads = [_][]const u8{
+        render_frame_input_component_id,
+        runtime.ui_rect_component_id,
+        runtime.ui_button_component_id,
+    };
+    const interact_ui_writes = [_][]const u8{render_ui_button_state_component_id};
+    try registry.registerEngineSystem(.{
+        .id = render_interact_ui_system_id,
+        .phase = .render,
+        .reads = &interact_ui_reads,
+        .writes = &interact_ui_writes,
+        .after = &after_extract,
+    });
+
     const prepare_ui_reads = [_][]const u8{
         runtime.ui_rect_component_id,
         runtime.ui_text_component_id,
         runtime.ui_button_component_id,
+        render_ui_button_state_component_id,
     };
-    const after_queue_meshes = [_][]const u8{render_queue_meshes_system_id};
+    const after_queue_meshes = [_][]const u8{ render_queue_meshes_system_id, render_interact_ui_system_id };
     try registry.registerEngineSystem(.{
         .id = render_prepare_ui_system_id,
         .phase = .render,
@@ -631,6 +760,8 @@ fn registerRenderEcsTypes(registry: *runtime.ComponentRegistry) !void {
         runtime.ui_rect_component_id,
         runtime.ui_text_component_id,
         runtime.ui_button_component_id,
+        render_frame_input_component_id,
+        render_ui_button_state_component_id,
     };
     const after_queue = [_][]const u8{render_queue_ui_system_id};
     try registry.registerEngineSystem(.{
@@ -721,6 +852,78 @@ fn extractUiTextInto(
         .color = text.color,
         .value = text.value,
     }) catch |err| return mapWorldError(err);
+}
+
+fn setRenderFrameInput(world: *runtime.World, input: FrameInput) RenderError!void {
+    const entity = world.createEntity(render_input_entity_id, "Render Input") catch |err| return mapWorldError(err);
+    const fields = [_]runtime.ComponentFieldValue{
+        .{ .name = "position", .value = .{ .vec3 = .{ input.pointer.position[0], input.pointer.position[1], 0.0 } } },
+        .{ .name = "has_position", .value = .{ .boolean = input.pointer.has_position } },
+        .{ .name = "primary_down", .value = .{ .boolean = input.pointer.primary_down } },
+        .{ .name = "primary_pressed", .value = .{ .boolean = input.pointer.primary_pressed } },
+        .{ .name = "primary_released", .value = .{ .boolean = input.pointer.primary_released } },
+        .{ .name = "ui_visible", .value = .{ .boolean = input.ui_visible } },
+        .{ .name = "f1_pressed", .value = .{ .boolean = input.f1_pressed } },
+    };
+    world.setComponent(entity, render_frame_input_component_id, &fields) catch |err| return mapWorldError(err);
+}
+
+fn renderFrameInput(world: *const runtime.World) RenderError!FrameInput {
+    const entity = world.findEntityById(render_input_entity_id) orelse return RenderError.InvalidScene;
+    const position = world.getVec3(entity, render_frame_input_component_id, "position") catch |err| return mapWorldError(err);
+    return .{
+        .pointer = .{
+            .position = .{ position[0], position[1] },
+            .has_position = world.getBoolean(entity, render_frame_input_component_id, "has_position") catch |err| return mapWorldError(err),
+            .primary_down = world.getBoolean(entity, render_frame_input_component_id, "primary_down") catch |err| return mapWorldError(err),
+            .primary_pressed = world.getBoolean(entity, render_frame_input_component_id, "primary_pressed") catch |err| return mapWorldError(err),
+            .primary_released = world.getBoolean(entity, render_frame_input_component_id, "primary_released") catch |err| return mapWorldError(err),
+        },
+        .ui_visible = world.getBoolean(entity, render_frame_input_component_id, "ui_visible") catch |err| return mapWorldError(err),
+        .f1_pressed = world.getBoolean(entity, render_frame_input_component_id, "f1_pressed") catch |err| return mapWorldError(err),
+    };
+}
+
+fn setRenderUiButtonState(world: *runtime.World, entity: runtime.EntityHandle, state: UiButtonState) RenderError!void {
+    const fields = [_]runtime.ComponentFieldValue{
+        .{ .name = "hovered", .value = .{ .boolean = state.hovered } },
+        .{ .name = "held", .value = .{ .boolean = state.held } },
+        .{ .name = "pressed", .value = .{ .boolean = state.pressed } },
+    };
+    world.setComponent(entity, render_ui_button_state_component_id, &fields) catch |err| return mapWorldError(err);
+}
+
+fn renderUiButtonState(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!?UiButtonState {
+    if (!(world.hasComponent(entity, render_ui_button_state_component_id) catch |err| return mapWorldError(err))) {
+        return null;
+    }
+    return .{
+        .hovered = world.getBoolean(entity, render_ui_button_state_component_id, "hovered") catch |err| return mapWorldError(err),
+        .held = world.getBoolean(entity, render_ui_button_state_component_id, "held") catch |err| return mapWorldError(err),
+        .pressed = world.getBoolean(entity, render_ui_button_state_component_id, "pressed") catch |err| return mapWorldError(err),
+    };
+}
+
+fn evaluateUiButtonState(input: FrameInput, position: [3]f32, size: [3]f32) UiButtonState {
+    const hovered = input.pointer.has_position and pointInsideUiRect(input.pointer.position, position, size);
+    return .{
+        .hovered = hovered,
+        .held = hovered and input.pointer.primary_down,
+        .pressed = hovered and input.pointer.primary_released,
+    };
+}
+
+fn pointInsideUiRect(point: [2]f32, position: [3]f32, size: [3]f32) bool {
+    if (!std.math.isFinite(point[0]) or !std.math.isFinite(point[1]) or
+        !isFiniteVec3(position) or !isFiniteVec3(size) or size[0] <= 0.0 or size[1] <= 0.0)
+    {
+        return false;
+    }
+
+    return point[0] >= position[0] and
+        point[1] >= position[1] and
+        point[0] < position[0] + size[0] and
+        point[1] < position[1] + size[1];
 }
 
 fn extractCameraInto(world: *runtime.World, camera: CameraState) RenderError!void {
@@ -1129,7 +1332,7 @@ const MeshDemo = struct {
         for (self.render_state.schedule.batches) |batch| {
             for (batch.systems) |system| {
                 if (std.mem.eql(u8, system.id, render_extract_system_id)) {
-                    try self.render_state.extractScene(context.frame.scene);
+                    try self.render_state.extractSceneWithInput(context.frame.scene, context.frame.input);
                 } else if (std.mem.eql(u8, system.id, render_prepare_meshes_system_id)) {
                     var plan = try BatchPlan.build(self.allocator, &self.render_state.world);
                     var plan_transferred = false;
@@ -1143,6 +1346,8 @@ const MeshDemo = struct {
                 } else if (std.mem.eql(u8, system.id, render_queue_meshes_system_id)) {
                     const plan = maybe_plan orelse return RenderError.InvalidScene;
                     try self.render_state.queueBatchDraws(plan.batches.len);
+                } else if (std.mem.eql(u8, system.id, render_interact_ui_system_id)) {
+                    try self.render_state.updateUiInteractions();
                 } else if (std.mem.eql(u8, system.id, render_prepare_ui_system_id)) {
                     try self.prepareUiDrawResources(context.device, context.queue, context.frame);
                 } else if (std.mem.eql(u8, system.id, render_queue_ui_system_id)) {
@@ -1523,6 +1728,26 @@ fn chooseSurfaceFormat(capabilities: wgpu.SurfaceCapabilities) ?wgpu.TextureForm
         return null;
     }
     return capabilities.formats[0];
+}
+
+fn updatePointerFromWindow(pointer: *PointerInput, window: *sdl.SDL_Window, x: f32, y: f32) void {
+    var window_width: c_int = 0;
+    var window_height: c_int = 0;
+    var pixel_width: c_int = 0;
+    var pixel_height: c_int = 0;
+
+    const has_window_size = sdl.SDL_GetWindowSize(window, &window_width, &window_height);
+    const has_pixel_size = sdl.SDL_GetWindowSizeInPixels(window, &pixel_width, &pixel_height);
+    if (!has_window_size or !has_pixel_size or window_width <= 0 or window_height <= 0) {
+        pointer.position = .{ x, y };
+        pointer.has_position = true;
+        return;
+    }
+
+    const scale_x = @as(f32, @floatFromInt(@max(pixel_width, 1))) / @as(f32, @floatFromInt(window_width));
+    const scale_y = @as(f32, @floatFromInt(@max(pixel_height, 1))) / @as(f32, @floatFromInt(window_height));
+    pointer.position = .{ x * scale_x, y * scale_y };
+    pointer.has_position = true;
 }
 
 fn configureSurfaceFromWindow(
@@ -2162,11 +2387,12 @@ test "render ECS extracts scene data and queues mesh draw commands" {
     defer state.deinit();
     try state.extractScene(.{ .world = &scene_world });
 
-    try std.testing.expectEqual(@as(usize, 7), state.world.entityCount());
+    try std.testing.expectEqual(@as(usize, 8), state.world.entityCount());
     try std.testing.expectEqual(@as(usize, 2), state.world.renderableMeshCount());
     try std.testing.expectEqual(@as(usize, 1), state.world.componentInstanceCountFor(runtime.ui_canvas_component_id));
     try std.testing.expectEqual(@as(usize, 1), state.world.uiRectCount());
     try std.testing.expectEqual(@as(usize, 1), state.world.uiTextCount());
+    try std.testing.expectEqual(@as(usize, 1), state.world.componentInstanceCountFor(render_frame_input_component_id));
     try std.testing.expectEqual(@as(f32, 52.0), (state.world.renderCamera() orelse return error.TestExpectedEqual).fov_y_degrees);
     try std.testing.expectEqual(@as(f32, 1.25), (state.world.renderDirectionalLight() orelse return error.TestExpectedEqual).intensity);
     const extracted_sphere = state.world.renderableMeshAt(1) orelse return error.TestExpectedEqual;
@@ -2269,6 +2495,129 @@ test "UI vertex builder expands rects and fixed pixel text" {
     try std.testing.expect(vertices.items.len > 6);
     try std.testing.expectEqual(@as(f32, -0.9), vertices.items[0].position[0]);
     try std.testing.expect(vertices.items[0].position[1] > 0.8);
+}
+
+test "UI hit testing uses half-open screen rects" {
+    const position = [3]f32{ 32.0, 24.0, 0.0 };
+    const size = [3]f32{ 120.0, 48.0, 0.0 };
+
+    try std.testing.expect(pointInsideUiRect(.{ 32.0, 24.0 }, position, size));
+    try std.testing.expect(pointInsideUiRect(.{ 151.99, 71.99 }, position, size));
+    try std.testing.expect(!pointInsideUiRect(.{ 152.0, 72.0 }, position, size));
+    try std.testing.expect(!pointInsideUiRect(.{ 31.99, 24.0 }, position, size));
+}
+
+test "render ECS derives UI button interaction state from frame input" {
+    var scene_world = runtime.World.init(std.testing.allocator);
+    defer scene_world.deinit();
+
+    const button = try scene_world.createEntity("button", "Button");
+    try scene_world.setUiRect(button, .{
+        .position = .{ 32.0, 24.0, 0.0 },
+        .size = .{ 120.0, 48.0, 0.0 },
+        .color = .{ 0.1, 0.2, 0.3 },
+    });
+    try scene_world.setUiButton(button);
+
+    const panel = try scene_world.createEntity("panel", "Panel");
+    try scene_world.setUiRect(panel, .{
+        .position = .{ 180.0, 24.0, 0.0 },
+        .size = .{ 80.0, 48.0, 0.0 },
+        .color = .{ 0.2, 0.2, 0.2 },
+    });
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+
+    try state.extractSceneWithInput(.{ .world = &scene_world }, .{
+        .pointer = .{
+            .position = .{ 48.0, 36.0 },
+            .has_position = true,
+            .primary_down = true,
+        },
+    });
+    try state.updateUiInteractions();
+
+    try std.testing.expectEqual(@as(usize, 1), state.world.componentInstanceCountFor(render_ui_button_state_component_id));
+    const extracted_button = state.world.uiRectAt(0) orelse return error.TestExpectedEqual;
+    const held_state = (try renderUiButtonState(&state.world, extracted_button.entity)) orelse return error.TestExpectedEqual;
+    try std.testing.expect(held_state.hovered);
+    try std.testing.expect(held_state.held);
+    try std.testing.expect(!held_state.pressed);
+
+    const extracted_panel = state.world.uiRectAt(1) orelse return error.TestExpectedEqual;
+    try std.testing.expect((try renderUiButtonState(&state.world, extracted_panel.entity)) == null);
+
+    try state.extractSceneWithInput(.{ .world = &scene_world }, .{
+        .pointer = .{
+            .position = .{ 48.0, 36.0 },
+            .has_position = true,
+            .primary_released = true,
+        },
+    });
+    try state.updateUiInteractions();
+
+    const pressed_button = state.world.uiRectAt(0) orelse return error.TestExpectedEqual;
+    const pressed_state = (try renderUiButtonState(&state.world, pressed_button.entity)) orelse return error.TestExpectedEqual;
+    try std.testing.expect(pressed_state.hovered);
+    try std.testing.expect(!pressed_state.held);
+    try std.testing.expect(pressed_state.pressed);
+}
+
+test "hidden UI overlay skips UI extraction but keeps frame input" {
+    var scene_world = runtime.World.init(std.testing.allocator);
+    defer scene_world.deinit();
+
+    const button = try scene_world.createEntity("button", "Button");
+    try scene_world.setUiRect(button, .{
+        .position = .{ 32.0, 24.0, 0.0 },
+        .size = .{ 120.0, 48.0, 0.0 },
+        .color = .{ 0.1, 0.2, 0.3 },
+    });
+    try scene_world.setUiButton(button);
+
+    const label = try scene_world.createEntity("label", "Label");
+    try scene_world.setUiText(label, .{
+        .position = .{ 42.0, 36.0, 0.0 },
+        .size = 2.0,
+        .color = .{ 1.0, 0.8, 0.2 },
+        .value = "HIDDEN",
+    });
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+    try state.extractSceneWithInput(.{ .world = &scene_world }, .{ .ui_visible = false });
+    try state.updateUiInteractions();
+
+    try std.testing.expectEqual(@as(usize, 0), state.world.uiRectCount());
+    try std.testing.expectEqual(@as(usize, 0), state.world.uiTextCount());
+    try std.testing.expectEqual(@as(usize, 0), state.world.componentInstanceCountFor(render_ui_button_state_component_id));
+
+    const input = try renderFrameInput(&state.world);
+    try std.testing.expect(!input.ui_visible);
+}
+
+test "UI vertex builder reflects button interaction state" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const button = try world.createEntity("button", "Button");
+    try world.setUiRect(button, .{
+        .position = .{ 32.0, 24.0, 0.0 },
+        .size = .{ 120.0, 48.0, 0.0 },
+        .color = .{ 0.1, 0.2, 0.3 },
+    });
+    try world.setUiButton(button);
+    try setRenderUiButtonState(&world, button, .{ .hovered = true });
+
+    var hovered_vertices = try buildUiVertices(std.testing.allocator, &world, 640, 480);
+    defer hovered_vertices.deinit(std.testing.allocator);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.112), hovered_vertices.items[0].color[0], 0.001);
+
+    try setRenderUiButtonState(&world, button, .{ .held = true });
+    var held_vertices = try buildUiVertices(std.testing.allocator, &world, 640, 480);
+    defer held_vertices.deinit(std.testing.allocator);
+    try std.testing.expect(held_vertices.items[6].color[0] < held_vertices.items[12].color[0]);
 }
 
 const BatchTestShadowFlags = struct {
@@ -2396,11 +2745,30 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
 
     var rects = world.uiRects();
     while (rects.next()) |rect| {
-        try appendUiRect(&vertices, allocator, width, height, rect.position, rect.size, rect.color);
+        const maybe_button_state = if (rect.is_button) try renderUiButtonState(world, rect.entity) else null;
+        var rect_color = rect.color;
+        if (maybe_button_state) |state| {
+            if (state.held) {
+                rect_color = scaleColor(rect.color, 0.82);
+            } else if (state.pressed) {
+                rect_color = scaleColor(rect.color, 1.18);
+            } else if (state.hovered) {
+                rect_color = scaleColor(rect.color, 1.12);
+            }
+        }
+
+        try appendUiRect(&vertices, allocator, width, height, rect.position, rect.size, rect_color);
         if (rect.is_button) {
-            const highlight = scaleColor(rect.color, 1.35);
-            const shadow = scaleColor(rect.color, 0.65);
-            try appendUiRect(&vertices, allocator, width, height, rect.position, .{ rect.size[0], @min(2.0, rect.size[1]), 0.0 }, highlight);
+            var top_color = scaleColor(rect_color, 1.35);
+            var bottom_color = scaleColor(rect_color, 0.65);
+            if (maybe_button_state) |state| {
+                if (state.held) {
+                    top_color = scaleColor(rect_color, 0.65);
+                    bottom_color = scaleColor(rect_color, 1.35);
+                }
+            }
+
+            try appendUiRect(&vertices, allocator, width, height, rect.position, .{ rect.size[0], @min(2.0, rect.size[1]), 0.0 }, top_color);
             try appendUiRect(
                 &vertices,
                 allocator,
@@ -2408,7 +2776,7 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
                 height,
                 .{ rect.position[0], rect.position[1] + @max(rect.size[1] - 2.0, 0.0), rect.position[2] },
                 .{ rect.size[0], @min(2.0, rect.size[1]), 0.0 },
-                shadow,
+                bottom_color,
             );
         }
     }
