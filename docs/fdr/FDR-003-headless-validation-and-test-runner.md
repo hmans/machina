@@ -14,6 +14,8 @@ The headless validation and test runner lets users, CI systems, and agents check
 - `machina step [path] [--frames N] [--dt seconds]` loads the default scene, runs the update schedule headlessly for the requested frame count, and reports final scene and simulation counts.
 - `machina step [path] --format=json` reports project metadata, final scene summary, simulation summary, schedule batches, and structured runtime diagnostics when a system fails.
 - Automated scenario fixtures live under `tests/projects/` and use complete text-authored Machina projects rather than sharing example projects.
+- `machina test [tests-path|project-path]` discovers text-authored test projects, reads each project's `test.machina.toml`, steps the project headlessly, and checks declared ECS field expectations.
+- `machina test --format=json` reports each project case, simulation summary, per-field expected/actual assertion data, diagnostics, and a suite summary.
 - `machina render-test [path] [output.bmp]` renders the default scene offscreen, reads the output image back, and verifies BMP shape, foreground coverage, visible components, and expected warm/cool color groups for automation.
 - Future headless test commands can exercise scene and script live reload deterministically.
 - Users can run project validation without initializing graphical presentation.
@@ -41,11 +43,11 @@ The headless validation and test runner lets users, CI systems, and agents check
 **Why:** Offscreen rendering is easier to run in agent and CI workflows, and parsing the output artifact can catch regressions like missing foreground content or collapsed multi-object renders.
 **Tradeoff:** Pixel analysis is still coarse and does not replace future golden-image or semantic render tests.
 
-### 4. Add deterministic stepping before full test scripting
+### 4. Add deterministic stepping and manifest assertions before full test scripting
 
-**Decision:** The first script behavior test surface runs a fixed number of update frames with an explicit timestep and reports summaries instead of introducing a full test DSL.
-**Why:** Agents and CI need a small, reliable way to prove script systems mutate ECS state and surface runtime diagnostics. This follows ADR-003 and ADR-006.
-**Tradeoff:** Assertions over arbitrary world fields still live in external tests or future tooling rather than in project-authored test files.
+**Decision:** Script behavior tests use a small `test.machina.toml` manifest with frame count, timestep, and ECS field equality assertions instead of introducing a full test scripting DSL.
+**Why:** Agents and CI need a small, reliable way to prove script systems mutate ECS state and surface runtime diagnostics. Keeping the assertions text-first makes them easy to inspect and patch. This follows ADR-003 and ADR-006.
+**Tradeoff:** The manifest currently supports direct component field equality, not arbitrary predicates, setup/teardown hooks, or multi-scene flows.
 
 ### 5. Keep gameplay test fixtures separate from examples
 

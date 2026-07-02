@@ -23,6 +23,7 @@ pub const Spin = runtime.Spin;
 pub const ComponentRegistry = runtime.ComponentRegistry;
 pub const ComponentDefinition = runtime.ComponentDefinition;
 pub const ComponentFieldDefinition = runtime.ComponentFieldDefinition;
+pub const ComponentValue = runtime.ComponentValue;
 pub const FieldType = runtime.FieldType;
 pub const SystemDefinition = runtime.SystemDefinition;
 pub const SystemPhase = runtime.SystemPhase;

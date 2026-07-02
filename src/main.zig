@@ -66,6 +66,10 @@ fn run(
         return try stepCommand(io, allocator, args[2..], stdout, stderr);
     }
 
+    if (std.mem.eql(u8, command, "test")) {
+        return try testCommand(io, allocator, args[2..], stdout, stderr);
+    }
+
     if (std.mem.eql(u8, command, "run")) {
         const target_path = if (args.len >= 3) args[2] else ".";
         var window_options = parseWindowOptions(args[3..]) catch |err| {
@@ -189,6 +193,11 @@ const StepCommandOptions = struct {
     format: CheckOutputFormat = .text,
 };
 
+const TestCommandOptions = struct {
+    target_path: []const u8 = "tests/projects",
+    format: CheckOutputFormat = .text,
+};
+
 fn checkCommand(
     io: Io,
     allocator: std.mem.Allocator,
@@ -289,6 +298,73 @@ fn stepCommand(
     }
 }
 
+fn testCommand(
+    io: Io,
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    stdout: *Io.Writer,
+    stderr: *Io.Writer,
+) !u8 {
+    const options = parseTestOptions(args) catch |err| {
+        try printArgumentError(stderr, err);
+        return 1;
+    };
+
+    const project_paths = collectTestProjects(io, allocator, options.target_path) catch |err| {
+        switch (options.format) {
+            .text => try stderr.print("{s}: test discovery failed: {s}\n", .{ options.target_path, @errorName(err) }),
+            .json => {
+                try stdout.writeAll("{\"ok\":false,\"error\":");
+                try writeJsonString(stdout, @errorName(err));
+                try stdout.writeAll(",\"root\":");
+                try writeJsonString(stdout, options.target_path);
+                try stdout.writeAll("}\n");
+            },
+        }
+        return 1;
+    };
+    defer freeOwnedStringList(allocator, project_paths);
+
+    if (project_paths.len == 0) {
+        switch (options.format) {
+            .text => try stderr.print("{s}: no Machina test projects found\n", .{options.target_path}),
+            .json => {
+                try stdout.writeAll("{\"ok\":false,\"error\":\"NoTestProjects\",\"root\":");
+                try writeJsonString(stdout, options.target_path);
+                try stdout.writeAll("}\n");
+            },
+        }
+        return 1;
+    }
+
+    var summary = TestSuiteSummary{};
+    if (options.format == .json) {
+        try stdout.writeAll("{\"tests\":[");
+    }
+
+    for (project_paths, 0..) |project_path, index| {
+        if (options.format == .json and index != 0) {
+            try stdout.writeByte(',');
+        }
+
+        const stats = try runTestCase(io, allocator, project_path, options.format, stdout, stderr);
+        summary.add(stats);
+    }
+
+    switch (options.format) {
+        .text => try printTestSummaryText(stdout, summary),
+        .json => {
+            try stdout.writeAll("],\"summary\":");
+            try printTestSummaryJson(stdout, summary);
+            try stdout.writeAll(",\"ok\":");
+            try stdout.writeAll(if (summary.failed_cases == 0) "true" else "false");
+            try stdout.writeAll("}\n");
+        },
+    }
+
+    return if (summary.failed_cases == 0) 0 else 1;
+}
+
 fn checkProjectForCommand(
     io: Io,
     allocator: std.mem.Allocator,
@@ -319,6 +395,7 @@ fn printHelp(writer: *Io.Writer) !void {
         \\  machina init [path]
         \\  machina check [path] [--format text|json]
         \\  machina step [path] [--frames N] [--dt seconds] [--format text|json]
+        \\  machina test [tests-path|project-path] [--format text|json]
         \\  machina run [path] [--frames N]
         \\  machina render [path] [output.bmp]
         \\  machina render-test [path] [output.bmp]
@@ -488,6 +565,609 @@ fn parseStepOptions(args: []const []const u8) ArgumentError!StepCommandOptions {
     return options;
 }
 
+fn parseTestOptions(args: []const []const u8) ArgumentError!TestCommandOptions {
+    var options = TestCommandOptions{};
+    var saw_path = false;
+    var index: usize = 0;
+    while (index < args.len) : (index += 1) {
+        const arg = args[index];
+        if (std.mem.eql(u8, arg, "--format")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.InvalidFormat;
+            }
+            options.format = try parseCheckOutputFormat(args[index]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--format=")) {
+            options.format = try parseCheckOutputFormat(arg["--format=".len..]);
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--")) {
+            return ArgumentError.UnknownArgument;
+        }
+        if (saw_path) {
+            return ArgumentError.UnknownArgument;
+        }
+        options.target_path = arg;
+        saw_path = true;
+    }
+    return options;
+}
+
+const TestManifestError = error{
+    InvalidTestManifest,
+};
+
+const ExpectedFieldValue = union(enum) {
+    boolean: bool,
+    int: i32,
+    float: f32,
+    vec3: [3]f32,
+    string: []const u8,
+
+    fn deinit(self: ExpectedFieldValue, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .string => |value| allocator.free(value),
+            else => {},
+        }
+    }
+
+    fn matches(self: ExpectedFieldValue, actual: machina.ComponentValue) bool {
+        return switch (self) {
+            .boolean => |expected| switch (actual) {
+                .boolean => |found| found == expected,
+                else => false,
+            },
+            .int => |expected| switch (actual) {
+                .int => |found| found == expected,
+                else => false,
+            },
+            .float => |expected| switch (actual) {
+                .float => |found| approxEqual(expected, found),
+                else => false,
+            },
+            .vec3 => |expected| switch (actual) {
+                .vec3 => |found| approxVec3(expected, found),
+                else => false,
+            },
+            .string => |expected| switch (actual) {
+                .string => |found| std.mem.eql(u8, expected, found),
+                else => false,
+            },
+        };
+    }
+};
+
+const TestExpectation = struct {
+    entity: []const u8,
+    component: []const u8,
+    field: []const u8,
+    expected: ExpectedFieldValue,
+
+    fn deinit(self: *TestExpectation, allocator: std.mem.Allocator) void {
+        allocator.free(self.entity);
+        allocator.free(self.component);
+        allocator.free(self.field);
+        self.expected.deinit(allocator);
+    }
+};
+
+const TestManifest = struct {
+    frames: u32 = 1,
+    delta_seconds: f32 = 1.0 / 60.0,
+    expectations: []TestExpectation = &.{},
+
+    fn deinit(self: *TestManifest, allocator: std.mem.Allocator) void {
+        for (self.expectations) |*expectation| {
+            expectation.deinit(allocator);
+        }
+        allocator.free(self.expectations);
+        self.* = .{};
+    }
+};
+
+const TestExpectationDraft = struct {
+    entity: ?[]const u8 = null,
+    component: ?[]const u8 = null,
+    field: ?[]const u8 = null,
+    expected: ?ExpectedFieldValue = null,
+
+    fn deinit(self: *TestExpectationDraft, allocator: std.mem.Allocator) void {
+        if (self.entity) |value| allocator.free(value);
+        if (self.component) |value| allocator.free(value);
+        if (self.field) |value| allocator.free(value);
+        if (self.expected) |value| value.deinit(allocator);
+        self.* = .{};
+    }
+
+    fn take(self: *TestExpectationDraft) TestManifestError!TestExpectation {
+        const entity = self.entity orelse return TestManifestError.InvalidTestManifest;
+        const component = self.component orelse return TestManifestError.InvalidTestManifest;
+        const field = self.field orelse return TestManifestError.InvalidTestManifest;
+        const expected = self.expected orelse return TestManifestError.InvalidTestManifest;
+        self.entity = null;
+        self.component = null;
+        self.field = null;
+        self.expected = null;
+        return .{
+            .entity = entity,
+            .component = component,
+            .field = field,
+            .expected = expected,
+        };
+    }
+};
+
+const TestCaseStats = struct {
+    assertions: u32 = 0,
+    failed_assertions: u32 = 0,
+    failed: bool = false,
+
+    fn passed(self: TestCaseStats) bool {
+        return !self.failed and self.failed_assertions == 0;
+    }
+};
+
+const TestSuiteSummary = struct {
+    cases: u32 = 0,
+    passed_cases: u32 = 0,
+    failed_cases: u32 = 0,
+    assertions: u32 = 0,
+    failed_assertions: u32 = 0,
+
+    fn add(self: *TestSuiteSummary, stats: TestCaseStats) void {
+        self.cases += 1;
+        self.assertions += stats.assertions;
+        self.failed_assertions += stats.failed_assertions;
+        if (stats.passed()) {
+            self.passed_cases += 1;
+        } else {
+            self.failed_cases += 1;
+        }
+    }
+};
+
+const ExpectationEvaluation = struct {
+    passed: bool,
+    actual: ?machina.ComponentValue = null,
+    err: ?anyerror = null,
+};
+
+fn collectTestProjects(
+    io: Io,
+    allocator: std.mem.Allocator,
+    target_path: []const u8,
+) ![]const []const u8 {
+    const cwd = Io.Dir.cwd();
+    const target_dir = try cwd.openDir(io, target_path, .{ .iterate = true });
+    defer target_dir.close(io);
+
+    var projects: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (projects.items) |project_path| {
+            allocator.free(project_path);
+        }
+        projects.deinit(allocator);
+    }
+
+    if (isTestProject(io, target_dir)) {
+        try projects.append(allocator, try allocator.dupe(u8, target_path));
+        return try projects.toOwnedSlice(allocator);
+    }
+
+    var iterator = target_dir.iterate();
+    while (try iterator.next(io)) |entry| {
+        if (entry.kind != .directory) {
+            continue;
+        }
+
+        const child_is_project = childIsTestProject(io, target_dir, entry.name);
+        if (!child_is_project) {
+            continue;
+        }
+
+        const project_path = try std.fs.path.join(allocator, &.{ target_path, entry.name });
+        errdefer allocator.free(project_path);
+        try projects.append(allocator, project_path);
+    }
+
+    std.mem.sort([]const u8, projects.items, {}, stringLessThan);
+    return try projects.toOwnedSlice(allocator);
+}
+
+fn childIsTestProject(io: Io, parent_dir: Io.Dir, child_name: []const u8) bool {
+    const child_dir = parent_dir.openDir(io, child_name, .{}) catch return false;
+    defer child_dir.close(io);
+    return isTestProject(io, child_dir);
+}
+
+fn isTestProject(io: Io, dir: Io.Dir) bool {
+    return pathExists(io, dir, machina.project_file_name) and pathExists(io, dir, "test.machina.toml");
+}
+
+fn pathExists(io: Io, dir: Io.Dir, path: []const u8) bool {
+    dir.access(io, path, .{}) catch return false;
+    return true;
+}
+
+fn stringLessThan(_: void, left: []const u8, right: []const u8) bool {
+    return std.mem.lessThan(u8, left, right);
+}
+
+fn freeOwnedStringList(allocator: std.mem.Allocator, values: []const []const u8) void {
+    for (values) |value| {
+        allocator.free(value);
+    }
+    allocator.free(values);
+}
+
+fn loadTestManifest(
+    io: Io,
+    allocator: std.mem.Allocator,
+    project_path: []const u8,
+) !TestManifest {
+    const cwd = Io.Dir.cwd();
+    const project_dir = try cwd.openDir(io, project_path, .{});
+    defer project_dir.close(io);
+
+    const contents = try project_dir.readFileAlloc(io, "test.machina.toml", allocator, .limited(64 * 1024));
+    defer allocator.free(contents);
+
+    return parseTestManifest(allocator, contents);
+}
+
+fn parseTestManifest(allocator: std.mem.Allocator, contents: []const u8) !TestManifest {
+    var manifest = TestManifest{};
+    var expectations: std.ArrayList(TestExpectation) = .empty;
+    errdefer {
+        for (expectations.items) |*expectation| {
+            expectation.deinit(allocator);
+        }
+        expectations.deinit(allocator);
+    }
+
+    var draft: ?TestExpectationDraft = null;
+    errdefer if (draft) |*active| active.deinit(allocator);
+
+    var lines = std.mem.splitScalar(u8, contents, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0 or trimmed[0] == '#') {
+            continue;
+        }
+
+        if (std.mem.eql(u8, trimmed, "[[expect.field]]") or std.mem.eql(u8, trimmed, "[[expect]]")) {
+            try appendExpectationDraft(allocator, &expectations, &draft);
+            draft = .{};
+            continue;
+        }
+
+        if (trimmed[0] == '[') {
+            return TestManifestError.InvalidTestManifest;
+        }
+
+        const eq_index = std.mem.indexOfScalar(u8, trimmed, '=') orelse return TestManifestError.InvalidTestManifest;
+        const key = std.mem.trim(u8, trimmed[0..eq_index], " \t");
+        const value = std.mem.trim(u8, trimmed[eq_index + 1 ..], " \t");
+
+        if (draft) |*active| {
+            try readExpectationProperty(allocator, active, key, value);
+        } else {
+            try readTestManifestRootProperty(&manifest, key, value);
+        }
+    }
+
+    try appendExpectationDraft(allocator, &expectations, &draft);
+    if (expectations.items.len == 0) {
+        return TestManifestError.InvalidTestManifest;
+    }
+
+    manifest.expectations = try expectations.toOwnedSlice(allocator);
+    return manifest;
+}
+
+fn appendExpectationDraft(
+    allocator: std.mem.Allocator,
+    expectations: *std.ArrayList(TestExpectation),
+    draft: *?TestExpectationDraft,
+) !void {
+    if (draft.*) |*active| {
+        const expectation = try active.take();
+        errdefer {
+            var owned = expectation;
+            owned.deinit(allocator);
+        }
+        try expectations.append(allocator, expectation);
+        active.deinit(allocator);
+        draft.* = null;
+    }
+}
+
+fn readTestManifestRootProperty(manifest: *TestManifest, key: []const u8, value: []const u8) !void {
+    if (std.mem.eql(u8, key, "frames")) {
+        manifest.frames = parsePositiveFrameValue(value) catch return TestManifestError.InvalidTestManifest;
+        return;
+    }
+    if (std.mem.eql(u8, key, "dt") or std.mem.eql(u8, key, "delta_seconds")) {
+        manifest.delta_seconds = parsePositiveDeltaValue(value) catch return TestManifestError.InvalidTestManifest;
+        return;
+    }
+    return TestManifestError.InvalidTestManifest;
+}
+
+fn readExpectationProperty(
+    allocator: std.mem.Allocator,
+    draft: *TestExpectationDraft,
+    key: []const u8,
+    value: []const u8,
+) !void {
+    if (std.mem.eql(u8, key, "entity")) {
+        if (draft.entity != null) return TestManifestError.InvalidTestManifest;
+        draft.entity = try parseTestString(allocator, value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "component")) {
+        if (draft.component != null) return TestManifestError.InvalidTestManifest;
+        draft.component = try parseTestString(allocator, value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "field")) {
+        if (draft.field != null) return TestManifestError.InvalidTestManifest;
+        draft.field = try parseTestString(allocator, value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "equals_bool")) {
+        try setExpectedValue(allocator, draft, .{ .boolean = try parseTestBool(value) });
+        return;
+    }
+    if (std.mem.eql(u8, key, "equals_int")) {
+        try setExpectedValue(allocator, draft, .{ .int = std.fmt.parseInt(i32, value, 10) catch return TestManifestError.InvalidTestManifest });
+        return;
+    }
+    if (std.mem.eql(u8, key, "equals_float")) {
+        const expected = std.fmt.parseFloat(f32, value) catch return TestManifestError.InvalidTestManifest;
+        if (!std.math.isFinite(expected)) return TestManifestError.InvalidTestManifest;
+        try setExpectedValue(allocator, draft, .{ .float = expected });
+        return;
+    }
+    if (std.mem.eql(u8, key, "equals_vec3")) {
+        try setExpectedValue(allocator, draft, .{ .vec3 = try parseTestVec3(value) });
+        return;
+    }
+    if (std.mem.eql(u8, key, "equals_string")) {
+        try setExpectedValue(allocator, draft, .{ .string = try parseTestString(allocator, value) });
+        return;
+    }
+    return TestManifestError.InvalidTestManifest;
+}
+
+fn setExpectedValue(allocator: std.mem.Allocator, draft: *TestExpectationDraft, value: ExpectedFieldValue) !void {
+    if (draft.expected != null) {
+        value.deinit(allocator);
+        return TestManifestError.InvalidTestManifest;
+    }
+    draft.expected = value;
+}
+
+fn parsePositiveFrameValue(value: []const u8) !u32 {
+    const frames = std.fmt.parseInt(u32, value, 10) catch return TestManifestError.InvalidTestManifest;
+    if (frames == 0) {
+        return TestManifestError.InvalidTestManifest;
+    }
+    return frames;
+}
+
+fn parsePositiveDeltaValue(value: []const u8) !f32 {
+    const delta_seconds = std.fmt.parseFloat(f32, value) catch return TestManifestError.InvalidTestManifest;
+    if (!std.math.isFinite(delta_seconds) or delta_seconds <= 0.0) {
+        return TestManifestError.InvalidTestManifest;
+    }
+    return delta_seconds;
+}
+
+fn parseTestString(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
+    if (value.len < 2 or value[0] != '"' or value[value.len - 1] != '"') {
+        return TestManifestError.InvalidTestManifest;
+    }
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    var index: usize = 1;
+    while (index < value.len - 1) : (index += 1) {
+        const byte = value[index];
+        if (byte != '\\') {
+            try out.append(allocator, byte);
+            continue;
+        }
+
+        index += 1;
+        if (index >= value.len - 1) {
+            return TestManifestError.InvalidTestManifest;
+        }
+
+        switch (value[index]) {
+            '\\' => try out.append(allocator, '\\'),
+            '"' => try out.append(allocator, '"'),
+            'n' => try out.append(allocator, '\n'),
+            'r' => try out.append(allocator, '\r'),
+            't' => try out.append(allocator, '\t'),
+            else => return TestManifestError.InvalidTestManifest,
+        }
+    }
+
+    return try out.toOwnedSlice(allocator);
+}
+
+fn parseTestBool(value: []const u8) !bool {
+    if (std.mem.eql(u8, value, "true")) {
+        return true;
+    }
+    if (std.mem.eql(u8, value, "false")) {
+        return false;
+    }
+    return TestManifestError.InvalidTestManifest;
+}
+
+fn parseTestVec3(value: []const u8) ![3]f32 {
+    if (value.len < 5 or value[0] != '[' or value[value.len - 1] != ']') {
+        return TestManifestError.InvalidTestManifest;
+    }
+
+    var result: [3]f32 = undefined;
+    var count: usize = 0;
+    var parts = std.mem.splitScalar(u8, value[1 .. value.len - 1], ',');
+    while (parts.next()) |part| {
+        if (count >= result.len) {
+            return TestManifestError.InvalidTestManifest;
+        }
+        const trimmed = std.mem.trim(u8, part, " \t\r");
+        if (trimmed.len == 0) {
+            return TestManifestError.InvalidTestManifest;
+        }
+        const parsed = std.fmt.parseFloat(f32, trimmed) catch return TestManifestError.InvalidTestManifest;
+        if (!std.math.isFinite(parsed)) {
+            return TestManifestError.InvalidTestManifest;
+        }
+        result[count] = parsed;
+        count += 1;
+    }
+
+    if (count != result.len) {
+        return TestManifestError.InvalidTestManifest;
+    }
+    return result;
+}
+
+fn runTestCase(
+    io: Io,
+    allocator: std.mem.Allocator,
+    project_path: []const u8,
+    format: CheckOutputFormat,
+    stdout: *Io.Writer,
+    stderr: *Io.Writer,
+) !TestCaseStats {
+    const name = std.fs.path.basename(trimTrailingSlashes(project_path));
+
+    var manifest = loadTestManifest(io, allocator, project_path) catch |err| {
+        const stats = TestCaseStats{ .failed = true };
+        switch (format) {
+            .text => try stdout.print("FAIL {s}: test.machina.toml {s}\n", .{ name, @errorName(err) }),
+            .json => try printTestCaseLoadFailureJson(stdout, name, project_path, "manifest", err),
+        }
+        return stats;
+    };
+    defer manifest.deinit(allocator);
+
+    var stats = TestCaseStats{ .assertions = @intCast(manifest.expectations.len) };
+    const result = machina.stepProjectDetailed(io, allocator, project_path, .{
+        .frames = manifest.frames,
+        .delta_seconds = manifest.delta_seconds,
+    }) catch |err| {
+        stats.failed = true;
+        switch (format) {
+            .text => try stdout.print("FAIL {s}: project load {s}\n", .{ name, @errorName(err) }),
+            .json => try printTestCaseLoadFailureJson(stdout, name, project_path, "project", err),
+        }
+        return stats;
+    };
+    defer machina.freeStepDetailedResult(allocator, result);
+
+    switch (result) {
+        .ok => |ok| {
+            try evaluateTestCaseOk(name, project_path, ok, manifest, format, stdout, &stats);
+        },
+        .runtime_error => |failure| {
+            stats.failed = true;
+            switch (format) {
+                .text => {
+                    try stdout.print("FAIL {s}: runtime error after {d}/{d} frames\n", .{
+                        name,
+                        failure.summary.completed_frames,
+                        failure.summary.frames,
+                    });
+                    try printScriptDiagnostic(stderr, project_path, failure.diagnostic);
+                },
+                .json => try printTestCaseRuntimeFailureJson(stdout, name, project_path, failure),
+            }
+        },
+        .invalid => |diagnostic| {
+            stats.failed = true;
+            switch (format) {
+                .text => {
+                    try stdout.print("FAIL {s}: invalid scripts\n", .{name});
+                    try printScriptDiagnostic(stderr, project_path, diagnostic);
+                },
+                .json => try printTestCaseDiagnosticFailureJson(stdout, name, project_path, diagnostic),
+            }
+        },
+    }
+
+    return stats;
+}
+
+fn evaluateTestCaseOk(
+    name: []const u8,
+    project_path: []const u8,
+    ok: machina.StepOk,
+    manifest: TestManifest,
+    format: CheckOutputFormat,
+    stdout: *Io.Writer,
+    stats: *TestCaseStats,
+) !void {
+    switch (format) {
+        .text => {
+            var printed_failure_header = false;
+            for (manifest.expectations) |expectation| {
+                const evaluation = evaluateExpectation(ok.scene.world, expectation);
+                if (evaluation.passed) {
+                    continue;
+                }
+
+                stats.failed_assertions += 1;
+                if (!printed_failure_header) {
+                    try stdout.print("FAIL {s}\n", .{name});
+                    printed_failure_header = true;
+                }
+                try printExpectationFailureText(stdout, expectation, evaluation);
+            }
+
+            if (stats.failed_assertions == 0) {
+                try stdout.print("PASS {s} ({d} assertions)\n", .{ name, stats.assertions });
+            }
+        },
+        .json => {
+            try printTestCaseOkJson(stdout, name, project_path, ok, manifest, stats);
+        },
+    }
+}
+
+fn evaluateExpectation(world: machina.World, expectation: TestExpectation) ExpectationEvaluation {
+    const entity = world.findEntityById(expectation.entity) orelse return .{
+        .passed = false,
+        .err = error.UnknownEntity,
+    };
+    const actual = world.getComponentFieldValue(entity, expectation.component, expectation.field) catch |err| return .{
+        .passed = false,
+        .err = err,
+    };
+    return .{
+        .passed = expectation.expected.matches(actual),
+        .actual = actual,
+    };
+}
+
+fn approxEqual(expected: f32, actual: f32) bool {
+    return @abs(expected - actual) <= 0.0001;
+}
+
+fn approxVec3(expected: [3]f32, actual: [3]f32) bool {
+    return approxEqual(expected[0], actual[0]) and
+        approxEqual(expected[1], actual[1]) and
+        approxEqual(expected[2], actual[2]);
+}
+
 fn parseFrameCount(value: []const u8) ArgumentError!u32 {
     const frames = std.fmt.parseInt(u32, value, 10) catch return ArgumentError.InvalidFrames;
     if (frames == 0) {
@@ -606,6 +1286,199 @@ fn printStepFailureText(writer: *Io.Writer, root_path: []const u8, failure: mach
         failure.summary.frames,
         failure.summary.delta_seconds,
     });
+}
+
+fn printExpectationFailureText(
+    writer: *Io.Writer,
+    expectation: TestExpectation,
+    evaluation: ExpectationEvaluation,
+) !void {
+    try writer.print("  - {s}.{s}.{s}: expected ", .{
+        expectation.entity,
+        expectation.component,
+        expectation.field,
+    });
+    try printExpectedFieldValueText(writer, expectation.expected);
+    if (evaluation.actual) |actual| {
+        try writer.writeAll(", got ");
+        try printComponentValueText(writer, actual);
+    } else if (evaluation.err) |err| {
+        try writer.print(", got {s}", .{@errorName(err)});
+    }
+    try writer.writeByte('\n');
+}
+
+fn printExpectedFieldValueText(writer: *Io.Writer, value: ExpectedFieldValue) !void {
+    switch (value) {
+        .boolean => |payload| try writer.writeAll(if (payload) "true" else "false"),
+        .int => |payload| try writer.print("{d}", .{payload}),
+        .float => |payload| try writer.print("{d}", .{payload}),
+        .vec3 => |payload| try writer.print("[{d}, {d}, {d}]", .{ payload[0], payload[1], payload[2] }),
+        .string => |payload| try writer.print("\"{s}\"", .{payload}),
+    }
+}
+
+fn printComponentValueText(writer: *Io.Writer, value: machina.ComponentValue) !void {
+    switch (value) {
+        .boolean => |payload| try writer.writeAll(if (payload) "true" else "false"),
+        .int => |payload| try writer.print("{d}", .{payload}),
+        .float => |payload| try writer.print("{d}", .{payload}),
+        .vec3 => |payload| try writer.print("[{d}, {d}, {d}]", .{ payload[0], payload[1], payload[2] }),
+        .string => |payload| try writer.print("\"{s}\"", .{payload}),
+    }
+}
+
+fn printTestSummaryText(writer: *Io.Writer, summary: TestSuiteSummary) !void {
+    try writer.print("Test projects: {d} passed, {d} failed, {d} assertions", .{
+        summary.passed_cases,
+        summary.failed_cases,
+        summary.assertions,
+    });
+    if (summary.failed_assertions != 0) {
+        try writer.print(", {d} failed", .{summary.failed_assertions});
+    }
+    try writer.writeByte('\n');
+}
+
+fn printTestSummaryJson(writer: *Io.Writer, summary: TestSuiteSummary) !void {
+    try writer.print(
+        "{{\"cases\":{d},\"passed\":{d},\"failed\":{d},\"assertions\":{d},\"failed_assertions\":{d}}}",
+        .{
+            summary.cases,
+            summary.passed_cases,
+            summary.failed_cases,
+            summary.assertions,
+            summary.failed_assertions,
+        },
+    );
+}
+
+fn printTestCaseLoadFailureJson(
+    writer: *Io.Writer,
+    name: []const u8,
+    project_path: []const u8,
+    stage: []const u8,
+    err: anyerror,
+) !void {
+    try writer.writeAll("{\"name\":");
+    try writeJsonString(writer, name);
+    try writer.writeAll(",\"path\":");
+    try writeJsonString(writer, project_path);
+    try writer.writeAll(",\"ok\":false,\"stage\":");
+    try writeJsonString(writer, stage);
+    try writer.writeAll(",\"error\":");
+    try writeJsonString(writer, @errorName(err));
+    try writer.writeAll("}");
+}
+
+fn printTestCaseDiagnosticFailureJson(
+    writer: *Io.Writer,
+    name: []const u8,
+    project_path: []const u8,
+    diagnostic: machina.ScriptDiagnostic,
+) !void {
+    try writer.writeAll("{\"name\":");
+    try writeJsonString(writer, name);
+    try writer.writeAll(",\"path\":");
+    try writeJsonString(writer, project_path);
+    try writer.writeAll(",\"ok\":false,\"diagnostic\":");
+    try printScriptDiagnosticObjectJson(writer, project_path, diagnostic);
+    try writer.writeAll("}");
+}
+
+fn printTestCaseRuntimeFailureJson(
+    writer: *Io.Writer,
+    name: []const u8,
+    project_path: []const u8,
+    failure: machina.StepRuntimeError,
+) !void {
+    try writer.writeAll("{\"name\":");
+    try writeJsonString(writer, name);
+    try writer.writeAll(",\"path\":");
+    try writeJsonString(writer, project_path);
+    try writer.writeAll(",\"ok\":false,\"simulation\":");
+    try printStepSummaryJson(writer, failure.summary);
+    try writer.writeAll(",\"diagnostic\":");
+    try printScriptDiagnosticObjectJson(writer, project_path, failure.diagnostic);
+    try writer.writeAll("}");
+}
+
+fn printTestCaseOkJson(
+    writer: *Io.Writer,
+    name: []const u8,
+    project_path: []const u8,
+    ok: machina.StepOk,
+    manifest: TestManifest,
+    stats: *TestCaseStats,
+) !void {
+    try writer.writeAll("{\"name\":");
+    try writeJsonString(writer, name);
+    try writer.writeAll(",\"path\":");
+    try writeJsonString(writer, project_path);
+    try writer.writeAll(",\"simulation\":");
+    try printStepSummaryJson(writer, ok.summary);
+    try writer.writeAll(",\"assertions\":[");
+    for (manifest.expectations, 0..) |expectation, index| {
+        if (index != 0) {
+            try writer.writeByte(',');
+        }
+
+        const evaluation = evaluateExpectation(ok.scene.world, expectation);
+        if (!evaluation.passed) {
+            stats.failed_assertions += 1;
+        }
+        try printTestExpectationJson(writer, expectation, evaluation);
+    }
+    try writer.writeAll("],\"failed_assertions\":");
+    try writer.print("{d}", .{stats.failed_assertions});
+    try writer.writeAll(",\"ok\":");
+    try writer.writeAll(if (stats.failed_assertions == 0) "true" else "false");
+    try writer.writeAll("}");
+}
+
+fn printTestExpectationJson(
+    writer: *Io.Writer,
+    expectation: TestExpectation,
+    evaluation: ExpectationEvaluation,
+) !void {
+    try writer.writeAll("{\"entity\":");
+    try writeJsonString(writer, expectation.entity);
+    try writer.writeAll(",\"component\":");
+    try writeJsonString(writer, expectation.component);
+    try writer.writeAll(",\"field\":");
+    try writeJsonString(writer, expectation.field);
+    try writer.writeAll(",\"expected\":");
+    try printExpectedFieldValueJson(writer, expectation.expected);
+    try writer.writeAll(",\"ok\":");
+    try writer.writeAll(if (evaluation.passed) "true" else "false");
+    if (evaluation.actual) |actual| {
+        try writer.writeAll(",\"actual\":");
+        try printComponentValueJson(writer, actual);
+    } else if (evaluation.err) |err| {
+        try writer.writeAll(",\"error\":");
+        try writeJsonString(writer, @errorName(err));
+    }
+    try writer.writeAll("}");
+}
+
+fn printExpectedFieldValueJson(writer: *Io.Writer, value: ExpectedFieldValue) !void {
+    switch (value) {
+        .boolean => |payload| try writer.writeAll(if (payload) "true" else "false"),
+        .int => |payload| try writer.print("{d}", .{payload}),
+        .float => |payload| try writer.print("{d}", .{payload}),
+        .vec3 => |payload| try writer.print("[{d},{d},{d}]", .{ payload[0], payload[1], payload[2] }),
+        .string => |payload| try writeJsonString(writer, payload),
+    }
+}
+
+fn printComponentValueJson(writer: *Io.Writer, value: machina.ComponentValue) !void {
+    switch (value) {
+        .boolean => |payload| try writer.writeAll(if (payload) "true" else "false"),
+        .int => |payload| try writer.print("{d}", .{payload}),
+        .float => |payload| try writer.print("{d}", .{payload}),
+        .vec3 => |payload| try writer.print("[{d},{d},{d}]", .{ payload[0], payload[1], payload[2] }),
+        .string => |payload| try writeJsonString(writer, payload),
+    }
 }
 
 fn printCheckOkJson(writer: *Io.Writer, result: machina.CheckResult) !void {
@@ -843,6 +1716,67 @@ test "parseStepOptions accepts path frames dt and json format" {
 test "parseStepOptions rejects invalid dt" {
     const args = [_][]const u8{ "--dt", "inf" };
     try std.testing.expectError(ArgumentError.InvalidDelta, parseStepOptions(&args));
+}
+
+test "parseTestOptions defaults to tests/projects" {
+    const options = try parseTestOptions(&.{});
+    try std.testing.expectEqualStrings("tests/projects", options.target_path);
+    try std.testing.expectEqual(CheckOutputFormat.text, options.format);
+}
+
+test "parseTestOptions accepts path and json format" {
+    const args = [_][]const u8{ "tests/projects/health_tick", "--format=json" };
+    const options = try parseTestOptions(&args);
+    try std.testing.expectEqualStrings("tests/projects/health_tick", options.target_path);
+    try std.testing.expectEqual(CheckOutputFormat.json, options.format);
+}
+
+test "parseTestManifest reads field assertions" {
+    var manifest = try parseTestManifest(std.testing.allocator,
+        \\frames = 4
+        \\dt = 1.0
+        \\
+        \\[[expect.field]]
+        \\entity = "door-1"
+        \\component = "door"
+        \\field = "openness"
+        \\equals_float = 1.0
+        \\
+        \\[[expect.field]]
+        \\entity = "switch-1"
+        \\component = "switch"
+        \\field = "active"
+        \\equals_bool = true
+        \\
+    );
+    defer manifest.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(u32, 4), manifest.frames);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), manifest.delta_seconds, 0.000001);
+    try std.testing.expectEqual(@as(usize, 2), manifest.expectations.len);
+    try std.testing.expectEqualStrings("door-1", manifest.expectations[0].entity);
+    try std.testing.expectEqualStrings("door", manifest.expectations[0].component);
+    try std.testing.expectEqualStrings("openness", manifest.expectations[0].field);
+    try std.testing.expect(manifest.expectations[0].expected.matches(.{ .float = 1.0 }));
+    try std.testing.expect(manifest.expectations[1].expected.matches(.{ .boolean = true }));
+}
+
+test "testCommand runs gameplay project suite" {
+    var stdout_buffer: [8192]u8 = undefined;
+    var stdout = Io.Writer.fixed(&stdout_buffer);
+    var stderr_buffer: [2048]u8 = undefined;
+    var stderr = Io.Writer.fixed(&stderr_buffer);
+    const io = Io.Threaded.global_single_threaded.io();
+
+    const args = [_][]const u8{"tests/projects"};
+    const exit_code = try testCommand(io, std.testing.allocator, &args, &stdout, &stderr);
+
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, stdout.buffered(), "PASS auto_door") != null);
+    try std.testing.expect(std.mem.indexOf(u8, stdout.buffered(), "PASS health_tick") != null);
+    try std.testing.expect(std.mem.indexOf(u8, stdout.buffered(), "PASS projectile_lifetime") != null);
+    try std.testing.expect(std.mem.indexOf(u8, stdout.buffered(), "Test projects: 3 passed, 0 failed") != null);
+    try std.testing.expectEqualStrings("", stderr.buffered());
 }
 
 test "printCheckOkJson includes schedule summary" {

@@ -6,8 +6,8 @@ description = "Build the machina CLI"
 run = "zig build"
 
 [tasks.test]
-description = "Run Zig tests"
-run = "zig build test"
+description = "Run the full Machina test suite"
+run = "zig build test && zig build && ./zig-out/bin/machina test tests/projects"
 
 [tasks.luau-check]
 description = "Run Luau editor type checks"
