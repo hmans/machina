@@ -2223,6 +2223,82 @@ test "stepProjectDetailed returns runtime diagnostics and final world state" {
     }
 }
 
+test "headless gameplay fixture applies health damage and regen" {
+    const io = Io.Threaded.global_single_threaded.io();
+    const result = try stepProjectDetailed(io, std.testing.allocator, "tests/projects/health_tick", .{
+        .frames = 4,
+        .delta_seconds = 1.0,
+    });
+    defer freeStepDetailedResult(std.testing.allocator, result);
+
+    switch (result) {
+        .ok => |ok| {
+            try std.testing.expectEqualStrings("Health Tick Test", ok.project.name);
+            try std.testing.expectEqual(@as(u32, 4), ok.summary.completed_frames);
+            try std.testing.expectEqual(@as(usize, 1), ok.scene.entityCount());
+            try std.testing.expectEqual(@as(usize, 3), ok.scene.componentInstanceCount());
+            try std.testing.expectEqual(@as(usize, 2), ok.schedule.systemCount());
+            try expectFloatField(ok.scene.world, "health-target", "health", "current", 5.0);
+            try expectFloatField(ok.scene.world, "health-target", "health", "max", 10.0);
+        },
+        else => return error.TestExpectedEqual,
+    }
+}
+
+test "headless gameplay fixture moves projectile and expires lifetime" {
+    const io = Io.Threaded.global_single_threaded.io();
+    const result = try stepProjectDetailed(io, std.testing.allocator, "tests/projects/projectile_lifetime", .{
+        .frames = 3,
+        .delta_seconds = 1.0,
+    });
+    defer freeStepDetailedResult(std.testing.allocator, result);
+
+    switch (result) {
+        .ok => |ok| {
+            try std.testing.expectEqualStrings("Projectile Lifetime Test", ok.project.name);
+            try std.testing.expectEqual(@as(u32, 3), ok.summary.completed_frames);
+            try std.testing.expectEqual(@as(usize, 1), ok.scene.entityCount());
+            try std.testing.expectEqual(@as(usize, 3), ok.scene.componentInstanceCount());
+            try std.testing.expectEqual(@as(usize, 2), ok.schedule.systemCount());
+
+            const entity = ok.scene.world.findEntityById("projectile-1") orelse return error.TestExpectedEqual;
+            const transform = (try ok.scene.world.getTransform(entity)) orelse return error.TestExpectedEqual;
+            try std.testing.expectApproxEqAbs(@as(f32, 6.0), transform.position[0], 0.0001);
+            try std.testing.expectApproxEqAbs(@as(f32, 0.0), transform.position[1], 0.0001);
+            try std.testing.expectApproxEqAbs(@as(f32, 0.0), transform.position[2], 0.0001);
+            try expectFloatField(ok.scene.world, "projectile-1", "lifetime", "remaining", 0.0);
+            try expectBooleanField(ok.scene.world, "projectile-1", "lifetime", "expired", true);
+        },
+        else => return error.TestExpectedEqual,
+    }
+}
+
+test "headless gameplay fixture opens door from active switch" {
+    const io = Io.Threaded.global_single_threaded.io();
+    const result = try stepProjectDetailed(io, std.testing.allocator, "tests/projects/auto_door", .{
+        .frames = 4,
+        .delta_seconds = 1.0,
+    });
+    defer freeStepDetailedResult(std.testing.allocator, result);
+
+    switch (result) {
+        .ok => |ok| {
+            try std.testing.expectEqualStrings("Auto Door Test", ok.project.name);
+            try std.testing.expectEqual(@as(u32, 4), ok.summary.completed_frames);
+            try std.testing.expectEqual(@as(usize, 2), ok.scene.entityCount());
+            try std.testing.expectEqual(@as(usize, 3), ok.scene.componentInstanceCount());
+            try std.testing.expectEqual(@as(usize, 1), ok.schedule.systemCount());
+
+            try expectBooleanField(ok.scene.world, "switch-1", "switch", "active", true);
+            try expectFloatField(ok.scene.world, "door-1", "door", "openness", 1.0);
+            const door = ok.scene.world.findEntityById("door-1") orelse return error.TestExpectedEqual;
+            const transform = (try ok.scene.world.getTransform(door)) orelse return error.TestExpectedEqual;
+            try std.testing.expectApproxEqAbs(@as(f32, 1.5708), transform.rotation[2], 0.0001);
+        },
+        else => return error.TestExpectedEqual,
+    }
+}
+
 test "LiveProject reloads script runner multiplier" {
     const root_path = ".zig-cache/test-live-script-runner-reload";
     const io = Io.Threaded.global_single_threaded.io();
@@ -2550,6 +2626,36 @@ fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !vo
         .sub_path = "scripts/gameplay.luau",
         .data = data,
     });
+}
+
+fn expectFloatField(
+    world: World,
+    entity_id: []const u8,
+    component_id: []const u8,
+    field_name: []const u8,
+    expected: f32,
+) !void {
+    const entity = world.findEntityById(entity_id) orelse return error.TestExpectedEqual;
+    const value = try world.getComponentFieldValue(entity, component_id, field_name);
+    switch (value) {
+        .float => |actual| try std.testing.expectApproxEqAbs(expected, actual, 0.0001),
+        else => return error.TestExpectedEqual,
+    }
+}
+
+fn expectBooleanField(
+    world: World,
+    entity_id: []const u8,
+    component_id: []const u8,
+    field_name: []const u8,
+    expected: bool,
+) !void {
+    const entity = world.findEntityById(entity_id) orelse return error.TestExpectedEqual;
+    const value = try world.getComponentFieldValue(entity, component_id, field_name);
+    switch (value) {
+        .boolean => |actual| try std.testing.expectEqual(expected, actual),
+        else => return error.TestExpectedEqual,
+    }
 }
 
 fn writeSpinnerScene(io: Io, root_dir: Io.Dir) !void {

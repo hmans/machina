@@ -13,6 +13,7 @@ The headless validation and test runner lets users, CI systems, and agents check
 - `machina check [path] --format=json` reports project metadata and the validated update schedule batches, including system ids, runner kinds, read/write sets, and before/after ordering declarations.
 - `machina step [path] [--frames N] [--dt seconds]` loads the default scene, runs the update schedule headlessly for the requested frame count, and reports final scene and simulation counts.
 - `machina step [path] --format=json` reports project metadata, final scene summary, simulation summary, schedule batches, and structured runtime diagnostics when a system fails.
+- Automated scenario fixtures live under `tests/projects/` and use complete text-authored Machina projects rather than sharing example projects.
 - `machina render-test [path] [output.bmp]` renders the default scene offscreen, reads the output image back, and verifies BMP shape, foreground coverage, visible components, and expected warm/cool color groups for automation.
 - Future headless test commands can exercise scene and script live reload deterministically.
 - Users can run project validation without initializing graphical presentation.
@@ -45,6 +46,12 @@ The headless validation and test runner lets users, CI systems, and agents check
 **Decision:** The first script behavior test surface runs a fixed number of update frames with an explicit timestep and reports summaries instead of introducing a full test DSL.
 **Why:** Agents and CI need a small, reliable way to prove script systems mutate ECS state and surface runtime diagnostics. This follows ADR-003 and ADR-006.
 **Tradeoff:** Assertions over arbitrary world fields still live in external tests or future tooling rather than in project-authored test files.
+
+### 5. Keep gameplay test fixtures separate from examples
+
+**Decision:** Game-shaped automated fixtures live in `tests/projects/`, not under `examples/`.
+**Why:** Examples are user-facing smoke projects, while tests need purpose-built scenes and scripts that can change to cover edge cases without implying supported sample content.
+**Tradeoff:** Some project files are duplicated between examples and tests until package/shared-fixture tooling exists.
 
 ## Related
 
