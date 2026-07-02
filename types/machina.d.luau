@@ -13,7 +13,7 @@ export type MachinaFieldType =
 
 export type MachinaComponentDefinition = {
     version: number?,
-    fields: { [string]: string }?,
+    fields: { [string]: MachinaFieldType }?,
 }
 
 export type MachinaSystemPhase = "startup" | "update" | "fixed_update" | "render"
@@ -23,8 +23,8 @@ export type MachinaVec3 = { number }
 export type MachinaComponent<T> = {
     id: MachinaComponentId,
 
-    --- Type-only marker used by Luau to preserve component payload types through handles.
-    __machina_component_type: T,
+    --- Runtime-guarded type brand used by Luau to preserve component payload types through handles.
+    __machina_component_type: () -> T,
 }
 
 export type MachinaComponentRef = MachinaComponentId | MachinaComponent<any>
@@ -115,6 +115,10 @@ export type MachinaComponentFunction = <T>(
     definition: MachinaComponentDefinition?
 ) -> MachinaComponent<T>
 
+export type MachinaFieldsFunction = (
+    fields: { [string]: MachinaFieldType }
+) -> { [string]: MachinaFieldType }
+
 export type MachinaQueryFunction =
     (<A>(MachinaComponent<A>) -> MachinaQueryObject1<A>)
     & (<A, B>(MachinaComponent<A>, MachinaComponent<B>) -> MachinaQueryObject2<A, B>)
@@ -130,6 +134,9 @@ export type MachinaEcs = {
 
     --- Creates a reusable query object over typed component handles.
     query: MachinaQueryFunction,
+
+    --- Validates and preserves typed component field declaration maps.
+    fields: MachinaFieldsFunction,
 
     --- Erases typed component handles into component id refs for system read/write declarations.
     refs: (...MachinaComponentRef) -> MachinaComponentRefs,

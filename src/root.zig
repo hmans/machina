@@ -1501,9 +1501,9 @@ test "checkProject validates script declarations and builds a system schedule" {
         \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
         \\local RenderCube = ecs.component<<MachinaRenderCube>>("machina.render.cube")
         \\local Spin = ecs.component<<Spin>>("spin", {
-        \\  fields = {
+        \\  fields = ecs.fields({
         \\    angular_velocity = "vec3",
-        \\  },
+        \\  }),
         \\})
         \\local Spinners = ecs.query(Spin)
         \\local RenderedCubes = ecs.query(Transform, RenderCube)
@@ -1552,9 +1552,9 @@ test "checkProject rejects invalid script declarations" {
         .sub_path = "scripts/gameplay.luau",
         .data =
         \\ecs.component("machina.bad", {
-        \\  fields = {
+        \\  fields = ecs.fields({
         \\    value = "f32",
-        \\  },
+        \\  }),
         \\})
         ,
     });
@@ -1705,9 +1705,9 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
         \\}
         \\
         \\local Spin = ecs.component<<Spin>>("spin", {
-        \\  fields = {
+        \\  fields = ecs.fields({
         \\    angular_velocity = "vec3",
-        \\  },
+        \\  }),
         \\})
         \\local Spinners = ecs.query(Spin)
         \\
@@ -1737,15 +1737,15 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
         \\}
         \\
         \\local Spin = ecs.component<<Spin>>("spin", {
-        \\  fields = {
+        \\  fields = ecs.fields({
         \\    angular_velocity = "vec3",
-        \\  },
+        \\  }),
         \\})
         \\
         \\local Marker = ecs.component<<Marker>>("marker", {
-        \\  fields = {
+        \\  fields = ecs.fields({
         \\    enabled = "boolean",
-        \\  },
+        \\  }),
         \\})
         \\local Spinners = ecs.query(Spin)
         \\local Markers = ecs.query(Marker)
@@ -1771,9 +1771,9 @@ test "LiveProject reloads changed scripts and keeps last good registry on failur
         .sub_path = "scripts/gameplay.luau",
         .data =
         \\ecs.component("machina.bad", {
-        \\  fields = {
+        \\  fields = ecs.fields({
         \\    value = "f32",
-        \\  },
+        \\  }),
         \\})
         ,
     });
@@ -1816,9 +1816,9 @@ test "LiveProject update runs the scheduled rotation system" {
         \\
         \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
         \\local Spin = ecs.component<<Spin>>("spin", {
-        \\  fields = {
+        \\  fields = ecs.fields({
         \\    angular_velocity = "vec3",
-        \\  },
+        \\  }),
         \\})
         \\local RotatingCubes = ecs.query(Transform, Spin)
         \\
@@ -2157,9 +2157,9 @@ fn writeRotateScript(io: Io, root_dir: Io.Dir, delta_expression: []const u8) !vo
         \\
         \\local Transform = ecs.component<<MachinaTransform>>("machina.transform")
         \\local Spin = ecs.component<<Spin>>("spin", {{
-        \\  fields = {{
+        \\  fields = ecs.fields({{
         \\    angular_velocity = "vec3",
-        \\  }},
+        \\  }}),
         \\}})
         \\local RotatingCubes = ecs.query(Transform, Spin)
         \\

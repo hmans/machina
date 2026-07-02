@@ -7,9 +7,9 @@ type Spin = {
 local Transform = ecs.component<<MachinaTransform>>("machina.transform")
 local RenderCube = ecs.component<<MachinaRenderCube>>("machina.render.cube")
 local Spin = ecs.component<<Spin>>("spin", {
-  fields = {
+  fields = ecs.fields({
     angular_velocity = "vec3",
-  },
+  }),
 })
 
 local RotatingCubes = ecs.query(Transform, Spin)

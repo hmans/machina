@@ -71,11 +71,19 @@ static std::string check_string(lua_State* state, int index)
     return std::string(value, len);
 }
 
+static int component_type_brand(lua_State* state)
+{
+    luaL_error(state, "component type brand is for Luau analysis only");
+    return 0;
+}
+
 static void push_component_handle(lua_State* state, const std::string& id)
 {
     lua_newtable(state);
     lua_pushlstring(state, id.c_str(), id.size());
     lua_setfield(state, -2, "id");
+    lua_pushcclosure(state, component_type_brand, "component.__machina_component_type", 0);
+    lua_setfield(state, -2, "__machina_component_type");
     lua_setreadonly(state, -1, 1);
 }
 
@@ -290,6 +298,30 @@ static int ecs_refs(lua_State* state)
         const std::string id = check_component_id(state, index);
         lua_pushlstring(state, id.c_str(), id.size());
         lua_rawseti(state, -2, index);
+    }
+
+    lua_setreadonly(state, -1, 1);
+    return 1;
+}
+
+static int ecs_fields(lua_State* state)
+{
+    luaL_checktype(state, 1, LUA_TTABLE);
+    const int source_index = lua_absindex(state, 1);
+
+    lua_newtable(state);
+    lua_pushnil(state);
+    while (lua_next(state, source_index) != 0)
+    {
+        size_t name_len = 0;
+        size_t type_len = 0;
+        const char* name = luaL_checklstring(state, -2, &name_len);
+        const char* type = luaL_checklstring(state, -1, &type_len);
+
+        lua_pushlstring(state, name, name_len);
+        lua_pushlstring(state, type, type_len);
+        lua_settable(state, -5);
+        lua_pop(state, 1);
     }
 
     lua_setreadonly(state, -1, 1);
@@ -571,6 +603,9 @@ static void install_ecs(lua_State* state, machina_luau* vm)
 
     lua_pushcclosure(state, ecs_refs, "ecs.refs", 0);
     lua_setfield(state, -2, "refs");
+
+    lua_pushcclosure(state, ecs_fields, "ecs.fields", 0);
+    lua_setfield(state, -2, "fields");
 
     lua_pushlightuserdata(state, vm);
     lua_pushcclosure(state, ecs_system, "ecs.system", 1);

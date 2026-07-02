@@ -55,9 +55,9 @@ type Spin = {
 
 local Transform = ecs.component<<MachinaTransform>>("machina.transform")
 local Spin = ecs.component<<Spin>>("spin", {
-  fields = {
+  fields = ecs.fields({
     angular_velocity = "vec3",
-  },
+  }),
 })
 local RotatingCubes = ecs.query(Transform, Spin)
 
@@ -89,9 +89,9 @@ type Spin = {
 
 local Transform = ecs.component<<MachinaTransform>>("machina.transform")
 local Spin = ecs.component<<Spin>>("spin", {
-  fields = {
+  fields = ecs.fields({
     angular_velocity = "vec3",
-  },
+  }),
 })
 local RotatingCubes = ecs.query(Transform, Spin)
 
@@ -115,5 +115,30 @@ fi
 if ! grep -q "Expected this to be 'string'" "${invalid_output}"; then
   printf 'error: invalid typed query fixture failed for an unexpected reason\n' >&2
   cat "${invalid_output}" >&2
+  exit 1
+fi
+
+invalid_fields_script="${tmpdir}/typed-fields-invalid.luau"
+cat > "${invalid_fields_script}" <<'LUA'
+type Spin = {
+  angular_velocity: MachinaVec3,
+}
+
+local _Spin = ecs.component<<Spin>>("spin", {
+  fields = ecs.fields({
+    angular_velocity = "vec4",
+  }),
+})
+LUA
+
+invalid_fields_output="${tmpdir}/typed-fields-invalid.out"
+if analyze "${invalid_fields_script}" >"${invalid_fields_output}" 2>&1; then
+  printf 'error: expected invalid field fixture to fail Luau analysis\n' >&2
+  exit 1
+fi
+
+if ! grep -q "vec4" "${invalid_fields_output}"; then
+  printf 'error: invalid field fixture failed for an unexpected reason\n' >&2
+  cat "${invalid_fields_output}" >&2
   exit 1
 fi
