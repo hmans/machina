@@ -20,6 +20,8 @@ Headful demo rendering proves that Machina can create a platform window, hand it
 - Renderable meshes render with depth testing, scene-driven directional diffuse shading, and receiver-side shadowing.
 - UI rectangles and text labels render after 3D scene content as an overlay.
 - Users can run `machina run [path] --frames N` to exit after a fixed number of frames for smoke tests and automation.
+- The engine-owned editor/debug overlay is hidden by default; users can press Ctrl+Tab to toggle it.
+- Users can run `machina run [path] --editor` to start with the editor/debug overlay visible.
 - `machina render [path] [output.bmp]` remains the headless/offscreen snapshot command.
 
 ## Design Decisions
@@ -42,7 +44,13 @@ Headful demo rendering proves that Machina can create a platform window, hand it
 **Why:** A visible window normally runs until closed, but development agents and CI need a bounded smoke-test path that still initializes the same surface and presentation code.
 **Tradeoff:** The option is an engine-runner concern rather than project data, so it should remain a CLI/runtime flag.
 
-### 4. Share the renderer ECS path with offscreen rendering
+### 4. Keep editor visibility as a runtime option
+
+**Decision:** `--editor` is supported on the headful run command and starts the engine-owned editor/debug overlay visible.
+**Why:** Normal gameplay runs should show the game first, while editor sessions need immediate tooling chrome without mutating project data.
+**Tradeoff:** Early editor state is controlled by runner flags until editor session persistence is designed.
+
+### 5. Share the renderer ECS path with offscreen rendering
 
 **Decision:** Headful rendering extracts, prepares, queues, and draws through the same renderer-owned ECS world and schedule as offscreen rendering.
 **Why:** Visible windows and headless snapshots should exercise the same rendering architecture wherever possible. This follows ADR-013.

@@ -517,7 +517,7 @@ fn printHelp(writer: *Io.Writer) !void {
         \\  machina step [path] [--frames N] [--dt seconds] [--format text|json]
         \\  machina bench [path] [--frames N] [--dt seconds] [--format text|json]
         \\  machina test [tests-path|project-path] [--format text|json]
-        \\  machina run [path] [--frames N]
+        \\  machina run [path] [--frames N] [--editor]
         \\  machina render [path] [output.bmp]
         \\  machina render-test [path] [output.bmp]
         \\
@@ -593,6 +593,10 @@ fn parseWindowOptions(args: []const []const u8) ArgumentError!machina.WindowOpti
             if (options.max_frames.? == 0) {
                 return ArgumentError.InvalidFrames;
             }
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--editor")) {
+            options.editor = true;
             continue;
         }
 
@@ -1923,6 +1927,13 @@ test "projectNameFromPath uses final path segment" {
     try std.testing.expectEqualStrings("demo", projectNameFromPath("games/demo"));
     try std.testing.expectEqualStrings("demo", projectNameFromPath("games/demo/"));
     try std.testing.expectEqualStrings("Machina Project", projectNameFromPath("."));
+}
+
+test "parseWindowOptions accepts frames and editor flag" {
+    const args = [_][]const u8{ "--frames", "12", "--editor" };
+    const options = try parseWindowOptions(&args);
+    try std.testing.expectEqual(@as(u32, 12), options.max_frames.?);
+    try std.testing.expect(options.editor);
 }
 
 test "parseCheckOptions accepts path and json format" {

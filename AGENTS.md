@@ -8,7 +8,7 @@ Machina is an experimental, text-first game engine written in Zig. The engine is
 - Fully ECS based. The ECS is exposed to scripts. Users can author new component types and systems in Luau, and the engine will schedule them with native systems.
 - Projects are split into scenes, which are mostly collections of entities, persisted as .toml files.
 - Run your project by running `machina run` in your project directory.
-- Hit F1 in a headful run to toggle the engine UI overlay; the first editor/debug overlay shows FPS.
+- Press Ctrl+Tab in a headful run to toggle the engine UI overlay; `machina run --editor` shows it by default. The first editor/debug overlay shows FPS.
 
 Please add to this list as needed.
 
@@ -35,15 +35,69 @@ Please add to this list as needed.
 
 ## Current Engine Model
 
-Projects have a `project.machina.toml` file, a default scene path, and an optional `scripts = [...]` list. Scenes are TOML-shaped text files with root `name` and `version` fields plus `[[entities]]` records. Entity data is authored as component tables such as `[entities.components."machina.transform"]`, `[entities.components."machina.geometry.primitive"]`, `[entities.components."machina.material.surface"]`, `[entities.components."machina.camera"]`, `[entities.components."machina.light.directional"]`, shadow markers like `[entities.components."machina.shadow.caster"]`, UI tables like `[entities.components."machina.ui.rect"]`, `[entities.components."machina.ui.text"]`, and `[entities.components."machina.ui.command"]`, and project-local tables like `[entities.components.spin]`. Scene component ids and fields must validate against the engine/script component registry.
+Project data:
 
-Rendering uses `wgpu-native`. Headful rendering currently uses SDL3 on macOS via Homebrew paths in `build.zig`; offscreen rendering writes BMP artifacts and is the preferred automation surface. Renderable meshes, UI primitives, the active camera fallback, and the first directional light are resolved from ECS world data where available. New scene-authored renderables should use `machina.geometry.primitive` plus `machina.material.surface`; `machina.render.cube` is a legacy shortcut that renders as box geometry with inline color. Shadow behavior is authored with `machina.shadow.caster` and `machina.shadow.receiver` marker components. First-slice UI uses retained scene components: `machina.ui.canvas`, `machina.ui.rect`, `machina.ui.text`, `machina.ui.button`, and `machina.ui.command`; UI renders as a screen-space overlay after 3D content, with fixed-pixel Spleen 16x32-derived built-in text. Headful input is translated into ECS frame input, button markers derive ECS interaction state for hovered, held, and pressed visuals, and command buttons emit transient `machina.ui.command_event` components before update systems run. Headful runs generate an engine-owned debug overlay in the render ECS world; F1 toggles it and the initial panel shows FPS over the scene. The renderer owns an internal render world and render-phase schedule built with the same `runtime.World`, component registry, and scheduler implementation as game worlds. Matching geometry and shadow-state renderables are automatically grouped into instanced render batches below the scene authoring surface; current base color is per-instance and should not split batches. GPU handles remain renderer-owned side resources until native/internal component storage has explicit lifecycle rules.
+- Projects have a `project.machina.toml` file, a default scene path, and an optional `scripts = [...]` list.
+- Scenes are TOML-shaped text files with root `name` and `version` fields plus `[[entities]]` records.
+- Entity data is authored as component tables such as `[entities.components."machina.transform"]`, `[entities.components."machina.geometry.primitive"]`, `[entities.components."machina.material.surface"]`, `[entities.components."machina.camera"]`, `[entities.components."machina.light.directional"]`, shadow markers like `[entities.components."machina.shadow.caster"]`, UI tables like `[entities.components."machina.ui.rect"]`, `[entities.components."machina.ui.text"]`, and `[entities.components."machina.ui.command"]`, and project-local tables like `[entities.components.spin]`.
+- Scene component ids and fields must validate against the engine/script component registry.
 
-The low-level runtime model is ECS-oriented: stable entity identity, structured components, systems over component queries, and a scripting API that exposes those concepts directly. `src/runtime.zig` owns the current `World`, component registry, and system schedule planning. Component storage is columnar per component type: each component table has dense entity rows, a sparse entity-to-row index, and typed SoA field columns. Scene loading builds a world, scripts register ECS component/system types, and rendering queries renderable components from that world. Script systems can spawn/despawn entities and add/remove components through the ECS facade; structural mutations must respect declared write access.
+Rendering and UI:
 
-Luau is the target scripting language. The current implementation parses a constrained Luau declaration surface for `ecs.component(...)`, `ecs.fields(...)`, `ecs.query(...)`, and `ecs.system(...)`, stores real Luau system callbacks, and runs them through the native scheduler. The preferred script API uses typed component handles and query objects: `ecs.component(...)` infers component payload editor types from `ecs.fields({ field = "vec3" })` using Luau type functions, `ecs.component<<T>>(...)` remains available for explicit payload schemas, `ecs.query(...)` creates a reusable typed query object, systems attach that query object with `query = ...`, and runtime loops use `Query:iter(world)` to yield the entity plus requested component proxies. `ecs.schema(...)` and `ecs.vec3()` are compatibility shims, not the default authoring style. Use `ecs.refs(...)` for explicit write access or extra manual access declarations. Startup systems run once for a loaded project/scene generation before update systems; script-only reloads do not replay startup over existing live world state. Keep the public API system-first: scripts declare component access, and the native engine owns scheduling, validation, reload transactions, and future parallelization. Editor type checks require Luau's new solver; keep `mise luau-check` and VS Code settings aligned with that requirement.
+- Rendering uses `wgpu-native`.
+- Headful rendering currently uses SDL3 on macOS via Homebrew paths in `build.zig`.
+- Offscreen rendering writes BMP artifacts and is the preferred automation surface.
+- Renderable meshes, UI primitives, the active camera fallback, and the first directional light are resolved from ECS world data where available.
+- New scene-authored renderables should use `machina.geometry.primitive` plus `machina.material.surface`.
+- `machina.render.cube` is a legacy shortcut that renders as box geometry with inline color.
+- Shadow behavior is authored with `machina.shadow.caster` and `machina.shadow.receiver` marker components.
+- First-slice UI uses retained scene components: `machina.ui.canvas`, `machina.ui.rect`, `machina.ui.text`, `machina.ui.button`, and `machina.ui.command`.
+- UI renders as a screen-space overlay after 3D content, with fixed-pixel Spleen 16x32-derived built-in text.
+- Headful input is translated into ECS frame input.
+- Button markers derive ECS interaction state for hovered, held, and pressed visuals.
+- Command buttons emit transient `machina.ui.command_event` components before update systems run.
+- Headful runs can generate an engine-owned debug overlay in the render ECS world.
+- The debug overlay is hidden by default, `machina run --editor` shows it on startup, Ctrl+Tab toggles it, and the initial panel shows FPS over the scene.
+- The renderer owns an internal render world and render-phase schedule built with the same `runtime.World`, component registry, and scheduler implementation as game worlds.
+- Matching geometry and shadow-state renderables are automatically grouped into instanced render batches below the scene authoring surface.
+- Current base color is per-instance and should not split batches.
+- GPU handles remain renderer-owned side resources until native/internal component storage has explicit lifecycle rules.
 
-Live reload is a core runtime capability. `machina run` currently uses a `LiveProject` session that tracks project metadata and the active scene as loaded text sources. Valid edits swap into the running renderer; invalid edits keep the last known good project and scene active. New architecture should preserve reloadable text data, stable ids, staged validation, and last-known-good behavior.
+ECS runtime:
+
+- The low-level runtime model is ECS-oriented: stable entity identity, structured components, systems over component queries, and a scripting API that exposes those concepts directly.
+- `src/runtime.zig` owns the current `World`, component registry, and system schedule planning.
+- Component storage is columnar per component type.
+- Each component table has dense entity rows, a sparse entity-to-row index, and typed SoA field columns.
+- Scene loading builds a world, scripts register ECS component/system types, and rendering queries renderable components from that world.
+- Script systems can spawn/despawn entities and add/remove components through the ECS facade.
+- Structural mutations must respect declared write access.
+
+Luau scripting:
+
+- Luau is the target scripting language.
+- The current implementation parses a constrained Luau declaration surface for `ecs.component(...)`, `ecs.fields(...)`, `ecs.query(...)`, and `ecs.system(...)`.
+- Machina stores real Luau system callbacks and runs them through the native scheduler.
+- The preferred script API uses typed component handles and query objects.
+- `ecs.component(...)` infers component payload editor types from `ecs.fields({ field = "vec3" })` using Luau type functions.
+- `ecs.component<<T>>(...)` remains available for explicit payload schemas.
+- `ecs.query(...)` creates a reusable typed query object.
+- Systems attach that query object with `query = ...`.
+- Runtime loops use `Query:iter(world)` to yield the entity plus requested component proxies.
+- `ecs.schema(...)` and `ecs.vec3()` are compatibility shims, not the default authoring style.
+- Use `ecs.refs(...)` for explicit write access or extra manual access declarations.
+- Startup systems run once for a loaded project/scene generation before update systems.
+- Script-only reloads do not replay startup over existing live world state.
+- Keep the public API system-first: scripts declare component access, and the native engine owns scheduling, validation, reload transactions, and future parallelization.
+- Editor type checks require Luau's new solver; keep `mise luau-check` and VS Code settings aligned with that requirement.
+
+Live reload:
+
+- Live reload is a core runtime capability.
+- `machina run` currently uses a `LiveProject` session that tracks project metadata and the active scene as loaded text sources.
+- Valid edits swap into the running renderer.
+- Invalid edits keep the last known good project and scene active.
+- New architecture should preserve reloadable text data, stable ids, staged validation, and last-known-good behavior.
 
 ## Working Rules
 

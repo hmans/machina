@@ -61,6 +61,7 @@ pub const Stats = struct {
 
 pub const WindowOptions = struct {
     max_frames: ?u32 = null,
+    editor: bool = false,
     scene_reload: ?SceneReloadHook = null,
     frame_update: ?FrameUpdateHook = null,
 };
@@ -96,20 +97,22 @@ pub const FrameInput = struct {
     pointer: PointerInput = .{},
     ui_visible: bool = true,
     debug_overlay_visible: bool = false,
-    f1_pressed: bool = false,
+    editor_toggle_pressed: bool = false,
     fps: f32 = 0.0,
 
     fn beginFrame(self: *FrameInput) void {
         self.pointer.beginFrame();
-        self.f1_pressed = false;
+        self.editor_toggle_pressed = false;
     }
 };
 
 fn toggleDebugOverlay(input: *FrameInput) void {
-    const next_visible = !input.debug_overlay_visible;
-    input.debug_overlay_visible = next_visible;
-    input.ui_visible = next_visible;
-    input.f1_pressed = true;
+    input.debug_overlay_visible = !input.debug_overlay_visible;
+    input.editor_toggle_pressed = true;
+}
+
+fn isEditorToggleShortcut(key: sdl.SDL_Keycode, modifiers: sdl.SDL_Keymod) bool {
+    return key == sdl.SDLK_TAB and (modifiers & sdl.SDL_KMOD_CTRL) != 0;
 }
 
 pub fn stats(allocator: std.mem.Allocator, scene: Scene) RenderError!Stats {
@@ -285,7 +288,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
 
     var running = true;
     var frame_count: u32 = 0;
-    var input: FrameInput = .{ .debug_overlay_visible = true };
+    var input: FrameInput = .{ .debug_overlay_visible = options.editor };
     var last_frame_ticks = sdl.SDL_GetTicksNS();
     var smoothed_fps: f32 = 0.0;
     while (running) {
@@ -296,7 +299,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
             switch (event.type) {
                 sdl.SDL_EVENT_QUIT => running = false,
                 sdl.SDL_EVENT_KEY_DOWN => {
-                    if (!event.key.repeat and event.key.key == sdl.SDLK_F1) {
+                    if (!event.key.repeat and isEditorToggleShortcut(event.key.key, event.key.mod)) {
                         toggleDebugOverlay(&input);
                     }
                 },
@@ -670,7 +673,7 @@ fn registerRenderEcsTypes(registry: *runtime.ComponentRegistry) !void {
         .{ .name = "primary_released", .value_type = .boolean },
         .{ .name = "ui_visible", .value_type = .boolean },
         .{ .name = "debug_overlay_visible", .value_type = .boolean },
-        .{ .name = "f1_pressed", .value_type = .boolean },
+        .{ .name = "editor_toggle_pressed", .value_type = .boolean },
         .{ .name = "fps", .value_type = .float },
     };
     try registry.registerEngineComponent(.{
@@ -958,7 +961,7 @@ fn setRenderFrameInput(world: *runtime.World, input: FrameInput) RenderError!voi
         .{ .name = "primary_released", .value = .{ .boolean = input.pointer.primary_released } },
         .{ .name = "ui_visible", .value = .{ .boolean = input.ui_visible } },
         .{ .name = "debug_overlay_visible", .value = .{ .boolean = input.debug_overlay_visible } },
-        .{ .name = "f1_pressed", .value = .{ .boolean = input.f1_pressed } },
+        .{ .name = "editor_toggle_pressed", .value = .{ .boolean = input.editor_toggle_pressed } },
         .{ .name = "fps", .value = .{ .float = input.fps } },
     };
     world.setComponent(entity, render_frame_input_component_id, &fields) catch |err| return mapWorldError(err);
@@ -977,7 +980,7 @@ fn renderFrameInput(world: *const runtime.World) RenderError!FrameInput {
         },
         .ui_visible = world.getBoolean(entity, render_frame_input_component_id, "ui_visible") catch |err| return mapWorldError(err),
         .debug_overlay_visible = world.getBoolean(entity, render_frame_input_component_id, "debug_overlay_visible") catch |err| return mapWorldError(err),
-        .f1_pressed = world.getBoolean(entity, render_frame_input_component_id, "f1_pressed") catch |err| return mapWorldError(err),
+        .editor_toggle_pressed = world.getBoolean(entity, render_frame_input_component_id, "editor_toggle_pressed") catch |err| return mapWorldError(err),
         .fps = world.getFloat(entity, render_frame_input_component_id, "fps") catch |err| return mapWorldError(err),
     };
 }
@@ -2695,21 +2698,26 @@ test "hidden UI overlay skips UI extraction but keeps frame input" {
     try std.testing.expect(!input.debug_overlay_visible);
 }
 
-test "F1 debug overlay toggle updates visible flags" {
+test "ctrl-tab debug overlay toggle updates editor visibility only" {
     var input = FrameInput{ .debug_overlay_visible = true };
 
     toggleDebugOverlay(&input);
     try std.testing.expect(!input.debug_overlay_visible);
-    try std.testing.expect(!input.ui_visible);
-    try std.testing.expect(input.f1_pressed);
+    try std.testing.expect(input.ui_visible);
+    try std.testing.expect(input.editor_toggle_pressed);
 
     input.beginFrame();
-    try std.testing.expect(!input.f1_pressed);
+    try std.testing.expect(!input.editor_toggle_pressed);
 
     toggleDebugOverlay(&input);
     try std.testing.expect(input.debug_overlay_visible);
     try std.testing.expect(input.ui_visible);
-    try std.testing.expect(input.f1_pressed);
+    try std.testing.expect(input.editor_toggle_pressed);
+
+    try std.testing.expect(isEditorToggleShortcut(sdl.SDLK_TAB, sdl.SDL_KMOD_CTRL));
+    try std.testing.expect(isEditorToggleShortcut(sdl.SDLK_TAB, sdl.SDL_KMOD_LCTRL));
+    try std.testing.expect(!isEditorToggleShortcut(sdl.SDLK_TAB, sdl.SDL_KMOD_NONE));
+    try std.testing.expect(!isEditorToggleShortcut(sdl.SDLK_F1, sdl.SDL_KMOD_NONE));
 }
 
 test "debug overlay extracts FPS label when visible" {
