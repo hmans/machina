@@ -1,49 +1,38 @@
-# Starlight Starter Kit: Basics
+# Machina Documentation Website
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+This is the Astro Starlight documentation site for Machina Engine.
 
-```
-pnpm create astro@latest -- --template starlight
-```
+## Development
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+Install dependencies from the checked-in lockfile:
 
-## 🚀 Project Structure
-
-Inside of your Astro + Starlight project, you'll see the following folders and files:
-
-```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
+```sh
+pnpm install
 ```
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+Start the local docs server in the background:
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
+```sh
+pnpm astro dev --background
+```
 
-Static assets, like favicons, can be placed in the `public/` directory.
+Build the static site:
 
-## 🧞 Commands
+```sh
+pnpm run build
+```
 
-All commands are run from the root of the project, from a terminal:
+## Content
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `pnpm install`             | Installs dependencies                            |
-| `pnpm dev`             | Starts local dev server at `localhost:4321`      |
-| `pnpm build`           | Build your production site to `./dist/`          |
-| `pnpm preview`         | Preview your build locally, before deploying     |
-| `pnpm astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `pnpm astro -- --help` | Get help using the Astro CLI                     |
+Documentation pages live in `src/content/docs/`.
 
-## 👀 Want to learn more?
+The current site is organized around:
 
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+- Getting started
+- Core concepts
+- Scripting and native code
+- Rendering and UI
+- Workflow
+- Reference
+
+When updating engine behavior, keep these docs aligned with source, ADRs, FDRs, examples, and CLI output.

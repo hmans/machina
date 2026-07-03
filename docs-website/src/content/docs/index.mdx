@@ -1,40 +1,44 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
-template: splash # Remove or comment out this line to display the site sidebar on this page.
+title: Machina Engine
+description: Documentation for the text-first, ECS-native game engine built for agentic workflows.
+template: splash
 hero:
-  tagline: Congrats on setting up a new Starlight project!
-  image:
-    file: ../../assets/houston.webp
+  tagline: A text-first, ECS-native game engine where scenes, scripts, tests, native systems, rendering, UI, and editor tooling are all designed to be inspectable and automatable.
   actions:
-    - text: Example Guide
-      link: /guides/example/
+    - text: Start Building
+      link: /getting-started/quickstart/
       icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
-      icon: external
+    - text: Explore the Runtime
+      link: /concepts/ecs/
+      icon: open-book
       variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-## Next steps
+## Why Machina Exists
 
 <CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
+	<Card title="Text-first projects" icon="document">
+		Projects and scenes are TOML. Scripts are Luau. Native extensions are Zig. Core state is designed to be read, edited, diffed, tested, and live-reloaded.
 	</Card>
-	<Card title="Change page layout" icon="document">
-		Delete `template: splash` in `src/content/docs/index.mdx` to display a
-		sidebar on this page.
+	<Card title="Real ECS everywhere" icon="setting">
+		Game state, script systems, native systems, render extraction, UI primitives, editor overlays, and internal render systems all use the same ECS runtime model.
 	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
+	<Card title="Agent-friendly loops" icon="rocket">
+		Headless commands validate projects, step simulations, run game-shaped tests, benchmark scenes, and render deterministic BMP artifacts for verification.
 	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
+	<Card title="Prototype, then port" icon="code">
+		Write gameplay in typed Luau systems first, then move hot paths to project-local Zig systems without changing scene data or component ids.
 	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
+	<Card title="Rendering is data-driven" icon="star">
+		Scene-authored transforms, geometry, materials, cameras, lights, shadows, batching, UI, and editor overlays all flow through ECS data.
 	</Card>
 </CardGrid>
+
+## Good First Pages
+
+- [Quickstart](/getting-started/quickstart/) shows the fastest path from a project directory to validation, stepping, rendering, and headful play.
+- [Project Model](/concepts/project-model/) explains how `project.machina.toml`, scenes, scripts, native modules, and generated cache data fit together.
+- [Luau Systems](/scripting/luau/) covers component declarations, typed queries, systems, and lifecycle commands.
+- [Testing and Verification](/workflow/testing/) covers `machina test`, render tests, benchmarks, and the game-shaped fixtures in `tests/projects/`.
