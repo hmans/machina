@@ -17,3 +17,4 @@
 | [ADR-013](ADR-013-shared-ecs-for-engine-internal-worlds.md) | Shared ECS for Engine-Internal Worlds | 2026-07-02 |
 | [ADR-014](ADR-014-resolved-query-plans-for-luau-ecs-iteration.md) | Resolved Query Plans for Luau ECS Iteration | 2026-07-03 |
 | [ADR-015](ADR-015-buffer-backed-luau-query-views.md) | Buffer-Backed Luau Query Views | 2026-07-03 |
+| [ADR-016](ADR-016-generation-aware-entity-handles.md) | Generation-Aware Entity Handles | 2026-07-03 |

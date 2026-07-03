@@ -15,7 +15,8 @@ typedef int (*machina_luau_query_next_fn)(
     const char* const* component_ids,
     size_t component_count,
     uint32_t* cursor,
-    uint32_t* out_entity
+    uint32_t* out_entity,
+    uint32_t* out_entity_generation
 );
 
 typedef int (*machina_luau_prepare_query_fn)(
@@ -35,7 +36,13 @@ typedef int (*machina_luau_query_next_prepared_fn)(
     uint32_t driver_table_index,
     uint32_t* cursor,
     uint32_t* out_entity,
+    uint32_t* out_entity_generation,
     uint32_t* out_component_rows
+);
+
+typedef uint64_t (*machina_luau_query_plan_generation_fn)(
+    void* context,
+    void* world
 );
 
 typedef int (*machina_luau_read_f32_view_fn)(
@@ -44,6 +51,7 @@ typedef int (*machina_luau_read_f32_view_fn)(
     const char* component_id,
     uint32_t component_table_index,
     const uint32_t* entities,
+    const uint32_t* entity_generations,
     const uint32_t* component_rows,
     size_t entity_count,
     const char* field_name,
@@ -56,6 +64,7 @@ typedef int (*machina_luau_write_f32_view_fn)(
     const char* component_id,
     uint32_t component_table_index,
     const uint32_t* entities,
+    const uint32_t* entity_generations,
     const uint32_t* component_rows,
     size_t entity_count,
     const char* field_name,
@@ -68,6 +77,7 @@ typedef int (*machina_luau_read_vec3_view_fn)(
     const char* component_id,
     uint32_t component_table_index,
     const uint32_t* entities,
+    const uint32_t* entity_generations,
     const uint32_t* component_rows,
     size_t entity_count,
     const char* field_name,
@@ -80,6 +90,7 @@ typedef int (*machina_luau_write_vec3_view_fn)(
     const char* component_id,
     uint32_t component_table_index,
     const uint32_t* entities,
+    const uint32_t* entity_generations,
     const uint32_t* component_rows,
     size_t entity_count,
     const char* field_name,
@@ -90,6 +101,7 @@ typedef int (*machina_luau_get_vec3_fn)(
     void* context,
     void* world,
     uint32_t entity,
+    uint32_t entity_generation,
     const char* component_id,
     const char* field_name,
     float out_value[3]
@@ -99,6 +111,7 @@ typedef int (*machina_luau_set_vec3_fn)(
     void* context,
     void* world,
     uint32_t entity,
+    uint32_t entity_generation,
     const char* component_id,
     const char* field_name,
     const float value[3]
@@ -129,6 +142,7 @@ typedef int (*machina_luau_get_field_fn)(
     void* context,
     void* world,
     uint32_t entity,
+    uint32_t entity_generation,
     const char* component_id,
     const char* field_name,
     machina_luau_field_value* out_value
@@ -138,6 +152,7 @@ typedef int (*machina_luau_get_field_resolved_fn)(
     void* context,
     void* world,
     uint32_t entity,
+    uint32_t entity_generation,
     const char* component_id,
     uint32_t component_table_index,
     uint32_t component_row_index,
@@ -149,6 +164,7 @@ typedef int (*machina_luau_set_field_fn)(
     void* context,
     void* world,
     uint32_t entity,
+    uint32_t entity_generation,
     const char* component_id,
     const char* field_name,
     const machina_luau_field_value* value
@@ -158,6 +174,7 @@ typedef int (*machina_luau_set_field_resolved_fn)(
     void* context,
     void* world,
     uint32_t entity,
+    uint32_t entity_generation,
     const char* component_id,
     uint32_t component_table_index,
     uint32_t component_row_index,
@@ -177,19 +194,22 @@ typedef int (*machina_luau_spawn_entity_fn)(
     void* world,
     const char* id,
     const char* name,
-    uint32_t* out_entity
+    uint32_t* out_entity,
+    uint32_t* out_entity_generation
 );
 
 typedef int (*machina_luau_despawn_entity_fn)(
     void* context,
     void* world,
-    uint32_t entity
+    uint32_t entity,
+    uint32_t entity_generation
 );
 
 typedef int (*machina_luau_add_component_fn)(
     void* context,
     void* world,
     uint32_t entity,
+    uint32_t entity_generation,
     const char* component_id,
     const machina_luau_component_field_value* fields,
     size_t field_count
@@ -199,6 +219,7 @@ typedef int (*machina_luau_remove_component_fn)(
     void* context,
     void* world,
     uint32_t entity,
+    uint32_t entity_generation,
     const char* component_id
 );
 
@@ -209,6 +230,7 @@ typedef struct machina_luau_callbacks
     machina_luau_query_next_fn query_next;
     machina_luau_prepare_query_fn prepare_query;
     machina_luau_query_next_prepared_fn query_next_prepared;
+    machina_luau_query_plan_generation_fn query_plan_generation;
     machina_luau_read_f32_view_fn read_f32_view;
     machina_luau_write_f32_view_fn write_f32_view;
     machina_luau_read_vec3_view_fn read_vec3_view;

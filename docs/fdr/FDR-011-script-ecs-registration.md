@@ -31,6 +31,7 @@ Script ECS registration lets project and package scripts define new component an
 - Script-authored systems can provide Luau `run` callbacks that execute during the native schedule.
 - Script system callbacks receive an engine-provided world facade instead of direct component storage ownership.
 - Script systems can call the world facade to spawn entities.
+- Script-created and query-yielded entity proxies carry generated entity handles so stale proxies fail instead of aliasing a different live entity after despawn/compaction.
 - Script systems can call entity facade methods to add/remove registered components or despawn entities.
 - Adding/removing a component requires the active system to declare write access to that component.
 - Despawning an entity requires the active system to declare write access to every component currently attached to the entity.
@@ -44,6 +45,7 @@ Script ECS registration lets project and package scripts define new component an
 - Scripts use `ecs.refs(...)` to erase typed component handles into explicit `reads` or `writes` declarations when needed.
 - The preferred runtime loop calls `Query:iter(world)` and receives the entity plus component proxies for the requested components.
 - `Query:iter(world)` prepares its component set for the iterator so repeated loop rows can reuse resolved ECS table and row positions behind the proxy API.
+- Reusable query objects keep a hidden prepared plan across system invocations and invalidate it when used with a different active world or a newer world query-plan generation.
 - High-cardinality runtime loops can call `Query:view(world)` to capture the current matched rows and bulk read/write `f32` or `vec3` fields through Luau buffers.
 - The lower-level `world.query(...)` loop remains available for compatibility and debugging.
 - Low-level entity vector accessors remain available for compatibility and debugging.
@@ -112,8 +114,8 @@ Script ECS registration lets project and package scripts define new component an
 ### 10. Hide hot-loop query preparation behind typed query objects
 
 **Decision:** Typed query objects keep the author-facing Luau API stable while the bridge prepares component table and row access internally for each iterator.
-**Why:** Authors and agents should keep writing clear ECS loops, and the engine should optimize the storage path under that API. It follows ADR-014.
-**Tradeoff:** The bridge must preserve compatibility with the lower-level string-based query path, and per-field proxy access still has a host-call cost.
+**Why:** Authors and agents should keep writing clear ECS loops, and the engine should optimize the storage path under that API. Reusable query objects can persist prepared table plans across invocations and invalidate them when the world generation changes. It follows ADR-014.
+**Tradeoff:** The bridge must preserve compatibility with the lower-level string-based query path, and per-field proxy access still has a host-call cost unless the system opts into query views.
 
 ### 11. Make bulk query views an explicit hot-path API
 
@@ -121,9 +123,15 @@ Script ECS registration lets project and package scripts define new component an
 **Why:** The ordinary proxy API should remain readable, but large script systems need a way to reduce Luau/native bridge calls without leaving the ECS/scheduler model. It follows ADR-015.
 **Tradeoff:** Buffer code uses byte offsets and is easier to get wrong than proxy field access, so examples should reserve it for measured hot loops and keep ordinary logic on `Query:iter(world)`.
 
+### 12. Carry entity generations through script proxies
+
+**Decision:** Entity proxies and component proxies created by Luau queries or `world.spawn` carry the runtime entity generation alongside the dense index.
+**Why:** Script code can hold proxies past structural mutation. Generation-aware callbacks prevent stale proxies from mutating the wrong live entity after dense removal. It follows ADR-016.
+**Tradeoff:** The host bridge has a wider callback ABI, and stale proxies fail rather than continuing to track entities that moved to a different dense index.
+
 ## Related
 
-- **ADRs:** ADR-006, ADR-008, ADR-009, ADR-010, ADR-011, ADR-012, ADR-014, ADR-015
+- **ADRs:** ADR-006, ADR-008, ADR-009, ADR-010, ADR-011, ADR-012, ADR-014, ADR-015, ADR-016
 - **FDRs:** FDR-004, FDR-009, FDR-010, FDR-012, FDR-013
 
 ## Open Questions

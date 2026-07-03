@@ -14,6 +14,8 @@ Machina will prepare Luau query iterators into resolved runtime plans. A prepare
 
 Component proxies still expose the same Luau field API. Internally, resolved proxies carry entity identity plus table/row coordinates. Runtime field access validates that the cached row still belongs to the requested entity and falls back through the sparse entity-to-row map if a row moved.
 
+Reusable typed query objects will also own a hidden persistent plan. `Query:iter(world)` and `Query:view(world)` reuse that plan when it was prepared for the same active world and the same world query-plan generation. The world increments that generation when a new component table appears, so an empty plan can recover if a system creates the queried component type later. Component table indices are append-only, so ordinary component membership churn does not invalidate the table-index part of a plan.
+
 The bridge will not add a global field-index cache for component proxy fields yet. A query-local field-index cache was tested and regressed the `spawn_swarm` workload because the cache overhead exceeded the small column-name scan it replaced.
 
 ## Consequences
@@ -22,4 +24,6 @@ The bridge will not add a global field-index cache for component proxy fields ye
 
 The C ABI between Luau and Zig now has prepared-query and resolved-field callbacks, increasing bridge complexity. The old string-based query and field callbacks remain available for low-level compatibility paths.
 
-Resolved rows are not raw pointers and are validated before use, so structural mutation should not silently redirect a proxy to the wrong entity. Deferred command buffers, generation-safe entity handles, chunked/archetype storage, and bulk field access remain future work.
+Persistent query object plans remove repeated component id-to-table resolution from recurring script systems. The plan cache is scoped by active world pointer and query-plan generation, not by global component id alone.
+
+Resolved rows are not raw pointers and are validated before use, so structural mutation should not silently redirect a proxy to the wrong entity. Buffer-backed query views now cover explicit `f32` and `vec3` bulk field access, and generation-aware handles now prevent stale generated proxies from aliasing compacted entities. Deferred command buffers, stable slot handles, chunked/archetype storage, broader field view support, and hybrid native hot systems remain future work.

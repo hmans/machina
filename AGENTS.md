@@ -67,6 +67,7 @@ ECS runtime:
 
 - The low-level runtime model is ECS-oriented: stable entity identity, structured components, systems over component queries, and a scripting API that exposes those concepts directly.
 - `src/runtime.zig` owns the current `World`, component registry, and system schedule planning.
+- Runtime-created entity handles are generation-aware. Preserve index+generation together across query, spawn, proxy, and bulk view bridge paths.
 - Component storage is columnar per component type.
 - Each component table has dense entity rows, a sparse entity-to-row index, and typed SoA field columns.
 - Scene loading builds a world, scripts register ECS component/system types, and rendering queries renderable components from that world.
@@ -86,6 +87,7 @@ Luau scripting:
 - Systems attach that query object with `query = ...`.
 - Runtime loops use `Query:iter(world)` to yield the entity plus requested component proxies.
 - `Query:iter(world)` prepares component table and row positions internally for each iterator; keep the Luau API ergonomic and let the bridge/runtime optimize below it.
+- Reusable query objects cache hidden prepared plans across invocations. If a change affects component table identity or table-index validity, update the world query-plan generation invalidation path.
 - Large hot-loop systems may use `Query:view(world)` to capture the current query rows and bulk read/write `f32` or `vec3` fields through Luau buffers.
 - Query views are frame-local transfer surfaces, not script-owned storage. Do not keep them beyond the active system invocation.
 - Query view buffers use byte offsets: `f32` values are packed every 4 bytes, and `vec3` values are packed as xyz xyz every 12 bytes.

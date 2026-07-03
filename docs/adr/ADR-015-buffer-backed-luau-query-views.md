@@ -25,7 +25,7 @@ Bulk reads require declared read access. Bulk writes require declared write acce
 
 ## Consequences
 
-Luau systems can amortize bridge overhead by moving contiguous `f32` and `vec3` data in bulk. In the `spawn_swarm` benchmark, the update path dropped from the earlier resolved-row baseline of roughly `0.67 ms/frame` to roughly `0.16 ms/frame` for 793 animated renderables on the current development machine.
+Luau systems can amortize bridge overhead by moving contiguous `f32` and `vec3` data in bulk. In the `spawn_swarm` benchmark, the update path dropped from the earlier resolved-row baseline of roughly `0.67 ms/frame` to roughly `0.16 ms/frame` for 793 animated renderables on the current development machine, including generation-aware entity validation.
 
 The script API now has two runtime access styles: component proxies for readability and query views for scale. Query views are less ergonomic because scripts must use byte offsets and Luau `buffer` operations, but the explicit API makes that tradeoff visible.
 

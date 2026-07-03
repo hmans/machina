@@ -641,6 +641,7 @@ pub fn registerEngineComponents(registry: *ComponentRegistry) !void {
 
 pub const EntityHandle = struct {
     index: u32,
+    generation: u32 = 0,
 };
 
 pub const ResolvedComponentRow = struct {
@@ -651,6 +652,7 @@ pub const ResolvedComponentRow = struct {
 pub const Entity = struct {
     id: []const u8,
     name: []const u8,
+    generation: u32 = 0,
 };
 
 pub const EntityComponentIterator = struct {
@@ -659,6 +661,7 @@ pub const EntityComponentIterator = struct {
     index: usize = 0,
 
     pub fn next(self: *EntityComponentIterator) ?[]const u8 {
+        _ = self.world.entity(self.handle) catch return null;
         while (self.index < self.world.component_tables.items.len) {
             const table = &self.world.component_tables.items[self.index];
             self.index += 1;
@@ -1006,6 +1009,8 @@ pub const World = struct {
     allocator: std.mem.Allocator,
     entities: std.ArrayList(Entity) = .empty,
     component_tables: std.ArrayList(ComponentTable) = .empty,
+    query_plan_generation: u64 = 1,
+    next_entity_generation: u32 = 1,
 
     pub fn init(allocator: std.mem.Allocator) World {
         return .{ .allocator = allocator };
@@ -1025,6 +1030,10 @@ pub const World = struct {
         self.* = .{ .allocator = allocator };
     }
 
+    pub fn queryPlanGeneration(self: World) u64 {
+        return self.query_plan_generation;
+    }
+
     pub fn createEntity(self: *World, id: []const u8, name: []const u8) !EntityHandle {
         if (self.findEntityById(id) != null) {
             return WorldError.DuplicateEntityId;
@@ -1035,10 +1044,15 @@ pub const World = struct {
         const owned_name = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(owned_name);
 
-        const handle = EntityHandle{ .index = @intCast(self.entities.items.len) };
+        const generation = self.nextEntityGeneration();
+        const handle = EntityHandle{
+            .index = @intCast(self.entities.items.len),
+            .generation = generation,
+        };
         try self.entities.append(self.allocator, .{
             .id = owned_id,
             .name = owned_name,
+            .generation = generation,
         });
         errdefer _ = self.entities.pop();
 
@@ -1078,6 +1092,9 @@ pub const World = struct {
         if (index >= self.entities.items.len) {
             return WorldError.InvalidEntity;
         }
+        if (handle.generation != 0 and self.entities.items[index].generation != handle.generation) {
+            return WorldError.InvalidEntity;
+        }
         return self.entities.items[index];
     }
 
@@ -1092,7 +1109,10 @@ pub const World = struct {
     pub fn findEntityById(self: World, id: []const u8) ?EntityHandle {
         for (self.entities.items, 0..) |stored_entity, index| {
             if (std.mem.eql(u8, stored_entity.id, id)) {
-                return .{ .index = @intCast(index) };
+                return .{
+                    .index = @intCast(index),
+                    .generation = stored_entity.generation,
+                };
             }
         }
         return null;
@@ -1317,7 +1337,10 @@ pub const World = struct {
                 table.rows_by_entity.items[entity_index] = moved_row;
             }
             if (moved_row) |row| {
-                table.entities.items[row] = .{ .index = @intCast(entity_index) };
+                table.entities.items[row] = .{
+                    .index = @intCast(entity_index),
+                    .generation = self.entities.items[entity_index].generation,
+                };
             }
             if (table.rows_by_entity.items.len > 0) {
                 _ = table.rows_by_entity.pop();
@@ -1667,6 +1690,9 @@ pub const World = struct {
         if (index >= self.entities.items.len) {
             return WorldError.InvalidEntity;
         }
+        if (handle.generation != 0 and self.entities.items[index].generation != handle.generation) {
+            return WorldError.InvalidEntity;
+        }
         return index;
     }
 
@@ -1768,7 +1794,24 @@ pub const World = struct {
         var table = try self.createComponentTable(component_id, fields);
         errdefer table.deinit(self.allocator);
         try self.component_tables.append(self.allocator, table);
+        self.bumpQueryPlanGeneration();
         return self.component_tables.items.len - 1;
+    }
+
+    fn bumpQueryPlanGeneration(self: *World) void {
+        self.query_plan_generation +%= 1;
+        if (self.query_plan_generation == 0) {
+            self.query_plan_generation = 1;
+        }
+    }
+
+    fn nextEntityGeneration(self: *World) u32 {
+        const generation = self.next_entity_generation;
+        self.next_entity_generation +%= 1;
+        if (self.next_entity_generation == 0) {
+            self.next_entity_generation = 1;
+        }
+        return generation;
     }
 
     fn createComponentTable(self: World, component_id: []const u8, fields: []const ComponentFieldValue) WorldError!ComponentTable {
@@ -1865,12 +1908,22 @@ fn rowForEntity(table: ComponentTable, handle: EntityHandle) ?usize {
     if (entity_index >= table.rows_by_entity.items.len) {
         return null;
     }
-    return table.rows_by_entity.items[entity_index];
+    const row = table.rows_by_entity.items[entity_index] orelse return null;
+    if (row >= table.entities.items.len or
+        table.entities.items[row].index != handle.index or
+        (handle.generation != 0 and table.entities.items[row].generation != handle.generation))
+    {
+        return null;
+    }
+    return row;
 }
 
 fn resolvedRowForEntity(table: ComponentTable, handle: EntityHandle, row_index: u32) ?usize {
     const row: usize = row_index;
-    if (row < table.entities.items.len and table.entities.items[row].index == handle.index) {
+    if (row < table.entities.items.len and
+        table.entities.items[row].index == handle.index and
+        (handle.generation == 0 or table.entities.items[row].generation == handle.generation))
+    {
         return row;
     }
     return rowForEntity(table, handle);
@@ -2209,9 +2262,13 @@ test "world removes entities and repairs component table handles" {
     try std.testing.expect(try world.removeEntity(middle));
     try std.testing.expectEqual(@as(usize, 2), world.entityCount());
     try std.testing.expect(world.findEntityById("middle") == null);
+    try std.testing.expectError(WorldError.InvalidEntity, world.entity(middle));
+    try std.testing.expectError(WorldError.InvalidEntity, world.getTransform(middle));
 
     const moved_last = world.findEntityById("last") orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(u32, 1), moved_last.index);
+    try std.testing.expectEqual(last.generation, moved_last.generation);
+    try std.testing.expectError(WorldError.InvalidEntity, world.entity(last));
     const moved_transform = (try world.getTransform(moved_last)) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(f32, 1.0), moved_transform.position[0]);
     try std.testing.expect(try world.hasComponent(moved_last, surface_material_component_id));

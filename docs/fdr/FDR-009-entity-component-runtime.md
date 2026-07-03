@@ -17,9 +17,11 @@ The entity component runtime is the shared low-level model for game state. It gi
 - Engine subsystems can own internal worlds that use the same `World`, component registry, query, and schedule implementation as game worlds.
 - Engine-owned rendering components include transform, built-in primitive geometry, surface material, legacy cube renderer, camera, directional light, shadow marker, and UI primitive data.
 - The renderer owns an internal render world and render-phase schedule for extracted render data, mesh draw-command entities, and UI draw-command entities.
+- Entity handles carry dense index plus generation. Generated handles fail if a removed entity slot is reused or compacted into a different live entity.
 - Each component table owns dense entity rows, a sparse entity-to-row index, and typed SoA field columns derived from engine or script schemas.
 - Scripts can query entities by component set and mutate supported component fields through the scripting API.
 - Script query iteration preserves the public component proxy API while internally reusing resolved component table and row positions for the lifetime of an iterator.
+- Reusable script query objects cache prepared component table plans across invocations and invalidate them when the active world or world query-plan generation changes.
 - Script query views can snapshot a matched entity set and bulk-transfer `f32` or `vec3` fields through Luau buffers for high-cardinality hot loops.
 - Scripts can spawn and despawn entities through the ECS facade.
 - Scripts can add and remove registered components through the ECS facade.
@@ -77,8 +79,8 @@ The entity component runtime is the shared low-level model for game state. It gi
 ### 8. Prepare script query iteration against ECS storage
 
 **Decision:** Luau query iterators resolve component tables and row positions behind the component proxy API instead of rediscovering them through component ids on every yielded access.
-**Why:** Script systems need hot loops that still look like normal ECS component iteration. Reusing resolved storage positions follows ADR-014 while keeping scheduler validation and row safety in the runtime.
-**Tradeoff:** The bridge has more internal state, and component field access still crosses the host boundary until a broader bulk-access design exists.
+**Why:** Script systems need hot loops that still look like normal ECS component iteration. Reusing resolved storage positions and caching reusable query object plans follows ADR-014 while keeping scheduler validation and row safety in the runtime.
+**Tradeoff:** The bridge has more internal state, and component field access still crosses the host boundary unless a system opts into query views.
 
 ### 9. Add explicit bulk query views for hot Luau systems
 
@@ -86,14 +88,21 @@ The entity component runtime is the shared low-level model for game state. It gi
 **Why:** Large Luau systems need to amortize host bridge overhead without bypassing the shared ECS world, scheduler access checks, or resolved-row validation. It follows ADR-015.
 **Tradeoff:** Buffer offset code is less ergonomic than component proxies, so it should be used deliberately for measured hot loops rather than becoming the default script style.
 
+### 10. Validate generated entity handles
+
+**Decision:** Runtime-created entity handles carry generations, and runtime accessors reject nonzero-generation handles that no longer match the entity record at their dense index.
+**Why:** Dense entity removal can move another entity into a removed index. Generation checks prevent stale handles and script proxies from silently aliasing that moved entity. It follows ADR-016.
+**Tradeoff:** Handles are safer but not fully stable across compaction; an old handle to a moved entity also becomes invalid until a stable slot/free-list model exists.
+
 ## Related
 
-- **ADRs:** ADR-001, ADR-006, ADR-008, ADR-010, ADR-013, ADR-014, ADR-015
+- **ADRs:** ADR-001, ADR-006, ADR-008, ADR-010, ADR-013, ADR-014, ADR-015, ADR-016
 - **FDRs:** FDR-002, FDR-004, FDR-005, FDR-010, FDR-011, FDR-014, FDR-015, FDR-016, FDR-017
 
 ## Open Questions
 
 - What stable id format should entities use?
+- Should entity handles eventually use stable slots and a free list instead of dense indices that invalidate moved handles?
 - How much scheduler control should scripts get beyond phases, access declarations, and before/after relationships?
 - When should structural mutations move from immediate execution to deferred command buffers?
 - Which additional field types need bulk query view support beyond `f32` and `vec3`?

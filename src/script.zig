@@ -430,6 +430,7 @@ fn initProgram(allocator: std.mem.Allocator) !Program {
         .query_next = queryNextCallback,
         .prepare_query = prepareQueryCallback,
         .query_next_prepared = queryNextPreparedCallback,
+        .query_plan_generation = queryPlanGenerationCallback,
         .read_f32_view = readF32ViewCallback,
         .write_f32_view = writeF32ViewCallback,
         .read_vec3_view = readVec3ViewCallback,
@@ -711,12 +712,14 @@ fn queryNextCallback(
     component_count: usize,
     raw_cursor: ?*u32,
     raw_out_entity: ?*u32,
+    raw_out_entity_generation: ?*u32,
 ) callconv(.c) c_int {
     const program: *Program = @ptrCast(@alignCast(raw_context orelse return -1));
     const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return -1));
     const component_id_ptr = raw_component_ids orelse return -1;
     const cursor = raw_cursor orelse return -1;
     const out_entity = raw_out_entity orelse return -1;
+    const out_entity_generation = raw_out_entity_generation orelse return -1;
 
     var component_ids_buffer: [16][]const u8 = undefined;
     if (component_count == 0 or component_count > component_ids_buffer.len) {
@@ -744,6 +747,7 @@ fn queryNextCallback(
     const entity = world.queryNext(component_ids_buffer[0..component_count], &cursor_value) orelse return 0;
     cursor.* = @intCast(cursor_value);
     out_entity.* = entity.index;
+    out_entity_generation.* = entity.generation;
     return 1;
 }
 
@@ -805,6 +809,7 @@ fn queryNextPreparedCallback(
     driver_table_index: u32,
     raw_cursor: ?*u32,
     raw_out_entity: ?*u32,
+    raw_out_entity_generation: ?*u32,
     raw_out_component_rows: ?[*]u32,
 ) callconv(.c) c_int {
     const program: *Program = @ptrCast(@alignCast(raw_context orelse return -1));
@@ -812,6 +817,7 @@ fn queryNextPreparedCallback(
     const component_table_indices_ptr = raw_component_table_indices orelse return -1;
     const cursor = raw_cursor orelse return -1;
     const out_entity = raw_out_entity orelse return -1;
+    const out_entity_generation = raw_out_entity_generation orelse return -1;
     const out_component_rows_ptr = raw_out_component_rows orelse return -1;
 
     if (component_count == 0 or component_count > 16) {
@@ -835,7 +841,17 @@ fn queryNextPreparedCallback(
 
     cursor.* = @intCast(cursor_value);
     out_entity.* = entity.index;
+    out_entity_generation.* = entity.generation;
     return 1;
+}
+
+fn queryPlanGenerationCallback(
+    raw_context: ?*anyopaque,
+    raw_world: ?*anyopaque,
+) callconv(.c) u64 {
+    _ = raw_context;
+    const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
+    return world.queryPlanGeneration();
 }
 
 fn readF32ViewCallback(
@@ -844,6 +860,7 @@ fn readF32ViewCallback(
     raw_component_id: ?[*:0]const u8,
     component_table_index: u32,
     raw_entities: ?[*]const u32,
+    raw_entity_generations: ?[*]const u32,
     raw_component_rows: ?[*]const u32,
     entity_count: usize,
     raw_field_name: ?[*:0]const u8,
@@ -867,10 +884,11 @@ fn readF32ViewCallback(
     }
 
     const entities = (raw_entities orelse return 0)[0..entity_count];
+    const entity_generations = (raw_entity_generations orelse return 0)[0..entity_count];
     const component_rows = (raw_component_rows orelse return 0)[0..entity_count];
     const out_values = (raw_out_values orelse return 0)[0..entity_count];
-    for (entities, component_rows, out_values) |entity_index, component_row_index, *out_value| {
-        const value = world.getComponentFieldValueResolved(.{ .index = entity_index }, .{
+    for (entities, entity_generations, component_rows, out_values) |entity_index, entity_generation, component_row_index, *out_value| {
+        const value = world.getComponentFieldValueResolved(.{ .index = entity_index, .generation = entity_generation }, .{
             .table_index = component_table_index,
             .row_index = component_row_index,
         }, field_name) catch |err| {
@@ -903,6 +921,7 @@ fn writeF32ViewCallback(
     raw_component_id: ?[*:0]const u8,
     component_table_index: u32,
     raw_entities: ?[*]const u32,
+    raw_entity_generations: ?[*]const u32,
     raw_component_rows: ?[*]const u32,
     entity_count: usize,
     raw_field_name: ?[*:0]const u8,
@@ -926,9 +945,10 @@ fn writeF32ViewCallback(
     }
 
     const entities = (raw_entities orelse return 0)[0..entity_count];
+    const entity_generations = (raw_entity_generations orelse return 0)[0..entity_count];
     const component_rows = (raw_component_rows orelse return 0)[0..entity_count];
     const values = (raw_values orelse return 0)[0..entity_count];
-    for (entities, component_rows, values) |entity_index, component_row_index, value| {
+    for (entities, entity_generations, component_rows, values) |entity_index, entity_generation, component_row_index, value| {
         if (!std.math.isFinite(value)) {
             program.setHostError("system '{s}' tried to bulk-write non-finite f32 value to '{s}.{s}'", .{
                 program.activeSystemId(),
@@ -937,7 +957,7 @@ fn writeF32ViewCallback(
             });
             return 0;
         }
-        world.setComponentFieldValueResolved(.{ .index = entity_index }, .{
+        world.setComponentFieldValueResolved(.{ .index = entity_index, .generation = entity_generation }, .{
             .table_index = component_table_index,
             .row_index = component_row_index,
         }, field_name, .{ .float = value }) catch |err| {
@@ -959,6 +979,7 @@ fn readVec3ViewCallback(
     raw_component_id: ?[*:0]const u8,
     component_table_index: u32,
     raw_entities: ?[*]const u32,
+    raw_entity_generations: ?[*]const u32,
     raw_component_rows: ?[*]const u32,
     entity_count: usize,
     raw_field_name: ?[*:0]const u8,
@@ -982,10 +1003,11 @@ fn readVec3ViewCallback(
     }
 
     const entities = (raw_entities orelse return 0)[0..entity_count];
+    const entity_generations = (raw_entity_generations orelse return 0)[0..entity_count];
     const component_rows = (raw_component_rows orelse return 0)[0..entity_count];
     const out_values = (raw_out_values orelse return 0)[0 .. entity_count * 3];
-    for (entities, component_rows, 0..) |entity_index, component_row_index, entity_offset| {
-        const value = world.getComponentFieldValueResolved(.{ .index = entity_index }, .{
+    for (entities, entity_generations, component_rows, 0..) |entity_index, entity_generation, component_row_index, entity_offset| {
+        const value = world.getComponentFieldValueResolved(.{ .index = entity_index, .generation = entity_generation }, .{
             .table_index = component_table_index,
             .row_index = component_row_index,
         }, field_name) catch |err| {
@@ -1022,6 +1044,7 @@ fn writeVec3ViewCallback(
     raw_component_id: ?[*:0]const u8,
     component_table_index: u32,
     raw_entities: ?[*]const u32,
+    raw_entity_generations: ?[*]const u32,
     raw_component_rows: ?[*]const u32,
     entity_count: usize,
     raw_field_name: ?[*:0]const u8,
@@ -1045,9 +1068,10 @@ fn writeVec3ViewCallback(
     }
 
     const entities = (raw_entities orelse return 0)[0..entity_count];
+    const entity_generations = (raw_entity_generations orelse return 0)[0..entity_count];
     const component_rows = (raw_component_rows orelse return 0)[0..entity_count];
     const values = (raw_values orelse return 0)[0 .. entity_count * 3];
-    for (entities, component_rows, 0..) |entity_index, component_row_index, entity_offset| {
+    for (entities, entity_generations, component_rows, 0..) |entity_index, entity_generation, component_row_index, entity_offset| {
         const value_offset = entity_offset * 3;
         const value = [3]f32{
             values[value_offset + 0],
@@ -1062,7 +1086,7 @@ fn writeVec3ViewCallback(
             });
             return 0;
         }
-        world.setComponentFieldValueResolved(.{ .index = entity_index }, .{
+        world.setComponentFieldValueResolved(.{ .index = entity_index, .generation = entity_generation }, .{
             .table_index = component_table_index,
             .row_index = component_row_index,
         }, field_name, .{ .vec3 = value }) catch |err| {
@@ -1082,6 +1106,7 @@ fn getVec3Callback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
     entity_index: u32,
+    entity_generation: u32,
     raw_component_id: ?[*:0]const u8,
     raw_field_name: ?[*:0]const u8,
     raw_out_value: ?[*]f32,
@@ -1100,7 +1125,7 @@ fn getVec3Callback(
         });
         return 0;
     }
-    const value = world.getVec3(.{ .index = entity_index }, component_id, field_name) catch |err| {
+    const value = world.getVec3(.{ .index = entity_index, .generation = entity_generation }, component_id, field_name) catch |err| {
         program.setHostError("system '{s}' failed to read '{s}.{s}': {s}", .{
             program.activeSystemId(),
             component_id,
@@ -1119,6 +1144,7 @@ fn setVec3Callback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
     entity_index: u32,
+    entity_generation: u32,
     raw_component_id: ?[*:0]const u8,
     raw_field_name: ?[*:0]const u8,
     raw_value: ?[*]const f32,
@@ -1137,7 +1163,7 @@ fn setVec3Callback(
         });
         return 0;
     }
-    world.setVec3(.{ .index = entity_index }, component_id, field_name, .{
+    world.setVec3(.{ .index = entity_index, .generation = entity_generation }, component_id, field_name, .{
         value[0],
         value[1],
         value[2],
@@ -1193,6 +1219,7 @@ fn getFieldCallback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
     entity_index: u32,
+    entity_generation: u32,
     raw_component_id: ?[*:0]const u8,
     raw_field_name: ?[*:0]const u8,
     raw_out_value: ?*c.machina_luau_field_value,
@@ -1212,7 +1239,7 @@ fn getFieldCallback(
         return 0;
     }
 
-    const value = world.getComponentFieldValue(.{ .index = entity_index }, component_id, field_name) catch |err| {
+    const value = world.getComponentFieldValue(.{ .index = entity_index, .generation = entity_generation }, component_id, field_name) catch |err| {
         program.setHostError("system '{s}' failed to read '{s}.{s}': {s}", .{
             program.activeSystemId(),
             component_id,
@@ -1229,6 +1256,7 @@ fn getFieldResolvedCallback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
     entity_index: u32,
+    entity_generation: u32,
     raw_component_id: ?[*:0]const u8,
     component_table_index: u32,
     component_row_index: u32,
@@ -1250,7 +1278,7 @@ fn getFieldResolvedCallback(
         return 0;
     }
 
-    const value = world.getComponentFieldValueResolved(.{ .index = entity_index }, .{
+    const value = world.getComponentFieldValueResolved(.{ .index = entity_index, .generation = entity_generation }, .{
         .table_index = component_table_index,
         .row_index = component_row_index,
     }, field_name) catch |err| {
@@ -1270,6 +1298,7 @@ fn setFieldCallback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
     entity_index: u32,
+    entity_generation: u32,
     raw_component_id: ?[*:0]const u8,
     raw_field_name: ?[*:0]const u8,
     raw_value: ?*const c.machina_luau_field_value,
@@ -1289,7 +1318,7 @@ fn setFieldCallback(
         return 0;
     }
 
-    const component_value = componentValueFromLuau(world, .{ .index = entity_index }, component_id, field_name, value) catch |err| {
+    const component_value = componentValueFromLuau(world, .{ .index = entity_index, .generation = entity_generation }, component_id, field_name, value) catch |err| {
         program.setHostError("system '{s}' failed to convert value for '{s}.{s}': {s}", .{
             program.activeSystemId(),
             component_id,
@@ -1298,7 +1327,7 @@ fn setFieldCallback(
         });
         return 0;
     };
-    world.setComponentFieldValue(.{ .index = entity_index }, component_id, field_name, component_value) catch |err| {
+    world.setComponentFieldValue(.{ .index = entity_index, .generation = entity_generation }, component_id, field_name, component_value) catch |err| {
         program.setHostError("system '{s}' failed to write '{s}.{s}': {s}", .{
             program.activeSystemId(),
             component_id,
@@ -1314,6 +1343,7 @@ fn setFieldResolvedCallback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
     entity_index: u32,
+    entity_generation: u32,
     raw_component_id: ?[*:0]const u8,
     component_table_index: u32,
     component_row_index: u32,
@@ -1339,7 +1369,7 @@ fn setFieldResolvedCallback(
         .table_index = component_table_index,
         .row_index = component_row_index,
     };
-    const entity = runtime.EntityHandle{ .index = entity_index };
+    const entity = runtime.EntityHandle{ .index = entity_index, .generation = entity_generation };
     const component_value = componentValueFromLuauResolved(world, entity, resolved, field_name, value) catch |err| {
         program.setHostError("system '{s}' failed to convert value for '{s}.{s}': {s}", .{
             program.activeSystemId(),
@@ -1367,12 +1397,14 @@ fn spawnEntityCallback(
     raw_id: ?[*:0]const u8,
     raw_name: ?[*:0]const u8,
     raw_out_entity: ?*u32,
+    raw_out_entity_generation: ?*u32,
 ) callconv(.c) c_int {
     const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
     const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
     const id = std.mem.span(raw_id orelse return 0);
     const name = std.mem.span(raw_name orelse return 0);
     const out_entity = raw_out_entity orelse return 0;
+    const out_entity_generation = raw_out_entity_generation orelse return 0;
 
     const entity = world.createEntity(id, name) catch |err| {
         program.setHostError("system '{s}' failed to spawn entity '{s}': {s}", .{
@@ -1383,6 +1415,7 @@ fn spawnEntityCallback(
         return 0;
     };
     out_entity.* = entity.index;
+    out_entity_generation.* = entity.generation;
     return 1;
 }
 
@@ -1390,10 +1423,11 @@ fn despawnEntityCallback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
     entity_index: u32,
+    entity_generation: u32,
 ) callconv(.c) c_int {
     const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
     const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
-    const entity = runtime.EntityHandle{ .index = entity_index };
+    const entity = runtime.EntityHandle{ .index = entity_index, .generation = entity_generation };
     _ = world.entity(entity) catch |err| {
         program.setHostError("system '{s}' failed to despawn entity {d}: {s}", .{
             program.activeSystemId(),
@@ -1437,6 +1471,7 @@ fn addComponentCallback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
     entity_index: u32,
+    entity_generation: u32,
     raw_component_id: ?[*:0]const u8,
     raw_fields: ?[*]const c.machina_luau_component_field_value,
     field_count: usize,
@@ -1459,7 +1494,7 @@ fn addComponentCallback(
         });
         return 0;
     };
-    const entity = runtime.EntityHandle{ .index = entity_index };
+    const entity = runtime.EntityHandle{ .index = entity_index, .generation = entity_generation };
     const raw_slice = if (field_count == 0) &[_]c.machina_luau_component_field_value{} else (raw_fields orelse return 0)[0..field_count];
     const fields = program.allocator.alloc(runtime.ComponentFieldValue, field_count) catch {
         program.setHostError("system '{s}' failed to allocate component fields for '{s}'", .{
@@ -1510,6 +1545,7 @@ fn removeComponentCallback(
     raw_context: ?*anyopaque,
     raw_world: ?*anyopaque,
     entity_index: u32,
+    entity_generation: u32,
     raw_component_id: ?[*:0]const u8,
 ) callconv(.c) c_int {
     const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
@@ -1522,7 +1558,7 @@ fn removeComponentCallback(
         });
         return 0;
     }
-    _ = world.removeComponent(.{ .index = entity_index }, component_id) catch |err| {
+    _ = world.removeComponent(.{ .index = entity_index, .generation = entity_generation }, component_id) catch |err| {
         program.setHostError("system '{s}' failed to remove component '{s}' from entity {d}: {s}", .{
             program.activeSystemId(),
             component_id,
@@ -1830,6 +1866,48 @@ test "luau systems can spawn despawn add and remove components" {
     try std.testing.expect(!try world.hasComponent(spawned, "temporary"));
     try std.testing.expectEqual(@as(i32, 7), try world.getInt(spawned, "spawned", "value"));
     try std.testing.expect(world.findEntityById("doomed") == null);
+}
+
+test "luau entity proxies reject stale generated handles after despawn" {
+    var program = try loadSourceProgram(
+        std.testing.allocator,
+        "test.luau",
+        \\--!strict
+        \\
+        \\local Marker = ecs.component("marker", {
+        \\  fields = ecs.fields({
+        \\    value = "int",
+        \\  }),
+        \\})
+        \\
+        \\ecs.system("reject_stale_proxy", {
+        \\  phase = "startup",
+        \\  writes = ecs.refs(Marker),
+        \\  run = function(world, _dt)
+        \\    local first = world.spawn("first", "First")
+        \\    first:add(Marker, { value = 1 })
+        \\    local second = world.spawn("second", "Second")
+        \\    second:add(Marker, { value = 2 })
+        \\    first:despawn()
+        \\    local ok = pcall(function()
+        \\      first:add(Marker, { value = 3 })
+        \\    end)
+        \\    if ok then
+        \\      error("stale proxy unexpectedly mutated a live entity")
+        \\    end
+        \\  end,
+        \\})
+        ,
+    );
+    defer program.deinit();
+
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    try std.testing.expect(program.startup(&world));
+    const second = world.findEntityById("second") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), world.entityCount());
+    try std.testing.expectEqual(@as(i32, 2), try world.getInt(second, "marker", "value"));
 }
 
 test "luau component handles can reference engine components without registration" {
@@ -2192,6 +2270,45 @@ test "luau query views cannot be reused across system invocations" {
 
     try std.testing.expect(program.update(&world, 0.25));
     try std.testing.expect(!program.update(&world, 0.25));
+}
+
+test "luau query object plans invalidate when component tables appear" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
+        \\--!strict
+        \\
+        \\local Marker = ecs.component("marker", {
+        \\  fields = ecs.fields({
+        \\    value = "int",
+        \\  }),
+        \\})
+        \\local Markers = ecs.query(Marker)
+        \\
+        \\ecs.system("create_then_query", {
+        \\  query = Markers,
+        \\  writes = ecs.refs(Marker),
+        \\  run = function(world, _dt)
+        \\    local before = 0
+        \\    for _entity, _marker in Markers:iter(world) do
+        \\      before += 1
+        \\    end
+        \\    local entity = world.spawn("marker-one", "Marker One")
+        \\    entity:add(Marker, { value = 3 })
+        \\    local after = 0
+        \\    for _entity, marker in Markers:iter(world) do
+        \\      after += marker.value
+        \\    end
+        \\    if before ~= 0 or after ~= 3 then
+        \\      error("query plan did not invalidate")
+        \\    end
+        \\  end,
+        \\})
+    );
+    defer program.deinit();
+
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    try std.testing.expect(program.update(&world, 0.25));
 }
 
 test "luau schema helper rejects non-marker field values" {
