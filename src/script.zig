@@ -430,6 +430,10 @@ fn initProgram(allocator: std.mem.Allocator) !Program {
         .query_next = queryNextCallback,
         .prepare_query = prepareQueryCallback,
         .query_next_prepared = queryNextPreparedCallback,
+        .read_f32_view = readF32ViewCallback,
+        .write_f32_view = writeF32ViewCallback,
+        .read_vec3_view = readVec3ViewCallback,
+        .write_vec3_view = writeVec3ViewCallback,
         .get_vec3 = getVec3Callback,
         .set_vec3 = setVec3Callback,
         .get_field = getFieldCallback,
@@ -831,6 +835,246 @@ fn queryNextPreparedCallback(
 
     cursor.* = @intCast(cursor_value);
     out_entity.* = entity.index;
+    return 1;
+}
+
+fn readF32ViewCallback(
+    raw_context: ?*anyopaque,
+    raw_world: ?*anyopaque,
+    raw_component_id: ?[*:0]const u8,
+    component_table_index: u32,
+    raw_entities: ?[*]const u32,
+    raw_component_rows: ?[*]const u32,
+    entity_count: usize,
+    raw_field_name: ?[*:0]const u8,
+    raw_out_values: ?[*]f32,
+) callconv(.c) c_int {
+    const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
+    const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
+    const component_id = std.mem.span(raw_component_id orelse return 0);
+    const field_name = std.mem.span(raw_field_name orelse return 0);
+    if (!program.activeSystemAllowsRead(component_id)) {
+        program.setHostError("system '{s}' tried to bulk-read '{s}.{s}' without declaring '{s}' in reads or writes", .{
+            program.activeSystemId(),
+            component_id,
+            field_name,
+            component_id,
+        });
+        return 0;
+    }
+    if (entity_count == 0) {
+        return 1;
+    }
+
+    const entities = (raw_entities orelse return 0)[0..entity_count];
+    const component_rows = (raw_component_rows orelse return 0)[0..entity_count];
+    const out_values = (raw_out_values orelse return 0)[0..entity_count];
+    for (entities, component_rows, out_values) |entity_index, component_row_index, *out_value| {
+        const value = world.getComponentFieldValueResolved(.{ .index = entity_index }, .{
+            .table_index = component_table_index,
+            .row_index = component_row_index,
+        }, field_name) catch |err| {
+            program.setHostError("system '{s}' failed to bulk-read '{s}.{s}': {s}", .{
+                program.activeSystemId(),
+                component_id,
+                field_name,
+                @errorName(err),
+            });
+            return 0;
+        };
+        out_value.* = switch (value) {
+            .float => |payload| payload,
+            else => {
+                program.setHostError("system '{s}' tried to bulk-read non-f32 field '{s}.{s}' as f32", .{
+                    program.activeSystemId(),
+                    component_id,
+                    field_name,
+                });
+                return 0;
+            },
+        };
+    }
+    return 1;
+}
+
+fn writeF32ViewCallback(
+    raw_context: ?*anyopaque,
+    raw_world: ?*anyopaque,
+    raw_component_id: ?[*:0]const u8,
+    component_table_index: u32,
+    raw_entities: ?[*]const u32,
+    raw_component_rows: ?[*]const u32,
+    entity_count: usize,
+    raw_field_name: ?[*:0]const u8,
+    raw_values: ?[*]const f32,
+) callconv(.c) c_int {
+    const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
+    const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
+    const component_id = std.mem.span(raw_component_id orelse return 0);
+    const field_name = std.mem.span(raw_field_name orelse return 0);
+    if (!program.activeSystemAllowsWrite(component_id)) {
+        program.setHostError("system '{s}' tried to bulk-write '{s}.{s}' without declaring '{s}' in writes", .{
+            program.activeSystemId(),
+            component_id,
+            field_name,
+            component_id,
+        });
+        return 0;
+    }
+    if (entity_count == 0) {
+        return 1;
+    }
+
+    const entities = (raw_entities orelse return 0)[0..entity_count];
+    const component_rows = (raw_component_rows orelse return 0)[0..entity_count];
+    const values = (raw_values orelse return 0)[0..entity_count];
+    for (entities, component_rows, values) |entity_index, component_row_index, value| {
+        if (!std.math.isFinite(value)) {
+            program.setHostError("system '{s}' tried to bulk-write non-finite f32 value to '{s}.{s}'", .{
+                program.activeSystemId(),
+                component_id,
+                field_name,
+            });
+            return 0;
+        }
+        world.setComponentFieldValueResolved(.{ .index = entity_index }, .{
+            .table_index = component_table_index,
+            .row_index = component_row_index,
+        }, field_name, .{ .float = value }) catch |err| {
+            program.setHostError("system '{s}' failed to bulk-write '{s}.{s}': {s}", .{
+                program.activeSystemId(),
+                component_id,
+                field_name,
+                @errorName(err),
+            });
+            return 0;
+        };
+    }
+    return 1;
+}
+
+fn readVec3ViewCallback(
+    raw_context: ?*anyopaque,
+    raw_world: ?*anyopaque,
+    raw_component_id: ?[*:0]const u8,
+    component_table_index: u32,
+    raw_entities: ?[*]const u32,
+    raw_component_rows: ?[*]const u32,
+    entity_count: usize,
+    raw_field_name: ?[*:0]const u8,
+    raw_out_values: ?[*]f32,
+) callconv(.c) c_int {
+    const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
+    const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
+    const component_id = std.mem.span(raw_component_id orelse return 0);
+    const field_name = std.mem.span(raw_field_name orelse return 0);
+    if (!program.activeSystemAllowsRead(component_id)) {
+        program.setHostError("system '{s}' tried to bulk-read '{s}.{s}' without declaring '{s}' in reads or writes", .{
+            program.activeSystemId(),
+            component_id,
+            field_name,
+            component_id,
+        });
+        return 0;
+    }
+    if (entity_count == 0) {
+        return 1;
+    }
+
+    const entities = (raw_entities orelse return 0)[0..entity_count];
+    const component_rows = (raw_component_rows orelse return 0)[0..entity_count];
+    const out_values = (raw_out_values orelse return 0)[0 .. entity_count * 3];
+    for (entities, component_rows, 0..) |entity_index, component_row_index, entity_offset| {
+        const value = world.getComponentFieldValueResolved(.{ .index = entity_index }, .{
+            .table_index = component_table_index,
+            .row_index = component_row_index,
+        }, field_name) catch |err| {
+            program.setHostError("system '{s}' failed to bulk-read '{s}.{s}': {s}", .{
+                program.activeSystemId(),
+                component_id,
+                field_name,
+                @errorName(err),
+            });
+            return 0;
+        };
+        const vec3 = switch (value) {
+            .vec3 => |payload| payload,
+            else => {
+                program.setHostError("system '{s}' tried to bulk-read non-vec3 field '{s}.{s}' as vec3", .{
+                    program.activeSystemId(),
+                    component_id,
+                    field_name,
+                });
+                return 0;
+            },
+        };
+        const value_offset = entity_offset * 3;
+        out_values[value_offset + 0] = vec3[0];
+        out_values[value_offset + 1] = vec3[1];
+        out_values[value_offset + 2] = vec3[2];
+    }
+    return 1;
+}
+
+fn writeVec3ViewCallback(
+    raw_context: ?*anyopaque,
+    raw_world: ?*anyopaque,
+    raw_component_id: ?[*:0]const u8,
+    component_table_index: u32,
+    raw_entities: ?[*]const u32,
+    raw_component_rows: ?[*]const u32,
+    entity_count: usize,
+    raw_field_name: ?[*:0]const u8,
+    raw_values: ?[*]const f32,
+) callconv(.c) c_int {
+    const program: *Program = @ptrCast(@alignCast(raw_context orelse return 0));
+    const world: *runtime.World = @ptrCast(@alignCast(raw_world orelse return 0));
+    const component_id = std.mem.span(raw_component_id orelse return 0);
+    const field_name = std.mem.span(raw_field_name orelse return 0);
+    if (!program.activeSystemAllowsWrite(component_id)) {
+        program.setHostError("system '{s}' tried to bulk-write '{s}.{s}' without declaring '{s}' in writes", .{
+            program.activeSystemId(),
+            component_id,
+            field_name,
+            component_id,
+        });
+        return 0;
+    }
+    if (entity_count == 0) {
+        return 1;
+    }
+
+    const entities = (raw_entities orelse return 0)[0..entity_count];
+    const component_rows = (raw_component_rows orelse return 0)[0..entity_count];
+    const values = (raw_values orelse return 0)[0 .. entity_count * 3];
+    for (entities, component_rows, 0..) |entity_index, component_row_index, entity_offset| {
+        const value_offset = entity_offset * 3;
+        const value = [3]f32{
+            values[value_offset + 0],
+            values[value_offset + 1],
+            values[value_offset + 2],
+        };
+        if (!std.math.isFinite(value[0]) or !std.math.isFinite(value[1]) or !std.math.isFinite(value[2])) {
+            program.setHostError("system '{s}' tried to bulk-write non-finite vec3 value to '{s}.{s}'", .{
+                program.activeSystemId(),
+                component_id,
+                field_name,
+            });
+            return 0;
+        }
+        world.setComponentFieldValueResolved(.{ .index = entity_index }, .{
+            .table_index = component_table_index,
+            .row_index = component_row_index,
+        }, field_name, .{ .vec3 = value }) catch |err| {
+            program.setHostError("system '{s}' failed to bulk-write '{s}.{s}': {s}", .{
+                program.activeSystemId(),
+                component_id,
+                field_name,
+                @errorName(err),
+            });
+            return 0;
+        };
+    }
     return 1;
 }
 
@@ -1778,6 +2022,176 @@ test "luau component proxy rejects scalar values outside host field range" {
 
     try std.testing.expect(!program.update(&world, 0.25));
     try std.testing.expectEqual(runtime.ComponentValue{ .float = 1.5 }, try world.getComponentFieldValue(entity, "stats", "speed"));
+}
+
+test "luau query views bulk read and write f32 and vec3 fields" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
+        \\--!strict
+        \\
+        \\local Motion = ecs.component("motion", {
+        \\  fields = ecs.fields({
+        \\    position = "vec3",
+        \\    velocity = "vec3",
+        \\    speed = "f32",
+        \\  }),
+        \\})
+        \\local Movers = ecs.query(Motion)
+        \\
+        \\ecs.system("advance_movers", {
+        \\  query = Movers,
+        \\  writes = ecs.refs(Motion),
+        \\  run = function(world, dt)
+        \\    local view = Movers:view(world)
+        \\    local count = view:count()
+        \\    local positions = view:read_vec3(Motion, "position")
+        \\    local velocities = view:read_vec3(Motion, "velocity")
+        \\    local speeds = view:read_f32(Motion, "speed")
+        \\
+        \\    for index = 0, count - 1 do
+        \\      local f32_offset = index * 4
+        \\      local vec3_offset = index * 12
+        \\      local px = buffer.readf32(positions, vec3_offset)
+        \\      local py = buffer.readf32(positions, vec3_offset + 4)
+        \\      local pz = buffer.readf32(positions, vec3_offset + 8)
+        \\      local vx = buffer.readf32(velocities, vec3_offset)
+        \\      local vy = buffer.readf32(velocities, vec3_offset + 4)
+        \\      local vz = buffer.readf32(velocities, vec3_offset + 8)
+        \\      buffer.writef32(positions, vec3_offset, px + vx * dt)
+        \\      buffer.writef32(positions, vec3_offset + 4, py + vy * dt)
+        \\      buffer.writef32(positions, vec3_offset + 8, pz + vz * dt)
+        \\      buffer.writef32(speeds, f32_offset, buffer.readf32(speeds, f32_offset) + dt)
+        \\    end
+        \\
+        \\    view:write_vec3(Motion, "position", positions)
+        \\    view:write_f32(Motion, "speed", speeds)
+        \\  end,
+        \\})
+    );
+    defer program.deinit();
+
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+    const first = try world.createEntity("first", "First");
+    const second = try world.createEntity("second", "Second");
+    try world.setComponent(first, "motion", &[_]runtime.ComponentFieldValue{
+        .{ .name = "position", .value = .{ .vec3 = .{ 1.0, 2.0, 3.0 } } },
+        .{ .name = "velocity", .value = .{ .vec3 = .{ 2.0, 0.0, -2.0 } } },
+        .{ .name = "speed", .value = .{ .float = 10.0 } },
+    });
+    try world.setComponent(second, "motion", &[_]runtime.ComponentFieldValue{
+        .{ .name = "position", .value = .{ .vec3 = .{ -1.0, 4.0, 0.5 } } },
+        .{ .name = "velocity", .value = .{ .vec3 = .{ 0.0, -4.0, 1.0 } } },
+        .{ .name = "speed", .value = .{ .float = 20.0 } },
+    });
+
+    try std.testing.expect(program.update(&world, 0.5));
+    try std.testing.expectEqual(runtime.ComponentValue{ .vec3 = .{ 2.0, 2.0, 2.0 } }, try world.getComponentFieldValue(first, "motion", "position"));
+    try std.testing.expectEqual(runtime.ComponentValue{ .float = 10.5 }, try world.getComponentFieldValue(first, "motion", "speed"));
+    try std.testing.expectEqual(runtime.ComponentValue{ .vec3 = .{ -1.0, 2.0, 1.0 } }, try world.getComponentFieldValue(second, "motion", "position"));
+    try std.testing.expectEqual(runtime.ComponentValue{ .float = 20.5 }, try world.getComponentFieldValue(second, "motion", "speed"));
+}
+
+test "luau query views require declared writes" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
+        \\--!strict
+        \\
+        \\local Stats = ecs.component("stats", {
+        \\  fields = ecs.fields({
+        \\    speed = "f32",
+        \\  }),
+        \\})
+        \\local StatsQuery = ecs.query(Stats)
+        \\
+        \\ecs.system("write_without_access", {
+        \\  query = StatsQuery,
+        \\  run = function(world, _dt)
+        \\    local view = StatsQuery:view(world)
+        \\    local speeds = view:read_f32(Stats, "speed")
+        \\    view:write_f32(Stats, "speed", speeds)
+        \\  end,
+        \\})
+    );
+    defer program.deinit();
+
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+    const entity = try world.createEntity("stats-entity", "Stats Entity");
+    try world.setComponent(entity, "stats", &[_]runtime.ComponentFieldValue{
+        .{ .name = "speed", .value = .{ .float = 1.5 } },
+    });
+
+    try std.testing.expect(!program.update(&world, 0.25));
+    try std.testing.expectEqual(runtime.ComponentValue{ .float = 1.5 }, try world.getComponentFieldValue(entity, "stats", "speed"));
+}
+
+test "luau query views reject non-finite bulk writes" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
+        \\--!strict
+        \\
+        \\local Stats = ecs.component("stats", {
+        \\  fields = ecs.fields({
+        \\    speed = "f32",
+        \\  }),
+        \\})
+        \\local StatsQuery = ecs.query(Stats)
+        \\
+        \\ecs.system("write_bad_value", {
+        \\  query = StatsQuery,
+        \\  writes = ecs.refs(Stats),
+        \\  run = function(world, _dt)
+        \\    local view = StatsQuery:view(world)
+        \\    local speeds = view:read_f32(Stats, "speed")
+        \\    buffer.writef32(speeds, 0, 1e100)
+        \\    view:write_f32(Stats, "speed", speeds)
+        \\  end,
+        \\})
+    );
+    defer program.deinit();
+
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+    const entity = try world.createEntity("stats-entity", "Stats Entity");
+    try world.setComponent(entity, "stats", &[_]runtime.ComponentFieldValue{
+        .{ .name = "speed", .value = .{ .float = 1.5 } },
+    });
+
+    try std.testing.expect(!program.update(&world, 0.25));
+    try std.testing.expectEqual(runtime.ComponentValue{ .float = 1.5 }, try world.getComponentFieldValue(entity, "stats", "speed"));
+}
+
+test "luau query views cannot be reused across system invocations" {
+    var program = try loadSourceProgram(std.testing.allocator, "test.luau",
+        \\--!strict
+        \\
+        \\local Stats = ecs.component("stats", {
+        \\  fields = ecs.fields({
+        \\    speed = "f32",
+        \\  }),
+        \\})
+        \\local StatsQuery = ecs.query(Stats)
+        \\local saved_view = nil
+        \\
+        \\ecs.system("stash_view", {
+        \\  query = StatsQuery,
+        \\  run = function(world, _dt)
+        \\    if saved_view ~= nil then
+        \\      saved_view:count()
+        \\    end
+        \\    saved_view = StatsQuery:view(world)
+        \\  end,
+        \\})
+    );
+    defer program.deinit();
+
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+    const entity = try world.createEntity("stats-entity", "Stats Entity");
+    try world.setComponent(entity, "stats", &[_]runtime.ComponentFieldValue{
+        .{ .name = "speed", .value = .{ .float = 1.5 } },
+    });
+
+    try std.testing.expect(program.update(&world, 0.25));
+    try std.testing.expect(!program.update(&world, 0.25));
 }
 
 test "luau schema helper rejects non-marker field values" {

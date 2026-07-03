@@ -265,34 +265,57 @@ export type MachinaWorld = {
     spawn: (id: string, name: string?) -> MachinaEntity,
 }
 
+export type MachinaQueryView = {
+    --- Returns the number of entities captured by this frame-local view.
+    count: (self: MachinaQueryView) -> number,
+
+    --- Bulk reads one f32 field into a packed Luau buffer.
+    read_f32: (self: MachinaQueryView, component: MachinaComponentRef, field: string) -> buffer,
+
+    --- Bulk writes one f32 field from a packed Luau buffer.
+    write_f32: (self: MachinaQueryView, component: MachinaComponentRef, field: string, values: buffer) -> (),
+
+    --- Bulk reads one vec3 field into a packed xyz xyz Luau buffer.
+    read_vec3: (self: MachinaQueryView, component: MachinaComponentRef, field: string) -> buffer,
+
+    --- Bulk writes one vec3 field from a packed xyz xyz Luau buffer.
+    write_vec3: (self: MachinaQueryView, component: MachinaComponentRef, field: string, values: buffer) -> (),
+}
+
 export type MachinaQueryObject1<A> = {
     refs: MachinaComponentRefs,
     iter: (self: MachinaQueryObject1<A>, world: MachinaWorld) -> (() -> (MachinaEntity, A)),
+    view: (self: MachinaQueryObject1<A>, world: MachinaWorld) -> MachinaQueryView,
 }
 
 export type MachinaQueryObject2<A, B> = {
     refs: MachinaComponentRefs,
     iter: (self: MachinaQueryObject2<A, B>, world: MachinaWorld) -> (() -> (MachinaEntity, A, B)),
+    view: (self: MachinaQueryObject2<A, B>, world: MachinaWorld) -> MachinaQueryView,
 }
 
 export type MachinaQueryObject3<A, B, C> = {
     refs: MachinaComponentRefs,
     iter: (self: MachinaQueryObject3<A, B, C>, world: MachinaWorld) -> (() -> (MachinaEntity, A, B, C)),
+    view: (self: MachinaQueryObject3<A, B, C>, world: MachinaWorld) -> MachinaQueryView,
 }
 
 export type MachinaQueryObject4<A, B, C, D> = {
     refs: MachinaComponentRefs,
     iter: (self: MachinaQueryObject4<A, B, C, D>, world: MachinaWorld) -> (() -> (MachinaEntity, A, B, C, D)),
+    view: (self: MachinaQueryObject4<A, B, C, D>, world: MachinaWorld) -> MachinaQueryView,
 }
 
 export type MachinaQueryObject5<A, B, C, D, E> = {
     refs: MachinaComponentRefs,
     iter: (self: MachinaQueryObject5<A, B, C, D, E>, world: MachinaWorld) -> (() -> (MachinaEntity, A, B, C, D, E)),
+    view: (self: MachinaQueryObject5<A, B, C, D, E>, world: MachinaWorld) -> MachinaQueryView,
 }
 
 export type MachinaQueryObject6<A, B, C, D, E, F> = {
     refs: MachinaComponentRefs,
     iter: (self: MachinaQueryObject6<A, B, C, D, E, F>, world: MachinaWorld) -> (() -> (MachinaEntity, A, B, C, D, E, F)),
+    view: (self: MachinaQueryObject6<A, B, C, D, E, F>, world: MachinaWorld) -> MachinaQueryView,
 }
 
 export type MachinaSystemDefinition = {

@@ -38,6 +38,54 @@ typedef int (*machina_luau_query_next_prepared_fn)(
     uint32_t* out_component_rows
 );
 
+typedef int (*machina_luau_read_f32_view_fn)(
+    void* context,
+    void* world,
+    const char* component_id,
+    uint32_t component_table_index,
+    const uint32_t* entities,
+    const uint32_t* component_rows,
+    size_t entity_count,
+    const char* field_name,
+    float* out_values
+);
+
+typedef int (*machina_luau_write_f32_view_fn)(
+    void* context,
+    void* world,
+    const char* component_id,
+    uint32_t component_table_index,
+    const uint32_t* entities,
+    const uint32_t* component_rows,
+    size_t entity_count,
+    const char* field_name,
+    const float* values
+);
+
+typedef int (*machina_luau_read_vec3_view_fn)(
+    void* context,
+    void* world,
+    const char* component_id,
+    uint32_t component_table_index,
+    const uint32_t* entities,
+    const uint32_t* component_rows,
+    size_t entity_count,
+    const char* field_name,
+    float* out_values
+);
+
+typedef int (*machina_luau_write_vec3_view_fn)(
+    void* context,
+    void* world,
+    const char* component_id,
+    uint32_t component_table_index,
+    const uint32_t* entities,
+    const uint32_t* component_rows,
+    size_t entity_count,
+    const char* field_name,
+    const float* values
+);
+
 typedef int (*machina_luau_get_vec3_fn)(
     void* context,
     void* world,
@@ -161,6 +209,10 @@ typedef struct machina_luau_callbacks
     machina_luau_query_next_fn query_next;
     machina_luau_prepare_query_fn prepare_query;
     machina_luau_query_next_prepared_fn query_next_prepared;
+    machina_luau_read_f32_view_fn read_f32_view;
+    machina_luau_write_f32_view_fn write_f32_view;
+    machina_luau_read_vec3_view_fn read_vec3_view;
+    machina_luau_write_vec3_view_fn write_vec3_view;
     machina_luau_get_vec3_fn get_vec3;
     machina_luau_set_vec3_fn set_vec3;
     machina_luau_get_field_fn get_field;

@@ -44,6 +44,7 @@ Script ECS registration lets project and package scripts define new component an
 - Scripts use `ecs.refs(...)` to erase typed component handles into explicit `reads` or `writes` declarations when needed.
 - The preferred runtime loop calls `Query:iter(world)` and receives the entity plus component proxies for the requested components.
 - `Query:iter(world)` prepares its component set for the iterator so repeated loop rows can reuse resolved ECS table and row positions behind the proxy API.
+- High-cardinality runtime loops can call `Query:view(world)` to capture the current matched rows and bulk read/write `f32` or `vec3` fields through Luau buffers.
 - The lower-level `world.query(...)` loop remains available for compatibility and debugging.
 - Low-level entity vector accessors remain available for compatibility and debugging.
 - Script-driven world mutation is checked against the system's declared component access.
@@ -114,15 +115,21 @@ Script ECS registration lets project and package scripts define new component an
 **Why:** Authors and agents should keep writing clear ECS loops, and the engine should optimize the storage path under that API. It follows ADR-014.
 **Tradeoff:** The bridge must preserve compatibility with the lower-level string-based query path, and per-field proxy access still has a host-call cost.
 
+### 11. Make bulk query views an explicit hot-path API
+
+**Decision:** Query objects expose `Query:view(world)` for scripts that want buffer-backed `f32` and `vec3` access over the current query result.
+**Why:** The ordinary proxy API should remain readable, but large script systems need a way to reduce Luau/native bridge calls without leaving the ECS/scheduler model. It follows ADR-015.
+**Tradeoff:** Buffer code uses byte offsets and is easier to get wrong than proxy field access, so examples should reserve it for measured hot loops and keep ordinary logic on `Query:iter(world)`.
+
 ## Related
 
-- **ADRs:** ADR-006, ADR-008, ADR-009, ADR-010, ADR-011, ADR-012, ADR-014
+- **ADRs:** ADR-006, ADR-008, ADR-009, ADR-010, ADR-011, ADR-012, ADR-014, ADR-015
 - **FDRs:** FDR-004, FDR-009, FDR-010, FDR-012, FDR-013
 
 ## Open Questions
 
 - How will component defaults and migrations be represented in script schemas?
 - Which system phases beyond `startup` and `update` should be exposed to script-defined systems first?
-- Which structured field accessors beyond scalar values and `vec3` should be added to the Luau runtime bridge?
+- Which structured field accessors and query view transfers beyond scalar values and `vec3` should be added to the Luau runtime bridge?
 - How should live script reload handle startup changes, schema changes, and world migrations without replaying unsafe mutations?
 - How should script runtime errors include full stack context and source spans?

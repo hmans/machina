@@ -117,27 +117,41 @@ ecs.system("animate_swarm", {
   run = function(world, dt)
     elapsed += dt
 
-    for _entity, transform, motion in Swarm:iter(world) do
-      local home = motion.home
-      local rotation = transform.rotation
-      local speed = motion.speed
-      local orbit_radius = motion.orbit_radius
-      local t = elapsed * speed + motion.phase
+    local view = Swarm:view(world)
+    local count = view:count()
+    local homes = view:read_vec3(SwarmMotion, "home")
+    local phases = view:read_f32(SwarmMotion, "phase")
+    local orbit_radii = view:read_f32(SwarmMotion, "orbit_radius")
+    local speeds = view:read_f32(SwarmMotion, "speed")
+    local positions = view:read_vec3(Transform, "position")
+    local rotations = view:read_vec3(Transform, "rotation")
+
+    for index = 0, count - 1 do
+      local f32_offset = index * 4
+      local vec3_offset = index * 12
+      local home_x = buffer.readf32(homes, vec3_offset)
+      local home_y = buffer.readf32(homes, vec3_offset + 4)
+      local home_z = buffer.readf32(homes, vec3_offset + 8)
+      local rotation_x = buffer.readf32(rotations, vec3_offset)
+      local rotation_y = buffer.readf32(rotations, vec3_offset + 4)
+      local rotation_z = buffer.readf32(rotations, vec3_offset + 8)
+      local speed = buffer.readf32(speeds, f32_offset)
+      local orbit_radius = buffer.readf32(orbit_radii, f32_offset)
+      local t = elapsed * speed + buffer.readf32(phases, f32_offset)
       local orbit_x = math.cos(t) * orbit_radius
       local orbit_z = math.sin(t * 0.91) * orbit_radius
       local bob = math.sin(t * 1.7) * 0.18
-      local next_position = {
-        home[1] + orbit_x,
-        home[2] + bob,
-        home[3] + orbit_z,
-      }
 
-      transform.position = next_position
-      transform.rotation = {
-        rotation[1] + dt * (0.55 + speed * 0.35),
-        rotation[2] + dt * (0.9 + orbit_radius),
-        rotation[3] + dt * (0.25 + math.sin(t) * 0.2),
-      }
+      buffer.writef32(positions, vec3_offset, home_x + orbit_x)
+      buffer.writef32(positions, vec3_offset + 4, home_y + bob)
+      buffer.writef32(positions, vec3_offset + 8, home_z + orbit_z)
+
+      buffer.writef32(rotations, vec3_offset, rotation_x + dt * (0.55 + speed * 0.35))
+      buffer.writef32(rotations, vec3_offset + 4, rotation_y + dt * (0.9 + orbit_radius))
+      buffer.writef32(rotations, vec3_offset + 8, rotation_z + dt * (0.25 + math.sin(t) * 0.2))
     end
+
+    view:write_vec3(Transform, "position", positions)
+    view:write_vec3(Transform, "rotation", rotations)
   end,
 })

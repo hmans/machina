@@ -20,6 +20,7 @@ The entity component runtime is the shared low-level model for game state. It gi
 - Each component table owns dense entity rows, a sparse entity-to-row index, and typed SoA field columns derived from engine or script schemas.
 - Scripts can query entities by component set and mutate supported component fields through the scripting API.
 - Script query iteration preserves the public component proxy API while internally reusing resolved component table and row positions for the lifetime of an iterator.
+- Script query views can snapshot a matched entity set and bulk-transfer `f32` or `vec3` fields through Luau buffers for high-cardinality hot loops.
 - Scripts can spawn and despawn entities through the ECS facade.
 - Scripts can add and remove registered components through the ECS facade.
 - Script-driven structural mutations are checked against the active system's declared write access.
@@ -79,9 +80,15 @@ The entity component runtime is the shared low-level model for game state. It gi
 **Why:** Script systems need hot loops that still look like normal ECS component iteration. Reusing resolved storage positions follows ADR-014 while keeping scheduler validation and row safety in the runtime.
 **Tradeoff:** The bridge has more internal state, and component field access still crosses the host boundary until a broader bulk-access design exists.
 
+### 9. Add explicit bulk query views for hot Luau systems
+
+**Decision:** Query objects expose `Query:view(world)` for frame-local bulk `f32` and `vec3` transfers through Luau buffers.
+**Why:** Large Luau systems need to amortize host bridge overhead without bypassing the shared ECS world, scheduler access checks, or resolved-row validation. It follows ADR-015.
+**Tradeoff:** Buffer offset code is less ergonomic than component proxies, so it should be used deliberately for measured hot loops rather than becoming the default script style.
+
 ## Related
 
-- **ADRs:** ADR-001, ADR-006, ADR-008, ADR-010, ADR-013, ADR-014
+- **ADRs:** ADR-001, ADR-006, ADR-008, ADR-010, ADR-013, ADR-014, ADR-015
 - **FDRs:** FDR-002, FDR-004, FDR-005, FDR-010, FDR-011, FDR-014, FDR-015, FDR-016, FDR-017
 
 ## Open Questions
@@ -89,3 +96,4 @@ The entity component runtime is the shared low-level model for game state. It gi
 - What stable id format should entities use?
 - How much scheduler control should scripts get beyond phases, access declarations, and before/after relationships?
 - When should structural mutations move from immediate execution to deferred command buffers?
+- Which additional field types need bulk query view support beyond `f32` and `vec3`?
