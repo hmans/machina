@@ -151,6 +151,7 @@ pub const EditorState = struct {
     captured_pointer: bool = false,
     system_scroll_offset: usize = 0,
     system_scroll_down_sign: f32 = -1.0,
+    system_scroll_had_idle: bool = true,
     last_pointer: [2]f32 = .{ 0.0, 0.0 },
     has_last_pointer: bool = false,
 };
@@ -251,8 +252,12 @@ fn scrollEditorSystemList(state: *EditorState, profile_count: usize, scroll_delt
     if (sign == state.system_scroll_down_sign) {
         state.system_scroll_offset = @min(max_scroll, state.system_scroll_offset + rows);
     } else {
+        if (state.system_scroll_offset == max_scroll and !state.system_scroll_had_idle) {
+            return;
+        }
         state.system_scroll_offset = if (rows > state.system_scroll_offset) 0 else state.system_scroll_offset - rows;
     }
+    state.system_scroll_had_idle = false;
 }
 
 fn scrollDirectionSign(value: f32) f32 {
@@ -269,6 +274,10 @@ pub fn updateEditorState(world: *runtime.World, state: *EditorState, input: Fram
     }
     const profile_count = editorSystemProfileScrollCount(input);
     clampEditorSystemScroll(state, profile_count);
+
+    if (input.pointer.wheel_delta[1] == 0.0) {
+        state.system_scroll_had_idle = true;
+    }
 
     if (input.pointer.wheel_delta[1] != 0.0 and editorSystemNeedsScroll(profile_count)) {
         scrollEditorSystemList(state, profile_count, input.pointer.wheel_delta[1]);
@@ -3812,7 +3821,55 @@ test "editor system list calibrates positive wheel deltas as down from the top" 
     _ = try updateEditorState(&world, &editor_state, .{
         .debug_overlay_visible = true,
         .system_profiles = &profiles,
+    });
+
+    _ = try updateEditorState(&world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .system_profiles = &profiles,
         .pointer = .{ .wheel_delta = .{ 0.0, -1.0 } },
+    });
+    try std.testing.expectEqual(@as(usize, 1), editor_state.system_scroll_offset);
+}
+
+test "editor system list ignores immediate reverse wheel bounce at the bottom" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const profiles = [_]runtime.SystemProfileSnapshot{
+        .{ .id = "system.0", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.1", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.2", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.3", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.4", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.5", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.6", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.7", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.8", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+    };
+
+    var editor_state = EditorState{
+        .system_scroll_offset = 2,
+        .system_scroll_down_sign = -1.0,
+        .system_scroll_had_idle = false,
+    };
+
+    _ = try updateEditorState(&world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .system_profiles = &profiles,
+        .pointer = .{ .wheel_delta = .{ 0.0, 1.0 } },
+    });
+    try std.testing.expectEqual(@as(usize, 2), editor_state.system_scroll_offset);
+
+    _ = try updateEditorState(&world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .system_profiles = &profiles,
+    });
+    try std.testing.expect(editor_state.system_scroll_had_idle);
+
+    _ = try updateEditorState(&world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .system_profiles = &profiles,
+        .pointer = .{ .wheel_delta = .{ 0.0, 1.0 } },
     });
     try std.testing.expectEqual(@as(usize, 1), editor_state.system_scroll_offset);
 }
