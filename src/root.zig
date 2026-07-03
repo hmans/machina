@@ -2574,7 +2574,7 @@ test "LiveProject editor scrolling uses render system profile count hint" {
         },
     });
 
-    try std.testing.expectEqual(@as(usize, 1), live_project.editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, 32.0), live_project.editor_state.system_scroll_y, 0.001);
 }
 
 test "LiveProject emits UI command events before scheduled scripts run" {

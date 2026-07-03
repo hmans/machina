@@ -23,9 +23,9 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - When live system profiling data is available, the editor/debug overlay lists active systems with their phase, rolling average runtime over the current profiling window, and last sample runtime.
 - The editor/debug overlay also lists engine-internal render systems profiled through the render ECS schedule.
 - The visible performance table updates at a throttled human-readable cadence while profiling continues to sample scheduled systems every frame.
-- The system performance view uses compact fixed-width rows and a scroll window so long system lists remain legible and every system can be reached.
-- While the editor/debug overlay is visible, mouse wheel input scrolls the visible system window when the system list overflows.
-- The editor/debug overlay includes a compact input diagnostics row with current wheel delta, pointer position, profiler scroll offset, and scrollable profile count while input routing is still being hardened.
+- The system performance view uses compact fixed-width rows and a clipped smooth-scroll viewport so long system lists remain legible and every system can be reached.
+- While the editor/debug overlay is visible, mouse wheel input scrolls the visible system viewport when the system list overflows. Scroll state is tracked in pixels, not rows, so fractional wheel deltas can move content smoothly.
+- The editor/debug overlay includes a compact input diagnostics row with current wheel delta, pointer position, profiler scroll pixel offset, and scrollable profile count while input routing is still being hardened.
 - The UI gallery example demonstrates the retained primitive set with panels, text, buttons, command events, and script-mutated UI state.
 - UI can be used for runtime diagnostics before a full editor exists.
 - UI definitions that are part of projects or tools follow the text-first project model.
@@ -81,11 +81,11 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 **Why:** Measuring at the scheduler boundary keeps the data tied to declared ECS systems and works for human and agent debugging without script instrumentation. It follows ADR-006, ADR-007, and ADR-008.
 **Tradeoff:** The table reports CPU wall time for project and engine-internal render systems. It does not yet include GPU time, parallel worker timing, flame charts, sorting, or drill-down timing history.
 
-### 9. Window long editor lists before exposing public layout containers
+### 9. Prove clipped smooth scrolling internally before exposing public layout containers
 
-**Decision:** The first overflowing editor list uses an engine-owned scroll window and small vertical layout helper, but Machina does not yet expose public `VBox`, `HBox`, or `ScrollContainer` scene components.
-**Why:** The editor needs immediate relief from clipped system rows, while public layout primitives need a real ECS component model for children, ordering, clipping, focus, and input routing.
-**Tradeoff:** The editor overlay can prove the layout behavior internally before the UI gallery and scene schema gain reusable layout containers.
+**Decision:** The first overflowing editor list uses an engine-owned pixel scroll offset, a small vertical layout helper, and an internal render clip component. Machina does not yet expose public `VBox`, `HBox`, or `ScrollContainer` scene components.
+**Why:** Smooth scrolling requires fractional content offsets plus clipping. The editor needs this behavior immediately, while public layout primitives still need a real ECS component model for children, ordering, clipping, focus, and input routing.
+**Tradeoff:** The editor overlay can prove smooth scrolling and clipping internally before the UI gallery and scene schema gain reusable layout containers.
 
 ### 10. Treat examples as the primitive gallery
 

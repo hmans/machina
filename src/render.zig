@@ -24,6 +24,7 @@ const depth_format = wgpu.TextureFormat.depth24_plus;
 const shadow_depth_format = wgpu.TextureFormat.depth32_float;
 const shadow_map_size = 1024;
 const render_ui_button_state_component_id = "machina.render.internal.ui.button_state";
+const render_ui_clip_component_id = "machina.render.internal.ui.clip";
 const render_draw_batch_component_id = "machina.render.internal.draw.batch";
 const render_draw_ui_component_id = "machina.render.internal.draw.ui";
 const render_extract_system_id = "machina.render.extract";
@@ -45,6 +46,7 @@ const editor_input_debug_y: f32 = 104.0;
 const editor_system_header_y: f32 = 136.0;
 const editor_system_first_row_y: f32 = 168.0;
 const editor_system_row_stride: f32 = 32.0;
+const editor_system_scroll_pixels_per_wheel: f32 = editor_system_row_stride;
 const render_system_profile_window_frames: usize = 120;
 const editor_controls_panel_width: f32 = 360.0;
 const editor_controls_panel_height: f32 = 102.0;
@@ -149,8 +151,7 @@ pub const EditorState = struct {
     selected_entity: ?runtime.EntityHandle = null,
     dragging_axis: EditorAxis = .none,
     captured_pointer: bool = false,
-    system_scroll_offset: usize = 0,
-    system_scroll_accumulator: f32 = 0.0,
+    system_scroll_y: f32 = 0.0,
     system_scroll_boundary: EditorScrollBoundary = .none,
     last_pointer: [2]f32 = .{ 0.0, 0.0 },
     has_last_pointer: bool = false,
@@ -166,7 +167,7 @@ pub const EditorFrameState = struct {
     paused: bool = false,
     selected_entity: ?runtime.EntityHandle = null,
     dragging_axis: EditorAxis = .none,
-    system_scroll_offset: usize = 0,
+    system_scroll_y: f32 = 0.0,
     entity_count: usize = 0,
     component_instance_count: usize = 0,
     renderable_count: usize = 0,
@@ -231,7 +232,7 @@ pub fn editorFrameState(world: *const runtime.World, state: EditorState) EditorF
         .paused = state.paused,
         .selected_entity = validatedEditorSelection(world, state.selected_entity),
         .dragging_axis = state.dragging_axis,
-        .system_scroll_offset = state.system_scroll_offset,
+        .system_scroll_y = state.system_scroll_y,
         .entity_count = world.entityCount(),
         .component_instance_count = world.componentInstanceCount(),
         .renderable_count = world.renderableMeshCount(),
@@ -239,13 +240,13 @@ pub fn editorFrameState(world: *const runtime.World, state: EditorState) EditorF
 }
 
 fn clampEditorSystemScroll(state: *EditorState, profile_count: usize) void {
-    state.system_scroll_offset = @min(state.system_scroll_offset, editorSystemMaxScroll(profile_count));
+    state.system_scroll_y = std.math.clamp(state.system_scroll_y, 0.0, editorSystemMaxScrollY(profile_count));
 }
 
 fn scrollEditorSystemList(state: *EditorState, profile_count: usize, scroll_delta_y: f32) void {
-    const max_scroll = editorSystemMaxScroll(profile_count);
-    if (max_scroll == 0) {
-        state.system_scroll_offset = 0;
+    const max_scroll_y = editorSystemMaxScrollY(profile_count);
+    if (max_scroll_y == 0.0) {
+        state.system_scroll_y = 0.0;
         return;
     }
 
@@ -253,25 +254,23 @@ fn scrollEditorSystemList(state: *EditorState, profile_count: usize, scroll_delt
         return;
     }
 
-    state.system_scroll_accumulator += -scroll_delta_y;
-    while (state.system_scroll_accumulator >= 1.0) {
-        if (state.system_scroll_offset == max_scroll) {
-            state.system_scroll_accumulator = 0.0;
-            state.system_scroll_boundary = .bottom;
-            return;
-        }
-        state.system_scroll_offset += 1;
-        state.system_scroll_accumulator -= 1.0;
+    const delta_pixels = -scroll_delta_y * editor_system_scroll_pixels_per_wheel;
+    if (delta_pixels == 0.0) {
+        return;
     }
-    while (state.system_scroll_accumulator <= -1.0) {
-        if (state.system_scroll_offset == 0) {
-            state.system_scroll_accumulator = 0.0;
-            state.system_scroll_boundary = .top;
-            return;
-        }
-        state.system_scroll_offset -= 1;
-        state.system_scroll_accumulator += 1.0;
+
+    const target = state.system_scroll_y + delta_pixels;
+    if (target <= 0.0) {
+        state.system_scroll_y = 0.0;
+        state.system_scroll_boundary = .top;
+        return;
     }
+    if (target >= max_scroll_y) {
+        state.system_scroll_y = max_scroll_y;
+        state.system_scroll_boundary = .bottom;
+        return;
+    }
+    state.system_scroll_y = target;
 }
 
 pub fn updateEditorState(world: *runtime.World, state: *EditorState, input: FrameInput) EditorError!EditorUpdate {
@@ -286,7 +285,6 @@ pub fn updateEditorState(world: *runtime.World, state: *EditorState, input: Fram
     clampEditorSystemScroll(state, profile_count);
 
     if (input.pointer.wheel_delta[1] == 0.0) {
-        state.system_scroll_accumulator = 0.0;
         state.system_scroll_boundary = .none;
     }
 
@@ -374,6 +372,11 @@ const UiButtonState = struct {
     hovered: bool = false,
     held: bool = false,
     pressed: bool = false,
+};
+
+const UiClipRect = struct {
+    position: [3]f32,
+    size: [3]f32,
 };
 
 pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const u8, scene: Scene) !void {
@@ -1101,6 +1104,15 @@ fn registerRenderEcsTypes(registry: *runtime.ComponentRegistry) !void {
         .version = 1,
         .fields = &ui_button_state_fields,
     });
+    const ui_clip_fields = [_]runtime.ComponentFieldDefinition{
+        .{ .name = "position", .value_type = .vec3 },
+        .{ .name = "size", .value_type = .vec3 },
+    };
+    try registry.registerEngineComponent(.{
+        .id = render_ui_clip_component_id,
+        .version = 1,
+        .fields = &ui_clip_fields,
+    });
     const draw_batch_fields = [_]runtime.ComponentFieldDefinition{
         .{ .name = "batch_index", .value_type = .int },
     };
@@ -1388,6 +1400,7 @@ const EditorVBox = struct {
     x: f32,
     y: f32,
     row_stride: f32,
+    clip: ?UiClipRect = null,
     row: usize = 0,
 
     fn init(
@@ -1408,6 +1421,12 @@ const EditorVBox = struct {
         };
     }
 
+    fn withClip(self: EditorVBox, clip: UiClipRect) EditorVBox {
+        var copy = self;
+        copy.clip = clip;
+        return copy;
+    }
+
     fn text(self: *EditorVBox, name: []const u8, value: []const u8, size: f32, color: [3]f32) RenderError!void {
         const entity_id = std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ self.id_prefix, self.row }) catch return RenderError.OutOfMemory;
         defer self.allocator.free(entity_id);
@@ -1422,6 +1441,9 @@ const EditorVBox = struct {
             .color = color,
             .value = value,
         }) catch |err| return mapWorldError(err);
+        if (self.clip) |clip| {
+            try setRenderUiClip(self.world, entity, clip);
+        }
         self.row += 1;
     }
 };
@@ -1482,7 +1504,15 @@ fn extractDebugOverlayInto(
     }) catch |err| return mapWorldError(err);
 
     const visible_range = editorSystemVisibleRange(input);
-    var system_rows = EditorVBox.init(allocator, world, "machina.editor.debug.systems.row", 28.0, editor_system_first_row_y, editor_system_row_stride);
+    const list_clip = editorSystemListClipRect();
+    var system_rows = EditorVBox.init(
+        allocator,
+        world,
+        "machina.editor.debug.systems.row",
+        28.0,
+        editor_system_first_row_y - visible_range.offset_y,
+        editor_system_row_stride,
+    ).withClip(list_clip);
     for (input.system_profiles[visible_range.start..visible_range.end]) |profile| {
         const line_text = formatSystemProfileLine(allocator, profile) catch return RenderError.OutOfMemory;
         defer allocator.free(line_text);
@@ -1496,7 +1526,13 @@ fn extractDebugOverlayInto(
             input.system_profiles.len,
         }) catch return RenderError.OutOfMemory;
         defer allocator.free(footer_text);
-        try system_rows.text("Editor Debug Systems Footer", footer_text, editor_system_text_size, .{ 0.56, 0.737, 0.949 });
+        const footer = world.createEntity("machina.editor.debug.systems.footer", "Editor Debug Systems Footer") catch |err| return mapWorldError(err);
+        world.setUiText(footer, .{
+            .position = .{ 28.0, editorSystemFooterY(), 0.0 },
+            .size = editor_system_text_size,
+            .color = .{ 0.56, 0.737, 0.949 },
+            .value = footer_text,
+        }) catch |err| return mapWorldError(err);
     }
 
     try extractEditorInspectorInto(allocator, world, scene_world, input);
@@ -1704,12 +1740,11 @@ fn formatInspectorFieldValue(allocator: std.mem.Allocator, field_name: []const u
 }
 
 fn editorDebugPanelSize(input: FrameInput) [2]f32 {
-    const visible_range = editorSystemVisibleRange(input);
-    const profile_rows = visible_range.end - visible_range.start;
     const has_profiles = input.system_profiles.len > 0;
     const panel_width: f32 = if (has_profiles) editor_system_panel_width else editor_controls_panel_width;
     var panel_height: f32 = 140.0;
     if (has_profiles) {
+        const profile_rows = @min(input.system_profiles.len, editor_system_profile_max_rows);
         panel_height = 178.0 + @as(f32, @floatFromInt(profile_rows)) * editor_system_row_stride;
         if (editorSystemNeedsScroll(input.system_profiles.len)) {
             panel_height += editor_system_row_stride;
@@ -1721,21 +1756,48 @@ fn editorDebugPanelSize(input: FrameInput) [2]f32 {
 const EditorSystemVisibleRange = struct {
     start: usize,
     end: usize,
+    offset_y: f32,
 };
 
 fn editorSystemVisibleRange(input: FrameInput) EditorSystemVisibleRange {
     const profile_count = input.system_profiles.len;
-    const visible_count = @min(profile_count, editor_system_profile_max_rows);
-    const max_start = editorSystemMaxScroll(profile_count);
-    const start = @min(input.editor.system_scroll_offset, max_start);
+    if (profile_count == 0) {
+        return .{ .start = 0, .end = 0, .offset_y = 0.0 };
+    }
+
+    const scroll_y = std.math.clamp(input.editor.system_scroll_y, 0.0, editorSystemMaxScrollY(profile_count));
+    const row_offset = scroll_y / editor_system_row_stride;
+    const start_float = @floor(row_offset);
+    const start: usize = @intFromFloat(start_float);
+    const offset_y = scroll_y - start_float * editor_system_row_stride;
+    const visible_count = @min(
+        profile_count - start,
+        editor_system_profile_max_rows + if (offset_y > 0.0) @as(usize, 1) else @as(usize, 0),
+    );
     return .{
         .start = start,
-        .end = @min(profile_count, start + visible_count),
+        .end = start + visible_count,
+        .offset_y = offset_y,
     };
 }
 
 fn editorSystemNeedsScroll(profile_count: usize) bool {
     return profile_count > editor_system_profile_max_rows;
+}
+
+fn editorSystemListClipRect() UiClipRect {
+    return .{
+        .position = .{ 20.0, editor_system_first_row_y, 0.0 },
+        .size = .{
+            editor_system_panel_width - 40.0,
+            @as(f32, @floatFromInt(editor_system_profile_max_rows)) * editor_system_row_stride,
+            0.0,
+        },
+    };
+}
+
+fn editorSystemFooterY() f32 {
+    return editor_system_first_row_y + @as(f32, @floatFromInt(editor_system_profile_max_rows)) * editor_system_row_stride;
 }
 
 fn editorSystemProfileScrollCount(input: FrameInput) usize {
@@ -1747,6 +1809,10 @@ fn editorSystemMaxScroll(profile_count: usize) usize {
         profile_count - editor_system_profile_max_rows
     else
         0;
+}
+
+fn editorSystemMaxScrollY(profile_count: usize) f32 {
+    return @as(f32, @floatFromInt(editorSystemMaxScroll(profile_count))) * editor_system_row_stride;
 }
 
 fn editorInspectorPanelHeight(input: FrameInput) f32 {
@@ -1762,20 +1828,20 @@ fn formatFpsLabel(allocator: std.mem.Allocator, fps: f32) error{OutOfMemory}![]c
 
 fn formatEditorInputDiagnostics(allocator: std.mem.Allocator, input: FrameInput) error{OutOfMemory}![]const u8 {
     if (!input.pointer.has_position) {
-        return std.fmt.allocPrint(allocator, "IN W{d:.1},{d:.1} P--,-- S{d} C{d}", .{
+        return std.fmt.allocPrint(allocator, "IN W{d:.1},{d:.1} P--,-- SY{d} C{d}", .{
             input.pointer.wheel_delta[0],
             input.pointer.wheel_delta[1],
-            input.editor.system_scroll_offset,
+            roundedScreenCoordinate(input.editor.system_scroll_y),
             editorSystemProfileScrollCount(input),
         });
     }
 
-    return std.fmt.allocPrint(allocator, "IN W{d:.1},{d:.1} P{d},{d} S{d} C{d}", .{
+    return std.fmt.allocPrint(allocator, "IN W{d:.1},{d:.1} P{d},{d} SY{d} C{d}", .{
         input.pointer.wheel_delta[0],
         input.pointer.wheel_delta[1],
         roundedScreenCoordinate(input.pointer.position[0]),
         roundedScreenCoordinate(input.pointer.position[1]),
-        input.editor.system_scroll_offset,
+        roundedScreenCoordinate(input.editor.system_scroll_y),
         editorSystemProfileScrollCount(input),
     });
 }
@@ -1928,6 +1994,14 @@ fn setRenderUiButtonState(world: *runtime.World, entity: runtime.EntityHandle, s
     world.setComponent(entity, render_ui_button_state_component_id, &fields) catch |err| return mapWorldError(err);
 }
 
+fn setRenderUiClip(world: *runtime.World, entity: runtime.EntityHandle, clip: UiClipRect) RenderError!void {
+    const fields = [_]runtime.ComponentFieldValue{
+        .{ .name = "position", .value = .{ .vec3 = clip.position } },
+        .{ .name = "size", .value = .{ .vec3 = clip.size } },
+    };
+    world.setComponent(entity, render_ui_clip_component_id, &fields) catch |err| return mapWorldError(err);
+}
+
 fn renderUiButtonState(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!?UiButtonState {
     if (!(world.hasComponent(entity, render_ui_button_state_component_id) catch |err| return mapWorldError(err))) {
         return null;
@@ -1936,6 +2010,16 @@ fn renderUiButtonState(world: *const runtime.World, entity: runtime.EntityHandle
         .hovered = world.getBoolean(entity, render_ui_button_state_component_id, "hovered") catch |err| return mapWorldError(err),
         .held = world.getBoolean(entity, render_ui_button_state_component_id, "held") catch |err| return mapWorldError(err),
         .pressed = world.getBoolean(entity, render_ui_button_state_component_id, "pressed") catch |err| return mapWorldError(err),
+    };
+}
+
+fn renderUiClip(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!?UiClipRect {
+    if (!(world.hasComponent(entity, render_ui_clip_component_id) catch |err| return mapWorldError(err))) {
+        return null;
+    }
+    return .{
+        .position = world.getVec3(entity, render_ui_clip_component_id, "position") catch |err| return mapWorldError(err),
+        .size = world.getVec3(entity, render_ui_clip_component_id, "size") catch |err| return mapWorldError(err),
     };
 }
 
@@ -3730,7 +3814,7 @@ test "editor system list scroll state responds to wheel input" {
         },
     });
     try std.testing.expect(down_update.consumed_pointer);
-    try std.testing.expectEqual(@as(usize, 1), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_row_stride), editor_state.system_scroll_y, 0.001);
 
     const up_update = try updateEditorState(&world, &editor_state, .{
         .debug_overlay_visible = true,
@@ -3742,7 +3826,7 @@ test "editor system list scroll state responds to wheel input" {
         },
     });
     try std.testing.expect(up_update.consumed_pointer);
-    try std.testing.expectEqual(@as(usize, 0), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), editor_state.system_scroll_y, 0.001);
 }
 
 test "editor system list wheel scroll does not depend on pointer hit testing" {
@@ -3773,7 +3857,7 @@ test "editor system list wheel scroll does not depend on pointer hit testing" {
     });
 
     try std.testing.expect(update.consumed_pointer);
-    try std.testing.expectEqual(@as(usize, 1), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_row_stride), editor_state.system_scroll_y, 0.001);
 }
 
 test "editor system list uses profile count hint for render-added rows" {
@@ -3794,7 +3878,7 @@ test "editor system list uses profile count hint for render-added rows" {
     });
 
     try std.testing.expect(update.consumed_pointer);
-    try std.testing.expectEqual(@as(usize, 1), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_row_stride), editor_state.system_scroll_y, 0.001);
 }
 
 test "editor system list uses fixed wheel direction" {
@@ -3819,7 +3903,7 @@ test "editor system list uses fixed wheel direction" {
         .system_profiles = &profiles,
         .pointer = .{ .wheel_delta = .{ 0.0, 1.0 } },
     });
-    try std.testing.expectEqual(@as(usize, 0), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), editor_state.system_scroll_y, 0.001);
 
     _ = try updateEditorState(&world, &editor_state, .{
         .debug_overlay_visible = true,
@@ -3831,7 +3915,7 @@ test "editor system list uses fixed wheel direction" {
         .system_profiles = &profiles,
         .pointer = .{ .wheel_delta = .{ 0.0, -1.0 } },
     });
-    try std.testing.expectEqual(@as(usize, 1), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_row_stride), editor_state.system_scroll_y, 0.001);
 
     _ = try updateEditorState(&world, &editor_state, .{
         .debug_overlay_visible = true,
@@ -3843,7 +3927,40 @@ test "editor system list uses fixed wheel direction" {
         .system_profiles = &profiles,
         .pointer = .{ .wheel_delta = .{ 0.0, 1.0 } },
     });
-    try std.testing.expectEqual(@as(usize, 0), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), editor_state.system_scroll_y, 0.001);
+}
+
+test "editor system list supports fractional pixel scroll" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const profiles = [_]runtime.SystemProfileSnapshot{
+        .{ .id = "system.0", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.1", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.2", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.3", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.4", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.5", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.6", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.7", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+        .{ .id = "system.8", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+    };
+
+    var editor_state = EditorState{};
+    _ = try updateEditorState(&world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .system_profiles = &profiles,
+        .pointer = .{ .wheel_delta = .{ 0.0, -0.5 } },
+    });
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_row_stride / 2.0), editor_state.system_scroll_y, 0.001);
+
+    const range = editorSystemVisibleRange(.{
+        .system_profiles = &profiles,
+        .editor = editorFrameState(&world, editor_state),
+    });
+    try std.testing.expectEqual(@as(usize, 0), range.start);
+    try std.testing.expectEqual(@as(usize, 8), range.end);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_row_stride / 2.0), range.offset_y, 0.001);
 }
 
 fn replayEditorScrollFrames(
@@ -3861,7 +3978,7 @@ fn replayEditorScrollFrames(
     }
 }
 
-test "editor system list replay ignores fractional inertial bounce at the bottom" {
+test "editor system list replay applies fractional scroll away from the bottom" {
     var world = runtime.World.init(std.testing.allocator);
     defer world.deinit();
 
@@ -3878,18 +3995,18 @@ test "editor system list replay ignores fractional inertial bounce at the bottom
     };
 
     var editor_state = EditorState{
-        .system_scroll_offset = 2,
+        .system_scroll_y = editor_system_row_stride * 2.0,
     };
 
     const bounce_frames = [_]f32{
         0.18, 0.0, 0.24, 0.0, 0.12, 0.0, 0.2,
     };
     try replayEditorScrollFrames(&world, &editor_state, &profiles, &bounce_frames);
-    try std.testing.expectEqual(@as(usize, 2), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, 40.32), editor_state.system_scroll_y, 0.001);
 
     const deliberate_reverse_frames = [_]f32{1.0};
     try replayEditorScrollFrames(&world, &editor_state, &profiles, &deliberate_reverse_frames);
-    try std.testing.expectEqual(@as(usize, 1), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, 8.32), editor_state.system_scroll_y, 0.001);
 }
 
 test "editor system list replay stays pinned through large boundary bounce stream" {
@@ -3913,11 +4030,11 @@ test "editor system list replay stays pinned through large boundary bounce strea
         -1.0, -1.0, -1.0, 1.0, 1.0, -0.75, 2.0, -1.0,
     };
     try replayEditorScrollFrames(&world, &editor_state, &profiles, &frames);
-    try std.testing.expectEqual(@as(usize, 2), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_row_stride * 2.0), editor_state.system_scroll_y, 0.001);
 
     const deliberate_reverse_after_idle = [_]f32{ 0.0, 1.0 };
     try replayEditorScrollFrames(&world, &editor_state, &profiles, &deliberate_reverse_after_idle);
-    try std.testing.expectEqual(@as(usize, 1), editor_state.system_scroll_offset);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_row_stride), editor_state.system_scroll_y, 0.001);
 }
 
 test "render ECS schedule orders extract prepare queue and draw systems" {
@@ -4318,11 +4435,11 @@ test "editor input diagnostics include wheel pointer and scroll state" {
             .has_position = true,
             .wheel_delta = .{ 0.0, -1.25 },
         },
-        .editor = .{ .system_scroll_offset = 3 },
+        .editor = .{ .system_scroll_y = 96.0 },
     });
     defer std.testing.allocator.free(line);
 
-    try std.testing.expectEqualStrings("IN W0.0,-1.3 P123,568 S3 C0", line);
+    try std.testing.expectEqualStrings("IN W0.0,-1.3 P123,568 SY96 C0", line);
 }
 
 test "debug overlay extracts FPS label when visible" {
@@ -4347,7 +4464,7 @@ test "debug overlay extracts FPS label when visible" {
     var saw_input = false;
     var texts = state.world.uiTexts();
     while (texts.next()) |text| {
-        if (std.mem.indexOf(u8, text.value, "IN W0.0,0.0 P--,-- S0 C0") != null) {
+        if (std.mem.indexOf(u8, text.value, "IN W0.0,0.0 P--,-- SY0 C0") != null) {
             saw_input = true;
         }
     }
@@ -4403,7 +4520,7 @@ test "debug overlay extracts system profile rows when available" {
     var saw_input = false;
     var texts = state.world.uiTexts();
     while (texts.next()) |text| {
-        if (std.mem.indexOf(u8, text.value, "IN W0.0,0.0 P--,-- S0 C2") != null) {
+        if (std.mem.indexOf(u8, text.value, "IN W0.0,0.0 P--,-- SY0 C2") != null) {
             saw_input = true;
         }
         try std.testing.expect(text.size >= 1.0);
@@ -4454,7 +4571,7 @@ test "debug overlay renders a scrolled system profile window" {
         .debug_overlay_visible = true,
         .fps = 60.0,
         .system_profiles = &profiles,
-        .editor = .{ .system_scroll_offset = 2 },
+        .editor = .{ .system_scroll_y = editor_system_row_stride * 2.0 },
     });
 
     var saw_zero = false;
@@ -4628,6 +4745,34 @@ test "UI vertex builder reflects button interaction state" {
     try std.testing.expect(held_vertices.items[6].color[0] < held_vertices.items[12].color[0]);
 }
 
+test "UI vertex builder clips text to render clip rect" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const text = try world.createEntity("text", "Text");
+    try world.setUiText(text, .{
+        .position = .{ 10.0, 8.0, 0.0 },
+        .size = 1.0,
+        .color = .{ 1.0, 1.0, 1.0 },
+        .value = "CLIP",
+    });
+    try setRenderUiClip(&world, text, .{
+        .position = .{ 10.0, 16.0, 0.0 },
+        .size = .{ 120.0, 18.0, 0.0 },
+    });
+
+    var vertices = try buildUiVertices(std.testing.allocator, &world, 640, 480);
+    defer vertices.deinit(std.testing.allocator);
+    try std.testing.expect(vertices.items.len > 0);
+
+    const clip_top = screenToClipY(16.0, 480);
+    const clip_bottom = screenToClipY(34.0, 480);
+    for (vertices.items) |vertex| {
+        try std.testing.expect(vertex.position[1] <= clip_top + 0.0001);
+        try std.testing.expect(vertex.position[1] >= clip_bottom - 0.0001);
+    }
+}
+
 const BatchTestShadowFlags = struct {
     casts_shadow: bool = false,
     receives_shadow: bool = false,
@@ -4754,6 +4899,7 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
     var rects = world.uiRects();
     while (rects.next()) |rect| {
         const maybe_button_state = if (rect.is_button) try renderUiButtonState(world, rect.entity) else null;
+        const maybe_clip = try renderUiClip(world, rect.entity);
         var rect_color = rect.color;
         if (maybe_button_state) |state| {
             if (state.held) {
@@ -4765,7 +4911,7 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
             }
         }
 
-        try appendUiRect(&vertices, allocator, width, height, rect.position, rect.size, rect_color);
+        try appendUiRectClipped(&vertices, allocator, width, height, rect.position, rect.size, rect_color, maybe_clip);
         if (rect.is_button) {
             var top_color = scaleColor(rect_color, 1.35);
             var bottom_color = scaleColor(rect_color, 0.65);
@@ -4776,8 +4922,8 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
                 }
             }
 
-            try appendUiRect(&vertices, allocator, width, height, rect.position, .{ rect.size[0], @min(2.0, rect.size[1]), 0.0 }, top_color);
-            try appendUiRect(
+            try appendUiRectClipped(&vertices, allocator, width, height, rect.position, .{ rect.size[0], @min(2.0, rect.size[1]), 0.0 }, top_color, maybe_clip);
+            try appendUiRectClipped(
                 &vertices,
                 allocator,
                 width,
@@ -4785,13 +4931,14 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
                 .{ rect.position[0], rect.position[1] + @max(rect.size[1] - 2.0, 0.0), rect.position[2] },
                 .{ rect.size[0], @min(2.0, rect.size[1]), 0.0 },
                 bottom_color,
+                maybe_clip,
             );
         }
     }
 
     var texts = world.uiTexts();
     while (texts.next()) |text| {
-        try appendUiText(&vertices, allocator, width, height, text);
+        try appendUiText(&vertices, allocator, width, height, text, try renderUiClip(world, text.entity));
     }
 
     return vertices;
@@ -4803,6 +4950,7 @@ fn appendUiText(
     width: u32,
     height: u32,
     text: runtime.UiText,
+    clip: ?UiClipRect,
 ) RenderError!void {
     if (!isFiniteVec3(text.position) or
         !std.math.isFinite(text.size) or
@@ -4821,7 +4969,7 @@ fn appendUiText(
             cursor_y += text.size * @as(f32, @floatFromInt(ui_font.height));
             continue;
         }
-        try appendGlyph(vertices, allocator, width, height, cursor_x, cursor_y, text.size, text.color, byte);
+        try appendGlyph(vertices, allocator, width, height, cursor_x, cursor_y, text.size, text.color, byte, clip);
         cursor_x += text.size * @as(f32, @floatFromInt(ui_font.advance));
     }
 }
@@ -4836,6 +4984,7 @@ fn appendGlyph(
     size: f32,
     color: [3]f32,
     byte: u8,
+    clip: ?UiClipRect,
 ) RenderError!void {
     const rows = ui_font.glyphRows(byte);
     for (rows, 0..) |row_bits, row| {
@@ -4844,7 +4993,7 @@ fn appendGlyph(
             if ((row_bits & (@as(ui_font.Row, 1) << bit)) == 0) {
                 continue;
             }
-            try appendUiRect(
+            try appendUiRectClipped(
                 vertices,
                 allocator,
                 width,
@@ -4852,6 +5001,7 @@ fn appendGlyph(
                 .{ x + @as(f32, @floatFromInt(column)) * size, y + @as(f32, @floatFromInt(row)) * size, 0.0 },
                 .{ size, size, 0.0 },
                 color,
+                clip,
             );
         }
     }
@@ -4866,14 +5016,44 @@ fn appendUiRect(
     size: [3]f32,
     color: [3]f32,
 ) RenderError!void {
+    try appendUiRectClipped(vertices, allocator, width, height, position, size, color, null);
+}
+
+fn appendUiRectClipped(
+    vertices: *std.ArrayList(UiVertex),
+    allocator: std.mem.Allocator,
+    width: u32,
+    height: u32,
+    position: [3]f32,
+    size: [3]f32,
+    color: [3]f32,
+    clip: ?UiClipRect,
+) RenderError!void {
     if (!isFiniteVec3(position) or !isFiniteVec3(size) or !isFiniteVec3(color) or size[0] <= 0.0 or size[1] <= 0.0) {
         return RenderError.InvalidScene;
     }
 
-    const left = screenToClipX(position[0], width);
-    const right = screenToClipX(position[0] + size[0], width);
-    const top = screenToClipY(position[1], height);
-    const bottom = screenToClipY(position[1] + size[1], height);
+    var clipped_position = position;
+    var clipped_size = size;
+    if (clip) |clip_rect| {
+        if (!isFiniteVec3(clip_rect.position) or !isFiniteVec3(clip_rect.size) or clip_rect.size[0] <= 0.0 or clip_rect.size[1] <= 0.0) {
+            return RenderError.InvalidScene;
+        }
+        const left_px = @max(position[0], clip_rect.position[0]);
+        const top_px = @max(position[1], clip_rect.position[1]);
+        const right_px = @min(position[0] + size[0], clip_rect.position[0] + clip_rect.size[0]);
+        const bottom_px = @min(position[1] + size[1], clip_rect.position[1] + clip_rect.size[1]);
+        if (right_px <= left_px or bottom_px <= top_px) {
+            return;
+        }
+        clipped_position = .{ left_px, top_px, position[2] };
+        clipped_size = .{ right_px - left_px, bottom_px - top_px, size[2] };
+    }
+
+    const left = screenToClipX(clipped_position[0], width);
+    const right = screenToClipX(clipped_position[0] + clipped_size[0], width);
+    const top = screenToClipY(clipped_position[1], height);
+    const bottom = screenToClipY(clipped_position[1] + clipped_size[1], height);
     const vertex_color = [4]f32{ clamp01(color[0]), clamp01(color[1]), clamp01(color[2]), 1.0 };
 
     const quad = [_]UiVertex{
