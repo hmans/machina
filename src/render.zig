@@ -36,9 +36,13 @@ const render_queue_ui_system_id = "machina.render.queue_ui";
 const render_draw_meshes_system_id = "machina.render.draw_meshes";
 const default_window_width = 1280;
 const default_window_height = 720;
+const editor_shell_margin: f32 = 16.0;
+const editor_shell_gap: f32 = 12.0;
+const editor_sidebar_target_width: f32 = 560.0;
+const editor_sidebar_min_width: f32 = 360.0;
+const editor_game_viewport_aspect: f32 = 16.0 / 9.0;
 const editor_performance_display_interval_ns: u64 = 333_000_000;
 const editor_system_profile_max_rows = 7;
-const editor_system_panel_width: f32 = 650.0;
 const editor_debug_fps_size: f32 = 1.6;
 const editor_system_text_size: f32 = 1.0;
 const editor_input_debug_y: f32 = 104.0;
@@ -48,16 +52,11 @@ const editor_system_row_stride: f32 = 32.0;
 const editor_system_scroll_pixels_per_wheel: f32 = 18.0;
 const editor_system_scroll_smoothing: f32 = 22.0;
 const render_system_profile_window_frames: usize = 120;
-const editor_controls_panel_width: f32 = 360.0;
-const editor_controls_panel_height: f32 = 102.0;
-const editor_controls_panel_x: f32 = 12.0;
-const editor_controls_panel_y: f32 = 12.0;
 const editor_control_button_y: f32 = 58.0;
 const editor_play_button_x: f32 = 28.0;
 const editor_step_button_x: f32 = 148.0;
 const editor_control_button_width: f32 = 104.0;
 const editor_control_button_height: f32 = 36.0;
-const editor_inspector_panel_width: f32 = 430.0;
 const editor_inspector_panel_height: f32 = 548.0;
 const editor_inspector_empty_panel_height: f32 = 178.0;
 const editor_inspector_panel_margin: f32 = 12.0;
@@ -338,12 +337,12 @@ pub fn updateEditorState(world: *runtime.World, state: *EditorState, input: Fram
     }
 
     if (input.pointer.primary_pressed) {
-        if (hitEditorPlayButton(input.pointer.position)) {
+        if (hitEditorPlayButton(input)) {
             state.paused = !state.paused;
             state.captured_pointer = true;
             return .{ .consumed_pointer = true };
         }
-        if (hitEditorStepButton(input.pointer.position)) {
+        if (hitEditorStepButton(input)) {
             state.paused = true;
             state.captured_pointer = true;
             return .{ .consumed_pointer = true, .step_once = true };
@@ -407,6 +406,25 @@ const UiButtonState = struct {
 const UiClipRect = struct {
     position: [3]f32,
     size: [3]f32,
+};
+
+const ScreenRect = struct {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+
+    fn position(self: ScreenRect) [3]f32 {
+        return .{ self.x, self.y, 0.0 };
+    }
+
+    fn size3(self: ScreenRect) [3]f32 {
+        return .{ self.width, self.height, 0.0 };
+    }
+
+    fn contains(self: ScreenRect, point: [2]f32) bool {
+        return pointInsideScreenRect(point, .{ self.x, self.y }, .{ self.width, self.height });
+    }
 };
 
 const UiResolvedLayout = struct {
@@ -696,11 +714,18 @@ const FrameConfig = struct {
     height: u32,
     scene: Scene,
     input: FrameInput = .{},
+
+    fn gameViewport(self: FrameConfig) ScreenRect {
+        var input = self.input;
+        input.viewport_width = @floatFromInt(self.width);
+        input.viewport_height = @floatFromInt(self.height);
+        return editorGameViewport(input);
+    }
 };
 
 const InstanceConfig = struct {
-    width: u32,
-    height: u32,
+    width: f32,
+    height: f32,
     mesh: *const runtime.RenderableMesh,
     camera: CameraState,
     light_view_projection: [16]f32,
@@ -971,10 +996,12 @@ const RenderEcsState = struct {
             runtime.ui_button_component_id,
         };
         while (self.world.queryNext(&button_query, &cursor)) |entity| {
+            const stored_entity = self.world.entity(entity) catch |err| return mapWorldError(err);
             const position = self.world.getVec3(entity, runtime.ui_rect_component_id, "position") catch |err| return mapWorldError(err);
             const size = self.world.getVec3(entity, runtime.ui_rect_component_id, "size") catch |err| return mapWorldError(err);
             const layout = try resolveUiLayout(&self.world, entity, position, size);
-            const state = evaluateUiButtonState(input, layout.position, size, layout.clip);
+            const screen_layout = try resolveUiScreenLayout(input, stored_entity.id, layout, size);
+            const state = evaluateUiButtonState(input, screen_layout.position, size, screen_layout.clip);
             try setRenderUiButtonState(&self.world, entity, state);
         }
     }
@@ -1496,28 +1523,86 @@ const EditorVBox = struct {
     }
 };
 
+fn extractEditorShellInto(world: *runtime.World, input: FrameInput) RenderError!void {
+    const sidebar = editorSidebarRect(input);
+    const game_viewport = editorGameViewport(input);
+
+    const sidebar_panel = world.createEntity("machina.editor.shell.sidebar", "Editor Sidebar") catch |err| return mapWorldError(err);
+    world.setUiRect(sidebar_panel, .{
+        .position = sidebar.position(),
+        .size = sidebar.size3(),
+        .color = .{ 0.02, 0.027, 0.051 },
+    }) catch |err| return mapWorldError(err);
+
+    const sidebar_accent = world.createEntity("machina.editor.shell.sidebar.accent", "Editor Sidebar Accent") catch |err| return mapWorldError(err);
+    world.setUiRect(sidebar_accent, .{
+        .position = sidebar.position(),
+        .size = .{ sidebar.width, 4.0, 0.0 },
+        .color = .{ 0.056, 0.749, 0.823 },
+    }) catch |err| return mapWorldError(err);
+
+    const frame_color = [3]f32{ 0.129, 0.161, 0.216 };
+    const accent_color = [3]f32{ 0.056, 0.749, 0.823 };
+    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.top", .{
+        .x = game_viewport.x - 4.0,
+        .y = game_viewport.y - 4.0,
+        .width = game_viewport.width + 8.0,
+        .height = 4.0,
+    }, accent_color);
+    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.bottom", .{
+        .x = game_viewport.x - 4.0,
+        .y = game_viewport.y + game_viewport.height,
+        .width = game_viewport.width + 8.0,
+        .height = 4.0,
+    }, frame_color);
+    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.left", .{
+        .x = game_viewport.x - 4.0,
+        .y = game_viewport.y,
+        .width = 4.0,
+        .height = game_viewport.height,
+    }, frame_color);
+    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.right", .{
+        .x = game_viewport.x + game_viewport.width,
+        .y = game_viewport.y,
+        .width = 4.0,
+        .height = game_viewport.height,
+    }, frame_color);
+}
+
+fn extractEditorShellRect(world: *runtime.World, id: []const u8, rect: ScreenRect, color: [3]f32) RenderError!void {
+    const entity = world.createEntity(id, "Editor Shell Rect") catch |err| return mapWorldError(err);
+    world.setUiRect(entity, .{
+        .position = rect.position(),
+        .size = rect.size3(),
+        .color = color,
+    }) catch |err| return mapWorldError(err);
+}
+
 fn extractDebugOverlayInto(
     allocator: std.mem.Allocator,
     world: *runtime.World,
     input: FrameInput,
     scene_world: *const runtime.World,
 ) RenderError!void {
+    try extractEditorShellInto(world, input);
+
     const has_profiles = input.system_profiles.len > 0;
     const panel_size = editorDebugPanelSize(input);
+    const panel = editorSystemPanelRect(input);
 
     const canvas = world.createEntity("machina.editor.debug.canvas", "Editor Debug Canvas") catch |err| return mapWorldError(err);
     world.setUiCanvas(canvas) catch |err| return mapWorldError(err);
 
-    const panel = world.createEntity("machina.editor.debug.panel", "Editor Debug Panel") catch |err| return mapWorldError(err);
-    world.setUiRect(panel, .{
-        .position = .{ 12.0, 12.0, 0.0 },
+    const system_panel = world.createEntity("machina.editor.debug.panel", "Editor Debug Panel") catch |err| return mapWorldError(err);
+    world.setUiRect(system_panel, .{
+        .position = panel.position(),
         .size = .{ panel_size[0], panel_size[1], 0.0 },
         .color = .{ 0.059, 0.09, 0.165 },
     }) catch |err| return mapWorldError(err);
 
     const accent = world.createEntity("machina.editor.debug.accent", "Editor Debug Accent") catch |err| return mapWorldError(err);
     world.setUiRect(accent, .{
-        .position = .{ 12.0, 12.0, 0.0 },
+        .position = panel.position(),
         .size = .{ panel_size[0], 4.0, 0.0 },
         .color = .{ 0.056, 0.749, 0.823 },
     }) catch |err| return mapWorldError(err);
@@ -1527,7 +1612,7 @@ fn extractDebugOverlayInto(
 
     const label = world.createEntity("machina.editor.debug.fps", "Editor Debug FPS") catch |err| return mapWorldError(err);
     world.setUiText(label, .{
-        .position = .{ 28.0, 24.0, 0.0 },
+        .position = .{ panel.x + 16.0, panel.y + 12.0, 0.0 },
         .size = editor_debug_fps_size,
         .color = .{ 0.93, 0.969, 1.0 },
         .value = fps_text,
@@ -1545,13 +1630,13 @@ fn extractDebugOverlayInto(
     defer allocator.free(header_text);
     const header = world.createEntity("machina.editor.debug.systems.header", "Editor Debug Systems Header") catch |err| return mapWorldError(err);
     world.setUiText(header, .{
-        .position = .{ 28.0, editor_system_header_y, 0.0 },
+        .position = .{ panel.x + 16.0, panel.y + editor_system_header_y, 0.0 },
         .size = editor_system_text_size,
         .color = .{ 0.56, 0.737, 0.949 },
         .value = header_text,
     }) catch |err| return mapWorldError(err);
 
-    const list_clip = editorSystemListClipRect();
+    const list_clip = editorSystemListClipRect(input);
     const system_scroll = world.createEntity("machina.editor.debug.systems.scroll", "Editor Debug Systems Scroll View") catch |err| return mapWorldError(err);
     world.setUiScrollView(system_scroll, .{
         .position = list_clip.position,
@@ -1563,8 +1648,8 @@ fn extractDebugOverlayInto(
     const system_row_height = @as(f32, @floatFromInt(ui_font.height)) * editor_system_text_size;
     world.setUiVBox(system_stack, .{
         .position = .{
-            28.0 - list_clip.position[0],
-            editor_system_first_row_y - list_clip.position[1],
+            panel.x + 16.0 - list_clip.position[0],
+            panel.y + editor_system_first_row_y - list_clip.position[1],
             0.0,
         },
         .spacing = @max(editor_system_row_stride - system_row_height, 0.0),
@@ -1598,7 +1683,7 @@ fn extractDebugOverlayInto(
         defer allocator.free(footer_text);
         const footer = world.createEntity("machina.editor.debug.systems.footer", "Editor Debug Systems Footer") catch |err| return mapWorldError(err);
         world.setUiText(footer, .{
-            .position = .{ 28.0, editorSystemFooterY(), 0.0 },
+            .position = .{ panel.x + 16.0, editorSystemFooterY(input), 0.0 },
             .size = editor_system_text_size,
             .color = .{ 0.56, 0.737, 0.949 },
             .value = footer_text,
@@ -1611,10 +1696,11 @@ fn extractDebugOverlayInto(
 fn extractEditorInputDiagnosticsInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
     const input_text = formatEditorInputDiagnostics(allocator, input) catch return RenderError.OutOfMemory;
     defer allocator.free(input_text);
+    const panel = editorSystemPanelRect(input);
 
     const entity = world.createEntity("machina.editor.debug.input", "Editor Debug Input") catch |err| return mapWorldError(err);
     world.setUiText(entity, .{
-        .position = .{ 28.0, editor_input_debug_y, 0.0 },
+        .position = .{ panel.x + 16.0, panel.y + editor_input_debug_y, 0.0 },
         .size = editor_system_text_size,
         .color = .{ 0.74, 0.879, 0.996 },
         .value = input_text,
@@ -1624,29 +1710,31 @@ fn extractEditorInputDiagnosticsInto(allocator: std.mem.Allocator, world: *runti
 fn extractEditorPlaybackControlsInto(world: *runtime.World, input: FrameInput) RenderError!void {
     const play_label = if (input.editor.paused) "PLAY" else "PAUSE";
     const play_color: [3]f32 = if (input.editor.paused) .{ 0.063, 0.725, 0.506 } else .{ 0.961, 0.62, 0.043 };
+    const play_rect = editorPlayButtonRect(input);
     const play = world.createEntity("machina.editor.controls.play", "Editor Play Button") catch |err| return mapWorldError(err);
     world.setUiRect(play, .{
-        .position = .{ editor_play_button_x, editor_control_button_y, 0.0 },
-        .size = .{ editor_control_button_width, editor_control_button_height, 0.0 },
+        .position = play_rect.position(),
+        .size = play_rect.size3(),
         .color = play_color,
     }) catch |err| return mapWorldError(err);
     const play_text = world.createEntity("machina.editor.controls.play.label", "Editor Play Label") catch |err| return mapWorldError(err);
     world.setUiText(play_text, .{
-        .position = .{ editor_play_button_x + 18.0, editor_control_button_y + 8.0, 0.0 },
+        .position = .{ play_rect.x + 18.0, play_rect.y + 8.0, 0.0 },
         .size = 1.0,
         .color = .{ 0.953, 0.969, 0.996 },
         .value = play_label,
     }) catch |err| return mapWorldError(err);
 
+    const step_rect = editorStepButtonRect(input);
     const step = world.createEntity("machina.editor.controls.step", "Editor Step Button") catch |err| return mapWorldError(err);
     world.setUiRect(step, .{
-        .position = .{ editor_step_button_x, editor_control_button_y, 0.0 },
-        .size = .{ editor_control_button_width, editor_control_button_height, 0.0 },
+        .position = step_rect.position(),
+        .size = step_rect.size3(),
         .color = .{ 0.129, 0.161, 0.216 },
     }) catch |err| return mapWorldError(err);
     const step_text = world.createEntity("machina.editor.controls.step.label", "Editor Step Label") catch |err| return mapWorldError(err);
     world.setUiText(step_text, .{
-        .position = .{ editor_step_button_x + 22.0, editor_control_button_y + 8.0, 0.0 },
+        .position = .{ step_rect.x + 22.0, step_rect.y + 8.0, 0.0 },
         .size = 1.0,
         .color = .{ 0.889, 0.949, 0.992 },
         .value = "STEP",
@@ -1659,21 +1747,25 @@ fn extractEditorInspectorInto(
     scene_world: *const runtime.World,
     input: FrameInput,
 ) RenderError!void {
-    const panel_x = @max(editorViewportWidth(input) - editor_inspector_panel_width - editor_inspector_panel_margin, editor_inspector_panel_margin);
-    const panel_y = editor_inspector_panel_margin;
+    const sidebar = editorSidebarRect(input);
+    const system_panel = editorSystemPanelRect(input);
+    const panel_x = sidebar.x;
+    const panel_y = system_panel.y + system_panel.height + editor_shell_gap;
+    const available_height = @max(sidebar.y + sidebar.height - panel_y, editor_inspector_empty_panel_height);
     const panel_height = editorInspectorPanelHeight(input);
+    const panel_width = sidebar.width;
 
     const panel = world.createEntity("machina.editor.inspector.panel", "Editor Inspector Panel") catch |err| return mapWorldError(err);
     world.setUiRect(panel, .{
         .position = .{ panel_x, panel_y, 0.0 },
-        .size = .{ editor_inspector_panel_width, panel_height, 0.0 },
+        .size = .{ panel_width, @min(panel_height, available_height), 0.0 },
         .color = .{ 0.059, 0.09, 0.165 },
     }) catch |err| return mapWorldError(err);
 
     const accent = world.createEntity("machina.editor.inspector.accent", "Editor Inspector Accent") catch |err| return mapWorldError(err);
     world.setUiRect(accent, .{
         .position = .{ panel_x, panel_y, 0.0 },
-        .size = .{ editor_inspector_panel_width, 4.0, 0.0 },
+        .size = .{ panel_width, 4.0, 0.0 },
         .color = .{ 0.056, 0.749, 0.823 },
     }) catch |err| return mapWorldError(err);
 
@@ -1810,8 +1902,9 @@ fn formatInspectorFieldValue(allocator: std.mem.Allocator, field_name: []const u
 }
 
 fn editorDebugPanelSize(input: FrameInput) [2]f32 {
+    const sidebar = editorSidebarRect(input);
     const has_profiles = input.system_profiles.len > 0;
-    const panel_width: f32 = if (has_profiles) editor_system_panel_width else editor_controls_panel_width;
+    const panel_width: f32 = sidebar.width;
     var panel_height: f32 = 140.0;
     if (has_profiles) {
         const profile_rows = @min(input.system_profiles.len, editor_system_profile_max_rows);
@@ -1821,6 +1914,17 @@ fn editorDebugPanelSize(input: FrameInput) [2]f32 {
         }
     }
     return .{ panel_width, panel_height };
+}
+
+fn editorSystemPanelRect(input: FrameInput) ScreenRect {
+    const sidebar = editorSidebarRect(input);
+    const size = editorDebugPanelSize(input);
+    return .{
+        .x = sidebar.x,
+        .y = sidebar.y,
+        .width = size[0],
+        .height = size[1],
+    };
 }
 
 const EditorSystemVisibleRange = struct {
@@ -1855,19 +1959,21 @@ fn editorSystemNeedsScroll(profile_count: usize) bool {
     return profile_count > editor_system_profile_max_rows;
 }
 
-fn editorSystemListClipRect() UiClipRect {
+fn editorSystemListClipRect(input: FrameInput) UiClipRect {
+    const panel = editorSystemPanelRect(input);
     return .{
-        .position = .{ 20.0, editor_system_first_row_y, 0.0 },
+        .position = .{ panel.x + 8.0, panel.y + editor_system_first_row_y, 0.0 },
         .size = .{
-            editor_system_panel_width - 40.0,
+            @max(panel.width - 16.0, 1.0),
             @as(f32, @floatFromInt(editor_system_profile_max_rows)) * editor_system_row_stride,
             0.0,
         },
     };
 }
 
-fn editorSystemFooterY() f32 {
-    return editor_system_first_row_y + @as(f32, @floatFromInt(editor_system_profile_max_rows)) * editor_system_row_stride;
+fn editorSystemFooterY(input: FrameInput) f32 {
+    const panel = editorSystemPanelRect(input);
+    return panel.y + editor_system_first_row_y + @as(f32, @floatFromInt(editor_system_profile_max_rows)) * editor_system_row_stride;
 }
 
 fn editorSystemProfileScrollCount(input: FrameInput) usize {
@@ -2145,6 +2251,26 @@ fn resolveUiLayout(world: *const runtime.World, entity: runtime.EntityHandle, lo
     }
 
     return RenderError.InvalidScene;
+}
+
+fn resolveUiScreenLayout(input: FrameInput, entity_id: []const u8, layout: UiResolvedLayout, item_size: [3]f32) RenderError!UiResolvedLayout {
+    if (!input.debug_overlay_visible or isEditorUiEntityId(entity_id)) {
+        return layout;
+    }
+
+    const viewport = editorGameViewport(input);
+    var screen_layout = layout;
+    screen_layout.position[0] += viewport.x;
+    screen_layout.position[1] += viewport.y;
+    screen_layout.clip = try combineUiClip(screen_layout.clip, .{
+        .position = viewport.position(),
+        .size = .{ viewport.width, viewport.height, item_size[2] },
+    });
+    return screen_layout;
+}
+
+fn isEditorUiEntityId(entity_id: []const u8) bool {
+    return std.mem.startsWith(u8, entity_id, "machina.editor.");
 }
 
 fn uiVBoxChildOffsetY(world: *const runtime.World, parent: runtime.EntityHandle, child: runtime.EntityHandle, child_item: UiLayoutItem) RenderError!f32 {
@@ -2709,6 +2835,7 @@ const MeshDemo = struct {
         const camera = try cameraState(&self.render_state.world);
         const light = try directionalLightState(&self.render_state.world);
         const light_view_projection = try shadowLightViewProjection(light);
+        const game_viewport = config.gameViewport();
         for (plan.batches, 0..) |entry, batch_index| {
             if (batch_index >= self.batches.len) {
                 return RenderError.InvalidScene;
@@ -2723,8 +2850,8 @@ const MeshDemo = struct {
                 }
                 const mesh = plan.renderables[render_index];
                 instances[instance_index] = try instanceAttributes(.{
-                    .width = config.width,
-                    .height = config.height,
+                    .width = game_viewport.width,
+                    .height = game_viewport.height,
                     .mesh = &mesh,
                     .camera = camera,
                     .light_view_projection = light_view_projection,
@@ -2787,6 +2914,14 @@ const MeshDemo = struct {
             .depth_stencil_attachment = &depth_attachment,
         }) orelse return RenderError.NoDevice;
         defer render_pass.release();
+        const game_viewport = context.frame.gameViewport();
+        render_pass.setViewport(game_viewport.x, game_viewport.y, game_viewport.width, game_viewport.height, 0.0, 1.0);
+        render_pass.setScissorRect(
+            @intFromFloat(@max(@floor(game_viewport.x), 0.0)),
+            @intFromFloat(@max(@floor(game_viewport.y), 0.0)),
+            @intFromFloat(@max(@ceil(game_viewport.width), 1.0)),
+            @intFromFloat(@max(@ceil(game_viewport.height), 1.0)),
+        );
         render_pass.setPipeline(self.pipeline);
         render_pass.setBindGroup(0, self.bind_group, 0, null);
         for (draw_batch_indices.items) |batch_index| {
@@ -3406,7 +3541,7 @@ fn frameUniforms(light_value: DirectionalLightState) RenderError!FrameUniforms {
 }
 
 fn instanceAttributes(config: InstanceConfig) RenderError!InstanceAttributes {
-    const aspect = @as(f32, @floatFromInt(config.width)) / @as(f32, @floatFromInt(config.height));
+    const aspect = config.width / config.height;
     const mesh = config.mesh;
     const rotation = matMul(
         rotationZ(mesh.rotation[2]),
@@ -3532,6 +3667,9 @@ fn validatedEditorSelection(world: *const runtime.World, selected: ?runtime.Enti
 }
 
 fn pickRenderableEntity(world: *const runtime.World, input: FrameInput) EditorError!?runtime.EntityHandle {
+    if (!editorGameViewport(input).contains(input.pointer.position)) {
+        return null;
+    }
     const ray = try editorRayFromInput(world, input);
     var best_entity: ?runtime.EntityHandle = null;
     var best_t = std.math.inf(f32);
@@ -3608,16 +3746,21 @@ fn dragSelectedEntity(world: *runtime.World, state: *EditorState, input: FrameIn
 }
 
 fn editorRayFromInput(world: *const runtime.World, input: FrameInput) EditorError!EditorRay {
-    const width = editorViewportWidth(input);
-    const height = editorViewportHeight(input);
+    const viewport = editorGameViewport(input);
+    const width = viewport.width;
+    const height = viewport.height;
     if (width <= 0.0 or height <= 0.0) {
+        return error.InvalidScene;
+    }
+    if (!viewport.contains(input.pointer.position)) {
         return error.InvalidScene;
     }
     const camera = cameraState(world) catch return error.InvalidScene;
     const aspect = width / height;
     const tan_half_fov = @tan(std.math.degreesToRadians(camera.fov_y_degrees) * 0.5);
-    const ndc_x = (input.pointer.position[0] / width) * 2.0 - 1.0;
-    const ndc_y = 1.0 - (input.pointer.position[1] / height) * 2.0;
+    const local_pointer = subtractVec2(input.pointer.position, .{ viewport.x, viewport.y });
+    const ndc_x = (local_pointer[0] / width) * 2.0 - 1.0;
+    const ndc_y = 1.0 - (local_pointer[1] / height) * 2.0;
     const local_direction = normalizeVec3(.{
         ndc_x * tan_half_fov * aspect,
         ndc_y * tan_half_fov,
@@ -3630,8 +3773,9 @@ fn editorRayFromInput(world: *const runtime.World, input: FrameInput) EditorErro
 }
 
 fn projectWorldToScreen(position: [3]f32, camera_value: CameraState, input: FrameInput) ?[2]f32 {
-    const width = editorViewportWidth(input);
-    const height = editorViewportHeight(input);
+    const viewport = editorGameViewport(input);
+    const width = viewport.width;
+    const height = viewport.height;
     if (width <= 0.0 or height <= 0.0) {
         return null;
     }
@@ -3648,8 +3792,8 @@ fn projectWorldToScreen(position: [3]f32, camera_value: CameraState, input: Fram
         return null;
     }
     return .{
-        (ndc_x + 1.0) * 0.5 * width,
-        (1.0 - ndc_y) * 0.5 * height,
+        viewport.x + (ndc_x + 1.0) * 0.5 * width,
+        viewport.y + (1.0 - ndc_y) * 0.5 * height,
     };
 }
 
@@ -3684,23 +3828,43 @@ fn editorAxisVector(axis: EditorAxis) ?[3]f32 {
     };
 }
 
-fn hitEditorPlayButton(position: [2]f32) bool {
-    return pointInsideScreenRect(position, .{ editor_play_button_x, editor_control_button_y }, .{ editor_control_button_width, editor_control_button_height });
+fn editorPlayButtonRect(input: FrameInput) ScreenRect {
+    const panel = editorSystemPanelRect(input);
+    return .{
+        .x = panel.x + editor_play_button_x - 12.0,
+        .y = panel.y + editor_control_button_y - 12.0,
+        .width = editor_control_button_width,
+        .height = editor_control_button_height,
+    };
 }
 
-fn hitEditorStepButton(position: [2]f32) bool {
-    return pointInsideScreenRect(position, .{ editor_step_button_x, editor_control_button_y }, .{ editor_control_button_width, editor_control_button_height });
+fn editorStepButtonRect(input: FrameInput) ScreenRect {
+    const panel = editorSystemPanelRect(input);
+    return .{
+        .x = panel.x + editor_step_button_x - 12.0,
+        .y = panel.y + editor_control_button_y - 12.0,
+        .width = editor_control_button_width,
+        .height = editor_control_button_height,
+    };
+}
+
+fn hitEditorPlayButton(input: FrameInput) bool {
+    return editorPlayButtonRect(input).contains(input.pointer.position);
+}
+
+fn hitEditorStepButton(input: FrameInput) bool {
+    return editorStepButtonRect(input).contains(input.pointer.position);
 }
 
 fn hitEditorChrome(input: FrameInput) bool {
-    const width = editorViewportWidth(input);
-    const inspector_x = @max(width - editor_inspector_panel_width - editor_inspector_panel_margin, editor_inspector_panel_margin);
-    return hitEditorSystemPanel(input) or
-        pointInsideScreenRect(input.pointer.position, .{ inspector_x, editor_inspector_panel_margin }, .{ editor_inspector_panel_width, editorInspectorPanelHeight(input) });
+    if (!input.debug_overlay_visible) {
+        return false;
+    }
+    return editorSidebarRect(input).contains(input.pointer.position);
 }
 
 fn hitEditorSystemPanel(input: FrameInput) bool {
-    return pointInsideScreenRect(input.pointer.position, .{ editor_controls_panel_x, editor_controls_panel_y }, editorDebugPanelSize(input));
+    return editorSidebarRect(input).contains(input.pointer.position);
 }
 
 fn pointInsideScreenRect(position: [2]f32, origin: [2]f32, size: [2]f32) bool {
@@ -3713,6 +3877,58 @@ fn editorViewportWidth(input: FrameInput) f32 {
 
 fn editorViewportHeight(input: FrameInput) f32 {
     return if (input.viewport_height > 0.0) input.viewport_height else @as(f32, @floatFromInt(output_height));
+}
+
+fn editorSidebarWidth(window_width: f32) f32 {
+    if (window_width <= 0.0) {
+        return editor_sidebar_target_width;
+    }
+    const max_sidebar = @max(editor_sidebar_min_width, window_width * 0.48);
+    return @min(editor_sidebar_target_width, max_sidebar);
+}
+
+fn editorSidebarRect(input: FrameInput) ScreenRect {
+    const window_width = editorViewportWidth(input);
+    const window_height = editorViewportHeight(input);
+    const sidebar_width = @min(editorSidebarWidth(window_width), @max(window_width - editor_shell_margin * 2.0, 1.0));
+    return .{
+        .x = @max(window_width - sidebar_width - editor_shell_margin, editor_shell_margin),
+        .y = editor_shell_margin,
+        .width = sidebar_width,
+        .height = @max(window_height - editor_shell_margin * 2.0, 1.0),
+    };
+}
+
+fn editorGameViewport(input: FrameInput) ScreenRect {
+    const window_width = editorViewportWidth(input);
+    const window_height = editorViewportHeight(input);
+    if (!input.debug_overlay_visible) {
+        return .{
+            .x = 0.0,
+            .y = 0.0,
+            .width = @max(window_width, 1.0),
+            .height = @max(window_height, 1.0),
+        };
+    }
+
+    const sidebar = editorSidebarRect(input);
+    const area_x = editor_shell_margin;
+    const area_y = editor_shell_margin;
+    const area_width = @max(sidebar.x - editor_shell_gap - area_x, 1.0);
+    const area_height = @max(window_height - editor_shell_margin * 2.0, 1.0);
+    var viewport_width = area_width;
+    var viewport_height = viewport_width / editor_game_viewport_aspect;
+    if (viewport_height > area_height) {
+        viewport_height = area_height;
+        viewport_width = viewport_height * editor_game_viewport_aspect;
+    }
+
+    return .{
+        .x = area_x + @max((area_width - viewport_width) * 0.5, 0.0),
+        .y = area_y + @max((area_height - viewport_height) * 0.5, 0.0),
+        .width = @max(viewport_width, 1.0),
+        .height = @max(viewport_height, 1.0),
+    };
 }
 
 fn cameraViewMatrix(transform_value: runtime.Transform) [16]f32 {
@@ -3865,12 +4081,18 @@ test "editor raycast selects nearest renderable mesh" {
     try world.setCubeRenderer(near, .{ .color = .{ 0.8, 0.4, 0.2 } });
 
     var editor_state = EditorState{};
-    const update = try updateEditorState(&world, &editor_state, .{
+    const input = FrameInput{
         .debug_overlay_visible = true,
         .viewport_width = 960.0,
         .viewport_height = 540.0,
+    };
+    const game_viewport = editorGameViewport(input);
+    const update = try updateEditorState(&world, &editor_state, .{
+        .debug_overlay_visible = input.debug_overlay_visible,
+        .viewport_width = input.viewport_width,
+        .viewport_height = input.viewport_height,
         .pointer = .{
-            .position = .{ 480.0, 270.0 },
+            .position = .{ game_viewport.x + game_viewport.width * 0.5, game_viewport.y + game_viewport.height * 0.5 },
             .has_position = true,
             .primary_pressed = true,
             .primary_down = true,
@@ -3894,15 +4116,21 @@ test "editor gizmo drag mutates selected transform position" {
     var editor_state = EditorState{
         .selected_entity = entity,
         .dragging_axis = .x,
-        .last_pointer = .{ 480.0, 270.0 },
         .has_last_pointer = true,
     };
-    const update = try updateEditorState(&world, &editor_state, .{
+    const input = FrameInput{
         .debug_overlay_visible = true,
         .viewport_width = 960.0,
         .viewport_height = 540.0,
+    };
+    const game_viewport = editorGameViewport(input);
+    editor_state.last_pointer = .{ game_viewport.x + game_viewport.width * 0.5, game_viewport.y + game_viewport.height * 0.5 };
+    const update = try updateEditorState(&world, &editor_state, .{
+        .debug_overlay_visible = input.debug_overlay_visible,
+        .viewport_width = input.viewport_width,
+        .viewport_height = input.viewport_height,
         .pointer = .{
-            .position = .{ 520.0, 270.0 },
+            .position = .{ editor_state.last_pointer[0] + 40.0, editor_state.last_pointer[1] },
             .has_position = true,
             .primary_down = true,
         },
@@ -3920,10 +4148,12 @@ test "editor playback controls toggle pause and request single step" {
     defer world.deinit();
 
     var editor_state = EditorState{};
+    const frame_input = FrameInput{ .debug_overlay_visible = true };
+    const play_rect = editorPlayButtonRect(frame_input);
     const pause_update = try updateEditorState(&world, &editor_state, .{
         .debug_overlay_visible = true,
         .pointer = .{
-            .position = .{ editor_play_button_x + 4.0, editor_control_button_y + 4.0 },
+            .position = .{ play_rect.x + 4.0, play_rect.y + 4.0 },
             .has_position = true,
             .primary_pressed = true,
             .primary_down = true,
@@ -3935,7 +4165,7 @@ test "editor playback controls toggle pause and request single step" {
     const release_update = try updateEditorState(&world, &editor_state, .{
         .debug_overlay_visible = true,
         .pointer = .{
-            .position = .{ editor_play_button_x + 4.0, editor_control_button_y + 4.0 },
+            .position = .{ play_rect.x + 4.0, play_rect.y + 4.0 },
             .has_position = true,
             .primary_released = true,
         },
@@ -3943,10 +4173,11 @@ test "editor playback controls toggle pause and request single step" {
     try std.testing.expect(release_update.consumed_pointer);
     try std.testing.expect(!editor_state.captured_pointer);
 
+    const step_rect = editorStepButtonRect(frame_input);
     const step_update = try updateEditorState(&world, &editor_state, .{
         .debug_overlay_visible = true,
         .pointer = .{
-            .position = .{ editor_step_button_x + 4.0, editor_control_button_y + 4.0 },
+            .position = .{ step_rect.x + 4.0, step_rect.y + 4.0 },
             .has_position = true,
             .primary_pressed = true,
             .primary_down = true,
@@ -3979,8 +4210,6 @@ test "editor system list scroll state responds to wheel input" {
         .delta_seconds = 1.0,
         .system_profiles = &profiles,
         .pointer = .{
-            .position = .{ editor_controls_panel_x + 12.0, editor_system_first_row_y },
-            .has_position = true,
             .wheel_delta = .{ 0.0, -1.0 },
         },
     });
@@ -3994,8 +4223,6 @@ test "editor system list scroll state responds to wheel input" {
         .delta_seconds = 1.0,
         .system_profiles = &profiles,
         .pointer = .{
-            .position = .{ editor_controls_panel_x + 12.0, editor_system_first_row_y },
-            .has_position = true,
             .wheel_delta = .{ 0.0, 1.0 },
         },
     });
@@ -4782,7 +5009,7 @@ test "debug overlay extracts FPS label when visible" {
     });
 
     try std.testing.expectEqual(@as(usize, 1), state.world.componentInstanceCountFor(runtime.ui_canvas_component_id));
-    try std.testing.expectEqual(@as(usize, 6), state.world.uiRectCount());
+    try std.testing.expectEqual(@as(usize, 12), state.world.uiRectCount());
     try std.testing.expectEqual(@as(usize, 9), state.world.uiTextCount());
 
     const label = state.world.uiTextAt(0) orelse return error.TestExpectedEqual;
@@ -4800,6 +5027,11 @@ test "debug overlay extracts FPS label when visible" {
     const input = try renderFrameInput(&state.world);
     try std.testing.expect(!input.ui_visible);
     try std.testing.expect(input.debug_overlay_visible);
+    const sidebar = editorSidebarRect(input);
+    const debug_panel = state.world.findEntityById("machina.editor.debug.panel") orelse return error.TestExpectedEqual;
+    const debug_panel_x = state.world.getVec3(debug_panel, runtime.ui_rect_component_id, "position") catch |err| return mapWorldError(err);
+    try std.testing.expect(debug_panel_x[0] >= sidebar.x);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.frame") == null);
 
     try state.queueUiDraw();
     try std.testing.expectEqual(@as(usize, 1), state.uiDrawCommandCount());
@@ -4836,7 +5068,7 @@ test "debug overlay extracts system profile rows when available" {
         .system_profiles = &profiles,
     });
 
-    try std.testing.expectEqual(@as(usize, 6), state.world.uiRectCount());
+    try std.testing.expectEqual(@as(usize, 12), state.world.uiRectCount());
     try std.testing.expectEqual(@as(usize, 12), state.world.uiTextCount());
 
     var saw_header = false;
@@ -4953,7 +5185,7 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     });
 
     try std.testing.expectEqual(@as(usize, 4), state.world.renderableMeshCount());
-    try std.testing.expectEqual(@as(usize, 6), state.world.uiRectCount());
+    try std.testing.expectEqual(@as(usize, 12), state.world.uiRectCount());
 
     var saw_handle = false;
     var saw_transform = false;
@@ -5222,6 +5454,7 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
         return RenderError.InvalidScene;
     }
 
+    const input = renderFrameInput(world) catch FrameInput{};
     var vertices: std.ArrayList(UiVertex) = .empty;
     errdefer vertices.deinit(allocator);
 
@@ -5229,7 +5462,8 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
     while (rects.next()) |rect| {
         const maybe_button_state = if (rect.is_button) try renderUiButtonState(world, rect.entity) else null;
         const layout = try resolveUiLayout(world, rect.entity, rect.position, rect.size);
-        const maybe_clip = try combineUiClip(layout.clip, try renderUiClip(world, rect.entity));
+        const screen_layout = try resolveUiScreenLayout(input, rect.id, layout, rect.size);
+        const maybe_clip = try combineUiClip(screen_layout.clip, try renderUiClip(world, rect.entity));
         var rect_color = rect.color;
         if (maybe_button_state) |state| {
             if (state.held) {
@@ -5241,7 +5475,7 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
             }
         }
 
-        try appendUiRectClipped(&vertices, allocator, width, height, layout.position, rect.size, rect_color, maybe_clip);
+        try appendUiRectClipped(&vertices, allocator, width, height, screen_layout.position, rect.size, rect_color, maybe_clip);
         if (rect.is_button) {
             var top_color = scaleColor(rect_color, 1.35);
             var bottom_color = scaleColor(rect_color, 0.65);
@@ -5252,13 +5486,13 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
                 }
             }
 
-            try appendUiRectClipped(&vertices, allocator, width, height, layout.position, .{ rect.size[0], @min(2.0, rect.size[1]), 0.0 }, top_color, maybe_clip);
+            try appendUiRectClipped(&vertices, allocator, width, height, screen_layout.position, .{ rect.size[0], @min(2.0, rect.size[1]), 0.0 }, top_color, maybe_clip);
             try appendUiRectClipped(
                 &vertices,
                 allocator,
                 width,
                 height,
-                .{ layout.position[0], layout.position[1] + @max(rect.size[1] - 2.0, 0.0), layout.position[2] },
+                .{ screen_layout.position[0], screen_layout.position[1] + @max(rect.size[1] - 2.0, 0.0), screen_layout.position[2] },
                 .{ rect.size[0], @min(2.0, rect.size[1]), 0.0 },
                 bottom_color,
                 maybe_clip,
@@ -5270,9 +5504,10 @@ fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, wi
     while (texts.next()) |text| {
         const text_height = @as(f32, @floatFromInt(ui_font.height)) * text.size;
         const layout = try resolveUiLayout(world, text.entity, text.position, .{ 0.0, text_height, 0.0 });
-        const maybe_clip = try combineUiClip(layout.clip, try renderUiClip(world, text.entity));
+        const screen_layout = try resolveUiScreenLayout(input, text.id, layout, .{ 0.0, text_height, 0.0 });
+        const maybe_clip = try combineUiClip(screen_layout.clip, try renderUiClip(world, text.entity));
         var resolved_text = text;
-        resolved_text.position = layout.position;
+        resolved_text.position = screen_layout.position;
         try appendUiText(&vertices, allocator, width, height, resolved_text, maybe_clip);
     }
 

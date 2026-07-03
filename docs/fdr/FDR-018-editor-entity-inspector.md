@@ -9,8 +9,9 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 
 ## Behavior
 
-- The editor overlay is hidden by default and can be shown with `machina run --editor` or toggled in a headful run with Ctrl+Tab.
-- The overlay includes playback controls for pause/resume and single-frame stepping.
+- The editor shell is hidden by default and can be shown with `machina run --editor` or toggled in a headful run with Ctrl+Tab.
+- When the editor shell is visible, the game renders into a dedicated 16:9 viewport and editor controls render outside it in a right sidebar.
+- The editor shell includes playback controls for pause/resume and single-frame stepping.
 - Pausing stops scheduled update systems while keeping startup, diagnostics, rendering, and editor interaction available.
 - Clicking a visible renderable mesh selects that entity.
 - The inspector shows live world counts, selected entity handle, name, id, position, and a capped component/field listing.
@@ -18,7 +19,7 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 - A selected renderable gets a world-space translate gizmo with X, Y, and Z handles.
 - Dragging a gizmo axis mutates the selected entity's transform position.
 - Selection uses generation-aware entity handles so stale selections are rejected instead of silently aliasing another entity.
-- Editor chrome consumes pointer input before it can select scene entities or trigger in-game UI buttons behind the overlay.
+- Editor chrome consumes pointer input before it can select scene entities or trigger in-game UI buttons. Mesh picking and gizmo interaction only use pointer coordinates inside the game viewport.
 
 ## Design Decisions
 
