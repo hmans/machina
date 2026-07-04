@@ -66,10 +66,11 @@ Rendering and UI:
 - `machina.ui.vbox` stacks direct children vertically from its local `position` with `spacing`.
 - `machina.ui.stack` is the preferred general layout container. It stacks direct children horizontally or vertically with `position`, `spacing`, `direction`, and `padding`.
 - `machina.ui.layout.item` attaches an entity to a parent by stable entity id and `order`; do not use dense runtime entity indices as UI parent references. It also carries `min_size`, `grow`, and `align`; `grow` is stored for API shape but does not redistribute extra space yet.
+- A `machina.ui.layout.item` child can point at a non-container UI rect/text/separator to inherit that parent's resolved position and then continue up the parent's own layout chain. Prefer this for button labels and composite controls instead of duplicating absolute coordinates.
 - `machina.ui.text_block` gives text a content box and `start`/`center`/`end` alignment. Plain `machina.ui.text` remains top-left positioned.
 - `machina.ui.progress_bar`, `machina.ui.toggle`, `machina.ui.separator`, and `machina.ui.spacer` are semantic UI components layered over the same ECS render path; prefer these over hand-rolled rect-only conventions when they match the intent.
 - Scene-authored UI input routing must use the retained layout model (`scroll_view`, `vbox`, `stack`, and `layout.item`) for hit testing and scroll handling. Do not hit-test raw `machina.ui.rect.position` unless you have first resolved parent layout and clipping.
-- Rendering, scene UI input, scroll handling, and canvas viewport scaling should call through `src/ui_layout.zig` rather than carrying duplicate layout math.
+- Rendering, scene UI input, scroll handling, button command dispatch, button hover/press visuals, and canvas viewport scaling should call through `src/ui_layout.zig` rather than carrying duplicate layout or hit-test math.
 - Headful input is translated into ECS frame input.
 - Runtime input is represented as transient engine-owned ECS components on `machina.input.frame`: `machina.input.pointer`, `machina.input.keyboard`, and `machina.input.frame`.
 - Input components are runtime resources, not scene-authored project data.
@@ -80,6 +81,7 @@ Rendering and UI:
 - When the editor shell is visible, render the game into the computed 16:9 game viewport and keep editor chrome outside that viewport. Picking, gizmo projection, and scene-authored UI should use game viewport coordinates, while editor chrome uses full-window coordinates.
 - The debug overlay displays performance snapshots at a throttled human-readable cadence; keep measuring every frame, but do not make the visible table flicker every frame.
 - The debug overlay performance table uses `machina.ui.scroll_view`, `machina.ui.vbox`, and `machina.ui.layout.item` for its clipped animated pixel-scroll viewport. It should not truncate the list to unreachable rows or regress to row-only, row-snapped, instant-jump scroll state, or private renderer-only list layout.
+- The debug overlay performance table should show a visible scrollbar when the system list overflows. Keep it generated as normal ECS UI rect data rather than a renderer-side overlay.
 - The debug overlay performance table should favor readable full system ids and rolling average duration. Do not reintroduce phase prefixes or last-sample columns into the compact row format without a deliberate UI redesign.
 - The editor overlay also owns playback controls, selected-entity inspection, click selection, and the first translate gizmo.
 - Editor selection is generation-aware and should reject stale handles instead of silently selecting whatever now lives at the old dense index.
@@ -158,7 +160,7 @@ Live reload:
 - Do not introduce UI-private or renderer-private input side channels. If a system needs keyboard or pointer state, route it through the shared `machina.input.*` components or explicitly document why that slice cannot yet do so.
 - Treat `machina.ui.command_event` as runtime-only transient data. Do not author it in scene files; author `machina.ui.command` on button entities instead.
 - Prefer reusable retained UI layout primitives over one-off renderer/editor layout shortcuts. Use `machina.ui.scroll_view` for clipped scrollable regions, `machina.ui.vbox` for vertical stacks, and `machina.ui.layout.item` with stable entity-id parents for child ordering.
-- Keep retained UI layout behavior centralized in `src/ui_layout.zig`; renderer and input paths may wrap it for local errors, but should not fork layout resolution semantics.
+- Keep retained UI layout and hit-test behavior centralized in `src/ui_layout.zig`; renderer and input paths may wrap it for local errors, but should not fork layout resolution semantics.
 - Keep editor/debug and example UI text legible at normal viewing sizes. Do not use built-in bitmap UI text below `1.0` scale for editor surfaces; prefer larger sizes for primary readouts and verify compact panels in a headful screenshot, offscreen render artifact, or smoke run.
 - Keep editor/debug list rows bounded and readable. Use compact formatting, scrolling, windowing, or pagination for unbounded lists instead of drawing unreachable overflow or hidden `... more` rows.
 - Keep smooth UI scrolling modeled as target pixel/float offsets, animated visible offsets, row-height-independent wheel distances, and clipping. Do not fake smooth scrolling with hidden whole-row windows, row-snapped targets, instant jumps, or by drawing unclipped overflow outside the viewport.

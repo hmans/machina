@@ -301,7 +301,7 @@ id = "button-primary-label"
 name = "Primary Button Label"
 
 [entities.components."machina.ui.text"]
-position = [208.0, 260.0, 0.0]
+position = [0.0, 0.0, 0.0]
 size = 1.0
 color = [0.886, 0.91, 0.941]
 value = "ACTION"
@@ -310,6 +310,10 @@ value = "ACTION"
 size = [112.0, 50.0, 0.0]
 horizontal_align = "center"
 vertical_align = "center"
+
+[entities.components."machina.ui.layout.item"]
+parent = "button-primary"
+order = 0
 
 [[entities]]
 id = "button-confirm"
@@ -342,7 +346,7 @@ id = "button-confirm-label"
 name = "Confirm Button Label"
 
 [entities.components."machina.ui.text"]
-position = [336.0, 260.0, 0.0]
+position = [0.0, 0.0, 0.0]
 size = 1.0
 color = [0.886, 0.91, 0.941]
 value = "OK"
@@ -351,6 +355,10 @@ value = "OK"
 size = [112.0, 50.0, 0.0]
 horizontal_align = "center"
 vertical_align = "center"
+
+[entities.components."machina.ui.layout.item"]
+parent = "button-confirm"
+order = 0
 
 [[entities]]
 id = "button-warn"
@@ -380,7 +388,7 @@ id = "button-warn-label"
 name = "Warning Button Label"
 
 [entities.components."machina.ui.text"]
-position = [464.0, 260.0, 0.0]
+position = [0.0, 0.0, 0.0]
 size = 1.0
 color = [0.886, 0.91, 0.941]
 value = "WARN"
@@ -389,6 +397,10 @@ value = "WARN"
 size = [112.0, 50.0, 0.0]
 horizontal_align = "center"
 vertical_align = "center"
+
+[entities.components."machina.ui.layout.item"]
+parent = "button-warn"
+order = 0
 
 [[entities]]
 id = "status-panel"

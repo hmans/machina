@@ -29,6 +29,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - The editor/debug overlay also lists engine-internal render systems profiled through the render ECS schedule.
 - The visible performance table updates at a throttled human-readable cadence while profiling continues to sample scheduled systems every frame.
 - The system performance view uses compact fixed-width rows and a scene-shaped clipped smooth-scroll viewport so long system lists remain legible and every system can be reached without inline pagination text.
+- The system performance view shows a generated scrollbar when its clipped system list overflows.
 - While the editor/debug overlay is visible, mouse wheel input scrolls the visible system viewport when the system list overflows. Scroll state uses a target pixel offset plus an animated visible pixel offset, and wheel distance is intentionally independent from row height so content can settle between rows.
 - The UI gallery example demonstrates the retained primitive set with panels, text, buttons, command events, scroll views, vertical stacks, horizontal stacks, spacers, centered text blocks, toggles, progress bars, separators, and script-mutated UI state.
 - `machina.ui.scroll_view` defines a screen-space viewport with `position`, `size`, and `content_offset` fields. Descendants are offset by `content_offset` and clipped to the viewport.
@@ -36,12 +37,13 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - `machina.ui.vbox` defines a vertical stack origin and spacing. Direct children are ordered by `machina.ui.layout.item.order` and stacked by their current primitive height.
 - `machina.ui.stack` defines a direction-aware stack origin, spacing, direction, and padding. Supported directions are `vertical`, `column`, `horizontal`, and `row`.
 - `machina.ui.layout.item` attaches an entity to a parent entity id and gives it integer order, minimum size, grow ratio, cross-axis alignment metadata, and symmetric x/y/z margin. Parent ids are stable scene entity ids, not dense runtime handles. Grow ratios are stored and validated but do not redistribute extra space yet.
+- `machina.ui.layout.item` can also parent a child to a non-container UI rect, text, or separator. In that case the child inherits the parent's resolved position and continues through the parent's layout chain. This is the preferred pattern for button labels and small composite controls.
 - `machina.ui.spacer` participates in layout without rendering.
 - `machina.ui.text_block` gives a text entity a content box and horizontal/vertical `start`, `center`, or `end` alignment.
 - `machina.ui.toggle` stores checked state and influences button/rect visuals. It does not yet toggle itself automatically; scripts or editor systems own state mutation.
 - `machina.ui.progress_bar` stores value, max, and fill color. It renders as a fill inside the entity's rect.
 - `machina.ui.separator` renders a thin semantic divider through the same UI vertex path as rectangles.
-- Retained UI layout is resolved through a shared engine module used by both rendering and scene UI input. Render positions, hit testing, scrolling, clipping, and scene canvas viewport scaling should not maintain separate layout semantics.
+- Retained UI layout and hit testing are resolved through a shared engine module used by both rendering and scene UI input. Render positions, hover/press state, command dispatch, scrolling, clipping, and scene canvas viewport scaling should not maintain separate semantics.
 - UI can be used for runtime diagnostics before a full editor exists.
 - UI definitions that are part of projects or tools follow the text-first project model.
 - The UI overlay renders after 3D scene content.
@@ -96,6 +98,12 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 **Why:** Scene-authored controls can be local to layout containers, so raw component positions are not authoritative screen positions. Rendering, command events, and scroll interaction must agree on the retained layout model.
 **Tradeoff:** `src/ui_layout.zig` is now the shared resolver for rendering and scene UI input, but the retained layout model is still intentionally compact and does not yet provide full constraint solving, focus, scroll bars, or style inheritance.
 
+### 6b. Share UI hit testing between rendering and input routing
+
+**Decision:** Button hover/held/pressed visuals, scene command dispatch, and scene scroll routing use shared `src/ui_layout.zig` hit-test helpers.
+**Why:** A control should not look hovered through one coordinate path and dispatch through another. Keeping rect resolution, clipping, and hit tests together gives future focus/capture work one place to extend.
+**Tradeoff:** Hit routing still selects the last matching entity in the current ECS iteration order. Z-order, disabled state, focus ownership, pointer capture, bubbling, and modal layers remain future design work.
+
 ### 7. Route button presses through command events
 
 **Decision:** Button entities can author a command id, and a successful release emits a one-frame command event containing the command id and source entity id.
@@ -125,6 +133,12 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 **Decision:** Machina adds opt-in canvas fit/fill scaling, layout item margins, and rounded rect borders as ECS component fields instead of treating the UI gallery as a window-size-specific hand layout.
 **Why:** The default game window is larger than the original UI examples. Retained UI needs explicit primitives for viewport adaptation and spacing so examples, editor chrome, and future tools can remain legible without per-window coordinate hacks.
 **Tradeoff:** This is still a compact layout system. Margins are symmetric vec3 values, borders are uniform, and canvas scaling is per scene UI surface rather than a full responsive constraint layout.
+
+### 9c. Allow composite controls to parent through visual primitives
+
+**Decision:** A `machina.ui.layout.item` child may target a non-container UI rect, text, or separator parent and inherit that parent's resolved position before continuing up the parent's own layout chain.
+**Why:** Button labels and similar composite controls should move with their visual parent without duplicating absolute coordinates or requiring every clickable primitive to also be a container.
+**Tradeoff:** This is parent-position inheritance, not a full scene graph. It does not yet inherit style, visibility, disabled state, opacity, transform scale/rotation, or input capture.
 
 ### 10. Treat examples as the primitive gallery
 

@@ -669,9 +669,9 @@ fn updateSceneUiScrollViews(world: *World) !void {
     const scroll_query = [_][]const u8{runtime.ui_scroll_view_component_id};
     while (world.queryNext(&scroll_query, &cursor)) |entity| {
         const scroll_view = try uiScrollView(world, entity) orelse continue;
-        const layout = try resolveUiLayout(world, entity, scroll_view.position);
-        const clip = try combineUiClip(layout.clip, .{ .position = layout.position, .size = scroll_view.size });
-        if (!runtime.pointInsideUiRect(pointer_position, layout.position, scroll_view.size) or !pointInsideUiClip(pointer_position, clip)) {
+        const hit_rect = try resolveUiRect(world, entity, scroll_view.position, scroll_view.size);
+        const clip = try combineUiClip(hit_rect.clip, .{ .position = hit_rect.position, .size = hit_rect.size });
+        if (!ui_layout.pointInsideRect(pointer_position, hit_rect.position, hit_rect.size, clip)) {
             continue;
         }
         selected = entity;
@@ -711,8 +711,7 @@ fn updateUiCommandEvents(world: *World) !void {
     while (world.queryNext(&command_button_query, &cursor)) |entity| {
         const position = try world.getVec3(entity, runtime.ui_rect_component_id, "position");
         const size = try world.getVec3(entity, runtime.ui_rect_component_id, "size");
-        const layout = try resolveUiLayout(world, entity, position);
-        if (!runtime.pointInsideUiRect(pointer_position, layout.position, size) or !pointInsideUiClip(pointer_position, layout.clip)) {
+        if ((try hitTestUiRect(world, entity, position, size, pointer_position)) == null) {
             continue;
         }
 
@@ -736,12 +735,16 @@ fn resolveUiLayout(world: *World, entity: runtime.EntityHandle, local_position: 
     return ui_layout.resolve(world, entity, local_position) catch |err| return mapLayoutError(err);
 }
 
-fn combineUiClip(a: ?ui_layout.ClipRect, b: ?ui_layout.ClipRect) !?ui_layout.ClipRect {
-    return ui_layout.combineClip(a, b) catch |err| return mapLayoutError(err);
+fn resolveUiRect(world: *World, entity: runtime.EntityHandle, local_position: [3]f32, size: [3]f32) !ui_layout.ResolvedRect {
+    return ui_layout.resolvedRect(world, entity, local_position, size) catch |err| return mapLayoutError(err);
 }
 
-fn pointInsideUiClip(point: [2]f32, clip: ?ui_layout.ClipRect) bool {
-    return ui_layout.pointInsideClip(point, clip);
+fn hitTestUiRect(world: *World, entity: runtime.EntityHandle, local_position: [3]f32, size: [3]f32, point: [2]f32) !?ui_layout.ResolvedRect {
+    return ui_layout.hitTestRect(world, entity, local_position, size, point) catch |err| return mapLayoutError(err);
+}
+
+fn combineUiClip(a: ?ui_layout.ClipRect, b: ?ui_layout.ClipRect) !?ui_layout.ClipRect {
+    return ui_layout.combineClip(a, b) catch |err| return mapLayoutError(err);
 }
 
 fn sceneUiPointerPosition(world: *World, input_entity: runtime.EntityHandle, pointer_position: [2]f32) ![2]f32 {

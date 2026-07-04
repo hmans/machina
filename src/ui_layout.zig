@@ -14,6 +14,14 @@ pub const ResolvedLayout = struct {
     clip: ?ClipRect = null,
 };
 
+pub const ResolvedRect = struct {
+    entity: runtime.EntityHandle,
+    id: []const u8,
+    position: [3]f32,
+    size: [3]f32,
+    clip: ?ClipRect = null,
+};
+
 pub const Target = struct {
     x: f32 = 0.0,
     y: f32 = 0.0,
@@ -152,20 +160,24 @@ pub fn resolve(world: *const runtime.World, entity: runtime.EntityHandle, local_
         resolved.position[1] += item.margin[1];
         resolved.position[2] += item.margin[2];
 
-        if (try vbox(world, parent)) |box| {
+        const has_vbox = try vbox(world, parent);
+        const has_stack = try stack(world, parent);
+        const has_scroll = try scrollView(world, parent);
+
+        if (has_vbox) |box| {
             resolved.position[0] += box.position[0];
             resolved.position[1] += box.position[1] + try vboxChildOffsetY(world, parent, child, item);
             resolved.position[2] += box.position[2];
         }
 
-        if (try stack(world, parent)) |stack_value| {
+        if (has_stack) |stack_value| {
             const stack_offset = try stackChildOffset(world, parent, child, item, stack_value);
             resolved.position[0] += stack_value.position[0] + stack_value.padding[0] + stack_offset[0];
             resolved.position[1] += stack_value.position[1] + stack_value.padding[1] + stack_offset[1];
             resolved.position[2] += stack_value.position[2] + stack_offset[2];
         }
 
-        if (try scrollView(world, parent)) |scroll_view| {
+        if (has_scroll) |scroll_view| {
             if (!isFiniteVec3(scroll_view.position) or !isFiniteVec3(scroll_view.size) or !isFiniteVec3(scroll_view.content_offset)) {
                 return error.InvalidLayout;
             }
@@ -176,6 +188,13 @@ pub fn resolve(world: *const runtime.World, entity: runtime.EntityHandle, local_
                 .position = scroll_view.position,
                 .size = scroll_view.size,
             });
+        }
+
+        if (has_vbox == null and has_stack == null and has_scroll == null) {
+            const anchor = try parentAnchorPosition(world, parent);
+            resolved.position[0] += anchor[0];
+            resolved.position[1] += anchor[1];
+            resolved.position[2] += anchor[2];
         }
 
         child = parent;
@@ -204,6 +223,34 @@ pub fn pointInsideClip(point: [2]f32, clip: ?ClipRect) bool {
         return runtime.pointInsideUiRect(point, clip_rect.position, clip_rect.size);
     }
     return true;
+}
+
+pub fn pointInsideRect(point: [2]f32, position: [3]f32, size: [3]f32, clip: ?ClipRect) bool {
+    return runtime.pointInsideUiRect(point, position, size) and pointInsideClip(point, clip);
+}
+
+pub fn resolvedRect(world: *const runtime.World, entity: runtime.EntityHandle, local_position: [3]f32, size: [3]f32) Error!ResolvedRect {
+    if (!isFiniteVec3(size) or size[0] < 0.0 or size[1] < 0.0 or size[2] < 0.0) {
+        return error.InvalidLayout;
+    }
+    const stored = try world.entity(entity);
+    const layout = try resolve(world, entity, local_position);
+    return .{
+        .entity = entity,
+        .id = stored.id,
+        .position = layout.position,
+        .size = size,
+        .clip = layout.clip,
+    };
+}
+
+pub fn hitTestResolvedRect(point: [2]f32, rect: ResolvedRect) bool {
+    return pointInsideRect(point, rect.position, rect.size, rect.clip);
+}
+
+pub fn hitTestRect(world: *const runtime.World, entity: runtime.EntityHandle, local_position: [3]f32, size: [3]f32, point: [2]f32) Error!?ResolvedRect {
+    const rect = try resolvedRect(world, entity, local_position, size);
+    return if (hitTestResolvedRect(point, rect)) rect else null;
 }
 
 pub fn pointerToDesign(world: *const runtime.World, target: Target, pointer_position: [2]f32) Error![2]f32 {
@@ -343,6 +390,19 @@ fn itemNaturalSize(world: *const runtime.World, entity: runtime.EntityHandle) Er
         const size = try world.getFloat(entity, runtime.ui_text_component_id, "size");
         const value = try world.getString(entity, runtime.ui_text_component_id, "value");
         return textPixelSize(value, size);
+    }
+    return .{ 0.0, 0.0, 0.0 };
+}
+
+fn parentAnchorPosition(world: *const runtime.World, entity: runtime.EntityHandle) Error![3]f32 {
+    if (try world.hasComponent(entity, runtime.ui_rect_component_id)) {
+        return try world.getVec3(entity, runtime.ui_rect_component_id, "position");
+    }
+    if (try world.hasComponent(entity, runtime.ui_separator_component_id)) {
+        return try world.getVec3(entity, runtime.ui_separator_component_id, "position");
+    }
+    if (try world.hasComponent(entity, runtime.ui_text_component_id)) {
+        return try world.getVec3(entity, runtime.ui_text_component_id, "position");
     }
     return .{ 0.0, 0.0, 0.0 };
 }

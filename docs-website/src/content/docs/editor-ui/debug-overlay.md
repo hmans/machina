@@ -26,11 +26,13 @@ The current overlay shows:
 - FPS.
 - Active project system count.
 - Rolling average runtime over the profiling window.
-- Last runtime sample.
 - Project Luau and native systems.
 - Engine-internal render systems.
+- A visible scrollbar when the system list overflows.
 
 System timings are captured at scheduler dispatch boundaries. Render system timings are captured from the render ECS schedule and displayed alongside project systems.
+
+The visible table updates at a throttled cadence for readability while the underlying profiler keeps sampling every frame.
 
 ## UI Is ECS Data
 
@@ -53,6 +55,8 @@ The editor overlay is generated into the render ECS world, but the same retained
 - `machina.ui.separator`
 
 Text uses an embedded Spleen-derived bitmap font.
+
+Editor controls are built from the same retained primitives as project UI. For example, playback button labels are text children of their button rects instead of separate absolute overlays.
 
 ## Scene-Authored UI Example
 

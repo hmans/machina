@@ -54,6 +54,8 @@ const editor_panel_bottom_padding: f32 = 18.0;
 const editor_system_row_stride: f32 = 36.0;
 const editor_system_scroll_pixels_per_wheel: f32 = 18.0;
 const editor_system_scroll_smoothing: f32 = 22.0;
+const editor_scrollbar_width: f32 = 6.0;
+const editor_scrollbar_gap: f32 = 10.0;
 const render_system_profile_window_frames: usize = 120;
 const editor_control_button_width: f32 = 104.0;
 const editor_control_button_height: f32 = 36.0;
@@ -1748,42 +1750,85 @@ fn extractDebugOverlayInto(
         try system_rows.text("Editor Debug System Row", line_text, editor_system_text_size, editor_palette.text);
     }
 
+    try extractEditorSystemScrollbarInto(world, input, list_clip);
     try extractEditorInspectorInto(allocator, world, scene_world, input);
 }
 
 fn extractEditorPlaybackControlsInto(world: *runtime.World, input: FrameInput) RenderError!void {
     const play_label = if (input.editor.paused) "PLAY" else "PAUSE";
     const play_color: [3]f32 = if (input.editor.paused) editor_palette.success else editor_palette.warning;
-    const play_rect = editorPlayButtonRect(input);
-    const play = world.createEntity("machina.editor.controls.play", "Editor Play Button") catch |err| return mapWorldError(err);
-    world.setUiRect(play, .{
-        .position = play_rect.position(),
-        .size = play_rect.size3(),
-        .color = play_color,
+    try extractEditorButtonInto(world, "machina.editor.controls.play", "Editor Play", editorPlayButtonRect(input), play_label, play_color);
+    try extractEditorButtonInto(world, "machina.editor.controls.step", "Editor Step", editorStepButtonRect(input), "STEP", editor_palette.panel_muted);
+}
+
+fn extractEditorButtonInto(
+    world: *runtime.World,
+    id: []const u8,
+    name: []const u8,
+    rect: ScreenRect,
+    label: []const u8,
+    color: [3]f32,
+) RenderError!void {
+    const button = world.createEntity(id, name) catch |err| return mapWorldError(err);
+    world.setUiRect(button, .{
+        .position = rect.position(),
+        .size = rect.size3(),
+        .color = color,
         .corner_radius = editor_button_corner_radius,
     }) catch |err| return mapWorldError(err);
-    const play_text = world.createEntity("machina.editor.controls.play.label", "Editor Play Label") catch |err| return mapWorldError(err);
-    world.setUiText(play_text, .{
-        .position = centeredUiTextPosition(play_rect, play_label, 1.0),
+    world.setUiButton(button) catch |err| return mapWorldError(err);
+
+    var label_id_buffer: [96]u8 = undefined;
+    const label_id = std.fmt.bufPrint(&label_id_buffer, "{s}.label", .{id}) catch return RenderError.InvalidScene;
+    var label_name_buffer: [96]u8 = undefined;
+    const label_name = std.fmt.bufPrint(&label_name_buffer, "{s} Label", .{name}) catch return RenderError.InvalidScene;
+    const text = world.createEntity(label_id, label_name) catch |err| return mapWorldError(err);
+    world.setUiText(text, .{
+        .position = .{ 0.0, 0.0, 0.0 },
         .size = 1.0,
         .color = editor_palette.text,
-        .value = play_label,
+        .value = label,
+    }) catch |err| return mapWorldError(err);
+    world.setUiTextBlock(text, .{
+        .size = rect.size3(),
+        .horizontal_align = "center",
+        .vertical_align = "center",
+    }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(text, .{
+        .parent = id,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorSystemScrollbarInto(world: *runtime.World, input: FrameInput, list_clip: UiClipRect) RenderError!void {
+    const profile_count = editorSystemProfileScrollCount(input);
+    if (!editorSystemNeedsScroll(profile_count)) {
+        return;
+    }
+
+    const track_height = list_clip.size[1];
+    const track_x = list_clip.position[0] + list_clip.size[0] + editor_scrollbar_gap;
+    const track = world.createEntity("machina.editor.debug.systems.scrollbar.track", "Editor System Scrollbar Track") catch |err| return mapWorldError(err);
+    world.setUiRect(track, .{
+        .position = .{ track_x, list_clip.position[1], 0.0 },
+        .size = .{ editor_scrollbar_width, track_height, 0.0 },
+        .color = editor_palette.panel_muted,
+        .corner_radius = editor_scrollbar_width * 0.5,
     }) catch |err| return mapWorldError(err);
 
-    const step_rect = editorStepButtonRect(input);
-    const step = world.createEntity("machina.editor.controls.step", "Editor Step Button") catch |err| return mapWorldError(err);
-    world.setUiRect(step, .{
-        .position = step_rect.position(),
-        .size = step_rect.size3(),
-        .color = editor_palette.panel_muted,
-        .corner_radius = editor_button_corner_radius,
-    }) catch |err| return mapWorldError(err);
-    const step_text = world.createEntity("machina.editor.controls.step.label", "Editor Step Label") catch |err| return mapWorldError(err);
-    world.setUiText(step_text, .{
-        .position = centeredUiTextPosition(step_rect, "STEP", 1.0),
-        .size = 1.0,
-        .color = editor_palette.text,
-        .value = "STEP",
+    const visible_rows = @as(f32, @floatFromInt(editor_system_profile_max_rows));
+    const total_rows = @as(f32, @floatFromInt(profile_count));
+    const thumb_height = @max(track_height * visible_rows / @max(total_rows, visible_rows), editor_scrollbar_width * 2.0);
+    const max_scroll = editorSystemMaxScrollY(profile_count);
+    const scroll_t = if (max_scroll > 0.0) std.math.clamp(input.editor.system_scroll_y / max_scroll, 0.0, 1.0) else 0.0;
+    const thumb_y = list_clip.position[1] + (track_height - thumb_height) * scroll_t;
+
+    const thumb = world.createEntity("machina.editor.debug.systems.scrollbar.thumb", "Editor System Scrollbar Thumb") catch |err| return mapWorldError(err);
+    world.setUiRect(thumb, .{
+        .position = .{ track_x, thumb_y, 0.0 },
+        .size = .{ editor_scrollbar_width, thumb_height, 0.0 },
+        .color = editor_palette.accent_soft,
+        .corner_radius = editor_scrollbar_width * 0.5,
     }) catch |err| return mapWorldError(err);
 }
 
@@ -1957,14 +2002,6 @@ fn editorTextWidth(value: []const u8, size: f32) f32 {
     return @as(f32, @floatFromInt(value.len * ui_font.advance)) * size;
 }
 
-fn centeredUiTextPosition(rect: ScreenRect, value: []const u8, size: f32) [3]f32 {
-    return .{
-        rect.x + @max((rect.width - editorTextWidth(value, size)) * 0.5, 0.0),
-        rect.y + @max((rect.height - editorTextHeight(size)) * 0.5, 0.0),
-        0.0,
-    };
-}
-
 fn editorPanelTextPosition(panel: ScreenRect, local_y: f32) [3]f32 {
     return .{ panel.x + editor_panel_padding_x, panel.y + local_y, 0.0 };
 }
@@ -2052,10 +2089,14 @@ fn editorSystemNeedsScroll(profile_count: usize) bool {
 
 fn editorSystemListClipRect(input: FrameInput) UiClipRect {
     const panel = editorSystemPanelRect(input);
+    const scrollbar_space = if (editorSystemNeedsScroll(editorSystemProfileScrollCount(input)))
+        editor_scrollbar_width + editor_scrollbar_gap
+    else
+        0.0;
     return .{
         .position = .{ panel.x + editor_panel_padding_x, editorSystemRowsY(input), 0.0 },
         .size = .{
-            @max(panel.width - editor_panel_padding_x * 2.0, 1.0),
+            @max(panel.width - editor_panel_padding_x * 2.0 - scrollbar_space, 1.0),
             @as(f32, @floatFromInt(editor_system_profile_max_rows)) * editor_system_row_stride,
             0.0,
         },
@@ -2308,6 +2349,10 @@ fn uiLayoutItemSize(world: *const runtime.World, entity: runtime.EntityHandle) R
     return ui_layout.itemSize(world, entity) catch |err| return mapLayoutError(err);
 }
 
+fn hitTestUiRect(point: [2]f32, position: [3]f32, size: [3]f32, clip: ?UiClipRect) bool {
+    return ui_layout.pointInsideRect(point, position, size, clip);
+}
+
 fn textPixelSize(value: []const u8, size: f32) [3]f32 {
     return ui_layout.textPixelSize(value, size);
 }
@@ -2316,14 +2361,8 @@ fn resolveUiTextPosition(world: *const runtime.World, entity: runtime.EntityHand
     return ui_layout.resolveTextPosition(world, entity, text, position) catch |err| return mapLayoutError(err);
 }
 
-fn pointInsideUiClip(point: [2]f32, clip: ?UiClipRect) bool {
-    return ui_layout.pointInsideClip(point, clip);
-}
-
 fn evaluateUiButtonState(input: FrameInput, position: [3]f32, size: [3]f32, clip: ?UiClipRect) UiButtonState {
-    const hovered = input.pointer.has_position and
-        runtime.pointInsideUiRect(input.pointer.position, position, size) and
-        pointInsideUiClip(input.pointer.position, clip);
+    const hovered = input.pointer.has_position and hitTestUiRect(input.pointer.position, position, size, clip);
     return .{
         .hovered = hovered,
         .held = hovered and input.pointer.primary_down,
@@ -4855,6 +4894,50 @@ test "UI stack layout resolves horizontal rows and text block centering" {
     try std.testing.expectApproxEqAbs(20.0 + (48.0 - label_size[1]) * 0.5, label_position[1], 0.001);
 }
 
+test "UI layout item can inherit a rect parent's layout chain" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const stack = try world.createEntity("stack", "Stack");
+    try world.setUiStack(stack, .{
+        .position = .{ 80.0, 40.0, 0.0 },
+        .spacing = 12.0,
+        .direction = "horizontal",
+        .padding = .{ 8.0, 6.0, 0.0 },
+    });
+
+    const button = try world.createEntity("button", "Button");
+    try world.setUiRect(button, .{
+        .position = .{ 2.0, 3.0, 0.0 },
+        .size = .{ 120.0, 48.0, 0.0 },
+        .color = .{ 0.1, 0.2, 0.3 },
+    });
+    try world.setUiLayoutItem(button, .{ .parent = "stack", .order = 0 });
+
+    const label = try world.createEntity("button-label", "Button Label");
+    try world.setUiText(label, .{
+        .position = .{ 0.0, 0.0, 0.0 },
+        .size = 1.0,
+        .value = "ACTION",
+    });
+    try world.setUiTextBlock(label, .{
+        .size = .{ 120.0, 48.0, 0.0 },
+        .horizontal_align = "center",
+        .vertical_align = "center",
+    });
+    try world.setUiLayoutItem(label, .{ .parent = "button", .order = 0 });
+
+    const label_layout = try resolveUiLayout(&world, label, .{ 0.0, 0.0, 0.0 });
+    try std.testing.expectApproxEqAbs(@as(f32, 90.0), label_layout.position[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 49.0), label_layout.position[1], 0.001);
+
+    const text = world.uiTextAt(0) orelse return error.TestExpectedEqual;
+    const centered = try resolveUiTextPosition(&world, label, text, label_layout.position);
+    const label_size = textPixelSize("ACTION", 1.0);
+    try std.testing.expectApproxEqAbs(90.0 + (120.0 - label_size[0]) * 0.5, centered[0], 0.001);
+    try std.testing.expectApproxEqAbs(49.0 + (48.0 - label_size[1]) * 0.5, centered[1], 0.001);
+}
+
 test "UI layout item margins participate in stack placement" {
     var world = runtime.World.init(std.testing.allocator);
     defer world.deinit();
@@ -5235,14 +5318,22 @@ test "debug overlay extracts FPS label when visible" {
     const play_position = try state.world.getVec3(play_button, runtime.ui_rect_component_id, "position");
     try std.testing.expect(play_position[1] >= label.position[1] + editorTextHeight(label.size) + editor_panel_section_gap - 0.001);
     try std.testing.expectEqual(@as(f32, editor_button_corner_radius), try state.world.getFloat(play_button, runtime.ui_rect_component_id, "corner_radius"));
+    try std.testing.expect(try state.world.hasComponent(play_button, runtime.ui_button_component_id));
 
-    const input = try renderFrameInput(&state.world);
     const play_label = state.world.findEntityById("machina.editor.controls.play.label") orelse return error.TestExpectedEqual;
     const play_label_position = try state.world.getVec3(play_label, runtime.ui_text_component_id, "position");
-    const expected_play_label_position = centeredUiTextPosition(editorPlayButtonRect(input), "PAUSE", 1.0);
-    try std.testing.expectApproxEqAbs(expected_play_label_position[0], play_label_position[0], 0.001);
-    try std.testing.expectApproxEqAbs(expected_play_label_position[1], play_label_position[1], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), play_label_position[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), play_label_position[1], 0.001);
+    const play_label_item = (try ui_layout.layoutItem(&state.world, play_label)) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings("machina.editor.controls.play", play_label_item.parent);
+    const resolved_play_label = try resolveUiLayout(&state.world, play_label, play_label_position);
+    const centered_play_label = try resolveUiTextPosition(&state.world, play_label, state.world.uiTextAt(1) orelse return error.TestExpectedEqual, resolved_play_label.position);
+    const expected_play_label_x = play_position[0] + (editor_control_button_width - editorTextWidth("PAUSE", 1.0)) * 0.5;
+    const expected_play_label_y = play_position[1] + (editor_control_button_height - editorTextHeight(1.0)) * 0.5;
+    try std.testing.expectApproxEqAbs(expected_play_label_x, centered_play_label[0], 0.001);
+    try std.testing.expectApproxEqAbs(expected_play_label_y, centered_play_label[1], 0.001);
 
+    const input = try renderFrameInput(&state.world);
     var texts = state.world.uiTexts();
     while (texts.next()) |text| {
         try std.testing.expect(std.mem.indexOf(u8, text.value, "IN W") == null);
@@ -5375,7 +5466,9 @@ test "debug overlay renders a scrolled system profile window" {
     try std.testing.expect(saw_eight);
     try std.testing.expectEqual(@as(usize, 1), state.world.componentInstanceCountFor(runtime.ui_scroll_view_component_id));
     try std.testing.expectEqual(@as(usize, 1), state.world.componentInstanceCountFor(runtime.ui_vbox_component_id));
-    try std.testing.expectEqual(@as(usize, profiles.len + 1), state.world.componentInstanceCountFor(runtime.ui_layout_item_component_id));
+    try std.testing.expectEqual(@as(usize, profiles.len + 3), state.world.componentInstanceCountFor(runtime.ui_layout_item_component_id));
+    try std.testing.expect(state.world.findEntityById("machina.editor.debug.systems.scrollbar.track") != null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.debug.systems.scrollbar.thumb") != null);
 }
 
 test "editor overlay extracts selected entity inspector and translate gizmo" {
