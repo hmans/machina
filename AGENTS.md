@@ -8,7 +8,7 @@ Machina is an experimental, text-first game engine written in Zig. The engine is
 - Fully ECS based. The ECS is exposed to scripts. Users can author new component types and systems in Luau, and the engine will schedule them with native systems.
 - Projects are split into scenes, which are mostly collections of entities, persisted as .toml files.
 - Run your project by running `machina run` in your project directory.
-- Press Ctrl+Tab in a headful run to toggle the engine editor shell; `machina run --editor` shows it by default. The editor shell contains a game viewport plus sidebar UI for FPS, playback, inspection, and live project/engine system timings.
+- Press Ctrl+Tab in a headful run to toggle the engine editor shell; `machina run --editor` shows it by default. The editor shell contains top/bottom bars, left/right sidebars, and a game viewport.
 
 Please see `docs/fdr/INDEX.md` for a complete list of features and `docs/adr/INDEX.md` for a complete list of architectural decisions.
 
@@ -84,8 +84,8 @@ Rendering and UI:
 - Button markers derive ECS interaction state for hovered, held, and pressed visuals.
 - Command buttons emit transient `machina.ui.command_event` components before update systems run.
 - Headful runs can generate an engine-owned editor/debug shell in the render ECS world.
-- The editor/debug shell is hidden by default, `machina run --editor` shows it on startup, Ctrl+Tab toggles it, and the current sidebar shows FPS plus project/native system timing rows and engine-internal render system timing rows.
-- When the editor shell is visible, render the game into the computed 16:9 game viewport and keep editor chrome outside that viewport. Picking, gizmo projection, and scene-authored UI should use game viewport coordinates, while editor chrome uses full-window coordinates.
+- The editor/debug shell is hidden by default, `machina run --editor` shows it on startup, and Ctrl+Tab toggles it. The top bar hosts FPS and playback controls, the left sidebar hosts project/native and engine-internal system timing rows, the right sidebar is reserved for selected-entity component inspection/editing, and the bottom bar hosts compact runtime status.
+- When the editor shell is visible, render the game into the full remaining viewport between the top bar, bottom bar, left sidebar, and right sidebar. Do not force this editor viewport to 16:9. Picking, gizmo projection, fly-camera activation, and scene-authored UI should use game viewport coordinates, while editor chrome uses full-window coordinates.
 - Headful runs have a render-only fly camera: right mouse look, WASD movement, Space up, Ctrl down. It initializes from the scene camera, resets on scene reload, and must not mutate scene-authored camera components or project files.
 - The debug overlay displays performance snapshots at a throttled human-readable cadence; keep measuring every frame, but do not make the visible table flicker every frame.
 - The debug overlay performance table uses `machina.ui.scroll_view`, `machina.ui.vbox`, and `machina.ui.layout.item` for its clipped animated pixel-scroll viewport. It should not truncate the list to unreachable rows or regress to row-only, row-snapped, instant-jump scroll state, or private renderer-only list layout.

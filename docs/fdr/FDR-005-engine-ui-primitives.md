@@ -23,8 +23,9 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - Command button hit routing is centralized in the retained UI layout module. Scene-authored command events and engine-owned editor command controls resolve the same rect layout and clipping rules before dispatch.
 - Headful runs can toggle the engine-owned editor/debug overlay with Ctrl+Tab.
 - Headful runs hide the engine-owned editor/debug overlay by default; `machina run --editor` starts with it visible.
-- The first engine-owned editor/debug shell displays current FPS beside the rendered scene.
-- In editor mode, 3D scene content and scene-authored game UI render into a dedicated 16:9 game viewport. Editor chrome renders outside that viewport, currently in a right sidebar.
+- The engine-owned editor/debug shell displays current FPS in a top bar.
+- In editor mode, 3D scene content and scene-authored game UI render into the full remaining viewport between the top bar, bottom bar, left sidebar, and right sidebar. The editor viewport is not forced to 16:9.
+- The left sidebar hosts the system performance inspector. The right sidebar is reserved for selected-entity component inspection and eventual component editing.
 - The engine-owned editor/debug shell also hosts the first editor playback controls and selected-entity inspector; detailed behavior is tracked in FDR-018.
 - When live system profiling data is available, the editor/debug overlay lists active systems with their full system id and rolling average runtime over the current profiling window.
 - The editor/debug overlay also lists engine-internal render systems profiled through the render ECS schedule.
@@ -141,6 +142,12 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 **Decision:** A `machina.ui.layout.item` child may target a non-container UI rect, text, or separator parent and inherit that parent's resolved position before continuing up the parent's own layout chain.
 **Why:** Button labels and similar composite controls should move with their visual parent without duplicating absolute coordinates or requiring every clickable primitive to also be a container.
 **Tradeoff:** This is parent-position inheritance, not a full scene graph. It does not yet inherit style, visibility, disabled state, opacity, transform scale/rotation, or input capture.
+
+### 9d. Split the editor shell into explicit chrome regions
+
+**Decision:** The engine-owned editor shell uses a top bar, bottom bar, left sidebar, right sidebar, and a game viewport that fills the remaining rectangle without enforcing a fixed aspect ratio.
+**Why:** The editor needs stable regions for tools as it grows. Systems belong in a dedicated inspector, component editing needs an exclusive selected-entity surface, and the game should use all area not occupied by editor chrome.
+**Tradeoff:** This is still a fixed chrome layout rather than dockable panels, tabs, splitters, collapsible sidebars, or persisted editor workspace state.
 
 ### 10. Treat examples as the primitive gallery
 

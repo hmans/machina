@@ -10,12 +10,14 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 ## Behavior
 
 - The editor shell is hidden by default and can be shown with `machina run --editor` or toggled in a headful run with Ctrl+Tab.
-- When the editor shell is visible, the game renders into a dedicated 16:9 viewport and editor controls render outside it in a right sidebar.
+- When the editor shell is visible, the game renders into the full remaining viewport between the editor top bar, bottom bar, left sidebar, and right sidebar.
 - The editor shell includes playback controls for pause/resume and single-frame stepping.
 - Playback controls are generated as retained `machina.ui.button` + `machina.ui.command` entities and routed through shared retained UI command hit testing.
 - Pausing stops scheduled update systems while keeping startup, diagnostics, rendering, and editor interaction available.
 - Clicking a visible renderable mesh selects that entity.
-- The Inspector V2 proof shows live world counts, selected entity handle, name, id, position, and a capped component/field listing read through ECS component reflection.
+- The bottom bar shows live world counts and viewport size.
+- The right sidebar is reserved for selected-entity component inspection and eventual editing.
+- The selected entity inspector shows the selected entity name/id and renders one rounded component card per attached component. Cards display current field values read through ECS component reflection.
 - The inspector does not show a full entity list by default.
 - A selected renderable gets a world-space translate gizmo with X, Y, and Z handles.
 - Dragging a gizmo axis mutates the selected entity's transform position.
@@ -50,9 +52,15 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 
 ### 5. Inspect real ECS component storage
 
-**Decision:** Inspector rows read selected entity components and fields from the shared ECS world.
+**Decision:** Inspector component cards read selected entity components and fields from the shared ECS world.
 **Why:** Editor inspection should reflect the actual runtime state used by scripts, native systems, rendering, and tests. This follows ADR-013 and ADR-016.
-**Tradeoff:** The first field listing is display-only and capped. Editable fields need validation, undo, type-specific widgets, and reload-safe write rules.
+**Tradeoff:** The first field listing is display-only. Editable fields need validation, undo, type-specific widgets, scrolling/virtualization for very large component sets, and reload-safe write rules.
+
+### 5b. Reserve the right sidebar for selected-entity components
+
+**Decision:** The right sidebar is exclusively for selected-entity component inspection/editing. Systems and runtime status live in other chrome regions.
+**Why:** Mixing performance, selection, and editing in one sidebar made the first overlay hard to scan and left no stable surface for component editing. A dedicated component column gives future editors a clear home for per-component controls.
+**Tradeoff:** Entity browsing/search and asset/project inspectors need their own future regions or modes.
 
 ### 6. Route editor controls through retained UI commands
 

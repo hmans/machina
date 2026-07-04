@@ -3,7 +3,7 @@ title: Editor UI Overlay
 description: Use Machina's ECS-hosted debug overlay for FPS and system performance inspection.
 ---
 
-Machina's first editor UI is an engine-owned debug overlay rendered with Machina UI primitives.
+Machina's first editor UI is an engine-owned editor shell rendered with Machina UI primitives.
 
 It is hidden by default.
 
@@ -21,22 +21,23 @@ Ctrl+Tab
 
 ## What It Shows
 
-The current overlay shows:
+The current shell uses:
 
-- FPS.
-- Active project system count.
-- Rolling average runtime over the profiling window.
-- Project Luau and native systems.
-- Engine-internal render systems.
-- A visible scrollbar when the system list overflows.
+- A top bar with FPS and playback controls.
+- A left sidebar with active project system count, rolling average runtime over the profiling window, project Luau/native systems, engine-internal render systems, and a visible scrollbar when the system list overflows.
+- A right sidebar reserved for selected-entity component inspection/editing.
+- A bottom bar with compact runtime status.
+- A game viewport that fills all remaining space between those editor regions.
 
 System timings are captured at scheduler dispatch boundaries. Render system timings are captured from the render ECS schedule and displayed alongside project systems.
 
 The visible table updates at a throttled cadence for readability while the underlying profiler keeps sampling every frame.
 
+When editor chrome is visible, scene content and scene-authored UI render into the game viewport. The editor viewport is not forced to 16:9.
+
 ## UI Is ECS Data
 
-The editor overlay is generated into the render ECS world, but the same retained UI primitives are available to projects:
+The editor shell is generated into the render ECS world, but the same retained UI primitives are available to projects:
 
 - `machina.ui.canvas`
 - `machina.ui.rect`

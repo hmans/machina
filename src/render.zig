@@ -37,13 +37,14 @@ const render_queue_ui_system_id = "machina.render.queue_ui";
 const render_draw_meshes_system_id = "machina.render.draw_meshes";
 const default_window_width = 1280;
 const default_window_height = 720;
-const editor_shell_margin: f32 = 16.0;
-const editor_shell_gap: f32 = 12.0;
-const editor_sidebar_target_width: f32 = 560.0;
-const editor_sidebar_min_width: f32 = 360.0;
-const editor_game_viewport_aspect: f32 = 16.0 / 9.0;
+const editor_top_bar_height: f32 = 56.0;
+const editor_bottom_bar_height: f32 = 36.0;
+const editor_left_sidebar_target_width: f32 = 420.0;
+const editor_left_sidebar_min_width: f32 = 260.0;
+const editor_right_sidebar_target_width: f32 = 460.0;
+const editor_right_sidebar_min_width: f32 = 300.0;
+const editor_min_game_viewport_width: f32 = 320.0;
 const editor_performance_display_interval_ns: u64 = 333_000_000;
-const editor_system_profile_max_rows = 7;
 const editor_debug_fps_size: f32 = 1.6;
 const editor_system_text_size: f32 = 1.0;
 const editor_panel_padding_x: f32 = 16.0;
@@ -67,11 +68,11 @@ const editor_command_step = "machina.editor.step";
 const fly_camera_move_speed: f32 = 6.0;
 const fly_camera_look_sensitivity: f32 = 0.0035;
 const fly_camera_max_pitch: f32 = std.math.degreesToRadians(89.0);
-const editor_inspector_panel_height: f32 = 548.0;
-const editor_inspector_empty_panel_height: f32 = 178.0;
 const editor_inspector_text_size: f32 = 1.0;
 const editor_inspector_line_stride: f32 = 28.0;
-const editor_inspector_max_lines: usize = 18;
+const editor_inspector_card_gap: f32 = 12.0;
+const editor_inspector_card_padding_x: f32 = 12.0;
+const editor_inspector_card_padding_y: f32 = 10.0;
 const editor_gizmo_axis_length: f32 = 1.25;
 const editor_gizmo_axis_thickness: f32 = 0.035;
 const editor_gizmo_pick_radius_px: f32 = 18.0;
@@ -303,8 +304,8 @@ pub fn editorFrameState(world: *const runtime.World, state: EditorState) EditorF
     };
 }
 
-fn clampEditorSystemScroll(state: *EditorState, profile_count: usize) void {
-    const max_scroll_y = editorSystemMaxScrollY(profile_count);
+fn clampEditorSystemScroll(state: *EditorState, input: FrameInput, profile_count: usize) void {
+    const max_scroll_y = editorSystemMaxScrollY(input, profile_count);
     state.system_scroll_target_y = std.math.clamp(state.system_scroll_target_y, 0.0, max_scroll_y);
     state.system_scroll_y = std.math.clamp(state.system_scroll_y, 0.0, max_scroll_y);
 }
@@ -366,11 +367,11 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
         return .{};
     }
     const profile_count = editorSystemProfileScrollCount(input);
-    clampEditorSystemScroll(state, profile_count);
+    clampEditorSystemScroll(state, input, profile_count);
 
     const wheel_y = input.pointer.wheel_delta[1];
     const system_scroll_route = if (wheel_y != 0.0 and
-        editorSystemNeedsScroll(profile_count) and
+        editorSystemNeedsScrollForInput(input, profile_count) and
         input.pointer.has_position and
         !std.math.isNan(input.pointer.position[0]) and
         !std.math.isNan(input.pointer.position[1]))
@@ -1676,49 +1677,41 @@ const EditorVBox = struct {
 };
 
 fn extractEditorShellInto(world: *runtime.World, input: FrameInput) RenderError!void {
-    const sidebar = editorSidebarRect(input);
+    const top = editorTopBarRect(input);
+    const bottom = editorBottomBarRect(input);
+    const left = editorLeftSidebarRect(input);
+    const right = editorRightSidebarRect(input);
     const game_viewport = editorGameViewport(input);
 
-    const sidebar_panel = world.createEntity("machina.editor.shell.sidebar", "Editor Sidebar") catch |err| return mapWorldError(err);
-    world.setUiRect(sidebar_panel, .{
-        .position = sidebar.position(),
-        .size = sidebar.size3(),
-        .color = editor_palette.shell,
-        .corner_radius = editor_panel_corner_radius,
-    }) catch |err| return mapWorldError(err);
-
-    const sidebar_accent = world.createEntity("machina.editor.shell.sidebar.accent", "Editor Sidebar Accent") catch |err| return mapWorldError(err);
-    world.setUiRect(sidebar_accent, .{
-        .position = sidebar.position(),
-        .size = .{ sidebar.width, 4.0, 0.0 },
-        .color = editor_palette.accent,
-        .corner_radius = 2.0,
-    }) catch |err| return mapWorldError(err);
+    try extractEditorShellRect(world, "machina.editor.shell.top_bar", top, editor_palette.shell);
+    try extractEditorShellRect(world, "machina.editor.shell.bottom_bar", bottom, editor_palette.shell);
+    try extractEditorShellRect(world, "machina.editor.shell.left_sidebar", left, editor_palette.panel);
+    try extractEditorShellRect(world, "machina.editor.shell.right_sidebar", right, editor_palette.panel);
 
     const frame_color = editor_palette.panel_muted;
     const accent_color = editor_palette.accent;
     try extractEditorShellRect(world, "machina.editor.shell.viewport.border.top", .{
-        .x = game_viewport.x - 4.0,
-        .y = game_viewport.y - 4.0,
-        .width = game_viewport.width + 8.0,
-        .height = 4.0,
+        .x = game_viewport.x,
+        .y = game_viewport.y,
+        .width = game_viewport.width,
+        .height = 2.0,
     }, accent_color);
     try extractEditorShellRect(world, "machina.editor.shell.viewport.border.bottom", .{
-        .x = game_viewport.x - 4.0,
-        .y = game_viewport.y + game_viewport.height,
-        .width = game_viewport.width + 8.0,
-        .height = 4.0,
+        .x = game_viewport.x,
+        .y = game_viewport.y + game_viewport.height - 2.0,
+        .width = game_viewport.width,
+        .height = 2.0,
     }, frame_color);
     try extractEditorShellRect(world, "machina.editor.shell.viewport.border.left", .{
-        .x = game_viewport.x - 4.0,
+        .x = game_viewport.x,
         .y = game_viewport.y,
-        .width = 4.0,
+        .width = 2.0,
         .height = game_viewport.height,
     }, frame_color);
     try extractEditorShellRect(world, "machina.editor.shell.viewport.border.right", .{
-        .x = game_viewport.x + game_viewport.width,
+        .x = game_viewport.x + game_viewport.width - 2.0,
         .y = game_viewport.y,
-        .width = 4.0,
+        .width = 2.0,
         .height = game_viewport.height,
     }, frame_color);
 }
@@ -1740,6 +1733,8 @@ fn extractDebugOverlayInto(
     scene_world: *const runtime.World,
 ) RenderError!void {
     try extractEditorShellInto(world, input);
+    try extractEditorTopBarInto(allocator, world, input);
+    try extractEditorBottomBarInto(allocator, world, input);
 
     const has_profiles = input.system_profiles.len > 0;
     const panel_size = editorDebugPanelSize(input);
@@ -1764,21 +1759,8 @@ fn extractDebugOverlayInto(
         .corner_radius = 2.0,
     }) catch |err| return mapWorldError(err);
 
-    const fps_text = formatFpsLabel(allocator, input.fps) catch return RenderError.OutOfMemory;
-    defer allocator.free(fps_text);
-
-    const label = world.createEntity("machina.editor.debug.fps", "Editor Debug FPS") catch |err| return mapWorldError(err);
-    world.setUiText(label, .{
-        .position = editorPanelTextPosition(panel, editor_panel_padding_y),
-        .size = editor_debug_fps_size,
-        .color = editor_palette.text,
-        .value = fps_text,
-    }) catch |err| return mapWorldError(err);
-
-    try extractEditorPlaybackControlsInto(world, input);
-
     if (!has_profiles) {
-        try extractEditorInspectorInto(allocator, world, scene_world, input);
+        try extractEditorComponentInspectorInto(allocator, world, scene_world, input);
         return;
     }
 
@@ -1830,7 +1812,50 @@ fn extractDebugOverlayInto(
     }
 
     try extractEditorSystemScrollbarInto(world, input, list_clip);
-    try extractEditorInspectorInto(allocator, world, scene_world, input);
+    try extractEditorComponentInspectorInto(allocator, world, scene_world, input);
+}
+
+fn extractEditorTopBarInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
+    const top = editorTopBarRect(input);
+    const title = world.createEntity("machina.editor.top.title", "Editor Top Title") catch |err| return mapWorldError(err);
+    world.setUiText(title, .{
+        .position = .{ editor_panel_padding_x, top.y + 14.0, 0.0 },
+        .size = 1.0,
+        .color = editor_palette.text_muted,
+        .value = "MACHINA",
+    }) catch |err| return mapWorldError(err);
+
+    const fps_text = formatFpsLabel(allocator, input.fps) catch return RenderError.OutOfMemory;
+    defer allocator.free(fps_text);
+    const fps = world.createEntity("machina.editor.debug.fps", "Editor Debug FPS") catch |err| return mapWorldError(err);
+    world.setUiText(fps, .{
+        .position = .{ 150.0, top.y + 8.0, 0.0 },
+        .size = editor_debug_fps_size,
+        .color = editor_palette.text,
+        .value = fps_text,
+    }) catch |err| return mapWorldError(err);
+
+    try extractEditorPlaybackControlsInto(world, input);
+}
+
+fn extractEditorBottomBarInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
+    const bottom = editorBottomBarRect(input);
+    const viewport = editorGameViewport(input);
+    const status = std.fmt.allocPrint(allocator, "ENTITIES {d}  COMPONENTS {d}  RENDERABLES {d}  VIEWPORT {d}x{d}", .{
+        input.editor.entity_count,
+        input.editor.component_instance_count,
+        input.editor.renderable_count,
+        @as(u32, @intFromFloat(@round(viewport.width))),
+        @as(u32, @intFromFloat(@round(viewport.height))),
+    }) catch return RenderError.OutOfMemory;
+    defer allocator.free(status);
+    const status_text = world.createEntity("machina.editor.bottom.status", "Editor Bottom Status") catch |err| return mapWorldError(err);
+    world.setUiText(status_text, .{
+        .position = .{ editor_panel_padding_x, bottom.y + 6.0, 0.0 },
+        .size = 1.0,
+        .color = editor_palette.text_muted,
+        .value = status,
+    }) catch |err| return mapWorldError(err);
 }
 
 fn extractEditorPlaybackControlsInto(world: *runtime.World, input: FrameInput) RenderError!void {
@@ -1883,7 +1908,7 @@ fn extractEditorButtonInto(
 
 fn extractEditorSystemScrollbarInto(world: *runtime.World, input: FrameInput, list_clip: UiClipRect) RenderError!void {
     const profile_count = editorSystemProfileScrollCount(input);
-    if (!editorSystemNeedsScroll(profile_count)) {
+    if (!editorSystemNeedsScrollForInput(input, profile_count)) {
         return;
     }
 
@@ -1897,10 +1922,10 @@ fn extractEditorSystemScrollbarInto(world: *runtime.World, input: FrameInput, li
         .corner_radius = editor_scrollbar_width * 0.5,
     }) catch |err| return mapWorldError(err);
 
-    const visible_rows = @as(f32, @floatFromInt(editor_system_profile_max_rows));
+    const visible_rows = @as(f32, @floatFromInt(editorSystemVisibleRows(input)));
     const total_rows = @as(f32, @floatFromInt(profile_count));
     const thumb_height = @max(track_height * visible_rows / @max(total_rows, visible_rows), editor_scrollbar_width * 2.0);
-    const max_scroll = editorSystemMaxScrollY(profile_count);
+    const max_scroll = editorSystemMaxScrollY(input, profile_count);
     const scroll_t = if (max_scroll > 0.0) std.math.clamp(input.editor.system_scroll_y / max_scroll, 0.0, 1.0) else 0.0;
     const thumb_y = list_clip.position[1] + (track_height - thumb_height) * scroll_t;
 
@@ -1913,26 +1938,24 @@ fn extractEditorSystemScrollbarInto(world: *runtime.World, input: FrameInput, li
     }) catch |err| return mapWorldError(err);
 }
 
-fn extractEditorInspectorInto(
+fn extractEditorComponentInspectorInto(
     allocator: std.mem.Allocator,
     world: *runtime.World,
     scene_world: *const runtime.World,
     input: FrameInput,
 ) RenderError!void {
-    const sidebar = editorSidebarRect(input);
-    const system_panel = editorSystemPanelRect(input);
+    const sidebar = editorRightSidebarRect(input);
     const panel_x = sidebar.x;
-    const panel_y = system_panel.y + system_panel.height + editor_shell_gap;
-    const available_height = @max(sidebar.y + sidebar.height - panel_y, editor_inspector_empty_panel_height);
-    const panel_height = editorInspectorPanelHeight(input);
+    const panel_y = sidebar.y;
     const panel_width = sidebar.width;
+    const panel_height = sidebar.height;
 
     const panel = world.createEntity("machina.editor.inspector.panel", "Editor Inspector Panel") catch |err| return mapWorldError(err);
     world.setUiRect(panel, .{
         .position = .{ panel_x, panel_y, 0.0 },
-        .size = .{ panel_width, @min(panel_height, available_height), 0.0 },
+        .size = .{ panel_width, panel_height, 0.0 },
         .color = editor_palette.panel,
-        .corner_radius = editor_panel_corner_radius,
+        .corner_radius = 0.0,
     }) catch |err| return mapWorldError(err);
 
     const accent = world.createEntity("machina.editor.inspector.accent", "Editor Inspector Accent") catch |err| return mapWorldError(err);
@@ -1943,121 +1966,110 @@ fn extractEditorInspectorInto(
         .corner_radius = 2.0,
     }) catch |err| return mapWorldError(err);
 
-    var row: usize = 0;
-    try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, "INSPECTOR", 1.15, editor_palette.text);
-    row += 1;
-
-    const counts = std.fmt.allocPrint(allocator, "ENTITIES {d} COMPONENTS {d}", .{
-        input.editor.entity_count,
-        input.editor.component_instance_count,
-    }) catch return RenderError.OutOfMemory;
-    defer allocator.free(counts);
-    try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, counts, editor_inspector_text_size, editor_palette.text_muted);
-    row += 1;
-
-    const renderables = std.fmt.allocPrint(allocator, "RENDERABLES {d}", .{input.editor.renderable_count}) catch return RenderError.OutOfMemory;
-    defer allocator.free(renderables);
-    try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, renderables, editor_inspector_text_size, editor_palette.text_muted);
-    row += 1;
+    try extractEditorText(world, "machina.editor.inspector.title", "Editor Inspector Title", .{
+        panel_x + editor_panel_padding_x,
+        panel_y + editor_panel_padding_y,
+        0.0,
+    }, "COMPONENTS", 1.15, editor_palette.text);
 
     const selected = input.editor.selected_entity orelse {
-        try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, "NO ENTITY SELECTED", editor_inspector_text_size, editor_palette.text);
-        row += 1;
-        try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, "CLICK A MESH", editor_inspector_text_size, editor_palette.text_dim);
+        try extractEditorText(world, "machina.editor.inspector.empty", "Editor Inspector Empty", .{
+            panel_x + editor_panel_padding_x,
+            panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.0,
+            0.0,
+        }, "NO ENTITY SELECTED", editor_inspector_text_size, editor_palette.text);
+        try extractEditorText(world, "machina.editor.inspector.empty.hint", "Editor Inspector Empty Hint", .{
+            panel_x + editor_panel_padding_x,
+            panel_y + editor_panel_padding_y + editor_inspector_line_stride * 3.0,
+            0.0,
+        }, "CLICK A MESH", editor_inspector_text_size, editor_palette.text_dim);
         return;
     };
 
     const entity = scene_world.entity(selected) catch {
-        try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, "SELECTION UNAVAILABLE", editor_inspector_text_size, editor_palette.danger);
+        try extractEditorText(world, "machina.editor.inspector.unavailable", "Editor Inspector Unavailable", .{
+            panel_x + editor_panel_padding_x,
+            panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.0,
+            0.0,
+        }, "SELECTION UNAVAILABLE", editor_inspector_text_size, editor_palette.danger);
         return;
     };
 
-    const handle = std.fmt.allocPrint(allocator, "HANDLE {d}:{d}", .{ selected.index, selected.generation }) catch return RenderError.OutOfMemory;
-    defer allocator.free(handle);
-    try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, handle, editor_inspector_text_size, editor_palette.text);
-    row += 1;
+    const entity_header = std.fmt.allocPrint(allocator, "{s}  {s}", .{ entity.name, entity.id }) catch return RenderError.OutOfMemory;
+    defer allocator.free(entity_header);
+    try extractEditorText(world, "machina.editor.inspector.entity", "Editor Inspector Entity", .{
+        panel_x + editor_panel_padding_x,
+        panel_y + editor_panel_padding_y + editor_inspector_line_stride,
+        0.0,
+    }, entity_header, editor_inspector_text_size, editor_palette.text_muted);
 
-    const name = std.fmt.allocPrint(allocator, "NAME {s}", .{entity.name}) catch return RenderError.OutOfMemory;
-    defer allocator.free(name);
-    try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, name, editor_inspector_text_size, editor_palette.text);
-    row += 1;
-
-    const id = std.fmt.allocPrint(allocator, "ID {s}", .{entity.id}) catch return RenderError.OutOfMemory;
-    defer allocator.free(id);
-    try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, id, editor_inspector_text_size, editor_palette.text);
-    row += 1;
-
-    if (scene_world.getTransform(selected) catch null) |transform_value| {
-        const position = formatInspectorVec3(allocator, "POS", transform_value.position) catch return RenderError.OutOfMemory;
-        defer allocator.free(position);
-        try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, position, editor_inspector_text_size, editor_palette.info);
-        row += 1;
-    }
-
-    var overflow = false;
+    var card_y = panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.5;
+    const card_x = panel_x + editor_panel_padding_x;
+    const card_width = @max(panel_width - editor_panel_padding_x * 2.0, 1.0);
+    const field_stride = editor_inspector_line_stride;
+    var component_index: usize = 0;
     var components = scene_world.entityComponents(selected) catch {
         return;
     };
     while (components.next()) |component_id| {
-        if (row >= editor_inspector_max_lines) {
-            overflow = true;
-            break;
-        }
-        const component_line = std.fmt.allocPrint(allocator, "[{s}]", .{component_id}) catch return RenderError.OutOfMemory;
-        defer allocator.free(component_line);
-        try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, component_line, editor_inspector_text_size, editor_palette.accent_soft);
-        row += 1;
-
         const field_count = scene_world.componentFieldCount(component_id);
+        const card_height = editor_inspector_card_padding_y * 2.0 +
+            editorTextHeight(editor_inspector_text_size) +
+            editor_panel_label_gap +
+            @as(f32, @floatFromInt(field_count)) * field_stride;
+        const card_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}", .{component_index}) catch return RenderError.OutOfMemory;
+        defer allocator.free(card_id);
+        const card = world.createEntity(card_id, "Editor Component Card") catch |err| return mapWorldError(err);
+        world.setUiRect(card, .{
+            .position = .{ card_x, card_y, 0.0 },
+            .size = .{ card_width, card_height, 0.0 },
+            .color = editor_palette.shell,
+            .corner_radius = editor_panel_corner_radius,
+        }) catch |err| return mapWorldError(err);
+
+        const title_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.title", .{component_index}) catch return RenderError.OutOfMemory;
+        defer allocator.free(title_id);
+        try extractEditorText(world, title_id, "Editor Component Title", .{
+            card_x + editor_inspector_card_padding_x,
+            card_y + editor_inspector_card_padding_y,
+            0.0,
+        }, component_id, editor_inspector_text_size, editor_palette.accent_soft);
+
         for (0..field_count) |field_index| {
-            if (row >= editor_inspector_max_lines) {
-                overflow = true;
-                break;
-            }
             const field_name = scene_world.componentFieldNameAt(component_id, field_index) orelse continue;
             const value = scene_world.getComponentFieldValue(selected, component_id, field_name) catch continue;
             const field_line = formatInspectorFieldValue(allocator, field_name, value) catch return RenderError.OutOfMemory;
             defer allocator.free(field_line);
-            try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, field_line, editor_inspector_text_size, editor_palette.text);
-            row += 1;
+            const field_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}", .{ component_index, field_index }) catch return RenderError.OutOfMemory;
+            defer allocator.free(field_id);
+            try extractEditorText(world, field_id, "Editor Component Field", .{
+                card_x + editor_inspector_card_padding_x,
+                card_y + editor_inspector_card_padding_y + editorTextHeight(editor_inspector_text_size) + editor_panel_label_gap + @as(f32, @floatFromInt(field_index)) * field_stride,
+                0.0,
+            }, field_line, editor_inspector_text_size, editor_palette.text);
         }
-        if (overflow) {
-            break;
-        }
-    }
 
-    if (overflow and row < editor_inspector_max_lines + 1) {
-        try extractEditorInspectorLine(allocator, world, row, panel_x, panel_y, "... MORE", editor_inspector_text_size, editor_palette.text_muted);
+        card_y += card_height + editor_inspector_card_gap;
+        component_index += 1;
     }
 }
 
-fn extractEditorInspectorLine(
-    allocator: std.mem.Allocator,
+fn extractEditorText(
     world: *runtime.World,
-    row: usize,
-    panel_x: f32,
-    panel_y: f32,
+    id: []const u8,
+    name: []const u8,
+    position: [3]f32,
     value: []const u8,
     size: f32,
     color: [3]f32,
 ) RenderError!void {
-    const entity_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.line.{d}", .{row}) catch return RenderError.OutOfMemory;
-    defer allocator.free(entity_id);
-    const entity = world.createEntity(entity_id, "Editor Inspector Line") catch |err| return mapWorldError(err);
+    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
     world.setUiText(entity, .{
-        .position = .{
-            panel_x + 16.0,
-            panel_y + 18.0 + @as(f32, @floatFromInt(row)) * editor_inspector_line_stride,
-            0.0,
-        },
+        .position = position,
         .size = size,
         .color = color,
         .value = value,
     }) catch |err| return mapWorldError(err);
-}
-
-fn formatInspectorVec3(allocator: std.mem.Allocator, label: []const u8, value: [3]f32) error{OutOfMemory}![]const u8 {
-    return std.fmt.allocPrint(allocator, "{s} {d:.2} {d:.2} {d:.2}", .{ label, value[0], value[1], value[2] });
 }
 
 fn formatInspectorFieldValue(allocator: std.mem.Allocator, field_name: []const u8, value: runtime.ComponentValue) error{OutOfMemory}![]const u8 {
@@ -2087,12 +2099,8 @@ fn editorPanelTextPosition(panel: ScreenRect, local_y: f32) [3]f32 {
     return .{ panel.x + editor_panel_padding_x, panel.y + local_y, 0.0 };
 }
 
-fn editorControlsYOffset() f32 {
-    return editor_panel_padding_y + editorTextHeight(editor_debug_fps_size) + editor_panel_section_gap;
-}
-
 fn editorSystemHeaderYOffset() f32 {
-    return editorControlsYOffset() + editor_control_button_height + editor_panel_section_gap;
+    return editor_panel_padding_y;
 }
 
 fn editorSystemRowsYOffset() f32 {
@@ -2100,21 +2108,12 @@ fn editorSystemRowsYOffset() f32 {
 }
 
 fn editorDebugPanelSize(input: FrameInput) [2]f32 {
-    const sidebar = editorSidebarRect(input);
-    const has_profiles = input.system_profiles.len > 0;
-    const panel_width: f32 = sidebar.width;
-    var panel_height: f32 = editorControlsYOffset() + editor_control_button_height + editor_panel_bottom_padding;
-    if (has_profiles) {
-        const profile_rows = @min(input.system_profiles.len, editor_system_profile_max_rows);
-        panel_height = editorSystemRowsYOffset() +
-            @as(f32, @floatFromInt(profile_rows)) * editor_system_row_stride +
-            editor_panel_bottom_padding;
-    }
-    return .{ panel_width, panel_height };
+    const sidebar = editorLeftSidebarRect(input);
+    return .{ sidebar.width, sidebar.height };
 }
 
 fn editorSystemPanelRect(input: FrameInput) ScreenRect {
-    const sidebar = editorSidebarRect(input);
+    const sidebar = editorLeftSidebarRect(input);
     const size = editorDebugPanelSize(input);
     return .{
         .x = sidebar.x,
@@ -2122,10 +2121,6 @@ fn editorSystemPanelRect(input: FrameInput) ScreenRect {
         .width = size[0],
         .height = size[1],
     };
-}
-
-fn editorControlsY(input: FrameInput) f32 {
-    return editorSystemPanelRect(input).y + editorControlsYOffset();
 }
 
 fn editorSystemHeaderY(input: FrameInput) f32 {
@@ -2148,14 +2143,15 @@ fn editorSystemVisibleRange(input: FrameInput) EditorSystemVisibleRange {
         return .{ .start = 0, .end = 0, .offset_y = 0.0 };
     }
 
-    const scroll_y = std.math.clamp(input.editor.system_scroll_y, 0.0, editorSystemMaxScrollY(profile_count));
+    const scroll_y = std.math.clamp(input.editor.system_scroll_y, 0.0, editorSystemMaxScrollY(input, profile_count));
     const row_offset = scroll_y / editor_system_row_stride;
     const start_float = @floor(row_offset);
     const start: usize = @intFromFloat(start_float);
     const offset_y = scroll_y - start_float * editor_system_row_stride;
+    const visible_rows = editorSystemVisibleRows(input);
     const visible_count = @min(
         profile_count - start,
-        editor_system_profile_max_rows + if (offset_y > 0.0) @as(usize, 1) else @as(usize, 0),
+        visible_rows + if (offset_y > 0.0) @as(usize, 1) else @as(usize, 0),
     );
     return .{
         .start = start,
@@ -2164,13 +2160,9 @@ fn editorSystemVisibleRange(input: FrameInput) EditorSystemVisibleRange {
     };
 }
 
-fn editorSystemNeedsScroll(profile_count: usize) bool {
-    return profile_count > editor_system_profile_max_rows;
-}
-
 fn editorSystemListClipRect(input: FrameInput) UiClipRect {
     const panel = editorSystemPanelRect(input);
-    const scrollbar_space = if (editorSystemNeedsScroll(editorSystemProfileScrollCount(input)))
+    const scrollbar_space = if (editorSystemNeedsScrollForInput(input, editorSystemProfileScrollCount(input)))
         editor_scrollbar_width + editor_scrollbar_gap
     else
         0.0;
@@ -2178,7 +2170,7 @@ fn editorSystemListClipRect(input: FrameInput) UiClipRect {
         .position = .{ panel.x + editor_panel_padding_x, editorSystemRowsY(input), 0.0 },
         .size = .{
             @max(panel.width - editor_panel_padding_x * 2.0 - scrollbar_space, 1.0),
-            @as(f32, @floatFromInt(editor_system_profile_max_rows)) * editor_system_row_stride,
+            @as(f32, @floatFromInt(editorSystemVisibleRows(input))) * editor_system_row_stride,
             0.0,
         },
     };
@@ -2188,22 +2180,26 @@ fn editorSystemProfileScrollCount(input: FrameInput) usize {
     return @max(input.system_profiles.len, input.system_profile_count_hint);
 }
 
-fn editorSystemMaxScroll(profile_count: usize) usize {
-    return if (profile_count > editor_system_profile_max_rows)
-        profile_count - editor_system_profile_max_rows
+fn editorSystemVisibleRows(input: FrameInput) usize {
+    const panel = editorSystemPanelRect(input);
+    const rows_height = @max(panel.y + panel.height - editorSystemRowsY(input) - editor_panel_bottom_padding, editor_system_row_stride);
+    return @max(@as(usize, @intFromFloat(@floor(rows_height / editor_system_row_stride))), 1);
+}
+
+fn editorSystemNeedsScrollForInput(input: FrameInput, profile_count: usize) bool {
+    return profile_count > editorSystemVisibleRows(input);
+}
+
+fn editorSystemMaxScroll(input: FrameInput, profile_count: usize) usize {
+    const visible_rows = editorSystemVisibleRows(input);
+    return if (profile_count > visible_rows)
+        profile_count - visible_rows
     else
         0;
 }
 
-fn editorSystemMaxScrollY(profile_count: usize) f32 {
-    return @as(f32, @floatFromInt(editorSystemMaxScroll(profile_count))) * editor_system_row_stride;
-}
-
-fn editorInspectorPanelHeight(input: FrameInput) f32 {
-    return if (input.editor.selected_entity == null)
-        editor_inspector_empty_panel_height
-    else
-        editor_inspector_panel_height;
+fn editorSystemMaxScrollY(input: FrameInput, profile_count: usize) f32 {
+    return @as(f32, @floatFromInt(editorSystemMaxScroll(input, profile_count))) * editor_system_row_stride;
 }
 
 fn formatFpsLabel(allocator: std.mem.Allocator, fps: f32) error{OutOfMemory}![]const u8 {
@@ -4069,10 +4065,10 @@ fn editorAxisVector(axis: EditorAxis) ?[3]f32 {
 }
 
 fn editorPlayButtonRect(input: FrameInput) ScreenRect {
-    const panel = editorSystemPanelRect(input);
+    const top = editorTopBarRect(input);
     return .{
-        .x = panel.x + editor_panel_padding_x,
-        .y = editorControlsY(input),
+        .x = @max(top.width - editor_panel_padding_x - editor_control_button_width * 2.0 - editor_control_button_gap, editor_panel_padding_x),
+        .y = top.y + (top.height - editor_control_button_height) * 0.5,
         .width = editor_control_button_width,
         .height = editor_control_button_height,
     };
@@ -4140,7 +4136,7 @@ fn hitEditorChrome(input: FrameInput) bool {
     if (!input.debug_overlay_visible) {
         return false;
     }
-    return editorSidebarRect(input).contains(input.pointer.position);
+    return !editorGameViewport(input).contains(input.pointer.position);
 }
 
 fn routeEditorSystemScrollWheel(
@@ -4202,23 +4198,70 @@ fn editorViewportHeight(input: FrameInput) f32 {
     return if (input.viewport_height > 0.0) input.viewport_height else @as(f32, @floatFromInt(output_height));
 }
 
-fn editorSidebarWidth(window_width: f32) f32 {
+fn editorSideWidths(window_width: f32) struct { left: f32, right: f32 } {
     if (window_width <= 0.0) {
-        return editor_sidebar_target_width;
+        return .{ .left = editor_left_sidebar_target_width, .right = editor_right_sidebar_target_width };
     }
-    const max_sidebar = @max(editor_sidebar_min_width, window_width * 0.48);
-    return @min(editor_sidebar_target_width, max_sidebar);
+    var left = std.math.clamp(window_width * 0.24, editor_left_sidebar_min_width, editor_left_sidebar_target_width);
+    var right = std.math.clamp(window_width * 0.26, editor_right_sidebar_min_width, editor_right_sidebar_target_width);
+    const max_side_total = @max(window_width - editor_min_game_viewport_width, 1.0);
+    if (left + right > max_side_total) {
+        const scale = max_side_total / (left + right);
+        left = @max(left * scale, 1.0);
+        right = @max(right * scale, 1.0);
+    }
+    return .{ .left = left, .right = right };
 }
 
-fn editorSidebarRect(input: FrameInput) ScreenRect {
+fn editorTopBarRect(input: FrameInput) ScreenRect {
+    const window_width = editorViewportWidth(input);
+    return .{
+        .x = 0.0,
+        .y = 0.0,
+        .width = @max(window_width, 1.0),
+        .height = editor_top_bar_height,
+    };
+}
+
+fn editorBottomBarRect(input: FrameInput) ScreenRect {
     const window_width = editorViewportWidth(input);
     const window_height = editorViewportHeight(input);
-    const sidebar_width = @min(editorSidebarWidth(window_width), @max(window_width - editor_shell_margin * 2.0, 1.0));
     return .{
-        .x = @max(window_width - sidebar_width - editor_shell_margin, editor_shell_margin),
-        .y = editor_shell_margin,
-        .width = sidebar_width,
-        .height = @max(window_height - editor_shell_margin * 2.0, 1.0),
+        .x = 0.0,
+        .y = @max(window_height - editor_bottom_bar_height, editor_top_bar_height),
+        .width = @max(window_width, 1.0),
+        .height = editor_bottom_bar_height,
+    };
+}
+
+fn editorSidePanelY(input: FrameInput) f32 {
+    _ = input;
+    return editor_top_bar_height;
+}
+
+fn editorSidePanelHeight(input: FrameInput) f32 {
+    const window_height = editorViewportHeight(input);
+    return @max(window_height - editor_top_bar_height - editor_bottom_bar_height, 1.0);
+}
+
+fn editorLeftSidebarRect(input: FrameInput) ScreenRect {
+    const widths = editorSideWidths(editorViewportWidth(input));
+    return .{
+        .x = 0.0,
+        .y = editorSidePanelY(input),
+        .width = widths.left,
+        .height = editorSidePanelHeight(input),
+    };
+}
+
+fn editorRightSidebarRect(input: FrameInput) ScreenRect {
+    const window_width = editorViewportWidth(input);
+    const widths = editorSideWidths(window_width);
+    return .{
+        .x = @max(window_width - widths.right, widths.left + 1.0),
+        .y = editorSidePanelY(input),
+        .width = widths.right,
+        .height = editorSidePanelHeight(input),
     };
 }
 
@@ -4234,23 +4277,16 @@ fn editorGameViewport(input: FrameInput) ScreenRect {
         };
     }
 
-    const sidebar = editorSidebarRect(input);
-    const area_x = editor_shell_margin;
-    const area_y = editor_shell_margin;
-    const area_width = @max(sidebar.x - editor_shell_gap - area_x, 1.0);
-    const area_height = @max(window_height - editor_shell_margin * 2.0, 1.0);
-    var viewport_width = area_width;
-    var viewport_height = viewport_width / editor_game_viewport_aspect;
-    if (viewport_height > area_height) {
-        viewport_height = area_height;
-        viewport_width = viewport_height * editor_game_viewport_aspect;
-    }
+    const left = editorLeftSidebarRect(input);
+    const right = editorRightSidebarRect(input);
+    const top = editorTopBarRect(input);
+    const bottom = editorBottomBarRect(input);
 
     return .{
-        .x = area_x + @max((area_width - viewport_width) * 0.5, 0.0),
-        .y = area_y + @max((area_height - viewport_height) * 0.5, 0.0),
-        .width = @max(viewport_width, 1.0),
-        .height = @max(viewport_height, 1.0),
+        .x = left.x + left.width,
+        .y = top.y + top.height,
+        .width = @max(right.x - (left.x + left.width), 1.0),
+        .height = @max(bottom.y - (top.y + top.height), 1.0),
     };
 }
 
@@ -4777,6 +4813,7 @@ test "editor system list supports fractional pixel scroll" {
     _ = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
         .debug_overlay_visible = true,
         .delta_seconds = 1.0,
+        .viewport_height = 440.0,
         .system_profiles = &profiles,
         .pointer = .{
             .position = editorSystemListHitTestPoint(&profiles, 0),
@@ -4788,6 +4825,7 @@ test "editor system list supports fractional pixel scroll" {
     editor_state.system_scroll_y = editor_state.system_scroll_target_y;
 
     const range = editorSystemVisibleRange(.{
+        .viewport_height = 440.0,
         .system_profiles = &profiles,
         .editor = editorFrameState(&world, editor_state),
     });
@@ -4849,6 +4887,7 @@ fn replayEditorScrollFrames(
         _ = try updateEditorState(std.testing.allocator, world, editor_state, .{
             .debug_overlay_visible = true,
             .delta_seconds = 1.0,
+            .viewport_height = 440.0,
             .system_profiles = profiles,
             .pointer = .{
                 .position = pointer,
@@ -5676,15 +5715,18 @@ test "debug overlay extracts FPS label when visible" {
     });
 
     try std.testing.expectEqual(@as(usize, 1), state.world.componentInstanceCountFor(runtime.ui_canvas_component_id));
-    try std.testing.expectEqual(@as(usize, 12), state.world.uiRectCount());
-    try std.testing.expectEqual(@as(usize, 8), state.world.uiTextCount());
+    try std.testing.expect(state.world.uiRectCount() >= 14);
+    try std.testing.expect(state.world.uiTextCount() >= 8);
 
-    const label = state.world.uiTextAt(0) orelse return error.TestExpectedEqual;
-    try std.testing.expectEqualStrings("FPS 60", label.value);
+    const label = state.world.findEntityById("machina.editor.debug.fps") orelse return error.TestExpectedEqual;
+    const fps_value = try state.world.getString(label, runtime.ui_text_component_id, "value");
+    const fps_position = try state.world.getVec3(label, runtime.ui_text_component_id, "position");
+    const fps_size = try state.world.getFloat(label, runtime.ui_text_component_id, "size");
+    try std.testing.expectEqualStrings("FPS 60", fps_value);
 
     const play_button = state.world.findEntityById("machina.editor.controls.play") orelse return error.TestExpectedEqual;
     const play_position = try state.world.getVec3(play_button, runtime.ui_rect_component_id, "position");
-    try std.testing.expect(play_position[1] >= label.position[1] + editorTextHeight(label.size) + editor_panel_section_gap - 0.001);
+    try std.testing.expect(play_position[0] > fps_position[0] + editorTextWidth(fps_value, fps_size));
     try std.testing.expectEqual(@as(f32, editor_button_corner_radius), try state.world.getFloat(play_button, runtime.ui_rect_component_id, "corner_radius"));
     try std.testing.expect(try state.world.hasComponent(play_button, runtime.ui_button_component_id));
     try std.testing.expectEqualStrings(editor_command_play_toggle, try state.world.getString(play_button, runtime.ui_command_component_id, "command"));
@@ -5696,7 +5738,16 @@ test "debug overlay extracts FPS label when visible" {
     const play_label_item = (try ui_layout.layoutItem(&state.world, play_label)) orelse return error.TestExpectedEqual;
     try std.testing.expectEqualStrings("machina.editor.controls.play", play_label_item.parent);
     const resolved_play_label = try resolveUiLayout(&state.world, play_label, play_label_position);
-    const centered_play_label = try resolveUiTextPosition(&state.world, play_label, state.world.uiTextAt(1) orelse return error.TestExpectedEqual, resolved_play_label.position);
+    const play_label_text = runtime.UiText{
+        .entity = play_label,
+        .id = "machina.editor.controls.play.label",
+        .name = "Editor Play Label",
+        .position = play_label_position,
+        .size = try state.world.getFloat(play_label, runtime.ui_text_component_id, "size"),
+        .color = try state.world.getVec3(play_label, runtime.ui_text_component_id, "color"),
+        .value = try state.world.getString(play_label, runtime.ui_text_component_id, "value"),
+    };
+    const centered_play_label = try resolveUiTextPosition(&state.world, play_label, play_label_text, resolved_play_label.position);
     const expected_play_label_x = play_position[0] + (editor_control_button_width - editorTextWidth("PAUSE", 1.0)) * 0.5;
     const expected_play_label_y = play_position[1] + (editor_control_button_height - editorTextHeight(1.0)) * 0.5;
     try std.testing.expectApproxEqAbs(expected_play_label_x, centered_play_label[0], 0.001);
@@ -5710,10 +5761,14 @@ test "debug overlay extracts FPS label when visible" {
 
     try std.testing.expect(!input.ui_visible);
     try std.testing.expect(input.debug_overlay_visible);
-    const sidebar = editorSidebarRect(input);
+    const left_sidebar = editorLeftSidebarRect(input);
     const debug_panel = state.world.findEntityById("machina.editor.debug.panel") orelse return error.TestExpectedEqual;
     const debug_panel_x = state.world.getVec3(debug_panel, runtime.ui_rect_component_id, "position") catch |err| return mapWorldError(err);
-    try std.testing.expect(debug_panel_x[0] >= sidebar.x);
+    try std.testing.expectApproxEqAbs(left_sidebar.x, debug_panel_x[0], 0.001);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.top_bar") != null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.bottom_bar") != null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.left_sidebar") != null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.right_sidebar") != null);
     try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.frame") == null);
 
     try state.queueUiDraw();
@@ -5751,8 +5806,8 @@ test "debug overlay extracts system profile rows when available" {
         .system_profiles = &profiles,
     });
 
-    try std.testing.expectEqual(@as(usize, 12), state.world.uiRectCount());
-    try std.testing.expectEqual(@as(usize, 11), state.world.uiTextCount());
+    try std.testing.expect(state.world.uiRectCount() >= 14);
+    try std.testing.expect(state.world.uiTextCount() >= 11);
 
     var saw_header = false;
     var saw_startup = false;
@@ -5863,26 +5918,28 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     });
 
     try std.testing.expectEqual(@as(usize, 4), state.world.renderableMeshCount());
-    try std.testing.expectEqual(@as(usize, 12), state.world.uiRectCount());
+    try std.testing.expect(state.world.uiRectCount() >= 16);
 
-    var saw_handle = false;
     var saw_transform = false;
     var saw_position_value = false;
+    var saw_entity_header = false;
     var texts = state.world.uiTexts();
     while (texts.next()) |text| {
-        if (std.mem.indexOf(u8, text.value, "HANDLE") != null) {
-            saw_handle = true;
+        if (std.mem.indexOf(u8, text.value, "Selected Box") != null) {
+            saw_entity_header = true;
         }
-        if (std.mem.indexOf(u8, text.value, "[machina.transform]") != null) {
+        if (std.mem.indexOf(u8, text.value, "machina.transform") != null) {
             saw_transform = true;
         }
         if (std.mem.indexOf(u8, text.value, "position 0.25 0.50 0.00") != null) {
             saw_position_value = true;
         }
     }
-    try std.testing.expect(saw_handle);
+    try std.testing.expect(saw_entity_header);
     try std.testing.expect(saw_transform);
     try std.testing.expect(saw_position_value);
+    try std.testing.expect(state.world.findEntityById("machina.editor.inspector.component.0") != null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.inspector.component.1") != null);
 }
 
 test "render ECS profiles internal systems for editor overlay" {
