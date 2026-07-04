@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     machina_mod.addOptions("build_options", build_options);
-    linkLuau(b, machina_mod);
+    linkLuau(b, machina_mod, target);
     addSdlBridge(b, machina_mod, target);
 
     const exe = b.addExecutable(.{
@@ -71,7 +71,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_exe_tests.step);
 }
 
-fn linkLuau(b: *std.Build, module: *std.Build.Module) void {
+fn linkLuau(b: *std.Build, module: *std.Build.Module, target: std.Build.ResolvedTarget) void {
     module.addIncludePath(b.path("src"));
     module.addIncludePath(b.path("third_party/luau/Common/include"));
     module.addIncludePath(b.path("third_party/luau/Ast/include"));
@@ -79,7 +79,11 @@ fn linkLuau(b: *std.Build, module: *std.Build.Module) void {
     module.addIncludePath(b.path("third_party/luau/Compiler/include"));
     module.addIncludePath(b.path("third_party/luau/VM/include"));
     module.linkSystemLibrary("c", .{});
-    module.linkSystemLibrary("c++", .{});
+    if (target.result.os.tag == .windows and target.result.abi == .msvc) {
+        module.linkSystemLibrary("msvcprt", .{});
+    } else {
+        module.linkSystemLibrary("c++", .{});
+    }
     module.addCSourceFiles(.{
         .root = b.path(""),
         .language = .cpp,
