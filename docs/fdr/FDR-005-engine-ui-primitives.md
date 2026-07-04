@@ -25,7 +25,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - Headful runs hide the engine-owned editor/debug overlay by default; `machina run --editor` starts with it visible.
 - The engine-owned editor/debug shell displays current FPS in a top bar.
 - In editor mode, 3D scene content and scene-authored game UI render into the full remaining viewport between the top bar, bottom bar, left sidebar, and right sidebar. The editor viewport is not forced to 16:9.
-- The left sidebar hosts the system performance inspector. The right sidebar is reserved for selected-entity component inspection and eventual component editing. The sidebars are separated from the game viewport by draggable splitters.
+- The left sidebar hosts the system performance inspector. The right sidebar is reserved for selected-entity component inspection and eventual component editing. The sidebars are separated from the game viewport by draggable splitters. Splitters render as thin dividers but use a wider hover/click target and change color when hovered or dragged.
 - The engine-owned editor/debug shell also hosts the first editor playback controls and selected-entity inspector; detailed behavior is tracked in FDR-018.
 - When live system profiling data is available, the editor/debug overlay lists active systems with their full system id and rolling average runtime over the current profiling window.
 - The editor/debug overlay also lists engine-internal render systems profiled through the render ECS schedule.
@@ -152,7 +152,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 
 ### 9e. Use retained hgroups for editor splitters
 
-**Decision:** The editor shell body is generated as a retained `machina.ui.hgroup` with left sidebar, left splitter, growable game viewport, right splitter, and right sidebar children. Dragging a splitter mutates engine-owned editor width state, and the generated hgroup resolves the resulting layout.
+**Decision:** The editor shell body is generated as a retained `machina.ui.hgroup` with left sidebar, left splitter, growable game viewport, right splitter, and right sidebar children. Dragging a splitter mutates engine-owned editor width state, and the generated hgroup resolves the resulting layout. Splitters keep a wider interaction target than their visible divider width and highlight on hover/drag.
 **Why:** Resizable editor regions should exercise and harden the same ECS UI layout path that projects can use. This avoids a private renderer-only layout model for one of the editor's most important surfaces.
 **Tradeoff:** Splitter persistence, collapsed panels, minimum-size negotiation across nested groups, cursor styling, keyboard resizing, and user-configured workspace layouts remain future work.
 

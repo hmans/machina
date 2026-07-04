@@ -45,6 +45,7 @@ const editor_right_sidebar_target_width: f32 = 460.0;
 const editor_right_sidebar_min_width: f32 = 300.0;
 const editor_min_game_viewport_width: f32 = 320.0;
 const editor_splitter_width: f32 = 2.0;
+const editor_splitter_hit_width: f32 = 12.0;
 const editor_performance_display_interval_ns: u64 = 333_000_000;
 const editor_debug_fps_size: f32 = 1.6;
 const editor_system_text_size: f32 = 1.0;
@@ -397,12 +398,12 @@ fn pickEditorSplitter(input: FrameInput) ?EditorSplitter {
     if (!input.debug_overlay_visible or !input.pointer.has_position) {
         return null;
     }
-    if (editorSplitterRect(input, .left)) |rect| {
+    if (editorSplitterHitRect(input, .left)) |rect| {
         if (rect.contains(input.pointer.position)) {
             return .left;
         }
     }
-    if (editorSplitterRect(input, .right)) |rect| {
+    if (editorSplitterHitRect(input, .right)) |rect| {
         if (rect.contains(input.pointer.position)) {
             return .right;
         }
@@ -1794,9 +1795,9 @@ fn extractEditorShellInto(world: *runtime.World, input: FrameInput) RenderError!
     }) catch |err| return mapWorldError(err);
 
     try extractEditorShellLayoutRect(world, "machina.editor.shell.left_sidebar", "Editor Left Sidebar", layout.left.size3(), 0, editor_palette.panel);
-    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, editor_palette.panel_muted);
+    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, editorSplitterColor(input, .left));
     try extractEditorShellLayoutSpacer(world, "machina.editor.shell.game_viewport", "Editor Game Viewport Slot", .{ editor_min_game_viewport_width, body.height, 0.0 }, 2, 1.0);
-    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, editor_palette.panel_muted);
+    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, editorSplitterColor(input, .right));
     try extractEditorShellLayoutRect(world, "machina.editor.shell.right_sidebar", "Editor Right Sidebar", layout.right.size3(), 4, editor_palette.panel);
 
     const frame_color = editor_palette.panel_muted;
@@ -4478,6 +4479,35 @@ fn editorSplitterRect(input: FrameInput, splitter: EditorSplitter) ?ScreenRect {
     };
 }
 
+fn editorSplitterHitRect(input: FrameInput, splitter: EditorSplitter) ?ScreenRect {
+    const visual = editorSplitterRect(input, splitter) orelse return null;
+    const extra_width = @max(editor_splitter_hit_width - visual.width, 0.0);
+    return .{
+        .x = visual.x - extra_width * 0.5,
+        .y = visual.y,
+        .width = visual.width + extra_width,
+        .height = visual.height,
+    };
+}
+
+fn editorSplitterHovered(input: FrameInput, splitter: EditorSplitter) bool {
+    if (!input.debug_overlay_visible or !input.pointer.has_position) {
+        return false;
+    }
+    const hit_rect = editorSplitterHitRect(input, splitter) orelse return false;
+    return hit_rect.contains(input.pointer.position);
+}
+
+fn editorSplitterColor(input: FrameInput, splitter: EditorSplitter) [3]f32 {
+    if (input.editor.dragging_splitter == splitter) {
+        return editor_palette.text_muted;
+    }
+    if (editorSplitterHovered(input, splitter)) {
+        return editor_palette.text_dim;
+    }
+    return editor_palette.panel_muted;
+}
+
 fn editorGameViewport(input: FrameInput) ScreenRect {
     const window_width = editorViewportWidth(input);
     const window_height = editorViewportHeight(input);
@@ -6000,12 +6030,35 @@ test "editor shell body uses hgroup slot for the game viewport" {
     const game_slot = state.world.findEntityById("machina.editor.shell.game_viewport") orelse return error.TestExpectedEqual;
     const slot_rect = try ui_layout.resolvedItemRect(&state.world, game_slot);
     const left_splitter = editorSplitterRect(input, .left) orelse return error.TestExpectedEqual;
+    const left_splitter_hit = editorSplitterHitRect(input, .left) orelse return error.TestExpectedEqual;
     const viewport = editorGameViewport(input);
     try std.testing.expectApproxEqAbs(@as(f32, 2.0), left_splitter.width, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 12.0), left_splitter_hit.width, 0.001);
     try std.testing.expectApproxEqAbs(viewport.x, slot_rect.position[0], 0.001);
     try std.testing.expectApproxEqAbs(viewport.y, slot_rect.position[1], 0.001);
     try std.testing.expectApproxEqAbs(viewport.width, slot_rect.size[0], 0.001);
     try std.testing.expectApproxEqAbs(viewport.height, slot_rect.size[1], 0.001);
+
+    var hover_state = try RenderEcsState.init(std.testing.allocator);
+    defer hover_state.deinit();
+    const hover_point = [2]f32{ left_splitter.x + left_splitter.width + 3.0, left_splitter.y + 40.0 };
+    try std.testing.expect(!left_splitter.contains(hover_point));
+    try std.testing.expect(left_splitter_hit.contains(hover_point));
+    try hover_state.extractSceneWithInput(.{ .world = &scene_world }, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = input.editor,
+        .pointer = .{
+            .position = hover_point,
+            .has_position = true,
+        },
+    });
+    const hover_splitter = hover_state.world.findEntityById("machina.editor.shell.splitter.left") orelse return error.TestExpectedEqual;
+    const hover_color = try hover_state.world.getVec3(hover_splitter, runtime.ui_separator_component_id, "color");
+    for (0..3) |channel| {
+        try std.testing.expectApproxEqAbs(editor_palette.text_dim[channel], hover_color[channel], 0.001);
+    }
 }
 
 test "editor splitters resize sidebars through editor state" {
@@ -6019,7 +6072,10 @@ test "editor splitters resize sidebars through editor state" {
         .viewport_height = 720.0,
     };
     const left_splitter = editorSplitterRect(initial_input, .left) orelse return error.TestExpectedEqual;
-    const press_point = [2]f32{ left_splitter.x + left_splitter.width * 0.5, left_splitter.y + 40.0 };
+    const left_splitter_hit = editorSplitterHitRect(initial_input, .left) orelse return error.TestExpectedEqual;
+    const press_point = [2]f32{ left_splitter.x + left_splitter.width + 3.0, left_splitter.y + 40.0 };
+    try std.testing.expect(!left_splitter.contains(press_point));
+    try std.testing.expect(left_splitter_hit.contains(press_point));
 
     const press = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
         .debug_overlay_visible = true,
