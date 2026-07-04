@@ -18,6 +18,10 @@ Please see `docs/fdr/INDEX.md` for a complete list of features and `docs/adr/IND
 - Implement behaviors in a reusable manner. Example: an entity reacting to input events should be implemented using a system that queries for entities with the relevant components, rather than hardcoding the behavior into the entity (or engine) itself.
 - The engine itself must be implemented in Zig, either in ECS systems and components, or in the engine's core. Luau is only for project-local scripting. Do not implement engine features in Luau.
 
+## Development Tooling
+
+- The engine can be instructed to run for n frames and/or generate screenshots. Use this for debugging and visual verificiation of your work.
+
 ## Project Shape
 
 - `src/main.zig` contains the CLI entry point and command routing.
