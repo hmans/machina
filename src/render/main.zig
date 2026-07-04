@@ -5,130 +5,641 @@ const geometry = @import("../geometry.zig");
 const runtime = @import("../runtime.zig");
 const ui_layout = @import("../ui_layout.zig");
 const ui_font = @import("../ui_font.zig");
-const render_backend = @import("backend.zig");
-const render_batching = @import("batching.zig");
-const render_bmp = @import("bmp.zig");
-const render_ecs = @import("ecs.zig");
-const render_math = @import("math.zig");
-const render_pipelines = @import("pipelines.zig");
 const wgpu = @import("wgpu");
 
-const platform = @import("platform.zig");
-const is_supported_window_platform = platform.is_supported_window_platform;
-const sdl = platform.sdl;
+const is_supported_window_platform = builtin.os.tag == .macos or builtin.os.tag == .linux or builtin.os.tag == .windows;
+const sdl = if (is_supported_window_platform) @cImport({
+    @cInclude("sdl_bridge.h");
+}) else struct {};
 
-const render_types = @import("types.zig");
-const render_ui_draw = @import("ui_draw.zig");
-const output_width = render_types.output_width;
-const output_height = render_types.output_height;
-const output_extent = render_types.output_extent;
-const output_bytes_per_row = render_types.output_bytes_per_row;
-const output_size = render_types.output_size;
-const depth_format = render_types.depth_format;
-const shadow_depth_format = render_types.shadow_depth_format;
-const shadow_map_size = render_types.shadow_map_size;
-const render_ui_button_state_component_id = render_types.render_ui_button_state_component_id;
-const render_ui_clip_component_id = render_types.render_ui_clip_component_id;
-const render_draw_batch_component_id = render_types.render_draw_batch_component_id;
-const render_draw_ui_component_id = render_types.render_draw_ui_component_id;
-const render_extract_system_id = render_types.render_extract_system_id;
-const render_prepare_meshes_system_id = render_types.render_prepare_meshes_system_id;
-const render_queue_meshes_system_id = render_types.render_queue_meshes_system_id;
-const render_interact_ui_system_id = render_types.render_interact_ui_system_id;
-const render_prepare_ui_system_id = render_types.render_prepare_ui_system_id;
-const render_queue_ui_system_id = render_types.render_queue_ui_system_id;
-const render_draw_meshes_system_id = render_types.render_draw_meshes_system_id;
-const default_window_width = render_types.default_window_width;
-const default_window_height = render_types.default_window_height;
-const editor_top_bar_height = render_types.editor_top_bar_height;
-const editor_bottom_bar_height = render_types.editor_bottom_bar_height;
-const editor_left_sidebar_target_width = render_types.editor_left_sidebar_target_width;
-const editor_left_sidebar_min_width = render_types.editor_left_sidebar_min_width;
-const editor_right_sidebar_target_width = render_types.editor_right_sidebar_target_width;
-const editor_right_sidebar_min_width = render_types.editor_right_sidebar_min_width;
-const editor_min_game_viewport_width = render_types.editor_min_game_viewport_width;
-const editor_splitter_width = render_types.editor_splitter_width;
-const editor_splitter_hit_width = render_types.editor_splitter_hit_width;
-const editor_performance_display_interval_ns = render_types.editor_performance_display_interval_ns;
-const live_run_default_delta_seconds = render_types.live_run_default_delta_seconds;
-const live_run_max_delta_seconds = render_types.live_run_max_delta_seconds;
-const editor_system_text_size = render_types.editor_system_text_size;
-const editor_panel_padding_x = render_types.editor_panel_padding_x;
-const editor_panel_padding_y = render_types.editor_panel_padding_y;
-const editor_panel_section_gap = render_types.editor_panel_section_gap;
-const editor_panel_label_gap = render_types.editor_panel_label_gap;
-const editor_panel_bottom_padding = render_types.editor_panel_bottom_padding;
-const editor_system_row_stride = render_types.editor_system_row_stride;
-const editor_system_row_label_padding_x = render_types.editor_system_row_label_padding_x;
-const editor_system_row_duration_padding_x = render_types.editor_system_row_duration_padding_x;
-const editor_system_field_column_gap = render_types.editor_system_field_column_gap;
-const editor_system_card_padding_y = render_types.editor_system_card_padding_y;
-const editor_system_scroll_pixels_per_wheel = render_types.editor_system_scroll_pixels_per_wheel;
-const editor_system_scroll_smoothing = render_types.editor_system_scroll_smoothing;
-const editor_scrollbar_width = render_types.editor_scrollbar_width;
-const editor_scrollbar_gap = render_types.editor_scrollbar_gap;
-const render_system_profile_window_frames = render_types.render_system_profile_window_frames;
-const editor_control_button_width = render_types.editor_control_button_width;
-const editor_control_button_height = render_types.editor_control_button_height;
-const editor_control_button_gap = render_types.editor_control_button_gap;
-const editor_panel_corner_radius = render_types.editor_panel_corner_radius;
-const editor_sidebar_panel_margin = render_types.editor_sidebar_panel_margin;
-const editor_button_corner_radius = render_types.editor_button_corner_radius;
-const editor_command_play_toggle = render_types.editor_command_play_toggle;
-const editor_command_step = render_types.editor_command_step;
-const editor_command_splitter_left = render_types.editor_command_splitter_left;
-const editor_command_splitter_right = render_types.editor_command_splitter_right;
-const fly_camera_move_speed = render_types.fly_camera_move_speed;
-const fly_camera_look_sensitivity = render_types.fly_camera_look_sensitivity;
-const fly_camera_max_pitch = render_types.fly_camera_max_pitch;
-const editor_inspector_text_size = render_types.editor_inspector_text_size;
-const editor_inspector_line_stride = render_types.editor_inspector_line_stride;
-const editor_inspector_field_row_stride = render_types.editor_inspector_field_row_stride;
-const editor_inspector_card_gap = render_types.editor_inspector_card_gap;
-const editor_inspector_separator_height = render_types.editor_inspector_separator_height;
-const editor_inspector_card_padding_x = render_types.editor_inspector_card_padding_x;
-const editor_inspector_card_padding_y = render_types.editor_inspector_card_padding_y;
-const editor_inspector_field_value_column_x = render_types.editor_inspector_field_value_column_x;
-const editor_inspector_field_column_gap = render_types.editor_inspector_field_column_gap;
-const editor_inspector_input_padding_x = render_types.editor_inspector_input_padding_x;
-const editor_inspector_input_gap = render_types.editor_inspector_input_gap;
-const editor_inspector_input_height = render_types.editor_inspector_input_height;
-const editor_inspector_input_corner_radius = render_types.editor_inspector_input_corner_radius;
-const editor_inspector_input_border_thickness = render_types.editor_inspector_input_border_thickness;
-const editor_inspector_caret_width = render_types.editor_inspector_caret_width;
-const editor_inspector_selection_padding_y = render_types.editor_inspector_selection_padding_y;
-const editor_component_id_buffer_len = render_types.editor_component_id_buffer_len;
-const editor_field_name_buffer_len = render_types.editor_field_name_buffer_len;
-const editor_input_text_buffer_len = render_types.editor_input_text_buffer_len;
-const editor_undo_capacity = render_types.editor_undo_capacity;
-const editor_gizmo_axis_length = render_types.editor_gizmo_axis_length;
-const editor_gizmo_axis_thickness = render_types.editor_gizmo_axis_thickness;
-const editor_gizmo_pick_radius_px = render_types.editor_gizmo_pick_radius_px;
-const editor_palette = render_types.editor_palette;
-pub const RenderError = render_types.RenderError;
-pub const Stats = render_types.Stats;
-pub const WindowOptions = render_types.WindowOptions;
-pub const Scene = render_types.Scene;
-pub const SceneReloadHook = render_types.SceneReloadHook;
-pub const FrameUpdateHook = render_types.FrameUpdateHook;
-pub const PointerInput = render_types.PointerInput;
-pub const KeyboardInput = render_types.KeyboardInput;
-pub const EditorAxis = render_types.EditorAxis;
-const EditorFieldSelection = render_types.EditorFieldSelection;
-const EditorStoredValue = render_types.EditorStoredValue;
-const EditorFieldEditCommand = render_types.EditorFieldEditCommand;
-const EditorTextInputState = render_types.EditorTextInputState;
-const EditorTextInputFrame = render_types.EditorTextInputFrame;
-const EditorTextInputFocusOptions = render_types.EditorTextInputFocusOptions;
-pub const EditorState = render_types.EditorState;
-pub const EditorSplitter = render_types.EditorSplitter;
-const EditorCursorKind = render_types.EditorCursorKind;
-const EditorScrollBoundary = render_types.EditorScrollBoundary;
-pub const EditorFrameState = render_types.EditorFrameState;
-pub const EditorUpdate = render_types.EditorUpdate;
-pub const EditorViewportBounds = render_types.EditorViewportBounds;
-pub const EditorError = render_types.EditorError;
-pub const FrameInput = render_types.FrameInput;
+const output_width = 640;
+const output_height = 480;
+const output_extent = wgpu.Extent3D{
+    .width = output_width,
+    .height = output_height,
+    .depth_or_array_layers = 1,
+};
+const output_bytes_per_row = 4 * output_width;
+const output_size = output_bytes_per_row * output_height;
+const depth_format = wgpu.TextureFormat.depth24_plus;
+const shadow_depth_format = wgpu.TextureFormat.depth32_float;
+const shadow_map_size = 1024;
+const bloom_level_count = 5;
+const render_ui_button_state_component_id = "machina.render.internal.ui.button_state";
+const render_ui_clip_component_id = "machina.render.internal.ui.clip";
+const render_draw_batch_component_id = "machina.render.internal.draw.batch";
+const render_draw_ui_component_id = "machina.render.internal.draw.ui";
+const render_extract_system_id = "machina.render.extract";
+const render_prepare_meshes_system_id = "machina.render.prepare_meshes";
+const render_queue_meshes_system_id = "machina.render.queue_meshes";
+const render_interact_ui_system_id = "machina.render.interact_ui";
+const render_prepare_ui_system_id = "machina.render.prepare_ui";
+const render_queue_ui_system_id = "machina.render.queue_ui";
+const render_draw_meshes_system_id = "machina.render.draw_meshes";
+const default_window_width = 1280;
+const default_window_height = 720;
+const editor_top_bar_height: f32 = 56.0;
+const editor_bottom_bar_height: f32 = 60.0;
+const editor_left_sidebar_target_width: f32 = 440.0;
+const editor_left_sidebar_min_width: f32 = 280.0;
+const editor_right_sidebar_target_width: f32 = 560.0;
+const editor_right_sidebar_min_width: f32 = 360.0;
+const editor_min_game_viewport_width: f32 = 320.0;
+const editor_splitter_width: f32 = 2.0;
+const editor_splitter_hit_width: f32 = 12.0;
+const editor_performance_display_interval_ns: u64 = 333_000_000;
+const live_run_default_delta_seconds: f32 = 1.0 / 60.0;
+const live_run_max_delta_seconds: f32 = 0.1;
+const editor_system_text_size: f32 = 1.0;
+const editor_panel_padding_x: f32 = 16.0;
+const editor_panel_padding_y: f32 = 22.0;
+const editor_panel_section_gap: f32 = 18.0;
+const editor_panel_label_gap: f32 = 10.0;
+const editor_panel_bottom_padding: f32 = 18.0;
+const editor_system_row_stride: f32 = 40.0;
+const editor_system_row_label_padding_x: f32 = 16.0;
+const editor_system_row_duration_padding_x: f32 = 16.0;
+const editor_system_field_column_gap: f32 = 4.0;
+const editor_system_card_padding_y: f32 = 16.0;
+const editor_system_scroll_pixels_per_wheel: f32 = 18.0;
+const editor_system_scroll_smoothing: f32 = 22.0;
+const editor_entity_text_size: f32 = 1.0;
+const editor_entity_row_stride: f32 = 34.0;
+const editor_entity_row_label_padding_x: f32 = 16.0;
+const editor_entity_row_component_padding_x: f32 = 16.0;
+const editor_entity_field_column_gap: f32 = 4.0;
+const editor_entity_card_padding_y: f32 = 14.0;
+const editor_left_panel_gap: f32 = 8.0;
+const editor_entity_panel_min_height: f32 = 160.0;
+const editor_system_panel_min_height: f32 = 180.0;
+const editor_scrollbar_width: f32 = 6.0;
+const editor_scrollbar_gap: f32 = 10.0;
+const render_system_profile_window_frames: usize = 120;
+const editor_control_button_width: f32 = 104.0;
+const editor_control_button_height: f32 = 36.0;
+const editor_control_button_gap: f32 = 14.0;
+const editor_panel_corner_radius: f32 = 16.0;
+const editor_sidebar_panel_margin: f32 = 6.0;
+const editor_button_corner_radius: f32 = 6.0;
+const editor_command_play_toggle = "machina.editor.play_toggle";
+const editor_command_step = "machina.editor.step";
+const editor_command_splitter_left = "machina.editor.splitter.left";
+const editor_command_splitter_right = "machina.editor.splitter.right";
+const fly_camera_move_speed: f32 = 6.0;
+const fly_camera_look_sensitivity: f32 = 0.0035;
+const fly_camera_max_pitch: f32 = std.math.degreesToRadians(89.0);
+const editor_inspector_text_size: f32 = 1.0;
+const editor_inspector_line_stride: f32 = 28.0;
+const editor_inspector_field_row_stride: f32 = 32.0;
+const editor_inspector_card_gap: f32 = 0.0;
+const editor_inspector_separator_height: f32 = 1.0;
+const editor_inspector_card_padding_x: f32 = 16.0;
+const editor_inspector_card_padding_y: f32 = 16.0;
+const editor_inspector_field_value_column_x: f32 = 204.0;
+const editor_inspector_field_column_gap: f32 = 8.0;
+const editor_inspector_input_padding_x: f32 = 4.0;
+const editor_inspector_input_gap: f32 = 6.0;
+const editor_inspector_input_height: f32 = 28.0;
+const editor_inspector_input_corner_radius: f32 = 5.0;
+const editor_inspector_input_border_thickness: f32 = 1.0;
+const editor_inspector_caret_width: f32 = 2.0;
+const editor_inspector_selection_padding_y: f32 = 4.0;
+const editor_inspector_toggle_width: f32 = 60.0;
+const editor_inspector_swatch_size: f32 = 28.0;
+const editor_inspector_lane_label_width: f32 = 14.0;
+const editor_inspector_lane_label_gap: f32 = 4.0;
+const editor_component_id_buffer_len = 128;
+const editor_field_name_buffer_len = 64;
+const editor_input_text_buffer_len = 128;
+const editor_undo_capacity = 64;
+const editor_geometry_primitives = [_][]const u8{ "box", "plane", "uv_sphere", "ico_sphere" };
+const editor_color_channels = [_][3]f32{
+    .{ 0.941, 0.267, 0.267 },
+    .{ 0.133, 0.773, 0.369 },
+    .{ 0.231, 0.51, 0.965 },
+};
+const editor_vec3_lane_labels = [_][]const u8{ "X", "Y", "Z" };
+const editor_gizmo_axis_length: f32 = 1.25;
+const editor_gizmo_axis_thickness: f32 = 0.035;
+const editor_gizmo_pick_radius_px: f32 = 18.0;
+
+const editor_palette = struct {
+    const shell = [3]f32{ 0.008, 0.012, 0.024 };
+    const panel = [3]f32{ 0.031, 0.041, 0.063 };
+    const panel_muted = [3]f32{ 0.094, 0.116, 0.151 };
+    const input = [3]f32{ 0.016, 0.023, 0.039 };
+    const input_selection = [3]f32{ 0.063, 0.255, 0.337 };
+    const input_active = [3]f32{ 0.047, 0.349, 0.263 };
+    const accent = [3]f32{ 0.031, 0.431, 0.533 };
+    const accent_soft = [3]f32{ 0.22, 0.714, 0.82 };
+    const text = [3]f32{ 0.886, 0.91, 0.941 };
+    const text_muted = [3]f32{ 0.58, 0.639, 0.722 };
+    const text_dim = [3]f32{ 0.392, 0.455, 0.545 };
+    const danger = [3]f32{ 0.82, 0.282, 0.282 };
+    const info = [3]f32{ 0.49, 0.745, 0.933 };
+    const primary = [3]f32{ 0.028, 0.324, 0.49 };
+    const success = [3]f32{ 0.023, 0.471, 0.314 };
+    const warning = [3]f32{ 0.714, 0.333, 0.031 };
+};
+
+pub const RenderError = error{
+    NoAdapter,
+    NoDevice,
+    NoSurface,
+    NoSurfaceFormat,
+    SurfaceFailed,
+    WindowingUnsupported,
+    SdlInitFailed,
+    WindowCreateFailed,
+    MetalViewCreateFailed,
+    MetalLayerMissing,
+    NativeWindowHandleMissing,
+    BufferMapFailed,
+    OutOfMemory,
+    InvalidScene,
+};
+
+pub const Stats = struct {
+    renderables: usize,
+    render_batches: usize,
+    ui_rects: usize,
+    ui_texts: usize,
+};
+
+pub const WindowOptions = struct {
+    max_frames: ?u32 = null,
+    editor: bool = false,
+    scene_reload: ?SceneReloadHook = null,
+    frame_update: ?FrameUpdateHook = null,
+};
+
+pub const AntialiasingMode = enum {
+    none,
+    fxaa,
+};
+
+pub const VignetteConfig = struct {
+    enabled: bool = false,
+    strength: f32 = 0.28,
+    radius: f32 = 0.78,
+};
+
+pub const ChromaticAberrationConfig = struct {
+    enabled: bool = false,
+    strength: f32 = 0.003,
+};
+
+pub const BloomConfig = struct {
+    enabled: bool = false,
+    threshold: f32 = 1.0,
+    intensity: f32 = 0.18,
+    radius: f32 = 1.0,
+};
+
+pub const PostProcessConfig = struct {
+    enabled: bool = false,
+    antialiasing: AntialiasingMode = .none,
+    vignette: VignetteConfig = .{},
+    chromatic_aberration: ChromaticAberrationConfig = .{},
+    bloom: BloomConfig = .{},
+
+    pub fn isActive(self: PostProcessConfig) bool {
+        return self.enabled and
+            (self.antialiasing == .fxaa or
+                self.vignette.enabled or
+                self.chromatic_aberration.enabled or
+                self.bloom.enabled);
+    }
+};
+
+pub const ToneMappingMode = enum {
+    none,
+    reinhard,
+    aces,
+};
+
+pub const ColorConfig = struct {
+    hdr: bool = false,
+    exposure: f32 = 0.0,
+    tone_mapping: ToneMappingMode = .none,
+};
+
+pub const RenderConfig = struct {
+    color: ColorConfig = .{},
+    postprocess: PostProcessConfig = .{},
+
+    pub fn requiresPostProcess(self: RenderConfig) bool {
+        return self.postprocess.isActive() or self.color.hdr or self.color.tone_mapping != .none or self.color.exposure != 0.0;
+    }
+
+    pub fn bloomActive(self: RenderConfig) bool {
+        return self.postprocess.enabled and self.postprocess.bloom.enabled and self.postprocess.bloom.intensity > 0.0;
+    }
+
+    pub fn sceneTextureFormat(self: RenderConfig, target_format: wgpu.TextureFormat) wgpu.TextureFormat {
+        if (self.requiresPostProcess() and self.color.hdr) {
+            return .rgba16_float;
+        }
+        return target_format;
+    }
+};
+
+pub const Scene = struct {
+    world: *const runtime.World,
+};
+
+fn renderConfigFromWorld(world: *const runtime.World) RenderConfig {
+    const settings = world.rendererSettings() orelse return .{};
+    return .{
+        .color = .{
+            .hdr = settings.hdr,
+            .exposure = settings.exposure,
+            .tone_mapping = parseToneMappingMode(settings.tone_mapping) orelse .none,
+        },
+        .postprocess = .{
+            .enabled = settings.postprocess_enabled,
+            .antialiasing = parseAntialiasingMode(settings.antialiasing) orelse .none,
+            .vignette = .{
+                .enabled = settings.vignette_enabled,
+                .strength = settings.vignette_strength,
+                .radius = settings.vignette_radius,
+            },
+            .chromatic_aberration = .{
+                .enabled = settings.chromatic_aberration_enabled,
+                .strength = settings.chromatic_aberration_strength,
+            },
+            .bloom = .{
+                .enabled = settings.bloom_enabled,
+                .threshold = settings.bloom_threshold,
+                .intensity = settings.bloom_intensity,
+                .radius = settings.bloom_radius,
+            },
+        },
+    };
+}
+
+fn parseAntialiasingMode(value: []const u8) ?AntialiasingMode {
+    if (std.mem.eql(u8, value, "none")) return .none;
+    if (std.mem.eql(u8, value, "fxaa")) return .fxaa;
+    return null;
+}
+
+fn parseToneMappingMode(value: []const u8) ?ToneMappingMode {
+    if (std.mem.eql(u8, value, "none")) return .none;
+    if (std.mem.eql(u8, value, "reinhard")) return .reinhard;
+    if (std.mem.eql(u8, value, "aces")) return .aces;
+    return null;
+}
+
+pub const SceneReloadHook = struct {
+    context: *anyopaque,
+    poll: *const fn (context: *anyopaque) ?Scene,
+};
+
+pub const FrameUpdateHook = struct {
+    context: *anyopaque,
+    step: *const fn (context: *anyopaque, delta_seconds: f32, input: *FrameInput) void,
+};
+
+pub const PointerInput = struct {
+    position: [2]f32 = .{ 0.0, 0.0 },
+    delta: [2]f32 = .{ 0.0, 0.0 },
+    has_position: bool = false,
+    primary_down: bool = false,
+    primary_pressed: bool = false,
+    primary_released: bool = false,
+    secondary_down: bool = false,
+    secondary_pressed: bool = false,
+    secondary_released: bool = false,
+    wheel_delta: [2]f32 = .{ 0.0, 0.0 },
+
+    fn beginFrame(self: *PointerInput) void {
+        self.primary_pressed = false;
+        self.primary_released = false;
+        self.secondary_pressed = false;
+        self.secondary_released = false;
+        self.delta = .{ 0.0, 0.0 };
+        self.wheel_delta = .{ 0.0, 0.0 };
+    }
+};
+
+pub const KeyboardInput = struct {
+    ctrl_down: bool = false,
+    shift_down: bool = false,
+    alt_down: bool = false,
+    super_down: bool = false,
+    move_forward: bool = false,
+    move_back: bool = false,
+    move_left: bool = false,
+    move_right: bool = false,
+    move_up: bool = false,
+    move_down: bool = false,
+    editor_toggle_pressed: bool = false,
+    editor_undo_pressed: bool = false,
+    editor_redo_pressed: bool = false,
+    editor_left_pressed: bool = false,
+    editor_right_pressed: bool = false,
+    editor_home_pressed: bool = false,
+    editor_end_pressed: bool = false,
+    editor_backspace_pressed: bool = false,
+    editor_delete_pressed: bool = false,
+    editor_enter_pressed: bool = false,
+    editor_select_all_pressed: bool = false,
+
+    fn beginFrame(self: *KeyboardInput) void {
+        self.editor_toggle_pressed = false;
+        self.editor_undo_pressed = false;
+        self.editor_redo_pressed = false;
+        self.editor_left_pressed = false;
+        self.editor_right_pressed = false;
+        self.editor_home_pressed = false;
+        self.editor_end_pressed = false;
+        self.editor_backspace_pressed = false;
+        self.editor_delete_pressed = false;
+        self.editor_enter_pressed = false;
+        self.editor_select_all_pressed = false;
+    }
+};
+
+pub const EditorAxis = enum {
+    none,
+    x,
+    y,
+    z,
+};
+
+const EditorFieldSelection = struct {
+    active: bool = false,
+    entity: runtime.EntityHandle = .{ .index = 0, .generation = 0 },
+    component_id: [editor_component_id_buffer_len]u8 = [_]u8{0} ** editor_component_id_buffer_len,
+    component_id_len: usize = 0,
+    field_name: [editor_field_name_buffer_len]u8 = [_]u8{0} ** editor_field_name_buffer_len,
+    field_name_len: usize = 0,
+    vec3_lane: u2 = 0,
+
+    fn componentId(self: *const EditorFieldSelection) []const u8 {
+        return self.component_id[0..self.component_id_len];
+    }
+
+    fn fieldName(self: *const EditorFieldSelection) []const u8 {
+        return self.field_name[0..self.field_name_len];
+    }
+
+    fn matches(self: *const EditorFieldSelection, entity: runtime.EntityHandle, component_id: []const u8, field_name: []const u8) bool {
+        return self.active and
+            self.entity.index == entity.index and
+            self.entity.generation == entity.generation and
+            std.mem.eql(u8, self.componentId(), component_id) and
+            std.mem.eql(u8, self.fieldName(), field_name);
+    }
+
+    fn sameInput(self: *const EditorFieldSelection, other: EditorFieldSelection) bool {
+        return self.active and
+            other.active and
+            self.entity.index == other.entity.index and
+            self.entity.generation == other.entity.generation and
+            self.vec3_lane == other.vec3_lane and
+            std.mem.eql(u8, self.componentId(), other.componentId()) and
+            std.mem.eql(u8, self.fieldName(), other.fieldName());
+    }
+};
+
+const EditorStoredValue = union(runtime.FieldType) {
+    boolean: bool,
+    int: i32,
+    float: f32,
+    vec3: [3]f32,
+    string: struct {
+        buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len,
+        len: usize = 0,
+    },
+
+    fn from(value: runtime.ComponentValue) ?EditorStoredValue {
+        return switch (value) {
+            .boolean => |payload| .{ .boolean = payload },
+            .int => |payload| .{ .int = payload },
+            .float => |payload| .{ .float = payload },
+            .vec3 => |payload| .{ .vec3 = payload },
+            .string => |payload| blk: {
+                if (payload.len > editor_input_text_buffer_len) {
+                    break :blk null;
+                }
+                var stored = EditorStoredValue{ .string = .{} };
+                @memcpy(stored.string.buffer[0..payload.len], payload);
+                stored.string.len = payload.len;
+                break :blk stored;
+            },
+        };
+    }
+
+    fn componentValue(self: *const EditorStoredValue) runtime.ComponentValue {
+        return switch (self.*) {
+            .boolean => |payload| .{ .boolean = payload },
+            .int => |payload| .{ .int = payload },
+            .float => |payload| .{ .float = payload },
+            .vec3 => |payload| .{ .vec3 = payload },
+            .string => .{ .string = self.string.buffer[0..self.string.len] },
+        };
+    }
+};
+
+const EditorFieldEditCommand = struct {
+    active: bool = false,
+    entity: runtime.EntityHandle = .{ .index = 0, .generation = 0 },
+    component_id: [editor_component_id_buffer_len]u8 = [_]u8{0} ** editor_component_id_buffer_len,
+    component_id_len: usize = 0,
+    field_name: [editor_field_name_buffer_len]u8 = [_]u8{0} ** editor_field_name_buffer_len,
+    field_name_len: usize = 0,
+    old_value: EditorStoredValue = .{ .boolean = false },
+    new_value: EditorStoredValue = .{ .boolean = false },
+
+    fn componentId(self: *const EditorFieldEditCommand) []const u8 {
+        return self.component_id[0..self.component_id_len];
+    }
+
+    fn fieldName(self: *const EditorFieldEditCommand) []const u8 {
+        return self.field_name[0..self.field_name_len];
+    }
+};
+
+const EditorTextInputState = struct {
+    active: bool = false,
+    selection: EditorFieldSelection = .{},
+    buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len,
+    len: usize = 0,
+    cursor: usize = 0,
+    selection_anchor: usize = 0,
+    original_value: EditorStoredValue = .{ .boolean = false },
+
+    fn text(self: *const EditorTextInputState) []const u8 {
+        return self.buffer[0..self.len];
+    }
+
+    fn selectionStart(self: *const EditorTextInputState) usize {
+        return @min(self.cursor, self.selection_anchor);
+    }
+
+    fn selectionEnd(self: *const EditorTextInputState) usize {
+        return @max(self.cursor, self.selection_anchor);
+    }
+
+    fn hasSelection(self: *const EditorTextInputState) bool {
+        return self.cursor != self.selection_anchor;
+    }
+
+    fn matches(self: *const EditorTextInputState, selection: EditorFieldSelection) bool {
+        return self.active and self.selection.sameInput(selection);
+    }
+};
+
+const EditorTextInputFrame = struct {
+    active: bool = false,
+    selection: EditorFieldSelection = .{},
+    buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len,
+    len: usize = 0,
+    cursor: usize = 0,
+    selection_anchor: usize = 0,
+
+    fn text(self: *const EditorTextInputFrame) []const u8 {
+        return self.buffer[0..self.len];
+    }
+
+    fn selectionStart(self: *const EditorTextInputFrame) usize {
+        return @min(self.cursor, self.selection_anchor);
+    }
+
+    fn selectionEnd(self: *const EditorTextInputFrame) usize {
+        return @max(self.cursor, self.selection_anchor);
+    }
+
+    fn hasSelection(self: *const EditorTextInputFrame) bool {
+        return self.cursor != self.selection_anchor;
+    }
+
+    fn matches(self: *const EditorTextInputFrame, selection: EditorFieldSelection) bool {
+        return self.active and self.selection.sameInput(selection);
+    }
+};
+
+const EditorTextInputFocusOptions = struct {
+    select_all_on_focus: bool = false,
+};
+
+pub const EditorState = struct {
+    paused: bool = false,
+    selected_entity: ?runtime.EntityHandle = null,
+    selected_property: EditorFieldSelection = .{},
+    text_input: EditorTextInputState = .{},
+    dragging_axis: EditorAxis = .none,
+    dragging_splitter: EditorSplitter = .none,
+    captured_pointer: bool = false,
+    system_scroll_y: f32 = 0.0,
+    system_scroll_target_y: f32 = 0.0,
+    system_scroll_boundary: EditorScrollBoundary = .none,
+    entity_scroll_y: f32 = 0.0,
+    entity_scroll_target_y: f32 = 0.0,
+    entity_scroll_boundary: EditorScrollBoundary = .none,
+    inspector_scroll_y: f32 = 0.0,
+    inspector_scroll_target_y: f32 = 0.0,
+    inspector_scroll_boundary: EditorScrollBoundary = .none,
+    left_sidebar_width: f32 = 0.0,
+    right_sidebar_width: f32 = 0.0,
+    last_pointer: [2]f32 = .{ 0.0, 0.0 },
+    has_last_pointer: bool = false,
+    undo_stack: [editor_undo_capacity]EditorFieldEditCommand = [_]EditorFieldEditCommand{.{}} ** editor_undo_capacity,
+    undo_len: usize = 0,
+    redo_stack: [editor_undo_capacity]EditorFieldEditCommand = [_]EditorFieldEditCommand{.{}} ** editor_undo_capacity,
+    redo_len: usize = 0,
+};
+
+pub const EditorSplitter = enum {
+    none,
+    left,
+    right,
+};
+
+const EditorCursorKind = enum {
+    default,
+    resize_ew,
+};
+
+const EditorScrollBoundary = enum {
+    none,
+    top,
+    bottom,
+};
+
+pub const EditorFrameState = struct {
+    paused: bool = false,
+    selected_entity: ?runtime.EntityHandle = null,
+    selected_property: EditorFieldSelection = .{},
+    text_input: EditorTextInputFrame = .{},
+    dragging_axis: EditorAxis = .none,
+    dragging_splitter: EditorSplitter = .none,
+    system_scroll_y: f32 = 0.0,
+    entity_scroll_y: f32 = 0.0,
+    inspector_scroll_y: f32 = 0.0,
+    left_sidebar_width: f32 = 0.0,
+    right_sidebar_width: f32 = 0.0,
+    entity_count: usize = 0,
+    component_instance_count: usize = 0,
+    renderable_count: usize = 0,
+};
+
+pub const EditorUpdate = struct {
+    consumed_pointer: bool = false,
+    step_once: bool = false,
+};
+
+pub const EditorViewportBounds = struct {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+};
+
+pub const EditorError = runtime.WorldError || error{InvalidScene};
+
+pub const FrameInput = struct {
+    pointer: PointerInput = .{},
+    keyboard: KeyboardInput = .{},
+    ui_visible: bool = true,
+    debug_overlay_visible: bool = false,
+    fps: f32 = 0.0,
+    delta_seconds: f32 = 0.0,
+    viewport_width: f32 = 0.0,
+    viewport_height: f32 = 0.0,
+    camera_override: ?runtime.Transform = null,
+    editor: EditorFrameState = .{},
+    system_profiles: []const runtime.SystemProfileSnapshot = &.{},
+    system_profile_count_hint: usize = 0,
+    text_input: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len,
+    text_input_len: usize = 0,
+
+    fn beginFrame(self: *FrameInput) void {
+        self.pointer.beginFrame();
+        self.keyboard.beginFrame();
+        self.system_profile_count_hint = 0;
+        self.text_input_len = 0;
+        @memset(self.text_input[0..], 0);
+    }
+
+    fn appendTextInput(self: *FrameInput, value: []const u8) void {
+        for (value) |byte| {
+            if (self.text_input_len >= self.text_input.len) {
+                break;
+            }
+            if (byte >= 32 and byte < 127) {
+                self.text_input[self.text_input_len] = byte;
+                self.text_input_len += 1;
+            }
+        }
+    }
+
+    fn textInput(self: *const FrameInput) []const u8 {
+        return self.text_input[0..self.text_input_len];
+    }
+};
 
 fn toggleDebugOverlay(input: *FrameInput) void {
     input.debug_overlay_visible = !input.debug_overlay_visible;
@@ -202,6 +713,7 @@ pub fn editorFrameState(world: *const runtime.World, state: EditorState) EditorF
         .dragging_axis = state.dragging_axis,
         .dragging_splitter = state.dragging_splitter,
         .system_scroll_y = state.system_scroll_y,
+        .entity_scroll_y = state.entity_scroll_y,
         .inspector_scroll_y = state.inspector_scroll_y,
         .left_sidebar_width = state.left_sidebar_width,
         .right_sidebar_width = state.right_sidebar_width,
@@ -237,6 +749,12 @@ fn clampEditorInspectorScroll(state: *EditorState, world: *const runtime.World, 
     const max_scroll_y = editorInspectorMaxScrollY(world, input);
     state.inspector_scroll_target_y = std.math.clamp(state.inspector_scroll_target_y, 0.0, max_scroll_y);
     state.inspector_scroll_y = std.math.clamp(state.inspector_scroll_y, 0.0, max_scroll_y);
+}
+
+fn clampEditorEntityScroll(state: *EditorState, world: *const runtime.World, input: FrameInput) void {
+    const max_scroll_y = editorEntityMaxScrollY(world, input);
+    state.entity_scroll_target_y = std.math.clamp(state.entity_scroll_target_y, 0.0, max_scroll_y);
+    state.entity_scroll_y = std.math.clamp(state.entity_scroll_y, 0.0, max_scroll_y);
 }
 
 fn applyEditorScrollRoute(
@@ -436,6 +954,56 @@ fn editorComponentValueSelectsAllOnFocus(value: runtime.ComponentValue) bool {
         .int, .float, .vec3 => true,
         .boolean, .string => false,
     };
+}
+
+fn applyEditorTypedControlClick(world: *runtime.World, state: *EditorState, selection: EditorFieldSelection) EditorError!bool {
+    const old_value = world.getComponentFieldValue(selection.entity, selection.componentId(), selection.fieldName()) catch return false;
+    const new_value = nextEditorTypedControlValue(selection, old_value) orelse return false;
+    state.text_input = .{};
+    try applyEditorFieldValue(world, state, selection, old_value, new_value);
+    state.selected_property = selection;
+    return true;
+}
+
+fn nextEditorTypedControlValue(selection: EditorFieldSelection, value: runtime.ComponentValue) ?runtime.ComponentValue {
+    return switch (value) {
+        .boolean => |payload| .{ .boolean = !payload },
+        .string => |payload| if (editorPrimitiveSelectorNextValue(selection, payload)) |next|
+            .{ .string = next }
+        else
+            null,
+        else => null,
+    };
+}
+
+fn editorPrimitiveSelectorNextValue(selection: EditorFieldSelection, value: []const u8) ?[]const u8 {
+    if (!editorFieldIsPrimitiveSelector(selection.componentId(), selection.fieldName())) {
+        return null;
+    }
+    for (editor_geometry_primitives, 0..) |primitive, index| {
+        if (std.mem.eql(u8, primitive, value)) {
+            return editor_geometry_primitives[(index + 1) % editor_geometry_primitives.len];
+        }
+    }
+    return null;
+}
+
+fn editorFieldIsPrimitiveSelector(component_id: []const u8, field_name: []const u8) bool {
+    return std.mem.eql(u8, component_id, runtime.geometry_primitive_component_id) and
+        std.mem.eql(u8, field_name, "primitive");
+}
+
+fn editorFieldLooksLikeColor(field_name: []const u8) bool {
+    return std.mem.indexOf(u8, field_name, "color") != null or
+        std.mem.indexOf(u8, field_name, "colour") != null;
+}
+
+fn editorVec3LaneColor(lane: u2) [3]f32 {
+    return editor_color_channels[@as(usize, lane)];
+}
+
+fn editorVec3LaneLabel(lane: u2) []const u8 {
+    return editor_vec3_lane_labels[@as(usize, lane)];
 }
 
 fn commitEditorTextInput(world: *runtime.World, state: *EditorState) EditorError!void {
@@ -750,11 +1318,13 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
     effective_input.editor.left_sidebar_width = state.left_sidebar_width;
     effective_input.editor.right_sidebar_width = state.right_sidebar_width;
     effective_input.editor.system_scroll_y = state.system_scroll_y;
+    effective_input.editor.entity_scroll_y = state.entity_scroll_y;
     effective_input.editor.inspector_scroll_y = state.inspector_scroll_y;
     effective_input.editor.text_input = editorTextInputFrame(world, state.selected_entity, state.text_input);
 
     const profile_count = editorSystemProfileScrollCount(input);
     clampEditorSystemScroll(state, effective_input, profile_count);
+    clampEditorEntityScroll(state, world, effective_input);
     clampEditorInspectorScroll(state, world, effective_input);
 
     const wheel_y = input.pointer.wheel_delta[1];
@@ -768,6 +1338,7 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
 
     if (wheel_y == 0.0 or scroll_route == null) {
         state.system_scroll_boundary = .none;
+        state.entity_scroll_boundary = .none;
         state.inspector_scroll_boundary = .none;
     }
 
@@ -776,12 +1347,21 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
             .system_scroll => |scroll| {
                 applyEditorScrollRoute(&state.system_scroll_y, &state.system_scroll_target_y, &state.system_scroll_boundary, scroll, wheel_y);
                 animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+                animateEditorScroll(&state.entity_scroll_y, &state.entity_scroll_target_y, input.delta_seconds);
+                animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
+                return .{ .consumed_pointer = true };
+            },
+            .entity_scroll => |scroll| {
+                applyEditorScrollRoute(&state.entity_scroll_y, &state.entity_scroll_target_y, &state.entity_scroll_boundary, scroll, wheel_y);
+                animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+                animateEditorScroll(&state.entity_scroll_y, &state.entity_scroll_target_y, input.delta_seconds);
                 animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
                 return .{ .consumed_pointer = true };
             },
             .inspector_scroll => |scroll| {
                 applyEditorScrollRoute(&state.inspector_scroll_y, &state.inspector_scroll_target_y, &state.inspector_scroll_boundary, scroll, wheel_y);
                 animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+                animateEditorScroll(&state.entity_scroll_y, &state.entity_scroll_target_y, input.delta_seconds);
                 animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
                 return .{ .consumed_pointer = true };
             },
@@ -790,6 +1370,7 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
     }
 
     animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+    animateEditorScroll(&state.entity_scroll_y, &state.entity_scroll_target_y, input.delta_seconds);
     animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
 
     if (try applyEditorKeyboardEdits(world, state, input)) {
@@ -823,7 +1404,7 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
             try commitEditorTextInput(world, state);
             effective_input.editor.text_input = editorTextInputFrame(world, state.selected_entity, state.text_input);
         }
-        if (try routeEditorUi(allocator, world, state.system_scroll_target_y, state.inspector_scroll_target_y, effective_input, profile_count)) |route| {
+        if (try routeEditorUi(allocator, world, state.system_scroll_target_y, state.entity_scroll_target_y, state.inspector_scroll_target_y, effective_input, profile_count)) |route| {
             switch (route) {
                 .splitter => |splitter| {
                     state.dragging_splitter = splitter;
@@ -845,11 +1426,27 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
                         },
                     };
                 },
+                .entity_select => |entity| {
+                    _ = world.entity(entity) catch {
+                        state.captured_pointer = true;
+                        return .{ .consumed_pointer = true };
+                    };
+                    state.selected_entity = entity;
+                    state.selected_property = .{};
+                    state.text_input = .{};
+                    state.captured_pointer = true;
+                    return .{ .consumed_pointer = true };
+                },
                 .system_scroll => {},
+                .entity_scroll => {},
                 .inspector_scroll => {},
             }
         }
         if (picked_property) |property| {
+            if (try applyEditorTypedControlClick(world, state, property)) {
+                state.captured_pointer = true;
+                return .{ .consumed_pointer = true };
+            }
             try focusEditorTextInput(world, state, property, editorTextInputFocusOptionsForProperty(world, property));
             state.captured_pointer = true;
             return .{ .consumed_pointer = true };
@@ -909,8 +1506,13 @@ pub fn stats(allocator: std.mem.Allocator, scene: Scene) RenderError!Stats {
     };
 }
 
-const UiButtonState = render_types.UiButtonState;
-const UiClipRect = render_types.UiClipRect;
+const UiButtonState = struct {
+    hovered: bool = false,
+    held: bool = false,
+    pressed: bool = false,
+};
+
+const UiClipRect = ui_layout.ClipRect;
 
 const ScreenRect = struct {
     x: f32,
@@ -931,1392 +1533,18 @@ const ScreenRect = struct {
     }
 };
 
-const UiCanvasTransform = render_types.UiCanvasTransform;
-const UiBorder = render_types.UiBorder;
-const UiProgressBar = render_types.UiProgressBar;
+const UiCanvasTransform = ui_layout.CanvasTransform;
 
-fn extractSceneUiInto(allocator: std.mem.Allocator, render_world: *runtime.World, scene_world: *const runtime.World) RenderError!void {
-    for (0..scene_world.entityCount()) |index| {
-        const source = runtime.EntityHandle{ .index = @intCast(index) };
-        const stored = scene_world.entity(source) catch return RenderError.InvalidScene;
-        if (!hasExtractableUiComponent(scene_world, source)) {
-            continue;
-        }
-
-        const target = render_world.createEntity(stored.id, stored.name) catch |err| return mapWorldError(err);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_canvas_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_rect_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_border_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_text_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_button_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_hit_area_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_command_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_scroll_view_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_vbox_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_hgroup_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_stack_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_layout_item_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_spacer_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_text_block_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_toggle_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_progress_bar_component_id);
-        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_separator_component_id);
-    }
-}
-
-fn hasExtractableUiComponent(world: *const runtime.World, entity: runtime.EntityHandle) bool {
-    return (world.hasComponent(entity, runtime.ui_canvas_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_rect_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_border_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_text_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_button_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_hit_area_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_command_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_scroll_view_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_vbox_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_hgroup_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_stack_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_layout_item_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_spacer_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_text_block_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_toggle_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_progress_bar_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_separator_component_id) catch false);
-}
-
-fn copyUiComponent(
-    allocator: std.mem.Allocator,
-    source_world: *const runtime.World,
-    target_world: *runtime.World,
-    source: runtime.EntityHandle,
-    target: runtime.EntityHandle,
-    component_id: []const u8,
-) RenderError!void {
-    if (!(source_world.hasComponent(source, component_id) catch |err| return mapWorldError(err))) {
-        return;
-    }
-
-    var fields: std.ArrayList(runtime.ComponentFieldValue) = .empty;
-    defer fields.deinit(allocator);
-
-    const field_count = source_world.componentFieldCount(component_id);
-    fields.ensureTotalCapacity(allocator, field_count) catch return RenderError.OutOfMemory;
-    for (0..field_count) |field_index| {
-        const field_name = source_world.componentFieldNameAt(component_id, field_index) orelse return RenderError.InvalidScene;
-        const value = source_world.getComponentFieldValue(source, component_id, field_name) catch |err| return mapWorldError(err);
-        fields.appendAssumeCapacity(.{
-            .name = field_name,
-            .value = value,
-        });
-    }
-
-    target_world.setComponent(target, component_id, fields.items) catch |err| return mapWorldError(err);
-}
-
-const EditorVBox = struct {
-    allocator: std.mem.Allocator,
-    world: *runtime.World,
-    id_prefix: []const u8,
-    x: f32,
-    y: f32,
-    row_stride: f32,
-    layout_parent: ?[]const u8 = null,
-    row: usize = 0,
-
-    fn init(
-        allocator: std.mem.Allocator,
-        world: *runtime.World,
-        id_prefix: []const u8,
-        x: f32,
-        y: f32,
-        row_stride: f32,
-    ) EditorVBox {
-        return .{
-            .allocator = allocator,
-            .world = world,
-            .id_prefix = id_prefix,
-            .x = x,
-            .y = y,
-            .row_stride = row_stride,
-        };
-    }
-
-    fn withLayoutParent(self: EditorVBox, parent: []const u8) EditorVBox {
-        var copy = self;
-        copy.layout_parent = parent;
-        return copy;
-    }
-
-    fn text(self: *EditorVBox, name: []const u8, value: []const u8, size: f32, color: [3]f32) RenderError!void {
-        const entity_id = std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ self.id_prefix, self.row }) catch return RenderError.OutOfMemory;
-        defer self.allocator.free(entity_id);
-        const entity = self.world.createEntity(entity_id, name) catch |err| return mapWorldError(err);
-        const position = if (self.layout_parent != null)
-            [3]f32{ 0.0, 0.0, 0.0 }
-        else
-            [3]f32{
-                self.x,
-                self.y + @as(f32, @floatFromInt(self.row)) * self.row_stride,
-                0.0,
-            };
-        self.world.setUiText(entity, .{
-            .position = position,
-            .size = size,
-            .color = color,
-            .value = value,
-        }) catch |err| return mapWorldError(err);
-        if (self.layout_parent) |parent| {
-            self.world.setUiLayoutItem(entity, .{
-                .parent = parent,
-                .order = @intCast(self.row),
-            }) catch |err| return mapWorldError(err);
-        }
-        self.row += 1;
-    }
+const UiBorder = struct {
+    color: [3]f32,
+    thickness: f32,
 };
 
-fn extractMeshInto(
-    allocator: std.mem.Allocator,
-    world: *runtime.World,
-    render_index: usize,
-    mesh: runtime.RenderableMesh,
-) RenderError!void {
-    const entity_id = std.fmt.allocPrint(allocator, "machina.render.extract.mesh.{d}", .{render_index}) catch return RenderError.OutOfMemory;
-    defer allocator.free(entity_id);
-
-    const entity = world.createEntity(entity_id, mesh.name) catch |err| return mapWorldError(err);
-    world.setTransform(entity, .{
-        .position = mesh.position,
-        .rotation = mesh.rotation,
-        .scale = mesh.scale,
-    }) catch |err| return mapWorldError(err);
-    world.setGeometryPrimitive(entity, .{
-        .primitive = mesh.primitive,
-        .segments = mesh.segments,
-        .rings = mesh.rings,
-    }) catch |err| return mapWorldError(err);
-    world.setSurfaceMaterial(entity, .{
-        .base_color = mesh.base_color,
-    }) catch |err| return mapWorldError(err);
-    if (mesh.casts_shadow) {
-        world.setShadowCaster(entity) catch |err| return mapWorldError(err);
-    }
-    if (mesh.receives_shadow) {
-        world.setShadowReceiver(entity) catch |err| return mapWorldError(err);
-    }
-}
-
-fn extractEditorGizmoInto(
-    allocator: std.mem.Allocator,
-    world: *runtime.World,
-    scene_world: *const runtime.World,
-    input: FrameInput,
-) RenderError!void {
-    const selected = input.editor.selected_entity orelse return;
-    const selected_transform = (scene_world.getTransform(selected) catch return RenderError.InvalidScene) orelse return;
-    const axes = [_]struct {
-        id: []const u8,
-        axis: EditorAxis,
-        position_offset: [3]f32,
-        scale: [3]f32,
-        color: [3]f32,
-        active_color: [3]f32,
-    }{
-        .{
-            .id = "x",
-            .axis = .x,
-            .position_offset = .{ editor_gizmo_axis_length * 0.5, 0.0, 0.0 },
-            .scale = .{ editor_gizmo_axis_length, editor_gizmo_axis_thickness, editor_gizmo_axis_thickness },
-            .color = editor_palette.danger,
-            .active_color = .{ 0.94, 0.42, 0.42 },
-        },
-        .{
-            .id = "y",
-            .axis = .y,
-            .position_offset = .{ 0.0, editor_gizmo_axis_length * 0.5, 0.0 },
-            .scale = .{ editor_gizmo_axis_thickness, editor_gizmo_axis_length, editor_gizmo_axis_thickness },
-            .color = editor_palette.success,
-            .active_color = .{ 0.176, 0.667, 0.443 },
-        },
-        .{
-            .id = "z",
-            .axis = .z,
-            .position_offset = .{ 0.0, 0.0, editor_gizmo_axis_length * 0.5 },
-            .scale = .{ editor_gizmo_axis_thickness, editor_gizmo_axis_thickness, editor_gizmo_axis_length },
-            .color = editor_palette.primary,
-            .active_color = editor_palette.accent_soft,
-        },
-    };
-
-    for (axes) |entry| {
-        const entity_id = std.fmt.allocPrint(allocator, "machina.editor.gizmo.{s}", .{entry.id}) catch return RenderError.OutOfMemory;
-        defer allocator.free(entity_id);
-        const entity = world.createEntity(entity_id, "Editor Translate Gizmo") catch |err| return mapWorldError(err);
-        world.setTransform(entity, .{
-            .position = addVec3(selected_transform.position, entry.position_offset),
-            .scale = entry.scale,
-        }) catch |err| return mapWorldError(err);
-        world.setGeometryPrimitive(entity, .{
-            .primitive = "box",
-            .segments = 0,
-            .rings = 0,
-        }) catch |err| return mapWorldError(err);
-        world.setSurfaceMaterial(entity, .{
-            .base_color = if (input.editor.dragging_axis == entry.axis) entry.active_color else entry.color,
-        }) catch |err| return mapWorldError(err);
-    }
-}
-
-fn extractEditorShellInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
-    const top = editorTopBarRect(input);
-    const bottom = editorBottomBarRect(input);
-    const body = editorBodyRect(input);
-    const layout = editorBodyLayout(input);
-    const game_viewport = editorGameViewport(input);
-    const hovered_splitter = routeEditorSplitterAt(allocator, input) catch null;
-
-    try extractEditorShellRect(world, "machina.editor.shell.top_bar", top, editor_palette.shell);
-    try extractEditorShellRect(world, "machina.editor.shell.bottom_bar", bottom, editor_palette.shell);
-
-    const body_group = world.createEntity("machina.editor.shell.body", "Editor Body HGroup") catch |err| return mapWorldError(err);
-    world.setUiHGroup(body_group, .{
-        .position = body.position(),
-        .size = body.size3(),
-        .spacing = 0.0,
-        .padding = .{ 0.0, 0.0, 0.0 },
-    }) catch |err| return mapWorldError(err);
-
-    try extractEditorShellLayoutRect(world, "machina.editor.shell.left_sidebar", "Editor Left Sidebar", layout.left.size3(), 0, editor_palette.panel);
-    try extractEditorShellLayoutSplitter(world, input, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, .left, hovered_splitter);
-    try extractEditorSplitterHitTarget(world, input, .left);
-    try extractEditorShellLayoutSpacer(world, "machina.editor.shell.game_viewport", "Editor Game Viewport Slot", .{ editor_min_game_viewport_width, body.height, 0.0 }, 2, 1.0);
-    try extractEditorShellLayoutSplitter(world, input, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, .right, hovered_splitter);
-    try extractEditorSplitterHitTarget(world, input, .right);
-    try extractEditorShellLayoutRect(world, "machina.editor.shell.right_sidebar", "Editor Right Sidebar", layout.right.size3(), 4, editor_palette.panel);
-
-    const frame_color = editor_palette.panel_muted;
-    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.bottom", .{
-        .x = game_viewport.x,
-        .y = game_viewport.y + game_viewport.height - 2.0,
-        .width = game_viewport.width,
-        .height = 2.0,
-    }, frame_color);
-}
-
-fn extractEditorSplitterHitTarget(world: *runtime.World, input: FrameInput, splitter: EditorSplitter) RenderError!void {
-    const visual = editorSplitterRect(input, splitter) orelse return;
-    const hit_rect = editorSplitterHitRect(input, splitter) orelse return;
-    const id = switch (splitter) {
-        .none => return,
-        .left => "machina.editor.shell.splitter.left.hit_area",
-        .right => "machina.editor.shell.splitter.right.hit_area",
-    };
-    const name = switch (splitter) {
-        .none => return,
-        .left => "Editor Left Splitter Hit Area",
-        .right => "Editor Right Splitter Hit Area",
-    };
-    const parent = switch (splitter) {
-        .none => return,
-        .left => "machina.editor.shell.splitter.left",
-        .right => "machina.editor.shell.splitter.right",
-    };
-    const command = switch (splitter) {
-        .none => return,
-        .left => editor_command_splitter_left,
-        .right => editor_command_splitter_right,
-    };
-    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
-    world.setUiHitArea(entity, .{
-        .position = .{ hit_rect.x - visual.x, 0.0, 0.0 },
-        .size = hit_rect.size3(),
-    }) catch |err| return mapWorldError(err);
-    world.setUiButton(entity) catch |err| return mapWorldError(err);
-    world.setUiCommand(entity, .{ .command = command }) catch |err| return mapWorldError(err);
-    world.setUiLayoutItem(entity, .{
-        .parent = parent,
-        .order = 0,
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractEditorShellRect(world: *runtime.World, id: []const u8, rect: ScreenRect, color: [3]f32) RenderError!void {
-    const entity = world.createEntity(id, "Editor Shell Rect") catch |err| return mapWorldError(err);
-    world.setUiRect(entity, .{
-        .position = rect.position(),
-        .size = rect.size3(),
-        .color = color,
-        .corner_radius = 0.0,
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractEditorShellLayoutRect(world: *runtime.World, id: []const u8, name: []const u8, size: [3]f32, order: i32, color: [3]f32) RenderError!void {
-    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
-    world.setUiRect(entity, .{
-        .position = .{ 0.0, 0.0, 0.0 },
-        .size = size,
-        .color = color,
-        .corner_radius = 0.0,
-    }) catch |err| return mapWorldError(err);
-    world.setUiLayoutItem(entity, .{
-        .parent = "machina.editor.shell.body",
-        .order = order,
-        .@"align" = "fill",
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractEditorShellLayoutSeparator(world: *runtime.World, id: []const u8, name: []const u8, size: [3]f32, order: i32, color: [3]f32) RenderError!void {
-    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
-    world.setUiSeparator(entity, .{
-        .position = .{ 0.0, 0.0, 0.0 },
-        .size = size,
-        .color = color,
-    }) catch |err| return mapWorldError(err);
-    world.setUiLayoutItem(entity, .{
-        .parent = "machina.editor.shell.body",
-        .order = order,
-        .@"align" = "fill",
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractEditorShellLayoutSplitter(
-    world: *runtime.World,
-    input: FrameInput,
-    id: []const u8,
-    name: []const u8,
-    size: [3]f32,
-    order: i32,
-    splitter: EditorSplitter,
-    hovered_splitter: ?EditorSplitter,
-) RenderError!void {
-    if (editorSplitterVisible(input, splitter, hovered_splitter)) {
-        try extractEditorShellLayoutSeparator(world, id, name, size, order, editorSplitterColor(input, splitter, hovered_splitter));
-        return;
-    }
-
-    try extractEditorShellLayoutSpacer(world, id, name, size, order, 0.0);
-}
-
-fn extractEditorShellLayoutSpacer(world: *runtime.World, id: []const u8, name: []const u8, min_size: [3]f32, order: i32, grow: f32) RenderError!void {
-    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
-    world.setUiSpacer(entity, .{ .size = .{ 0.0, 0.0, 0.0 } }) catch |err| return mapWorldError(err);
-    world.setUiLayoutItem(entity, .{
-        .parent = "machina.editor.shell.body",
-        .order = order,
-        .min_size = min_size,
-        .grow = grow,
-        .@"align" = "fill",
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractDebugOverlayInto(
-    allocator: std.mem.Allocator,
-    world: *runtime.World,
-    input: FrameInput,
-    scene_world: *const runtime.World,
-) RenderError!void {
-    try extractEditorShellInto(allocator, world, input);
-    try extractEditorTopBarInto(allocator, world, input);
-    try extractEditorBottomBarInto(allocator, world, input);
-
-    const has_profiles = input.system_profiles.len > 0;
-    const panel_size = editorDebugPanelSize(input);
-    const panel = editorSystemPanelRect(input);
-
-    const canvas = world.createEntity("machina.editor.debug.canvas", "Editor Debug Canvas") catch |err| return mapWorldError(err);
-    world.setUiCanvas(canvas, .{}) catch |err| return mapWorldError(err);
-
-    _ = try extractEditorPanel(world, "machina.editor.debug.panel", "Editor Debug Panel", .{
-        .x = panel.x,
-        .y = panel.y,
-        .width = panel_size[0],
-        .height = panel_size[1],
-    }, editor_palette.panel, 0.0);
-
-    if (!has_profiles) {
-        try extractEditorComponentInspectorInto(allocator, world, scene_world, input);
-        return;
-    }
-
-    const header_text = formatSystemProfileHeader(allocator, input.system_profiles) catch return RenderError.OutOfMemory;
-    defer allocator.free(header_text);
-    const header = world.createEntity("machina.editor.debug.systems.header", "Editor Debug Systems Header") catch |err| return mapWorldError(err);
-    world.setUiText(header, .{
-        .position = editorPanelTextPosition(panel, editorSystemHeaderY(input) - panel.y),
-        .size = editor_system_text_size,
-        .color = editor_palette.text_muted,
-        .value = header_text,
-    }) catch |err| return mapWorldError(err);
-
-    const list_clip = editorSystemListClipRect(input);
-    const system_scroll = world.createEntity("machina.editor.debug.systems.scroll", "Editor Debug Systems Scroll View") catch |err| return mapWorldError(err);
-    world.setUiScrollView(system_scroll, .{
-        .position = list_clip.position,
-        .size = list_clip.size,
-        .content_offset = .{ 0.0, input.editor.system_scroll_y, 0.0 },
-    }) catch |err| return mapWorldError(err);
-
-    const row_width = list_clip.size[0];
-    const table_height = editorSystemTableContentHeight(input.system_profiles.len);
-    const system_table = world.createEntity("machina.editor.debug.systems.table", "Editor Debug Systems Table") catch |err| return mapWorldError(err);
-    world.setUiRect(system_table, .{
-        .position = .{
-            0.0,
-            editorSystemRowsY(input) - list_clip.position[1],
-            0.0,
-        },
-        .size = .{ row_width, table_height, 0.0 },
-        .color = editor_palette.shell,
-        .corner_radius = editor_panel_corner_radius,
-    }) catch |err| return mapWorldError(err);
-    world.setUiLayoutItem(system_table, .{
-        .parent = "machina.editor.debug.systems.scroll",
-        .order = 0,
-    }) catch |err| return mapWorldError(err);
-
-    for (input.system_profiles, 0..) |profile, profile_index| {
-        const row_y = editor_system_card_padding_y + @as(f32, @floatFromInt(profile_index)) * editor_system_row_stride;
-        const duration_text = formatSystemProfileDuration(allocator, profile) catch return RenderError.OutOfMemory;
-        defer allocator.free(duration_text);
-        const duration_width = editorTextWidth(duration_text, editor_system_text_size);
-        const duration_x = @max(row_width - editor_system_row_duration_padding_x - duration_width, editor_system_row_label_padding_x);
-        const label_max_width = @max(duration_x - editor_system_row_label_padding_x - editor_system_field_column_gap, 1.0);
-        const label_text = fitEditorTextToWidth(allocator, profile.id, editor_system_text_size, label_max_width) catch return RenderError.OutOfMemory;
-        defer allocator.free(label_text);
-
-        const label_id = std.fmt.allocPrint(allocator, "machina.editor.debug.systems.row.{d}.label", .{profile_index}) catch return RenderError.OutOfMemory;
-        defer allocator.free(label_id);
-        _ = try extractEditorChildText(world, label_id, "Editor System Row Label", "machina.editor.debug.systems.table", .{
-            editor_system_row_label_padding_x,
-            row_y,
-            0.0,
-        }, label_text, editor_system_text_size, editor_palette.text);
-
-        const duration_id = std.fmt.allocPrint(allocator, "machina.editor.debug.systems.row.{d}.duration", .{profile_index}) catch return RenderError.OutOfMemory;
-        defer allocator.free(duration_id);
-        _ = try extractEditorChildText(world, duration_id, "Editor System Row Duration", "machina.editor.debug.systems.table", .{
-            duration_x,
-            row_y,
-            0.0,
-        }, duration_text, editor_system_text_size, editor_palette.text_muted);
-    }
-
-    try extractEditorSystemScrollbarInto(world, input, list_clip);
-    try extractEditorComponentInspectorInto(allocator, world, scene_world, input);
-}
-
-fn extractEditorTopBarInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
-    const top = editorTopBarRect(input);
-    const title = world.createEntity("machina.editor.top.title", "Editor Top Title") catch |err| return mapWorldError(err);
-    world.setUiText(title, .{
-        .position = .{ editor_panel_padding_x, top.y + 14.0, 0.0 },
-        .size = 1.0,
-        .color = editor_palette.text_muted,
-        .value = "MACHINA",
-    }) catch |err| return mapWorldError(err);
-
-    const fps_text = formatFpsLabel(allocator, input.fps) catch return RenderError.OutOfMemory;
-    defer allocator.free(fps_text);
-    const fps = world.createEntity("machina.editor.debug.fps", "Editor Debug FPS") catch |err| return mapWorldError(err);
-    world.setUiText(fps, .{
-        .position = .{ 150.0, top.y + 14.0, 0.0 },
-        .size = editor_system_text_size,
-        .color = editor_palette.text,
-        .value = fps_text,
-    }) catch |err| return mapWorldError(err);
-
-    try extractEditorPlaybackControlsInto(world, input);
-}
-
-fn extractEditorBottomBarInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
-    const bottom = editorBottomBarRect(input);
-    const viewport = editorGameViewport(input);
-    const status = std.fmt.allocPrint(allocator, "ENTITIES {d}  COMPONENTS {d}  RENDERABLES {d}  VIEWPORT {d}x{d}", .{
-        input.editor.entity_count,
-        input.editor.component_instance_count,
-        input.editor.renderable_count,
-        @as(u32, @intFromFloat(@round(viewport.width))),
-        @as(u32, @intFromFloat(@round(viewport.height))),
-    }) catch return RenderError.OutOfMemory;
-    defer allocator.free(status);
-    const status_text = world.createEntity("machina.editor.bottom.status", "Editor Bottom Status") catch |err| return mapWorldError(err);
-    world.setUiText(status_text, .{
-        .position = .{ editor_panel_padding_x, bottom.y + 14.0, 0.0 },
-        .size = editor_system_text_size,
-        .color = editor_palette.text_muted,
-        .value = status,
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractEditorPlaybackControlsInto(world: *runtime.World, input: FrameInput) RenderError!void {
-    const play_label = if (input.editor.paused) "PLAY" else "PAUSE";
-    const play_color: [3]f32 = if (input.editor.paused) editor_palette.success else editor_palette.warning;
-    const buttons = editorPlaybackButtonSpecs(input);
-    try extractEditorButtonInto(world, buttons[0], play_label, play_color);
-    try extractEditorButtonInto(world, buttons[1], "STEP", editor_palette.panel_muted);
-}
-
-fn extractEditorButtonInto(
-    world: *runtime.World,
-    spec: EditorButtonSpec,
-    label: []const u8,
-    color: [3]f32,
-) RenderError!void {
-    const button = world.createEntity(spec.id, spec.name) catch |err| return mapWorldError(err);
-    world.setUiRect(button, .{
-        .position = spec.rect.position(),
-        .size = spec.rect.size3(),
-        .color = color,
-        .corner_radius = editor_button_corner_radius,
-    }) catch |err| return mapWorldError(err);
-    world.setUiButton(button) catch |err| return mapWorldError(err);
-    world.setUiCommand(button, .{ .command = spec.command }) catch |err| return mapWorldError(err);
-
-    var label_id_buffer: [96]u8 = undefined;
-    const label_id = std.fmt.bufPrint(&label_id_buffer, "{s}.label", .{spec.id}) catch return RenderError.InvalidScene;
-    var label_name_buffer: [96]u8 = undefined;
-    const label_name = std.fmt.bufPrint(&label_name_buffer, "{s} Label", .{spec.name}) catch return RenderError.InvalidScene;
-    const text = world.createEntity(label_id, label_name) catch |err| return mapWorldError(err);
-    world.setUiText(text, .{
-        .position = .{ 0.0, 0.0, 0.0 },
-        .size = 1.0,
-        .color = editor_palette.text,
-        .value = label,
-    }) catch |err| return mapWorldError(err);
-    world.setUiTextBlock(text, .{
-        .size = spec.rect.size3(),
-        .horizontal_align = "center",
-        .vertical_align = "center",
-    }) catch |err| return mapWorldError(err);
-    world.setUiLayoutItem(text, .{
-        .parent = spec.id,
-        .order = 0,
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractEditorSystemScrollbarInto(world: *runtime.World, input: FrameInput, list_clip: UiClipRect) RenderError!void {
-    const profile_count = editorSystemProfileScrollCount(input);
-    if (!editorSystemNeedsScrollForInput(input, profile_count)) {
-        return;
-    }
-
-    const track_height = list_clip.size[1];
-    const track_x = list_clip.position[0] + list_clip.size[0] + editor_scrollbar_gap;
-    const track = world.createEntity("machina.editor.debug.systems.scrollbar.track", "Editor System Scrollbar Track") catch |err| return mapWorldError(err);
-    world.setUiRect(track, .{
-        .position = .{ track_x, list_clip.position[1], 0.0 },
-        .size = .{ editor_scrollbar_width, track_height, 0.0 },
-        .color = editor_palette.panel_muted,
-        .corner_radius = editor_scrollbar_width * 0.5,
-    }) catch |err| return mapWorldError(err);
-
-    const visible_rows = @as(f32, @floatFromInt(editorSystemVisibleRows(input)));
-    const total_rows = @as(f32, @floatFromInt(profile_count));
-    const thumb_height = @max(track_height * visible_rows / @max(total_rows, visible_rows), editor_scrollbar_width * 2.0);
-    const max_scroll = editorSystemMaxScrollY(input, profile_count);
-    const scroll_t = if (max_scroll > 0.0) std.math.clamp(input.editor.system_scroll_y / max_scroll, 0.0, 1.0) else 0.0;
-    const thumb_y = list_clip.position[1] + (track_height - thumb_height) * scroll_t;
-
-    const thumb = world.createEntity("machina.editor.debug.systems.scrollbar.thumb", "Editor System Scrollbar Thumb") catch |err| return mapWorldError(err);
-    world.setUiRect(thumb, .{
-        .position = .{ track_x, thumb_y, 0.0 },
-        .size = .{ editor_scrollbar_width, thumb_height, 0.0 },
-        .color = editor_palette.accent_soft,
-        .corner_radius = editor_scrollbar_width * 0.5,
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractEditorComponentInspectorInto(
-    allocator: std.mem.Allocator,
-    world: *runtime.World,
-    scene_world: *const runtime.World,
-    input: FrameInput,
-) RenderError!void {
-    const sidebar = editorSidebarPanelRect(editorRightSidebarRect(input));
-    const panel_x = sidebar.x;
-    const panel_y = sidebar.y;
-    const panel_width = sidebar.width;
-    const panel_height = sidebar.height;
-
-    _ = try extractEditorPanel(world, "machina.editor.inspector.panel", "Editor Inspector Panel", .{
-        .x = panel_x,
-        .y = panel_y,
-        .width = panel_width,
-        .height = panel_height,
-    }, editor_palette.panel, 0.0);
-
-    try extractEditorText(world, "machina.editor.inspector.title", "Editor Inspector Title", .{
-        panel_x + editor_panel_padding_x,
-        panel_y + editor_panel_padding_y,
-        0.0,
-    }, "COMPONENTS", editor_inspector_text_size, editor_palette.text);
-
-    const selected = input.editor.selected_entity orelse {
-        try extractEditorText(world, "machina.editor.inspector.empty", "Editor Inspector Empty", .{
-            panel_x + editor_panel_padding_x,
-            panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.0,
-            0.0,
-        }, "NO ENTITY SELECTED", editor_inspector_text_size, editor_palette.text);
-        try extractEditorText(world, "machina.editor.inspector.empty.hint", "Editor Inspector Empty Hint", .{
-            panel_x + editor_panel_padding_x,
-            panel_y + editor_panel_padding_y + editor_inspector_line_stride * 3.0,
-            0.0,
-        }, "CLICK A MESH", editor_inspector_text_size, editor_palette.text_dim);
-        return;
-    };
-
-    const entity = scene_world.entity(selected) catch {
-        try extractEditorText(world, "machina.editor.inspector.unavailable", "Editor Inspector Unavailable", .{
-            panel_x + editor_panel_padding_x,
-            panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.0,
-            0.0,
-        }, "SELECTION UNAVAILABLE", editor_inspector_text_size, editor_palette.danger);
-        return;
-    };
-
-    const entity_header = std.fmt.allocPrint(allocator, "{s}  {s}", .{ entity.name, entity.id }) catch return RenderError.OutOfMemory;
-    defer allocator.free(entity_header);
-    try extractEditorText(world, "machina.editor.inspector.entity", "Editor Inspector Entity", .{
-        panel_x + editor_panel_padding_x,
-        panel_y + editor_panel_padding_y + editor_inspector_line_stride,
-        0.0,
-    }, entity_header, editor_inspector_text_size, editor_palette.text_muted);
-
-    const scroll_clip = editorInspectorScrollClipRect(input);
-    const scroll = world.createEntity("machina.editor.inspector.scroll", "Editor Inspector Scroll View") catch |err| return mapWorldError(err);
-    world.setUiScrollView(scroll, .{
-        .position = scroll_clip.position,
-        .size = scroll_clip.size,
-        .content_offset = .{ 0.0, input.editor.inspector_scroll_y, 0.0 },
-    }) catch |err| return mapWorldError(err);
-
-    const stack_id = "machina.editor.inspector.components";
-    const stack = world.createEntity(stack_id, "Editor Component Stack") catch |err| return mapWorldError(err);
-    world.setUiVBox(stack, .{
-        .position = .{ 0.0, 0.0, 0.0 },
-        .spacing = editor_inspector_card_gap,
-    }) catch |err| return mapWorldError(err);
-    world.setUiLayoutItem(stack, .{
-        .parent = "machina.editor.inspector.scroll",
-        .order = 0,
-    }) catch |err| return mapWorldError(err);
-
-    const card_width = @max(scroll_clip.size[0], 1.0);
-    const field_stride = editor_inspector_field_row_stride;
-    var component_index: usize = 0;
-    var stack_order: i32 = 0;
-    var components = scene_world.entityComponents(selected) catch {
-        return;
-    };
-    while (components.next()) |component_id| {
-        if (component_index > 0) {
-            const separator_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.separator.{d}", .{component_index}) catch return RenderError.OutOfMemory;
-            defer allocator.free(separator_id);
-            const separator = world.createEntity(separator_id, "Editor Component Separator") catch |err| return mapWorldError(err);
-            world.setUiSeparator(separator, .{
-                .position = .{ 0.0, 0.0, 0.0 },
-                .size = .{ card_width, editor_inspector_separator_height, 0.0 },
-                .color = editor_palette.panel_muted,
-            }) catch |err| return mapWorldError(err);
-            world.setUiLayoutItem(separator, .{
-                .parent = stack_id,
-                .order = stack_order,
-            }) catch |err| return mapWorldError(err);
-            stack_order += 1;
-        }
-
-        const field_count = scene_world.componentFieldCount(component_id);
-        const card_height = editorInspectorComponentCardHeight(scene_world, component_id);
-        const card_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}", .{component_index}) catch return RenderError.OutOfMemory;
-        defer allocator.free(card_id);
-        const card = try extractEditorPanel(world, card_id, "Editor Component Card", .{
-            .x = 0.0,
-            .y = 0.0,
-            .width = card_width,
-            .height = card_height,
-        }, editor_palette.shell, editor_panel_corner_radius);
-        world.setUiLayoutItem(card, .{
-            .parent = stack_id,
-            .order = stack_order,
-        }) catch |err| return mapWorldError(err);
-        stack_order += 1;
-
-        const title_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.title", .{component_index}) catch return RenderError.OutOfMemory;
-        defer allocator.free(title_id);
-        const title_max_width = @max(card_width - editor_inspector_card_padding_x * 2.0, 1.0);
-        const title_value = fitEditorTextToWidth(allocator, component_id, editor_inspector_text_size, title_max_width) catch return RenderError.OutOfMemory;
-        defer allocator.free(title_value);
-        _ = try extractEditorChildText(world, title_id, "Editor Component Title", card_id, .{
-            editor_inspector_card_padding_x,
-            editor_inspector_card_padding_y,
-            0.0,
-        }, title_value, editor_inspector_text_size, editor_palette.accent_soft);
-
-        for (0..field_count) |field_index| {
-            const field_name = scene_world.componentFieldNameAt(component_id, field_index) orelse continue;
-            const value = scene_world.getComponentFieldValue(selected, component_id, field_name) catch continue;
-            const field_y = editor_inspector_card_padding_y + editorTextHeight(editor_inspector_text_size) + editor_panel_label_gap + @as(f32, @floatFromInt(field_index)) * field_stride;
-            try extractEditorPropertyRow(allocator, world, .{
-                .parent_id = card_id,
-                .component_index = component_index,
-                .field_index = field_index,
-                .component_id = component_id,
-                .field_name = field_name,
-                .value = value,
-                .card_width = card_width,
-                .field_y = field_y,
-                .text_input = input.editor.text_input,
-            });
-        }
-
-        component_index += 1;
-    }
-}
-
-fn extractEditorText(
-    world: *runtime.World,
-    id: []const u8,
-    name: []const u8,
-    position: [3]f32,
-    value: []const u8,
-    size: f32,
-    color: [3]f32,
-) RenderError!void {
-    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
-    world.setUiText(entity, .{
-        .position = position,
-        .size = size,
-        .color = color,
-        .value = value,
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractEditorPanel(
-    world: *runtime.World,
-    id: []const u8,
-    name: []const u8,
-    rect: ScreenRect,
-    color: [3]f32,
-    corner_radius: f32,
-) RenderError!runtime.EntityHandle {
-    const panel = world.createEntity(id, name) catch |err| return mapWorldError(err);
-    world.setUiRect(panel, .{
-        .position = rect.position(),
-        .size = rect.size3(),
-        .color = color,
-        .corner_radius = corner_radius,
-    }) catch |err| return mapWorldError(err);
-    return panel;
-}
-
-fn extractEditorChildText(
-    world: *runtime.World,
-    id: []const u8,
-    name: []const u8,
-    parent: []const u8,
-    position: [3]f32,
-    value: []const u8,
-    size: f32,
-    color: [3]f32,
-) RenderError!runtime.EntityHandle {
-    try extractEditorText(world, id, name, position, value, size, color);
-    const entity = world.findEntityById(id) orelse return RenderError.InvalidScene;
-    world.setUiLayoutItem(entity, .{ .parent = parent }) catch |err| return mapWorldError(err);
-    return entity;
-}
-
-fn formatInspectorFieldValue(allocator: std.mem.Allocator, value: runtime.ComponentValue) error{OutOfMemory}![]const u8 {
-    return switch (value) {
-        .boolean => |payload| std.fmt.allocPrint(allocator, "{s}", .{if (payload) "TRUE" else "FALSE"}),
-        .int => |payload| std.fmt.allocPrint(allocator, "{d}", .{payload}),
-        .float => |payload| std.fmt.allocPrint(allocator, "{d:.3}", .{payload}),
-        .vec3 => |payload| std.fmt.allocPrint(allocator, "{d:.2} {d:.2} {d:.2}", .{ payload[0], payload[1], payload[2] }),
-        .string => |payload| blk: {
-            const max_len: usize = 26;
-            const visible = if (payload.len > max_len) payload[0..max_len] else payload;
-            const suffix = if (payload.len > max_len) "..." else "";
-            break :blk std.fmt.allocPrint(allocator, "{s}{s}", .{ visible, suffix });
-        },
-    };
-}
-
-const EditorPropertyRowSpec = struct {
-    parent_id: []const u8,
-    component_index: usize,
-    field_index: usize,
-    component_id: []const u8,
-    field_name: []const u8,
-    value: runtime.ComponentValue,
-    card_width: f32,
-    field_y: f32,
-    text_input: EditorTextInputFrame = .{},
+const UiProgressBar = struct {
+    value: f32,
+    max: f32,
+    fill_color: [3]f32,
 };
-
-fn extractEditorPropertyRow(
-    allocator: std.mem.Allocator,
-    world: *runtime.World,
-    spec: EditorPropertyRowSpec,
-) RenderError!void {
-    const label_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.label", .{ spec.component_index, spec.field_index }) catch return RenderError.OutOfMemory;
-    defer allocator.free(label_id);
-
-    const value_x = editorInspectorFieldValueX(spec.card_width);
-    const label_max_width = @max(value_x - editor_inspector_card_padding_x - editor_inspector_field_column_gap, 1.0);
-    const label_text = fitEditorTextToWidth(allocator, spec.field_name, editor_inspector_text_size, label_max_width) catch return RenderError.OutOfMemory;
-    defer allocator.free(label_text);
-
-    _ = try extractEditorChildText(world, label_id, "Editor Component Field Label", spec.parent_id, .{
-        editor_inspector_card_padding_x,
-        spec.field_y,
-        0.0,
-    }, label_text, editor_inspector_text_size, editor_palette.text_muted);
-
-    switch (spec.value) {
-        .vec3 => |payload| {
-            const total_width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0);
-            const lane_width = @max((total_width - editor_inspector_input_gap * 2.0) / 3.0, 1.0);
-            for (0..3) |lane_index| {
-                var lane_buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len;
-                const lane: u2 = @intCast(lane_index);
-                const is_focused = editorTextInputFocuses(spec.text_input, spec.component_id, spec.field_name, lane);
-                const value_text = if (is_focused)
-                    spec.text_input.text()
-                else
-                    std.fmt.bufPrint(&lane_buffer, "{d:.2}", .{payload[lane]}) catch "";
-                try extractEditorPropertyInputBox(allocator, world, spec, .{
-                    .lane = lane,
-                    .x = value_x + @as(f32, @floatFromInt(lane_index)) * (lane_width + editor_inspector_input_gap),
-                    .width = lane_width,
-                    .text = value_text,
-                    .focused = is_focused,
-                    .cursor = if (is_focused) spec.text_input.cursor else value_text.len,
-                    .selection_anchor = if (is_focused) spec.text_input.selection_anchor else value_text.len,
-                });
-            }
-        },
-        else => {
-            var value_buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len;
-            const is_focused = editorTextInputFocuses(spec.text_input, spec.component_id, spec.field_name, 0);
-            const value_text = if (is_focused)
-                spec.text_input.text()
-            else
-                formatEditorInputValue(&value_buffer, spec.value, 0) orelse "";
-            try extractEditorPropertyInputBox(allocator, world, spec, .{
-                .lane = null,
-                .x = value_x,
-                .width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0),
-                .text = value_text,
-                .focused = is_focused,
-                .cursor = if (is_focused) spec.text_input.cursor else value_text.len,
-                .selection_anchor = if (is_focused) spec.text_input.selection_anchor else value_text.len,
-            });
-        },
-    }
-}
-
-const EditorPropertyInputBoxSpec = struct {
-    lane: ?u2,
-    x: f32,
-    width: f32,
-    text: []const u8,
-    focused: bool,
-    cursor: usize,
-    selection_anchor: usize,
-};
-
-fn extractEditorPropertyInputBox(
-    allocator: std.mem.Allocator,
-    world: *runtime.World,
-    row: EditorPropertyRowSpec,
-    input: EditorPropertyInputBoxSpec,
-) RenderError!void {
-    const input_id = if (input.lane) |lane|
-        std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.input.{d}", .{ row.component_index, row.field_index, lane }) catch return RenderError.OutOfMemory
-    else
-        std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.input", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
-    defer allocator.free(input_id);
-    const value_id = if (input.lane) |lane|
-        std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.value.{d}", .{ row.component_index, row.field_index, lane }) catch return RenderError.OutOfMemory
-    else
-        std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.value", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
-    defer allocator.free(value_id);
-
-    const box = try extractEditorPanel(world, input_id, "Editor Property Text Input", .{
-        .x = input.x,
-        .y = row.field_y - 4.0,
-        .width = input.width,
-        .height = editor_inspector_input_height,
-    }, editor_palette.input, editor_inspector_input_corner_radius);
-    world.setUiLayoutItem(box, .{
-        .parent = row.parent_id,
-        .order = 0,
-    }) catch |err| return mapWorldError(err);
-    if (input.focused) {
-        world.setUiBorder(box, .{
-            .color = editor_palette.accent_soft,
-            .thickness = editor_inspector_input_border_thickness,
-        }) catch |err| return mapWorldError(err);
-    }
-
-    const selection_start = @min(input.cursor, input.selection_anchor);
-    const selection_end = @max(input.cursor, input.selection_anchor);
-    if (input.focused and selection_start < selection_end) {
-        const selection_id = if (input.lane) |lane|
-            std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.selection.{d}", .{ row.component_index, row.field_index, lane }) catch return RenderError.OutOfMemory
-        else
-            std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.selection", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
-        defer allocator.free(selection_id);
-        const start_x = std.math.clamp(
-            editor_inspector_input_padding_x + editorTextWidth(input.text[0..@min(selection_start, input.text.len)], editor_inspector_text_size),
-            editor_inspector_input_padding_x,
-            @max(input.width - editor_inspector_input_padding_x, editor_inspector_input_padding_x),
-        );
-        const end_x = std.math.clamp(
-            editor_inspector_input_padding_x + editorTextWidth(input.text[0..@min(selection_end, input.text.len)], editor_inspector_text_size),
-            editor_inspector_input_padding_x,
-            @max(input.width - editor_inspector_input_padding_x, editor_inspector_input_padding_x),
-        );
-        const selection = try extractEditorPanel(world, selection_id, "Editor Property Text Selection", .{
-            .x = start_x,
-            .y = editor_inspector_selection_padding_y,
-            .width = @max(end_x - start_x, 1.0),
-            .height = editorTextHeight(editor_inspector_text_size) - editor_inspector_selection_padding_y * 0.5,
-        }, editor_palette.input_selection, 2.0);
-        world.setUiLayoutItem(selection, .{
-            .parent = input_id,
-            .order = 0,
-        }) catch |err| return mapWorldError(err);
-    }
-
-    const text_max_width = @max(input.width - editor_inspector_input_padding_x * 2.0, 1.0);
-    const fitted_text = fitEditorTextToWidth(allocator, input.text, editor_inspector_text_size, text_max_width) catch return RenderError.OutOfMemory;
-    defer allocator.free(fitted_text);
-    const text_entity = try extractEditorChildText(world, value_id, "Editor Property Text Input Value", input_id, .{
-        editor_inspector_input_padding_x,
-        2.0,
-        0.0,
-    }, fitted_text, editor_inspector_text_size, if (input.focused) editor_palette.text else editor_palette.text_muted);
-    world.setUiLayoutItem(text_entity, .{
-        .parent = input_id,
-        .order = 1,
-    }) catch |err| return mapWorldError(err);
-
-    if (input.focused) {
-        const cursor_x = std.math.clamp(
-            editor_inspector_input_padding_x + editorTextWidth(input.text[0..@min(input.cursor, input.text.len)], editor_inspector_text_size),
-            editor_inspector_input_padding_x,
-            @max(input.width - editor_inspector_input_padding_x, editor_inspector_input_padding_x),
-        );
-        const caret_id = if (input.lane) |lane|
-            std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.caret.{d}", .{ row.component_index, row.field_index, lane }) catch return RenderError.OutOfMemory
-        else
-            std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.caret", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
-        defer allocator.free(caret_id);
-        const caret = try extractEditorPanel(world, caret_id, "Editor Property Text Input Caret", .{
-            .x = cursor_x,
-            .y = 4.0,
-            .width = editor_inspector_caret_width,
-            .height = editorTextHeight(editor_inspector_text_size) - 4.0,
-        }, editor_palette.accent_soft, 0.0);
-        world.setUiLayoutItem(caret, .{
-            .parent = input_id,
-            .order = 2,
-        }) catch |err| return mapWorldError(err);
-    }
-}
-
-fn editorTextInputFocuses(input: EditorTextInputFrame, component_id: []const u8, field_name: []const u8, lane: u2) bool {
-    return input.active and
-        input.selection.vec3_lane == lane and
-        std.mem.eql(u8, input.selection.componentId(), component_id) and
-        std.mem.eql(u8, input.selection.fieldName(), field_name);
-}
-
-fn editorTextHeight(size: f32) f32 {
-    return @as(f32, @floatFromInt(ui_font.height)) * size;
-}
-
-fn editorTextWidth(value: []const u8, size: f32) f32 {
-    return @as(f32, @floatFromInt(value.len * ui_font.advance)) * size;
-}
-
-fn editorInspectorFieldValueX(card_width: f32) f32 {
-    const preferred = editor_inspector_field_value_column_x;
-    const max_start = @max(card_width - editor_inspector_card_padding_x - @as(f32, @floatFromInt(ui_font.advance)) * 3.0, editor_inspector_card_padding_x);
-    return std.math.clamp(preferred, editor_inspector_card_padding_x, max_start);
-}
-
-fn fitEditorTextToWidth(allocator: std.mem.Allocator, value: []const u8, size: f32, max_width: f32) error{OutOfMemory}![]u8 {
-    if (editorTextWidth(value, size) <= max_width) {
-        return allocator.dupe(u8, value);
-    }
-
-    const suffix = "...";
-    const glyph_width = @as(f32, @floatFromInt(ui_font.advance)) * size;
-    const suffix_width = editorTextWidth(suffix, size);
-    if (max_width <= 0.0 or glyph_width <= 0.0) {
-        return allocator.dupe(u8, "");
-    }
-    if (max_width < suffix_width) {
-        const glyph_count = @min(suffix.len, @as(usize, @intFromFloat(@floor(max_width / glyph_width))));
-        return allocator.dupe(u8, suffix[0..glyph_count]);
-    }
-    if (max_width == suffix_width) {
-        return allocator.dupe(u8, suffix);
-    }
-
-    const available_prefix_width = max_width - suffix_width;
-    const prefix_len = @min(value.len, @as(usize, @intFromFloat(@floor(available_prefix_width / glyph_width))));
-    return std.fmt.allocPrint(allocator, "{s}{s}", .{ value[0..prefix_len], suffix });
-}
-
-fn editorPanelTextPosition(panel: ScreenRect, local_y: f32) [3]f32 {
-    return .{ panel.x + editor_panel_padding_x, panel.y + local_y, 0.0 };
-}
-
-fn editorSystemHeaderYOffset() f32 {
-    return editor_panel_padding_y;
-}
-
-fn editorSystemRowsYOffset() f32 {
-    return editorSystemHeaderYOffset() + editorTextHeight(editor_system_text_size) + editor_panel_label_gap;
-}
-
-fn editorDebugPanelSize(input: FrameInput) [2]f32 {
-    const panel = editorSidebarPanelRect(editorLeftSidebarRect(input));
-    return .{ panel.width, panel.height };
-}
-
-fn editorSystemPanelRect(input: FrameInput) ScreenRect {
-    return editorSidebarPanelRect(editorLeftSidebarRect(input));
-}
-
-fn editorSidebarPanelRect(sidebar: ScreenRect) ScreenRect {
-    return insetScreenRect(sidebar, editor_sidebar_panel_margin);
-}
-
-fn insetScreenRect(rect: ScreenRect, inset: f32) ScreenRect {
-    const clamped = @max(inset, 0.0);
-    return .{
-        .x = rect.x + clamped,
-        .y = rect.y + clamped,
-        .width = @max(rect.width - clamped * 2.0, 1.0),
-        .height = @max(rect.height - clamped * 2.0, 1.0),
-    };
-}
-
-fn editorSystemHeaderY(input: FrameInput) f32 {
-    return editorSystemPanelRect(input).y + editorSystemHeaderYOffset();
-}
-
-fn editorSystemRowsY(input: FrameInput) f32 {
-    return editorSystemPanelRect(input).y + editorSystemRowsYOffset();
-}
-
-const EditorSystemVisibleRange = struct {
-    start: usize,
-    end: usize,
-    offset_y: f32,
-};
-
-fn editorSystemVisibleRange(input: FrameInput) EditorSystemVisibleRange {
-    const profile_count = input.system_profiles.len;
-    if (profile_count == 0) {
-        return .{ .start = 0, .end = 0, .offset_y = 0.0 };
-    }
-
-    const scroll_y = std.math.clamp(input.editor.system_scroll_y, 0.0, editorSystemMaxScrollY(input, profile_count));
-    const row_offset = scroll_y / editor_system_row_stride;
-    const start_float = @floor(row_offset);
-    const start: usize = @intFromFloat(start_float);
-    const offset_y = scroll_y - start_float * editor_system_row_stride;
-    const visible_rows = editorSystemVisibleRows(input);
-    const visible_count = @min(
-        profile_count - start,
-        visible_rows + if (offset_y > 0.0) @as(usize, 1) else @as(usize, 0),
-    );
-    return .{
-        .start = start,
-        .end = start + visible_count,
-        .offset_y = offset_y,
-    };
-}
-
-fn editorSystemListClipRect(input: FrameInput) UiClipRect {
-    const panel = editorSystemPanelRect(input);
-    const scrollbar_space = if (editorSystemNeedsScrollForInput(input, editorSystemProfileScrollCount(input)))
-        editor_scrollbar_width + editor_scrollbar_gap
-    else
-        0.0;
-    return .{
-        .position = .{ panel.x, editorSystemRowsY(input), 0.0 },
-        .size = .{
-            @max(panel.width - scrollbar_space, 1.0),
-            editorSystemTableContentHeight(editorSystemVisibleRows(input)),
-            0.0,
-        },
-    };
-}
-
-fn editorSystemProfileScrollCount(input: FrameInput) usize {
-    return @max(input.system_profiles.len, input.system_profile_count_hint);
-}
-
-fn editorSystemVisibleRows(input: FrameInput) usize {
-    const panel = editorSystemPanelRect(input);
-    const rows_height = @max(panel.y + panel.height - editorSystemRowsY(input) - editor_panel_bottom_padding - editor_system_card_padding_y * 2.0, editor_system_row_stride);
-    return @max(@as(usize, @intFromFloat(@floor(rows_height / editor_system_row_stride))), 1);
-}
-
-fn editorSystemTableContentHeight(row_count: usize) f32 {
-    return editor_system_card_padding_y * 2.0 + @as(f32, @floatFromInt(row_count)) * editor_system_row_stride;
-}
-
-fn editorInspectorScrollClipRect(input: FrameInput) UiClipRect {
-    const sidebar = editorSidebarPanelRect(editorRightSidebarRect(input));
-    const y = sidebar.y + editor_panel_padding_y + editor_inspector_line_stride * 2.5;
-    const bottom = sidebar.y + sidebar.height;
-    return .{
-        .position = .{ sidebar.x, y, 0.0 },
-        .size = .{
-            @max(sidebar.width, 1.0),
-            @max(bottom - y, 1.0),
-            0.0,
-        },
-    };
-}
-
-fn editorInspectorComponentContentHeight(scene_world: *const runtime.World, selected: ?runtime.EntityHandle) f32 {
-    const selected_entity = selected orelse return 0.0;
-    var components = scene_world.entityComponents(selected_entity) catch return 0.0;
-    var height: f32 = 0.0;
-    var component_index: usize = 0;
-    while (components.next()) |component_id| {
-        if (component_index > 0) {
-            height += editor_inspector_separator_height;
-        }
-        height += editorInspectorComponentCardHeight(scene_world, component_id);
-        component_index += 1;
-    }
-    return height;
-}
-
-fn editorInspectorComponentCardHeight(scene_world: *const runtime.World, component_id: []const u8) f32 {
-    const field_count = scene_world.componentFieldCount(component_id);
-    return editor_inspector_card_padding_y * 2.0 +
-        editorTextHeight(editor_inspector_text_size) +
-        editor_panel_label_gap +
-        @as(f32, @floatFromInt(field_count)) * editor_inspector_field_row_stride;
-}
-
-fn editorInspectorNeedsScroll(scene_world: *const runtime.World, input: FrameInput) bool {
-    return editorInspectorMaxScrollY(scene_world, input) > 0.0;
-}
-
-fn editorInspectorMaxScrollY(scene_world: *const runtime.World, input: FrameInput) f32 {
-    const clip = editorInspectorScrollClipRect(input);
-    return @max(editorInspectorComponentContentHeight(scene_world, input.editor.selected_entity) - clip.size[1], 0.0);
-}
-
-fn editorSystemNeedsScrollForInput(input: FrameInput, profile_count: usize) bool {
-    return profile_count > editorSystemVisibleRows(input);
-}
-
-fn editorSystemMaxScroll(input: FrameInput, profile_count: usize) usize {
-    const visible_rows = editorSystemVisibleRows(input);
-    return if (profile_count > visible_rows)
-        profile_count - visible_rows
-    else
-        0;
-}
-
-fn editorSystemMaxScrollY(input: FrameInput, profile_count: usize) f32 {
-    return @as(f32, @floatFromInt(editorSystemMaxScroll(input, profile_count))) * editor_system_row_stride;
-}
-
-fn formatFpsLabel(allocator: std.mem.Allocator, fps: f32) error{OutOfMemory}![]const u8 {
-    return std.fmt.allocPrint(allocator, "FPS {d}", .{roundedFps(fps)});
-}
-
-fn formatSystemProfileHeader(allocator: std.mem.Allocator, profiles: []const runtime.SystemProfileSnapshot) error{OutOfMemory}![]const u8 {
-    const window_size = if (profiles.len == 0) 0 else profiles[0].window_size;
-    return std.fmt.allocPrint(allocator, "SYS {d} AVG {d}F SNAP 3HZ", .{ profiles.len, window_size });
-}
-
-fn formatSystemProfileDuration(allocator: std.mem.Allocator, profile: runtime.SystemProfileSnapshot) error{OutOfMemory}![]const u8 {
-    if (profile.sample_count == 0) {
-        return allocator.dupe(u8, "--");
-    }
-
-    var average_buffer: [16]u8 = undefined;
-    const average = formatDurationShort(&average_buffer, profile.rolling_average_ns);
-    return allocator.dupe(u8, average);
-}
-
-fn formatDurationShort(buffer: *[16]u8, ns: u64) []const u8 {
-    const micros = nsToMicrosRounded(ns);
-    if (micros < 10_000) {
-        return std.fmt.bufPrint(buffer, "{d}us", .{micros}) catch "----";
-    }
-    return std.fmt.bufPrint(buffer, "{d}ms", .{(micros + 500) / 1000}) catch "----";
-}
-
-fn nsToMicrosRounded(ns: u64) u64 {
-    return (ns + 500) / 1000;
-}
-
-fn elapsedNanosecondsSince(started_ns: i128) u64 {
-    const elapsed_ns = monotonicTimestampNs() - started_ns;
-    if (elapsed_ns <= 0) {
-        return 0;
-    }
-    return @intCast(@min(elapsed_ns, std.math.maxInt(u64)));
-}
-
-fn monotonicTimestampNs() i128 {
-    const io = Io.Threaded.global_single_threaded.io();
-    return Io.Timestamp.now(io, .awake).nanoseconds;
-}
-
-fn roundedFps(fps: f32) i32 {
-    if (!std.math.isFinite(fps) or fps <= 0.0) {
-        return 0;
-    }
-    const clamped = @min(fps, 9999.0);
-    return @intFromFloat(@round(clamped));
-}
-
-pub const writeFrameInput = render_ecs.writeFrameInput;
-const setRenderFrameInput = render_ecs.setRenderFrameInput;
-const renderFrameInput = render_ecs.renderFrameInput;
-const setRenderUiButtonState = render_ecs.setRenderUiButtonState;
-const setRenderUiClip = render_ecs.setRenderUiClip;
-const renderUiButtonState = render_ecs.renderUiButtonState;
-const renderUiClip = render_ecs.renderUiClip;
-const uiBorder = render_ecs.uiBorder;
-const uiProgressBar = render_ecs.uiProgressBar;
-const uiToggleChecked = render_ecs.uiToggleChecked;
-
-fn resolveUiLayout(world: *const runtime.World, entity: runtime.EntityHandle, local_position: [3]f32) RenderError!ui_layout.ResolvedLayout {
-    return ui_layout.resolve(world, entity, local_position) catch |err| return mapLayoutError(err);
-}
-
-fn combineUiClip(a: ?UiClipRect, b: ?UiClipRect) RenderError!?UiClipRect {
-    return ui_layout.combineClip(a, b) catch |err| return mapLayoutError(err);
-}
-
-fn resolveUiScreenLayout(input: FrameInput, entity_id: []const u8, layout: ui_layout.ResolvedLayout, item_size: [3]f32) RenderError!ui_layout.ResolvedLayout {
-    if (!input.debug_overlay_visible or isEditorUiEntityId(entity_id)) {
-        return layout;
-    }
-    return ui_layout.clipToTarget(layout, sceneUiTarget(input, 0.0, 0.0), item_size) catch |err| return mapLayoutError(err);
-}
-
-fn sceneUiCanvasTransform(world: *const runtime.World, input: FrameInput, width: f32, height: f32) RenderError!UiCanvasTransform {
-    return ui_layout.canvasTransform(world, sceneUiTarget(input, width, height)) catch |err| return mapLayoutError(err);
-}
-
-fn sceneUiTarget(input: FrameInput, width: f32, height: f32) ui_layout.Target {
-    if (input.debug_overlay_visible) {
-        const viewport = editorGameViewport(input);
-        return .{ .x = viewport.x, .y = viewport.y, .width = viewport.width, .height = viewport.height };
-    }
-    return .{ .width = width, .height = height };
-}
-
-fn isEditorUiEntityId(entity_id: []const u8) bool {
-    return std.mem.startsWith(u8, entity_id, "machina.editor.");
-}
-
-fn applyUiCanvasLayout(transform: UiCanvasTransform, entity_id: []const u8, layout: ui_layout.ResolvedLayout) ui_layout.ResolvedLayout {
-    if (isEditorUiEntityId(entity_id)) {
-        return layout;
-    }
-    return ui_layout.applyCanvasTransform(transform, layout);
-}
-
-fn scaleUiVec3(transform: UiCanvasTransform, value: [3]f32) [3]f32 {
-    return ui_layout.scaleVec3(transform, value);
-}
-
-fn scaleUiSize(transform: UiCanvasTransform, value: [3]f32) [3]f32 {
-    return ui_layout.scaleSize(transform, value);
-}
-
-fn uiLayoutItemSize(world: *const runtime.World, entity: runtime.EntityHandle) RenderError![3]f32 {
-    return ui_layout.itemSize(world, entity) catch |err| return mapLayoutError(err);
-}
-
-fn hitTestUiRect(point: [2]f32, position: [3]f32, size: [3]f32, clip: ?UiClipRect) bool {
-    return ui_layout.pointInsideRect(point, position, size, clip);
-}
-
-fn textPixelSize(value: []const u8, size: f32) [3]f32 {
-    return ui_layout.textPixelSize(value, size);
-}
-
-fn resolveUiTextPosition(world: *const runtime.World, entity: runtime.EntityHandle, text: runtime.UiText, position: [3]f32) RenderError![3]f32 {
-    return ui_layout.resolveTextPosition(world, entity, text, position) catch |err| return mapLayoutError(err);
-}
-
-fn evaluateUiButtonState(input: FrameInput, position: [3]f32, size: [3]f32, clip: ?UiClipRect) UiButtonState {
-    const hovered = input.pointer.has_position and hitTestUiRect(input.pointer.position, position, size, clip);
-    return .{
-        .hovered = hovered,
-        .held = hovered and input.pointer.primary_down,
-        .pressed = hovered and input.pointer.primary_released,
-    };
-}
-
-fn extractCameraInto(world: *runtime.World, camera: CameraState) RenderError!void {
-    const entity = world.createEntity("machina.render.extract.camera", "Render Camera") catch |err| return mapWorldError(err);
-    world.setTransform(entity, camera.transform) catch |err| return mapWorldError(err);
-    world.setCamera(entity, .{
-        .fov_y_degrees = camera.fov_y_degrees,
-        .near = camera.near,
-        .far = camera.far,
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractDirectionalLightInto(world: *runtime.World, light: DirectionalLightState) RenderError!void {
-    const entity = world.createEntity("machina.render.extract.directional_light", "Render Directional Light") catch |err| return mapWorldError(err);
-    world.setDirectionalLight(entity, .{
-        .direction = light.direction,
-        .color = light.color,
-        .intensity = light.intensity,
-        .ambient = light.ambient,
-    }) catch |err| return mapWorldError(err);
-}
-
-const registerRenderEcsTypes = render_ecs.registerRenderEcsTypes;
-const batchIndexFromDrawEntity = render_ecs.batchIndexFromDrawEntity;
-
-fn mapEngineSetupError(err: anyerror) RenderError {
-    return switch (err) {
-        error.OutOfMemory => RenderError.OutOfMemory,
-        else => RenderError.InvalidScene,
-    };
-}
-
-fn mapWorldError(err: anyerror) RenderError {
-    return switch (err) {
-        error.OutOfMemory => RenderError.OutOfMemory,
-        else => RenderError.InvalidScene,
-    };
-}
-
-fn mapLayoutError(err: anyerror) RenderError {
-    return switch (err) {
-        error.OutOfMemory => RenderError.OutOfMemory,
-        else => RenderError.InvalidScene,
-    };
-}
-
-fn mapGeometryError(err: anyerror) RenderError {
-    return switch (err) {
-        error.OutOfMemory => RenderError.OutOfMemory,
-        else => RenderError.InvalidScene,
-    };
-}
 
 pub fn renderDemoBmp(io: Io, allocator: std.mem.Allocator, output_path: []const u8, scene: Scene) !void {
     try renderDemoBmpWithInput(io, allocator, output_path, scene, .{});
@@ -2678,7 +1906,8 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
         input.viewport_width = @floatFromInt(width);
         input.viewport_height = @floatFromInt(height);
         input.system_profile_count_hint = demo.renderSystemProfileCount();
-        const should_enable_relative_mouse = flyCameraInputActive(input);
+        _ = updateFlyCameraCapture(&fly_camera, input);
+        const should_enable_relative_mouse = flyCameraInputActive(fly_camera, input);
         if (should_enable_relative_mouse != relative_mouse_enabled) {
             _ = sdl.machina_sdl_set_window_relative_mouse_mode(window, @intFromBool(should_enable_relative_mouse));
             relative_mouse_enabled = should_enable_relative_mouse;
@@ -2717,10 +1946,6 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
     }
 }
 
-const GpuContext = render_backend.GpuContext;
-const DepthTarget = render_backend.DepthTarget;
-const ShadowTarget = render_backend.ShadowTarget;
-
 const FrameConfig = struct {
     width: u32,
     height: u32,
@@ -2735,11 +1960,26 @@ const FrameConfig = struct {
     }
 };
 
-const InstanceConfig = render_types.InstanceConfig;
-const CameraState = render_types.CameraState;
+const InstanceConfig = struct {
+    width: f32,
+    height: f32,
+    mesh: *const runtime.RenderableMesh,
+    camera: CameraState,
+    light_view_projection: [16]f32,
+};
+
+const BloomViews = [bloom_level_count]*wgpu.TextureView;
+
+const CameraState = struct {
+    transform: runtime.Transform = .{ .position = .{ 0.0, 0.0, 4.8 } },
+    fov_y_degrees: f32 = 48.0,
+    near: f32 = 0.1,
+    far: f32 = 100.0,
+};
 
 const FlyCameraState = struct {
     initialized: bool = false,
+    captured_look: bool = false,
     transform: runtime.Transform = .{},
 
     fn reset(self: *FlyCameraState) void {
@@ -2747,7 +1987,12 @@ const FlyCameraState = struct {
     }
 };
 
-const DirectionalLightState = render_types.DirectionalLightState;
+const DirectionalLightState = struct {
+    direction: [3]f32 = .{ 0.35, 0.68, 0.64 },
+    color: [3]f32 = .{ 1.0, 1.0, 1.0 },
+    intensity: f32 = 0.78,
+    ambient: f32 = 0.18,
+};
 
 const RenderSystemContext = struct {
     device: *wgpu.Device,
@@ -2964,6 +2209,10 @@ const RenderEcsState = struct {
             std.log.err("render extract failed while setting frame input: {s}", .{@errorName(err)});
             return err;
         };
+        extractRendererInto(&next_world, scene.world) catch |err| {
+            std.log.err("render extract failed while extracting renderer settings: {s}", .{@errorName(err)});
+            return err;
+        };
 
         var mesh_index: usize = 0;
         var meshes = scene.world.renderableMeshes();
@@ -3099,25 +2348,2546 @@ const RenderEcsState = struct {
     }
 };
 
-const BatchPlan = render_batching.BatchPlan;
-const BatchBuild = render_batching.BatchBuild;
-const BatchPlanEntry = render_batching.BatchPlanEntry;
+const GpuContext = struct {
+    adapter: *wgpu.Adapter,
+    device: *wgpu.Device,
+    queue: *wgpu.Queue,
 
-const UiDrawResources = render_ui_draw.UiDrawResources;
+    fn deinit(self: *GpuContext) void {
+        self.queue.release();
+        self.device.release();
+        self.adapter.release();
+    }
+};
+
+const DepthTarget = struct {
+    texture: ?*wgpu.Texture = null,
+    view: ?*wgpu.TextureView = null,
+    width: u32 = 0,
+    height: u32 = 0,
+
+    fn create(device: *wgpu.Device, width: u32, height: u32) RenderError!DepthTarget {
+        var target = DepthTarget{};
+        try target.ensure(device, width, height);
+        return target;
+    }
+
+    fn ensure(self: *DepthTarget, device: *wgpu.Device, width: u32, height: u32) RenderError!void {
+        if (self.view != null and self.width == width and self.height == height) {
+            return;
+        }
+
+        self.deinit();
+
+        const texture = device.createTexture(&wgpu.TextureDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina mesh depth texture"),
+            .size = .{
+                .width = width,
+                .height = height,
+                .depth_or_array_layers = 1,
+            },
+            .format = depth_format,
+            .usage = wgpu.TextureUsages.render_attachment,
+        }) orelse return RenderError.NoDevice;
+        errdefer texture.release();
+
+        const view = texture.createView(&wgpu.TextureViewDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina mesh depth view"),
+            .mip_level_count = 1,
+            .array_layer_count = 1,
+        }) orelse return RenderError.NoDevice;
+
+        self.texture = texture;
+        self.view = view;
+        self.width = width;
+        self.height = height;
+    }
+
+    fn deinit(self: *DepthTarget) void {
+        if (self.view) |view| {
+            view.release();
+        }
+        if (self.texture) |texture| {
+            texture.release();
+        }
+        self.* = .{};
+    }
+};
+
+const PostProcessTarget = struct {
+    texture: ?*wgpu.Texture = null,
+    view: ?*wgpu.TextureView = null,
+    width: u32 = 0,
+    height: u32 = 0,
+
+    fn ensure(
+        self: *PostProcessTarget,
+        device: *wgpu.Device,
+        width: u32,
+        height: u32,
+        format: wgpu.TextureFormat,
+    ) RenderError!void {
+        if (self.texture != null and self.width == width and self.height == height) {
+            return;
+        }
+
+        self.deinit();
+        const texture = device.createTexture(&wgpu.TextureDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina postprocess scene texture"),
+            .size = .{
+                .width = width,
+                .height = height,
+                .depth_or_array_layers = 1,
+            },
+            .format = format,
+            .usage = wgpu.TextureUsages.render_attachment | wgpu.TextureUsages.texture_binding,
+        }) orelse return RenderError.NoDevice;
+        errdefer texture.release();
+
+        const view = texture.createView(&wgpu.TextureViewDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina postprocess scene view"),
+            .mip_level_count = 1,
+            .array_layer_count = 1,
+        }) orelse return RenderError.NoDevice;
+        errdefer view.release();
+
+        self.* = .{
+            .texture = texture,
+            .view = view,
+            .width = width,
+            .height = height,
+        };
+    }
+
+    fn deinit(self: *PostProcessTarget) void {
+        if (self.view) |view| {
+            view.release();
+        }
+        if (self.texture) |texture| {
+            texture.release();
+        }
+        self.* = .{};
+    }
+};
+
+const ShadowTarget = struct {
+    texture: ?*wgpu.Texture = null,
+    view: ?*wgpu.TextureView = null,
+
+    fn create(device: *wgpu.Device) RenderError!ShadowTarget {
+        const texture = device.createTexture(&wgpu.TextureDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina shadow map texture"),
+            .size = .{
+                .width = shadow_map_size,
+                .height = shadow_map_size,
+                .depth_or_array_layers = 1,
+            },
+            .format = shadow_depth_format,
+            .usage = wgpu.TextureUsages.render_attachment | wgpu.TextureUsages.texture_binding,
+        }) orelse return RenderError.NoDevice;
+        errdefer texture.release();
+
+        const view = texture.createView(&wgpu.TextureViewDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina shadow map view"),
+            .mip_level_count = 1,
+            .array_layer_count = 1,
+            .aspect = .depth_only,
+        }) orelse return RenderError.NoDevice;
+
+        return .{
+            .texture = texture,
+            .view = view,
+        };
+    }
+
+    fn deinit(self: *ShadowTarget) void {
+        if (self.view) |view| {
+            view.release();
+        }
+        if (self.texture) |texture| {
+            texture.release();
+        }
+        self.* = .{};
+    }
+};
+
+fn registerRenderEcsTypes(registry: *runtime.ComponentRegistry) !void {
+    try runtime.registerEngineComponents(registry);
+
+    const ui_button_state_fields = [_]runtime.ComponentFieldDefinition{
+        .{ .name = "hovered", .value_type = .boolean },
+        .{ .name = "held", .value_type = .boolean },
+        .{ .name = "pressed", .value_type = .boolean },
+    };
+    try registry.registerEngineComponent(.{
+        .id = render_ui_button_state_component_id,
+        .version = 1,
+        .fields = &ui_button_state_fields,
+    });
+    const ui_clip_fields = [_]runtime.ComponentFieldDefinition{
+        .{ .name = "position", .value_type = .vec3 },
+        .{ .name = "size", .value_type = .vec3 },
+    };
+    try registry.registerEngineComponent(.{
+        .id = render_ui_clip_component_id,
+        .version = 1,
+        .fields = &ui_clip_fields,
+    });
+    const draw_batch_fields = [_]runtime.ComponentFieldDefinition{
+        .{ .name = "batch_index", .value_type = .int },
+    };
+    try registry.registerEngineComponent(.{
+        .id = render_draw_batch_component_id,
+        .version = 1,
+        .fields = &draw_batch_fields,
+    });
+    try registry.registerEngineComponent(.{
+        .id = render_draw_ui_component_id,
+        .version = 1,
+    });
+
+    const extract_writes = [_][]const u8{
+        runtime.transform_component_id,
+        runtime.geometry_primitive_component_id,
+        runtime.surface_material_component_id,
+        runtime.renderer_component_id,
+        runtime.camera_component_id,
+        runtime.directional_light_component_id,
+        runtime.shadow_caster_component_id,
+        runtime.shadow_receiver_component_id,
+        runtime.ui_canvas_component_id,
+        runtime.ui_rect_component_id,
+        runtime.ui_border_component_id,
+        runtime.ui_text_component_id,
+        runtime.ui_button_component_id,
+        runtime.ui_command_component_id,
+        runtime.ui_scroll_view_component_id,
+        runtime.ui_vbox_component_id,
+        runtime.ui_hgroup_component_id,
+        runtime.ui_stack_component_id,
+        runtime.ui_layout_item_component_id,
+        runtime.ui_spacer_component_id,
+        runtime.ui_text_block_component_id,
+        runtime.ui_toggle_component_id,
+        runtime.ui_progress_bar_component_id,
+        runtime.ui_separator_component_id,
+        runtime.input_pointer_component_id,
+        runtime.input_keyboard_component_id,
+        runtime.input_frame_component_id,
+    };
+    try registry.registerEngineSystem(.{
+        .id = render_extract_system_id,
+        .phase = .render,
+        .writes = &extract_writes,
+    });
+
+    const prepare_reads = [_][]const u8{
+        runtime.transform_component_id,
+        runtime.geometry_primitive_component_id,
+        runtime.surface_material_component_id,
+        runtime.shadow_caster_component_id,
+        runtime.shadow_receiver_component_id,
+    };
+    const after_extract = [_][]const u8{render_extract_system_id};
+    try registry.registerEngineSystem(.{
+        .id = render_prepare_meshes_system_id,
+        .phase = .render,
+        .reads = &prepare_reads,
+        .after = &after_extract,
+    });
+
+    const queue_reads = [_][]const u8{
+        runtime.transform_component_id,
+        runtime.geometry_primitive_component_id,
+        runtime.surface_material_component_id,
+        runtime.shadow_caster_component_id,
+        runtime.shadow_receiver_component_id,
+    };
+    const queue_writes = [_][]const u8{render_draw_batch_component_id};
+    const after_prepare = [_][]const u8{render_prepare_meshes_system_id};
+    try registry.registerEngineSystem(.{
+        .id = render_queue_meshes_system_id,
+        .phase = .render,
+        .reads = &queue_reads,
+        .writes = &queue_writes,
+        .after = &after_prepare,
+    });
+
+    const interact_ui_reads = [_][]const u8{
+        runtime.input_pointer_component_id,
+        runtime.input_frame_component_id,
+        runtime.ui_rect_component_id,
+        runtime.ui_button_component_id,
+        runtime.ui_scroll_view_component_id,
+        runtime.ui_vbox_component_id,
+        runtime.ui_hgroup_component_id,
+        runtime.ui_stack_component_id,
+        runtime.ui_layout_item_component_id,
+    };
+    const interact_ui_writes = [_][]const u8{render_ui_button_state_component_id};
+    try registry.registerEngineSystem(.{
+        .id = render_interact_ui_system_id,
+        .phase = .render,
+        .reads = &interact_ui_reads,
+        .writes = &interact_ui_writes,
+        .after = &after_extract,
+    });
+
+    const prepare_ui_reads = [_][]const u8{
+        runtime.ui_rect_component_id,
+        runtime.ui_border_component_id,
+        runtime.ui_text_component_id,
+        runtime.ui_button_component_id,
+        runtime.ui_scroll_view_component_id,
+        runtime.ui_vbox_component_id,
+        runtime.ui_hgroup_component_id,
+        runtime.ui_stack_component_id,
+        runtime.ui_layout_item_component_id,
+        runtime.ui_spacer_component_id,
+        runtime.ui_text_block_component_id,
+        runtime.ui_toggle_component_id,
+        runtime.ui_progress_bar_component_id,
+        runtime.ui_separator_component_id,
+        render_ui_button_state_component_id,
+    };
+    const after_queue_meshes = [_][]const u8{ render_queue_meshes_system_id, render_interact_ui_system_id };
+    try registry.registerEngineSystem(.{
+        .id = render_prepare_ui_system_id,
+        .phase = .render,
+        .reads = &prepare_ui_reads,
+        .after = &after_queue_meshes,
+    });
+
+    const queue_ui_reads = [_][]const u8{
+        runtime.ui_rect_component_id,
+        runtime.ui_border_component_id,
+        runtime.ui_text_component_id,
+        runtime.ui_separator_component_id,
+        runtime.ui_progress_bar_component_id,
+    };
+    const queue_ui_writes = [_][]const u8{render_draw_ui_component_id};
+    const after_prepare_ui = [_][]const u8{render_prepare_ui_system_id};
+    try registry.registerEngineSystem(.{
+        .id = render_queue_ui_system_id,
+        .phase = .render,
+        .reads = &queue_ui_reads,
+        .writes = &queue_ui_writes,
+        .after = &after_prepare_ui,
+    });
+
+    const draw_reads = [_][]const u8{
+        render_draw_batch_component_id,
+        render_draw_ui_component_id,
+        runtime.renderer_component_id,
+        runtime.transform_component_id,
+        runtime.geometry_primitive_component_id,
+        runtime.surface_material_component_id,
+        runtime.camera_component_id,
+        runtime.directional_light_component_id,
+        runtime.shadow_caster_component_id,
+        runtime.shadow_receiver_component_id,
+        runtime.ui_rect_component_id,
+        runtime.ui_text_component_id,
+        runtime.ui_button_component_id,
+        runtime.ui_scroll_view_component_id,
+        runtime.ui_vbox_component_id,
+        runtime.ui_hgroup_component_id,
+        runtime.ui_stack_component_id,
+        runtime.ui_layout_item_component_id,
+        runtime.ui_spacer_component_id,
+        runtime.ui_text_block_component_id,
+        runtime.ui_toggle_component_id,
+        runtime.ui_progress_bar_component_id,
+        runtime.ui_separator_component_id,
+        runtime.input_pointer_component_id,
+        runtime.input_keyboard_component_id,
+        runtime.input_frame_component_id,
+        render_ui_button_state_component_id,
+    };
+    const after_queue = [_][]const u8{render_queue_ui_system_id};
+    try registry.registerEngineSystem(.{
+        .id = render_draw_meshes_system_id,
+        .phase = .render,
+        .reads = &draw_reads,
+        .after = &after_queue,
+    });
+}
+
+fn extractMeshInto(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    render_index: usize,
+    mesh: runtime.RenderableMesh,
+) RenderError!void {
+    const entity_id = std.fmt.allocPrint(allocator, "machina.render.extract.mesh.{d}", .{render_index}) catch return RenderError.OutOfMemory;
+    defer allocator.free(entity_id);
+
+    const entity = world.createEntity(entity_id, mesh.name) catch |err| return mapWorldError(err);
+    world.setTransform(entity, .{
+        .position = mesh.position,
+        .rotation = mesh.rotation,
+        .scale = mesh.scale,
+    }) catch |err| return mapWorldError(err);
+    world.setGeometryPrimitive(entity, .{
+        .primitive = mesh.primitive,
+        .segments = mesh.segments,
+        .rings = mesh.rings,
+    }) catch |err| return mapWorldError(err);
+    world.setSurfaceMaterial(entity, .{
+        .base_color = mesh.base_color,
+    }) catch |err| return mapWorldError(err);
+    if (mesh.casts_shadow) {
+        world.setShadowCaster(entity) catch |err| return mapWorldError(err);
+    }
+    if (mesh.receives_shadow) {
+        world.setShadowReceiver(entity) catch |err| return mapWorldError(err);
+    }
+}
+
+fn extractEditorGizmoInto(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    scene_world: *const runtime.World,
+    input: FrameInput,
+) RenderError!void {
+    const selected = input.editor.selected_entity orelse return;
+    _ = scene_world.entity(selected) catch return;
+    const selected_transform = (scene_world.getTransform(selected) catch return) orelse return;
+    const axes = [_]struct {
+        id: []const u8,
+        axis: EditorAxis,
+        position_offset: [3]f32,
+        scale: [3]f32,
+        color: [3]f32,
+        active_color: [3]f32,
+    }{
+        .{
+            .id = "x",
+            .axis = .x,
+            .position_offset = .{ editor_gizmo_axis_length * 0.5, 0.0, 0.0 },
+            .scale = .{ editor_gizmo_axis_length, editor_gizmo_axis_thickness, editor_gizmo_axis_thickness },
+            .color = editor_palette.danger,
+            .active_color = .{ 0.94, 0.42, 0.42 },
+        },
+        .{
+            .id = "y",
+            .axis = .y,
+            .position_offset = .{ 0.0, editor_gizmo_axis_length * 0.5, 0.0 },
+            .scale = .{ editor_gizmo_axis_thickness, editor_gizmo_axis_length, editor_gizmo_axis_thickness },
+            .color = editor_palette.success,
+            .active_color = .{ 0.176, 0.667, 0.443 },
+        },
+        .{
+            .id = "z",
+            .axis = .z,
+            .position_offset = .{ 0.0, 0.0, editor_gizmo_axis_length * 0.5 },
+            .scale = .{ editor_gizmo_axis_thickness, editor_gizmo_axis_thickness, editor_gizmo_axis_length },
+            .color = editor_palette.primary,
+            .active_color = editor_palette.accent_soft,
+        },
+    };
+
+    for (axes) |entry| {
+        const entity_id = std.fmt.allocPrint(allocator, "machina.editor.gizmo.{s}", .{entry.id}) catch return RenderError.OutOfMemory;
+        defer allocator.free(entity_id);
+        const entity = world.createEntity(entity_id, "Editor Translate Gizmo") catch |err| return mapWorldError(err);
+        world.setTransform(entity, .{
+            .position = addVec3(selected_transform.position, entry.position_offset),
+            .scale = entry.scale,
+        }) catch |err| return mapWorldError(err);
+        world.setGeometryPrimitive(entity, .{
+            .primitive = "box",
+            .segments = 0,
+            .rings = 0,
+        }) catch |err| return mapWorldError(err);
+        world.setSurfaceMaterial(entity, .{
+            .base_color = if (input.editor.dragging_axis == entry.axis) entry.active_color else entry.color,
+        }) catch |err| return mapWorldError(err);
+    }
+}
+
+fn extractSceneUiInto(allocator: std.mem.Allocator, render_world: *runtime.World, scene_world: *const runtime.World) RenderError!void {
+    _ = allocator;
+    for (0..scene_world.entityCount()) |index| {
+        const source = runtime.EntityHandle{ .index = @intCast(index) };
+        const stored = scene_world.entity(source) catch return RenderError.InvalidScene;
+        if (!hasExtractableUiComponent(scene_world, source)) {
+            continue;
+        }
+
+        const target = render_world.findEntityById(stored.id) orelse
+            (render_world.createEntity(stored.id, stored.name) catch |err| return mapWorldError(err));
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_canvas_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_rect_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_border_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_text_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_button_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_hit_area_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_command_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_scroll_view_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_vbox_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_hgroup_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_stack_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_layout_item_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_spacer_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_text_block_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_toggle_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_progress_bar_component_id);
+        try copyComponent(scene_world, render_world, source, target, runtime.ui_separator_component_id);
+    }
+}
+
+fn extractRendererInto(render_world: *runtime.World, scene_world: *const runtime.World) RenderError!void {
+    var cursor: usize = 0;
+    const query = [_][]const u8{runtime.renderer_component_id};
+    const source = scene_world.queryNext(&query, &cursor) orelse return;
+    if (scene_world.queryNext(&query, &cursor) != null) {
+        return RenderError.InvalidScene;
+    }
+    const stored = scene_world.entity(source) catch return RenderError.InvalidScene;
+    const target = render_world.findEntityById(stored.id) orelse
+        (render_world.createEntity(stored.id, stored.name) catch |err| return mapWorldError(err));
+    try copyComponent(scene_world, render_world, source, target, runtime.renderer_component_id);
+}
+
+fn hasExtractableUiComponent(world: *const runtime.World, entity: runtime.EntityHandle) bool {
+    return (world.hasComponent(entity, runtime.ui_canvas_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_rect_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_border_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_text_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_button_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_hit_area_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_command_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_scroll_view_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_vbox_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_hgroup_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_stack_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_layout_item_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_spacer_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_text_block_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_toggle_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_progress_bar_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_separator_component_id) catch false);
+}
+
+fn copyComponent(
+    source_world: *const runtime.World,
+    target_world: *runtime.World,
+    source: runtime.EntityHandle,
+    target: runtime.EntityHandle,
+    component_id: []const u8,
+) RenderError!void {
+    if (!(source_world.hasComponent(source, component_id) catch |err| return mapWorldError(err))) {
+        return;
+    }
+
+    var fields: std.ArrayList(runtime.ComponentFieldValue) = .empty;
+    const allocator = target_world.allocator;
+    defer fields.deinit(allocator);
+
+    const field_count = source_world.componentFieldCount(component_id);
+    fields.ensureTotalCapacity(allocator, field_count) catch return RenderError.OutOfMemory;
+    for (0..field_count) |field_index| {
+        const field_name = source_world.componentFieldNameAt(component_id, field_index) orelse return RenderError.InvalidScene;
+        const value = source_world.getComponentFieldValue(source, component_id, field_name) catch |err| return mapWorldError(err);
+        fields.appendAssumeCapacity(.{
+            .name = field_name,
+            .value = value,
+        });
+    }
+
+    target_world.setComponent(target, component_id, fields.items) catch |err| return mapWorldError(err);
+}
+
+const EditorVBox = struct {
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    id_prefix: []const u8,
+    x: f32,
+    y: f32,
+    row_stride: f32,
+    layout_parent: ?[]const u8 = null,
+    row: usize = 0,
+
+    fn init(
+        allocator: std.mem.Allocator,
+        world: *runtime.World,
+        id_prefix: []const u8,
+        x: f32,
+        y: f32,
+        row_stride: f32,
+    ) EditorVBox {
+        return .{
+            .allocator = allocator,
+            .world = world,
+            .id_prefix = id_prefix,
+            .x = x,
+            .y = y,
+            .row_stride = row_stride,
+        };
+    }
+
+    fn withLayoutParent(self: EditorVBox, parent: []const u8) EditorVBox {
+        var copy = self;
+        copy.layout_parent = parent;
+        return copy;
+    }
+
+    fn text(self: *EditorVBox, name: []const u8, value: []const u8, size: f32, color: [3]f32) RenderError!void {
+        const entity_id = std.fmt.allocPrint(self.allocator, "{s}.{d}", .{ self.id_prefix, self.row }) catch return RenderError.OutOfMemory;
+        defer self.allocator.free(entity_id);
+        const entity = self.world.createEntity(entity_id, name) catch |err| return mapWorldError(err);
+        const position = if (self.layout_parent != null)
+            [3]f32{ 0.0, 0.0, 0.0 }
+        else
+            [3]f32{
+                self.x,
+                self.y + @as(f32, @floatFromInt(self.row)) * self.row_stride,
+                0.0,
+            };
+        self.world.setUiText(entity, .{
+            .position = position,
+            .size = size,
+            .color = color,
+            .value = value,
+        }) catch |err| return mapWorldError(err);
+        if (self.layout_parent) |parent| {
+            self.world.setUiLayoutItem(entity, .{
+                .parent = parent,
+                .order = @intCast(self.row),
+            }) catch |err| return mapWorldError(err);
+        }
+        self.row += 1;
+    }
+};
+
+fn extractEditorShellInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
+    const top = editorTopBarRect(input);
+    const bottom = editorBottomBarRect(input);
+    const body = editorBodyRect(input);
+    const layout = editorBodyLayout(input);
+    const game_viewport = editorGameViewport(input);
+    const hovered_splitter = routeEditorSplitterAt(allocator, input) catch null;
+
+    try extractEditorShellRect(world, "machina.editor.shell.top_bar", top, editor_palette.shell);
+    try extractEditorShellRect(world, "machina.editor.shell.bottom_bar", bottom, editor_palette.shell);
+
+    const body_group = world.createEntity("machina.editor.shell.body", "Editor Body HGroup") catch |err| return mapWorldError(err);
+    world.setUiHGroup(body_group, .{
+        .position = body.position(),
+        .size = body.size3(),
+        .spacing = 0.0,
+        .padding = .{ 0.0, 0.0, 0.0 },
+    }) catch |err| return mapWorldError(err);
+
+    try extractEditorShellLayoutRect(world, "machina.editor.shell.left_sidebar", "Editor Left Sidebar", layout.left.size3(), 0, editor_palette.panel);
+    try extractEditorShellLayoutSplitter(world, input, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, .left, hovered_splitter);
+    try extractEditorSplitterHitTarget(world, input, .left);
+    try extractEditorShellLayoutSpacer(world, "machina.editor.shell.game_viewport", "Editor Game Viewport Slot", .{ editor_min_game_viewport_width, body.height, 0.0 }, 2, 1.0);
+    try extractEditorShellLayoutSplitter(world, input, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, .right, hovered_splitter);
+    try extractEditorSplitterHitTarget(world, input, .right);
+    try extractEditorShellLayoutRect(world, "machina.editor.shell.right_sidebar", "Editor Right Sidebar", layout.right.size3(), 4, editor_palette.panel);
+
+    const frame_color = editor_palette.panel_muted;
+    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.bottom", .{
+        .x = game_viewport.x,
+        .y = game_viewport.y + game_viewport.height - 2.0,
+        .width = game_viewport.width,
+        .height = 2.0,
+    }, frame_color);
+}
+
+fn extractEditorSplitterHitTarget(world: *runtime.World, input: FrameInput, splitter: EditorSplitter) RenderError!void {
+    const visual = editorSplitterRect(input, splitter) orelse return;
+    const hit_rect = editorSplitterHitRect(input, splitter) orelse return;
+    const id = switch (splitter) {
+        .none => return,
+        .left => "machina.editor.shell.splitter.left.hit_area",
+        .right => "machina.editor.shell.splitter.right.hit_area",
+    };
+    const name = switch (splitter) {
+        .none => return,
+        .left => "Editor Left Splitter Hit Area",
+        .right => "Editor Right Splitter Hit Area",
+    };
+    const parent = switch (splitter) {
+        .none => return,
+        .left => "machina.editor.shell.splitter.left",
+        .right => "machina.editor.shell.splitter.right",
+    };
+    const command = switch (splitter) {
+        .none => return,
+        .left => editor_command_splitter_left,
+        .right => editor_command_splitter_right,
+    };
+    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
+    world.setUiHitArea(entity, .{
+        .position = .{ hit_rect.x - visual.x, 0.0, 0.0 },
+        .size = hit_rect.size3(),
+    }) catch |err| return mapWorldError(err);
+    world.setUiButton(entity) catch |err| return mapWorldError(err);
+    world.setUiCommand(entity, .{ .command = command }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(entity, .{
+        .parent = parent,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorShellRect(world: *runtime.World, id: []const u8, rect: ScreenRect, color: [3]f32) RenderError!void {
+    const entity = world.createEntity(id, "Editor Shell Rect") catch |err| return mapWorldError(err);
+    world.setUiRect(entity, .{
+        .position = rect.position(),
+        .size = rect.size3(),
+        .color = color,
+        .corner_radius = 0.0,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorShellLayoutRect(world: *runtime.World, id: []const u8, name: []const u8, size: [3]f32, order: i32, color: [3]f32) RenderError!void {
+    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
+    world.setUiRect(entity, .{
+        .position = .{ 0.0, 0.0, 0.0 },
+        .size = size,
+        .color = color,
+        .corner_radius = 0.0,
+    }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(entity, .{
+        .parent = "machina.editor.shell.body",
+        .order = order,
+        .@"align" = "fill",
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorShellLayoutSeparator(world: *runtime.World, id: []const u8, name: []const u8, size: [3]f32, order: i32, color: [3]f32) RenderError!void {
+    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
+    world.setUiSeparator(entity, .{
+        .position = .{ 0.0, 0.0, 0.0 },
+        .size = size,
+        .color = color,
+    }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(entity, .{
+        .parent = "machina.editor.shell.body",
+        .order = order,
+        .@"align" = "fill",
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorShellLayoutSplitter(
+    world: *runtime.World,
+    input: FrameInput,
+    id: []const u8,
+    name: []const u8,
+    size: [3]f32,
+    order: i32,
+    splitter: EditorSplitter,
+    hovered_splitter: ?EditorSplitter,
+) RenderError!void {
+    if (editorSplitterVisible(input, splitter, hovered_splitter)) {
+        try extractEditorShellLayoutSeparator(world, id, name, size, order, editorSplitterColor(input, splitter, hovered_splitter));
+        return;
+    }
+
+    try extractEditorShellLayoutSpacer(world, id, name, size, order, 0.0);
+}
+
+fn extractEditorShellLayoutSpacer(world: *runtime.World, id: []const u8, name: []const u8, min_size: [3]f32, order: i32, grow: f32) RenderError!void {
+    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
+    world.setUiSpacer(entity, .{ .size = .{ 0.0, 0.0, 0.0 } }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(entity, .{
+        .parent = "machina.editor.shell.body",
+        .order = order,
+        .min_size = min_size,
+        .grow = grow,
+        .@"align" = "fill",
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractDebugOverlayInto(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    input: FrameInput,
+    scene_world: *const runtime.World,
+) RenderError!void {
+    try extractEditorShellInto(allocator, world, input);
+    try extractEditorTopBarInto(allocator, world, input);
+    try extractEditorBottomBarInto(allocator, world, input);
+
+    const has_profiles = input.system_profiles.len > 0;
+    const panel_size = editorDebugPanelSize(input);
+    const panel = editorSystemPanelRect(input);
+
+    const canvas = world.createEntity("machina.editor.debug.canvas", "Editor Debug Canvas") catch |err| return mapWorldError(err);
+    world.setUiCanvas(canvas, .{}) catch |err| return mapWorldError(err);
+
+    _ = try extractEditorPanel(world, "machina.editor.debug.panel", "Editor Debug Panel", .{
+        .x = panel.x,
+        .y = panel.y,
+        .width = panel_size[0],
+        .height = panel_size[1],
+    }, editor_palette.panel, 0.0);
+
+    if (!has_profiles) {
+        try extractEditorEntityListInto(allocator, world, scene_world, input);
+        try extractEditorComponentInspectorInto(allocator, world, scene_world, input);
+        return;
+    }
+
+    const header_text = formatSystemProfileHeader(allocator, input.system_profiles) catch return RenderError.OutOfMemory;
+    defer allocator.free(header_text);
+    const header = world.createEntity("machina.editor.debug.systems.header", "Editor Debug Systems Header") catch |err| return mapWorldError(err);
+    world.setUiText(header, .{
+        .position = editorPanelTextPosition(panel, editorSystemHeaderY(input) - panel.y),
+        .size = editor_system_text_size,
+        .color = editor_palette.text_muted,
+        .value = header_text,
+    }) catch |err| return mapWorldError(err);
+
+    const list_clip = editorSystemListClipRect(input);
+    const system_scroll = world.createEntity("machina.editor.debug.systems.scroll", "Editor Debug Systems Scroll View") catch |err| return mapWorldError(err);
+    world.setUiScrollView(system_scroll, .{
+        .position = list_clip.position,
+        .size = list_clip.size,
+        .content_offset = .{ 0.0, input.editor.system_scroll_y, 0.0 },
+    }) catch |err| return mapWorldError(err);
+
+    const row_width = list_clip.size[0];
+    const table_height = editorSystemTableContentHeight(input.system_profiles.len);
+    const system_table = world.createEntity("machina.editor.debug.systems.table", "Editor Debug Systems Table") catch |err| return mapWorldError(err);
+    world.setUiRect(system_table, .{
+        .position = .{
+            0.0,
+            editorSystemRowsY(input) - list_clip.position[1],
+            0.0,
+        },
+        .size = .{ row_width, table_height, 0.0 },
+        .color = editor_palette.shell,
+        .corner_radius = editor_panel_corner_radius,
+    }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(system_table, .{
+        .parent = "machina.editor.debug.systems.scroll",
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+
+    for (input.system_profiles, 0..) |profile, profile_index| {
+        const row_y = editor_system_card_padding_y + @as(f32, @floatFromInt(profile_index)) * editor_system_row_stride;
+        const duration_text = formatSystemProfileDuration(allocator, profile) catch return RenderError.OutOfMemory;
+        defer allocator.free(duration_text);
+        const duration_width = editorTextWidth(duration_text, editor_system_text_size);
+        const duration_x = @max(row_width - editor_system_row_duration_padding_x - duration_width, editor_system_row_label_padding_x);
+        const label_max_width = @max(duration_x - editor_system_row_label_padding_x - editor_system_field_column_gap, 1.0);
+        const label_text = fitEditorTextToWidth(allocator, profile.id, editor_system_text_size, label_max_width) catch return RenderError.OutOfMemory;
+        defer allocator.free(label_text);
+
+        const label_id = std.fmt.allocPrint(allocator, "machina.editor.debug.systems.row.{d}.label", .{profile_index}) catch return RenderError.OutOfMemory;
+        defer allocator.free(label_id);
+        _ = try extractEditorChildText(world, label_id, "Editor System Row Label", "machina.editor.debug.systems.table", .{
+            editor_system_row_label_padding_x,
+            row_y,
+            0.0,
+        }, label_text, editor_system_text_size, editor_palette.text);
+
+        const duration_id = std.fmt.allocPrint(allocator, "machina.editor.debug.systems.row.{d}.duration", .{profile_index}) catch return RenderError.OutOfMemory;
+        defer allocator.free(duration_id);
+        _ = try extractEditorChildText(world, duration_id, "Editor System Row Duration", "machina.editor.debug.systems.table", .{
+            duration_x,
+            row_y,
+            0.0,
+        }, duration_text, editor_system_text_size, editor_palette.text_muted);
+    }
+
+    try extractEditorSystemScrollbarInto(world, input, list_clip);
+    try extractEditorEntityListInto(allocator, world, scene_world, input);
+    try extractEditorComponentInspectorInto(allocator, world, scene_world, input);
+}
+
+fn extractEditorTopBarInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
+    const top = editorTopBarRect(input);
+    const title = world.createEntity("machina.editor.top.title", "Editor Top Title") catch |err| return mapWorldError(err);
+    world.setUiText(title, .{
+        .position = .{ editor_panel_padding_x, top.y + 14.0, 0.0 },
+        .size = 1.0,
+        .color = editor_palette.text_muted,
+        .value = "MACHINA",
+    }) catch |err| return mapWorldError(err);
+
+    const fps_text = formatFpsLabel(allocator, input.fps) catch return RenderError.OutOfMemory;
+    defer allocator.free(fps_text);
+    const fps = world.createEntity("machina.editor.debug.fps", "Editor Debug FPS") catch |err| return mapWorldError(err);
+    world.setUiText(fps, .{
+        .position = .{ 150.0, top.y + 14.0, 0.0 },
+        .size = editor_system_text_size,
+        .color = editor_palette.text,
+        .value = fps_text,
+    }) catch |err| return mapWorldError(err);
+
+    try extractEditorPlaybackControlsInto(world, input);
+}
+
+fn extractEditorBottomBarInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
+    const bottom = editorBottomBarRect(input);
+    const viewport = editorGameViewport(input);
+    const status = std.fmt.allocPrint(allocator, "ENTITIES {d}  COMPONENTS {d}  RENDERABLES {d}  VIEWPORT {d}x{d}", .{
+        input.editor.entity_count,
+        input.editor.component_instance_count,
+        input.editor.renderable_count,
+        @as(u32, @intFromFloat(@round(viewport.width))),
+        @as(u32, @intFromFloat(@round(viewport.height))),
+    }) catch return RenderError.OutOfMemory;
+    defer allocator.free(status);
+    const status_text = world.createEntity("machina.editor.bottom.status", "Editor Bottom Status") catch |err| return mapWorldError(err);
+    world.setUiText(status_text, .{
+        .position = .{ editor_panel_padding_x, bottom.y + 14.0, 0.0 },
+        .size = editor_system_text_size,
+        .color = editor_palette.text_muted,
+        .value = status,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorPlaybackControlsInto(world: *runtime.World, input: FrameInput) RenderError!void {
+    const play_label = if (input.editor.paused) "PLAY" else "PAUSE";
+    const play_color: [3]f32 = if (input.editor.paused) editor_palette.success else editor_palette.warning;
+    const buttons = editorPlaybackButtonSpecs(input);
+    try extractEditorButtonInto(world, buttons[0], play_label, play_color);
+    try extractEditorButtonInto(world, buttons[1], "STEP", editor_palette.panel_muted);
+}
+
+fn extractEditorButtonInto(
+    world: *runtime.World,
+    spec: EditorButtonSpec,
+    label: []const u8,
+    color: [3]f32,
+) RenderError!void {
+    const button = world.createEntity(spec.id, spec.name) catch |err| return mapWorldError(err);
+    world.setUiRect(button, .{
+        .position = spec.rect.position(),
+        .size = spec.rect.size3(),
+        .color = color,
+        .corner_radius = editor_button_corner_radius,
+    }) catch |err| return mapWorldError(err);
+    world.setUiButton(button) catch |err| return mapWorldError(err);
+    world.setUiCommand(button, .{ .command = spec.command }) catch |err| return mapWorldError(err);
+
+    var label_id_buffer: [96]u8 = undefined;
+    const label_id = std.fmt.bufPrint(&label_id_buffer, "{s}.label", .{spec.id}) catch return RenderError.InvalidScene;
+    var label_name_buffer: [96]u8 = undefined;
+    const label_name = std.fmt.bufPrint(&label_name_buffer, "{s} Label", .{spec.name}) catch return RenderError.InvalidScene;
+    const text = world.createEntity(label_id, label_name) catch |err| return mapWorldError(err);
+    world.setUiText(text, .{
+        .position = .{ 0.0, 0.0, 0.0 },
+        .size = 1.0,
+        .color = editor_palette.text,
+        .value = label,
+    }) catch |err| return mapWorldError(err);
+    world.setUiTextBlock(text, .{
+        .size = spec.rect.size3(),
+        .horizontal_align = "center",
+        .vertical_align = "center",
+    }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(text, .{
+        .parent = spec.id,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorSystemScrollbarInto(world: *runtime.World, input: FrameInput, list_clip: UiClipRect) RenderError!void {
+    const profile_count = editorSystemProfileScrollCount(input);
+    if (!editorSystemNeedsScrollForInput(input, profile_count)) {
+        return;
+    }
+
+    const track_height = list_clip.size[1];
+    const track_x = list_clip.position[0] + list_clip.size[0] + editor_scrollbar_gap;
+    const track = world.createEntity("machina.editor.debug.systems.scrollbar.track", "Editor System Scrollbar Track") catch |err| return mapWorldError(err);
+    world.setUiRect(track, .{
+        .position = .{ track_x, list_clip.position[1], 0.0 },
+        .size = .{ editor_scrollbar_width, track_height, 0.0 },
+        .color = editor_palette.panel_muted,
+        .corner_radius = editor_scrollbar_width * 0.5,
+    }) catch |err| return mapWorldError(err);
+
+    const visible_rows = @as(f32, @floatFromInt(editorSystemVisibleRows(input)));
+    const total_rows = @as(f32, @floatFromInt(profile_count));
+    const thumb_height = @max(track_height * visible_rows / @max(total_rows, visible_rows), editor_scrollbar_width * 2.0);
+    const max_scroll = editorSystemMaxScrollY(input, profile_count);
+    const scroll_t = if (max_scroll > 0.0) std.math.clamp(input.editor.system_scroll_y / max_scroll, 0.0, 1.0) else 0.0;
+    const thumb_y = list_clip.position[1] + (track_height - thumb_height) * scroll_t;
+
+    const thumb = world.createEntity("machina.editor.debug.systems.scrollbar.thumb", "Editor System Scrollbar Thumb") catch |err| return mapWorldError(err);
+    world.setUiRect(thumb, .{
+        .position = .{ track_x, thumb_y, 0.0 },
+        .size = .{ editor_scrollbar_width, thumb_height, 0.0 },
+        .color = editor_palette.accent_soft,
+        .corner_radius = editor_scrollbar_width * 0.5,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorEntityListInto(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    scene_world: *const runtime.World,
+    input: FrameInput,
+) RenderError!void {
+    const panel = editorEntityPanelRect(input);
+    _ = try extractEditorPanel(world, "machina.editor.entities.panel", "Editor Entities Panel", panel, editor_palette.panel, 0.0);
+
+    const header_text = std.fmt.allocPrint(allocator, "ENTITIES {d}", .{scene_world.entityCount()}) catch return RenderError.OutOfMemory;
+    defer allocator.free(header_text);
+    try extractEditorText(world, "machina.editor.entities.header", "Editor Entities Header", editorPanelTextPosition(panel, editorSystemHeaderYOffset()), header_text, editor_entity_text_size, editor_palette.text_muted);
+
+    if (scene_world.entityCount() == 0) {
+        try extractEditorText(world, "machina.editor.entities.empty", "Editor Entities Empty", editorPanelTextPosition(panel, editorSystemRowsYOffset()), "NO ENTITIES", editor_entity_text_size, editor_palette.text_dim);
+        return;
+    }
+
+    const list_clip = editorEntityListClipRect(scene_world, input);
+    const entity_scroll = world.createEntity("machina.editor.entities.scroll", "Editor Entities Scroll View") catch |err| return mapWorldError(err);
+    world.setUiScrollView(entity_scroll, .{
+        .position = list_clip.position,
+        .size = list_clip.size,
+        .content_offset = .{ 0.0, input.editor.entity_scroll_y, 0.0 },
+    }) catch |err| return mapWorldError(err);
+
+    const row_width = list_clip.size[0];
+    const table_height = editorEntityTableContentHeight(scene_world.entityCount());
+    const entity_table = world.createEntity("machina.editor.entities.table", "Editor Entities Table") catch |err| return mapWorldError(err);
+    world.setUiRect(entity_table, .{
+        .position = .{ 0.0, 0.0, 0.0 },
+        .size = .{ row_width, table_height, 0.0 },
+        .color = editor_palette.shell,
+        .corner_radius = editor_panel_corner_radius,
+    }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(entity_table, .{
+        .parent = "machina.editor.entities.scroll",
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+
+    const range = editorEntityVisibleRange(scene_world, input);
+    for (range.start..range.end) |entity_index| {
+        const handle = editorEntityHandleAt(scene_world, entity_index) orelse continue;
+        const entity = scene_world.entity(handle) catch continue;
+        const row_y = editor_entity_card_padding_y + @as(f32, @floatFromInt(entity_index)) * editor_entity_row_stride;
+        const is_selected = editorEntityHandlesEqual(input.editor.selected_entity, handle);
+        if (is_selected) {
+            const highlight_id = std.fmt.allocPrint(allocator, "machina.editor.entities.row.{d}.highlight", .{entity_index}) catch return RenderError.OutOfMemory;
+            defer allocator.free(highlight_id);
+            const highlight = try extractEditorPanel(world, highlight_id, "Editor Entity Row Highlight", .{
+                .x = 0.0,
+                .y = row_y - 8.0,
+                .width = row_width,
+                .height = editor_entity_row_stride,
+            }, editor_palette.panel_muted, editor_button_corner_radius);
+            world.setUiLayoutItem(highlight, .{
+                .parent = "machina.editor.entities.table",
+                .order = @intCast(entity_index),
+            }) catch |err| return mapWorldError(err);
+        }
+
+        const component_count = editorEntityComponentCount(scene_world, handle);
+        const component_text = std.fmt.allocPrint(allocator, "{d}C", .{component_count}) catch return RenderError.OutOfMemory;
+        defer allocator.free(component_text);
+        const component_width = editorTextWidth(component_text, editor_entity_text_size);
+        const component_x = @max(row_width - editor_entity_row_component_padding_x - component_width, editor_entity_row_label_padding_x);
+        const label_max_width = @max(component_x - editor_entity_row_label_padding_x - editor_entity_field_column_gap, 1.0);
+        const raw_label = if (entity.name.len > 0) entity.name else entity.id;
+        const label_text = fitEditorTextToWidth(allocator, raw_label, editor_entity_text_size, label_max_width) catch return RenderError.OutOfMemory;
+        defer allocator.free(label_text);
+
+        const label_id = std.fmt.allocPrint(allocator, "machina.editor.entities.row.{d}.label", .{entity_index}) catch return RenderError.OutOfMemory;
+        defer allocator.free(label_id);
+        _ = try extractEditorChildText(world, label_id, "Editor Entity Row Label", "machina.editor.entities.table", .{
+            editor_entity_row_label_padding_x,
+            row_y,
+            0.0,
+        }, label_text, editor_entity_text_size, if (is_selected) editor_palette.accent_soft else editor_palette.text);
+
+        const component_id = std.fmt.allocPrint(allocator, "machina.editor.entities.row.{d}.components", .{entity_index}) catch return RenderError.OutOfMemory;
+        defer allocator.free(component_id);
+        _ = try extractEditorChildText(world, component_id, "Editor Entity Row Component Count", "machina.editor.entities.table", .{
+            component_x,
+            row_y,
+            0.0,
+        }, component_text, editor_entity_text_size, editor_palette.text_muted);
+    }
+
+    try extractEditorEntityScrollbarInto(world, scene_world, input, list_clip);
+}
+
+fn extractEditorEntityScrollbarInto(world: *runtime.World, scene_world: *const runtime.World, input: FrameInput, list_clip: UiClipRect) RenderError!void {
+    if (!editorEntityNeedsScroll(scene_world, input)) {
+        return;
+    }
+
+    const track_height = list_clip.size[1];
+    const track_x = list_clip.position[0] + list_clip.size[0] + editor_scrollbar_gap;
+    const track = world.createEntity("machina.editor.entities.scrollbar.track", "Editor Entities Scrollbar Track") catch |err| return mapWorldError(err);
+    world.setUiRect(track, .{
+        .position = .{ track_x, list_clip.position[1], 0.0 },
+        .size = .{ editor_scrollbar_width, track_height, 0.0 },
+        .color = editor_palette.panel_muted,
+        .corner_radius = editor_scrollbar_width * 0.5,
+    }) catch |err| return mapWorldError(err);
+
+    const visible_rows = @as(f32, @floatFromInt(editorEntityVisibleRows(input)));
+    const total_rows = @as(f32, @floatFromInt(scene_world.entityCount()));
+    const thumb_height = @max(track_height * visible_rows / @max(total_rows, visible_rows), editor_scrollbar_width * 2.0);
+    const max_scroll = editorEntityMaxScrollY(scene_world, input);
+    const scroll_t = if (max_scroll > 0.0) std.math.clamp(input.editor.entity_scroll_y / max_scroll, 0.0, 1.0) else 0.0;
+    const thumb_y = list_clip.position[1] + (track_height - thumb_height) * scroll_t;
+
+    const thumb = world.createEntity("machina.editor.entities.scrollbar.thumb", "Editor Entities Scrollbar Thumb") catch |err| return mapWorldError(err);
+    world.setUiRect(thumb, .{
+        .position = .{ track_x, thumb_y, 0.0 },
+        .size = .{ editor_scrollbar_width, thumb_height, 0.0 },
+        .color = editor_palette.accent_soft,
+        .corner_radius = editor_scrollbar_width * 0.5,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorComponentInspectorInto(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    scene_world: *const runtime.World,
+    input: FrameInput,
+) RenderError!void {
+    const sidebar = editorSidebarPanelRect(editorRightSidebarRect(input));
+    const panel_x = sidebar.x;
+    const panel_y = sidebar.y;
+    const panel_width = sidebar.width;
+    const panel_height = sidebar.height;
+
+    _ = try extractEditorPanel(world, "machina.editor.inspector.panel", "Editor Inspector Panel", .{
+        .x = panel_x,
+        .y = panel_y,
+        .width = panel_width,
+        .height = panel_height,
+    }, editor_palette.panel, 0.0);
+
+    try extractEditorText(world, "machina.editor.inspector.title", "Editor Inspector Title", .{
+        panel_x + editor_panel_padding_x,
+        panel_y + editor_panel_padding_y,
+        0.0,
+    }, "COMPONENTS", editor_inspector_text_size, editor_palette.text);
+
+    const selected = input.editor.selected_entity orelse {
+        try extractEditorText(world, "machina.editor.inspector.empty", "Editor Inspector Empty", .{
+            panel_x + editor_panel_padding_x,
+            panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.0,
+            0.0,
+        }, "NO ENTITY SELECTED", editor_inspector_text_size, editor_palette.text);
+        try extractEditorText(world, "machina.editor.inspector.empty.hint", "Editor Inspector Empty Hint", .{
+            panel_x + editor_panel_padding_x,
+            panel_y + editor_panel_padding_y + editor_inspector_line_stride * 3.0,
+            0.0,
+        }, "CLICK A MESH", editor_inspector_text_size, editor_palette.text_dim);
+        return;
+    };
+
+    const entity = scene_world.entity(selected) catch {
+        try extractEditorText(world, "machina.editor.inspector.unavailable", "Editor Inspector Unavailable", .{
+            panel_x + editor_panel_padding_x,
+            panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.0,
+            0.0,
+        }, "SELECTION UNAVAILABLE", editor_inspector_text_size, editor_palette.danger);
+        return;
+    };
+
+    const entity_header = std.fmt.allocPrint(allocator, "{s}  {s}", .{ entity.name, entity.id }) catch return RenderError.OutOfMemory;
+    defer allocator.free(entity_header);
+    try extractEditorText(world, "machina.editor.inspector.entity", "Editor Inspector Entity", .{
+        panel_x + editor_panel_padding_x,
+        panel_y + editor_panel_padding_y + editor_inspector_line_stride,
+        0.0,
+    }, entity_header, editor_inspector_text_size, editor_palette.text_muted);
+
+    const scroll_clip = editorInspectorScrollClipRect(input);
+    const scroll = world.createEntity("machina.editor.inspector.scroll", "Editor Inspector Scroll View") catch |err| return mapWorldError(err);
+    world.setUiScrollView(scroll, .{
+        .position = scroll_clip.position,
+        .size = scroll_clip.size,
+        .content_offset = .{ 0.0, input.editor.inspector_scroll_y, 0.0 },
+    }) catch |err| return mapWorldError(err);
+
+    const stack_id = "machina.editor.inspector.components";
+    const stack = world.createEntity(stack_id, "Editor Component Stack") catch |err| return mapWorldError(err);
+    world.setUiVBox(stack, .{
+        .position = .{ 0.0, 0.0, 0.0 },
+        .spacing = editor_inspector_card_gap,
+    }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(stack, .{
+        .parent = "machina.editor.inspector.scroll",
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+
+    const card_width = @max(scroll_clip.size[0], 1.0);
+    const field_stride = editor_inspector_field_row_stride;
+    var component_index: usize = 0;
+    var stack_order: i32 = 0;
+    var components = scene_world.entityComponents(selected) catch {
+        return;
+    };
+    while (components.next()) |component_id| {
+        if (component_index > 0) {
+            const separator_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.separator.{d}", .{component_index}) catch return RenderError.OutOfMemory;
+            defer allocator.free(separator_id);
+            const separator = world.createEntity(separator_id, "Editor Component Separator") catch |err| return mapWorldError(err);
+            world.setUiSeparator(separator, .{
+                .position = .{ 0.0, 0.0, 0.0 },
+                .size = .{ card_width, editor_inspector_separator_height, 0.0 },
+                .color = editor_palette.panel_muted,
+            }) catch |err| return mapWorldError(err);
+            world.setUiLayoutItem(separator, .{
+                .parent = stack_id,
+                .order = stack_order,
+            }) catch |err| return mapWorldError(err);
+            stack_order += 1;
+        }
+
+        const field_count = scene_world.componentFieldCount(component_id);
+        const card_height = editorInspectorComponentCardHeight(scene_world, component_id);
+        const card_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}", .{component_index}) catch return RenderError.OutOfMemory;
+        defer allocator.free(card_id);
+        const card = try extractEditorPanel(world, card_id, "Editor Component Card", .{
+            .x = 0.0,
+            .y = 0.0,
+            .width = card_width,
+            .height = card_height,
+        }, editor_palette.shell, editor_panel_corner_radius);
+        world.setUiLayoutItem(card, .{
+            .parent = stack_id,
+            .order = stack_order,
+        }) catch |err| return mapWorldError(err);
+        stack_order += 1;
+
+        const title_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.title", .{component_index}) catch return RenderError.OutOfMemory;
+        defer allocator.free(title_id);
+        const title_max_width = @max(card_width - editor_inspector_card_padding_x * 2.0, 1.0);
+        const title_value = fitEditorTextToWidth(allocator, component_id, editor_inspector_text_size, title_max_width) catch return RenderError.OutOfMemory;
+        defer allocator.free(title_value);
+        _ = try extractEditorChildText(world, title_id, "Editor Component Title", card_id, .{
+            editor_inspector_card_padding_x,
+            editor_inspector_card_padding_y,
+            0.0,
+        }, title_value, editor_inspector_text_size, editor_palette.accent_soft);
+
+        for (0..field_count) |field_index| {
+            const field_name = scene_world.componentFieldNameAt(component_id, field_index) orelse continue;
+            const value = scene_world.getComponentFieldValue(selected, component_id, field_name) catch continue;
+            const field_y = editor_inspector_card_padding_y + editorTextHeight(editor_inspector_text_size) + editor_panel_label_gap + @as(f32, @floatFromInt(field_index)) * field_stride;
+            try extractEditorPropertyRow(allocator, world, .{
+                .parent_id = card_id,
+                .component_index = component_index,
+                .field_index = field_index,
+                .component_id = component_id,
+                .field_name = field_name,
+                .value = value,
+                .card_width = card_width,
+                .field_y = field_y,
+                .text_input = input.editor.text_input,
+            });
+        }
+
+        component_index += 1;
+    }
+}
+
+fn extractEditorText(
+    world: *runtime.World,
+    id: []const u8,
+    name: []const u8,
+    position: [3]f32,
+    value: []const u8,
+    size: f32,
+    color: [3]f32,
+) RenderError!void {
+    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
+    world.setUiText(entity, .{
+        .position = position,
+        .size = size,
+        .color = color,
+        .value = value,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorPanel(
+    world: *runtime.World,
+    id: []const u8,
+    name: []const u8,
+    rect: ScreenRect,
+    color: [3]f32,
+    corner_radius: f32,
+) RenderError!runtime.EntityHandle {
+    const panel = world.createEntity(id, name) catch |err| return mapWorldError(err);
+    world.setUiRect(panel, .{
+        .position = rect.position(),
+        .size = rect.size3(),
+        .color = color,
+        .corner_radius = corner_radius,
+    }) catch |err| return mapWorldError(err);
+    return panel;
+}
+
+fn extractEditorChildText(
+    world: *runtime.World,
+    id: []const u8,
+    name: []const u8,
+    parent: []const u8,
+    position: [3]f32,
+    value: []const u8,
+    size: f32,
+    color: [3]f32,
+) RenderError!runtime.EntityHandle {
+    try extractEditorText(world, id, name, position, value, size, color);
+    const entity = world.findEntityById(id) orelse return RenderError.InvalidScene;
+    world.setUiLayoutItem(entity, .{ .parent = parent }) catch |err| return mapWorldError(err);
+    return entity;
+}
+
+fn formatInspectorFieldValue(allocator: std.mem.Allocator, value: runtime.ComponentValue) error{OutOfMemory}![]const u8 {
+    return switch (value) {
+        .boolean => |payload| std.fmt.allocPrint(allocator, "{s}", .{if (payload) "TRUE" else "FALSE"}),
+        .int => |payload| std.fmt.allocPrint(allocator, "{d}", .{payload}),
+        .float => |payload| std.fmt.allocPrint(allocator, "{d:.3}", .{payload}),
+        .vec3 => |payload| std.fmt.allocPrint(allocator, "{d:.2} {d:.2} {d:.2}", .{ payload[0], payload[1], payload[2] }),
+        .string => |payload| blk: {
+            const max_len: usize = 26;
+            const visible = if (payload.len > max_len) payload[0..max_len] else payload;
+            const suffix = if (payload.len > max_len) "..." else "";
+            break :blk std.fmt.allocPrint(allocator, "{s}{s}", .{ visible, suffix });
+        },
+    };
+}
+
+const EditorPropertyRowSpec = struct {
+    parent_id: []const u8,
+    component_index: usize,
+    field_index: usize,
+    component_id: []const u8,
+    field_name: []const u8,
+    value: runtime.ComponentValue,
+    card_width: f32,
+    field_y: f32,
+    text_input: EditorTextInputFrame = .{},
+};
+
+fn extractEditorPropertyRow(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    spec: EditorPropertyRowSpec,
+) RenderError!void {
+    const label_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.label", .{ spec.component_index, spec.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(label_id);
+
+    const value_x = editorInspectorFieldValueX(spec.card_width);
+    const label_max_width = @max(value_x - editor_inspector_card_padding_x - editor_inspector_field_column_gap, 1.0);
+    const label_text = fitEditorTextToWidth(allocator, spec.field_name, editor_inspector_text_size, label_max_width) catch return RenderError.OutOfMemory;
+    defer allocator.free(label_text);
+
+    _ = try extractEditorChildText(world, label_id, "Editor Component Field Label", spec.parent_id, .{
+        editor_inspector_card_padding_x,
+        spec.field_y,
+        0.0,
+    }, label_text, editor_inspector_text_size, editor_palette.text_muted);
+
+    switch (spec.value) {
+        .vec3 => |payload| {
+            const is_color = editorFieldLooksLikeColor(spec.field_name);
+            const swatch_total_width = if (is_color) editor_inspector_swatch_size + editor_inspector_input_gap else 0.0;
+            const total_width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0);
+            if (is_color) {
+                try extractEditorColorSwatch(allocator, world, spec, .{
+                    .x = value_x,
+                    .color = payload,
+                });
+            }
+            const lane_start_x = value_x + swatch_total_width;
+            const lane_total_width = @max(total_width - swatch_total_width, 1.0);
+            const lane_label_total_width = editor_inspector_lane_label_width + editor_inspector_lane_label_gap;
+            const lane_width = @max((lane_total_width - lane_label_total_width * 3.0 - editor_inspector_input_gap * 2.0) / 3.0, 1.0);
+            for (0..3) |lane_index| {
+                var lane_buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len;
+                const lane: u2 = @intCast(lane_index);
+                const label_x = lane_start_x + @as(f32, @floatFromInt(lane_index)) * (lane_label_total_width + lane_width + editor_inspector_input_gap);
+                try extractEditorVec3LaneLabel(allocator, world, spec, .{
+                    .lane = lane,
+                    .x = label_x,
+                    .color = editorVec3LaneColor(lane),
+                });
+                const is_focused = editorTextInputFocuses(spec.text_input, spec.component_id, spec.field_name, lane);
+                const value_text = if (is_focused)
+                    spec.text_input.text()
+                else
+                    std.fmt.bufPrint(&lane_buffer, "{d:.2}", .{payload[lane]}) catch "";
+                try extractEditorPropertyInputBox(allocator, world, spec, .{
+                    .lane = lane,
+                    .x = label_x + lane_label_total_width,
+                    .width = lane_width,
+                    .text = value_text,
+                    .focused = is_focused,
+                    .cursor = if (is_focused) spec.text_input.cursor else value_text.len,
+                    .selection_anchor = if (is_focused) spec.text_input.selection_anchor else value_text.len,
+                });
+            }
+        },
+        .boolean => |payload| {
+            try extractEditorBooleanToggle(allocator, world, spec, .{
+                .x = value_x,
+                .width = @min(editor_inspector_toggle_width, @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0)),
+                .value = payload,
+            });
+        },
+        .string => |payload| {
+            if (editorFieldIsPrimitiveSelector(spec.component_id, spec.field_name)) {
+                try extractEditorPrimitiveSelector(allocator, world, spec, .{
+                    .x = value_x,
+                    .width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0),
+                    .value = payload,
+                });
+            } else {
+                var value_buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len;
+                const is_focused = editorTextInputFocuses(spec.text_input, spec.component_id, spec.field_name, 0);
+                const value_text = if (is_focused)
+                    spec.text_input.text()
+                else
+                    formatEditorInputValue(&value_buffer, spec.value, 0) orelse "";
+                try extractEditorPropertyInputBox(allocator, world, spec, .{
+                    .lane = null,
+                    .x = value_x,
+                    .width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0),
+                    .text = value_text,
+                    .focused = is_focused,
+                    .cursor = if (is_focused) spec.text_input.cursor else value_text.len,
+                    .selection_anchor = if (is_focused) spec.text_input.selection_anchor else value_text.len,
+                });
+            }
+        },
+        else => {
+            var value_buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len;
+            const is_focused = editorTextInputFocuses(spec.text_input, spec.component_id, spec.field_name, 0);
+            const value_text = if (is_focused)
+                spec.text_input.text()
+            else
+                formatEditorInputValue(&value_buffer, spec.value, 0) orelse "";
+            try extractEditorPropertyInputBox(allocator, world, spec, .{
+                .lane = null,
+                .x = value_x,
+                .width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0),
+                .text = value_text,
+                .focused = is_focused,
+                .cursor = if (is_focused) spec.text_input.cursor else value_text.len,
+                .selection_anchor = if (is_focused) spec.text_input.selection_anchor else value_text.len,
+            });
+        },
+    }
+}
+
+const EditorPropertyInputBoxSpec = struct {
+    lane: ?u2,
+    x: f32,
+    width: f32,
+    text: []const u8,
+    focused: bool,
+    cursor: usize,
+    selection_anchor: usize,
+};
+
+const EditorVec3LaneLabelSpec = struct {
+    lane: u2,
+    x: f32,
+    color: [3]f32,
+};
+
+fn extractEditorVec3LaneLabel(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    row: EditorPropertyRowSpec,
+    label: EditorVec3LaneLabelSpec,
+) RenderError!void {
+    const label_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.lane_label.{d}", .{ row.component_index, row.field_index, label.lane }) catch return RenderError.OutOfMemory;
+    defer allocator.free(label_id);
+    _ = try extractEditorChildText(world, label_id, "Editor Property Vec3 Lane Label", row.parent_id, .{
+        label.x,
+        row.field_y,
+        0.0,
+    }, editorVec3LaneLabel(label.lane), editor_inspector_text_size, label.color);
+}
+
+const EditorBooleanToggleSpec = struct {
+    x: f32,
+    width: f32,
+    value: bool,
+};
+
+fn extractEditorBooleanToggle(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    row: EditorPropertyRowSpec,
+    toggle: EditorBooleanToggleSpec,
+) RenderError!void {
+    const toggle_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.toggle", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(toggle_id);
+    const label_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.toggle.label", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(label_id);
+
+    const color = if (toggle.value) editor_palette.input_active else editor_palette.input;
+    const toggle_entity = try extractEditorPanel(world, toggle_id, "Editor Property Boolean Toggle", .{
+        .x = toggle.x,
+        .y = row.field_y - 4.0,
+        .width = toggle.width,
+        .height = editor_inspector_input_height,
+    }, color, editor_inspector_input_corner_radius);
+    world.setUiLayoutItem(toggle_entity, .{
+        .parent = row.parent_id,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+    world.setUiBorder(toggle_entity, .{
+        .color = if (toggle.value) editor_palette.accent_soft else editor_palette.text_dim,
+        .thickness = editor_inspector_input_border_thickness,
+    }) catch |err| return mapWorldError(err);
+
+    const label = if (toggle.value) "ON" else "OFF";
+    const label_width = editorTextWidth(label, editor_inspector_text_size);
+    const label_x = @max((toggle.width - label_width) * 0.5, editor_inspector_input_padding_x);
+    const text = try extractEditorChildText(world, label_id, "Editor Property Boolean Toggle Label", toggle_id, .{
+        label_x,
+        2.0,
+        0.0,
+    }, label, editor_inspector_text_size, editor_palette.text);
+    world.setUiLayoutItem(text, .{
+        .parent = toggle_id,
+        .order = 1,
+    }) catch |err| return mapWorldError(err);
+}
+
+const EditorPrimitiveSelectorSpec = struct {
+    x: f32,
+    width: f32,
+    value: []const u8,
+};
+
+fn extractEditorPrimitiveSelector(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    row: EditorPropertyRowSpec,
+    selector: EditorPrimitiveSelectorSpec,
+) RenderError!void {
+    const selector_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.select", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(selector_id);
+    const value_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.select.value", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(value_id);
+
+    const box = try extractEditorPanel(world, selector_id, "Editor Property Primitive Selector", .{
+        .x = selector.x,
+        .y = row.field_y - 4.0,
+        .width = selector.width,
+        .height = editor_inspector_input_height,
+    }, editor_palette.input, editor_inspector_input_corner_radius);
+    world.setUiLayoutItem(box, .{
+        .parent = row.parent_id,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+    world.setUiBorder(box, .{
+        .color = editor_palette.text_dim,
+        .thickness = editor_inspector_input_border_thickness,
+    }) catch |err| return mapWorldError(err);
+
+    const label = std.fmt.allocPrint(allocator, "{s} >", .{selector.value}) catch return RenderError.OutOfMemory;
+    defer allocator.free(label);
+    const fitted = fitEditorTextToWidth(allocator, label, editor_inspector_text_size, @max(selector.width - editor_inspector_input_padding_x * 2.0, 1.0)) catch return RenderError.OutOfMemory;
+    defer allocator.free(fitted);
+    const text = try extractEditorChildText(world, value_id, "Editor Property Primitive Selector Value", selector_id, .{
+        editor_inspector_input_padding_x,
+        2.0,
+        0.0,
+    }, fitted, editor_inspector_text_size, editor_palette.text);
+    world.setUiLayoutItem(text, .{
+        .parent = selector_id,
+        .order = 1,
+    }) catch |err| return mapWorldError(err);
+}
+
+const EditorColorSwatchSpec = struct {
+    x: f32,
+    color: [3]f32,
+};
+
+fn extractEditorColorSwatch(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    row: EditorPropertyRowSpec,
+    swatch: EditorColorSwatchSpec,
+) RenderError!void {
+    const swatch_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.swatch", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(swatch_id);
+    const safe_color = [3]f32{
+        clamp01(swatch.color[0]),
+        clamp01(swatch.color[1]),
+        clamp01(swatch.color[2]),
+    };
+    const entity = try extractEditorPanel(world, swatch_id, "Editor Property Color Swatch", .{
+        .x = swatch.x,
+        .y = row.field_y - 4.0,
+        .width = editor_inspector_swatch_size,
+        .height = editor_inspector_input_height,
+    }, safe_color, editor_inspector_input_corner_radius);
+    world.setUiLayoutItem(entity, .{
+        .parent = row.parent_id,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+    world.setUiBorder(entity, .{
+        .color = editor_palette.text_dim,
+        .thickness = editor_inspector_input_border_thickness,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractEditorPropertyInputBox(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    row: EditorPropertyRowSpec,
+    input: EditorPropertyInputBoxSpec,
+) RenderError!void {
+    const input_id = if (input.lane) |lane|
+        std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.input.{d}", .{ row.component_index, row.field_index, lane }) catch return RenderError.OutOfMemory
+    else
+        std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.input", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(input_id);
+    const value_id = if (input.lane) |lane|
+        std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.value.{d}", .{ row.component_index, row.field_index, lane }) catch return RenderError.OutOfMemory
+    else
+        std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.value", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(value_id);
+
+    const box = try extractEditorPanel(world, input_id, "Editor Property Text Input", .{
+        .x = input.x,
+        .y = row.field_y - 4.0,
+        .width = input.width,
+        .height = editor_inspector_input_height,
+    }, editor_palette.input, editor_inspector_input_corner_radius);
+    world.setUiLayoutItem(box, .{
+        .parent = row.parent_id,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+    if (input.focused) {
+        world.setUiBorder(box, .{
+            .color = editor_palette.accent_soft,
+            .thickness = editor_inspector_input_border_thickness,
+        }) catch |err| return mapWorldError(err);
+    }
+
+    const selection_start = @min(input.cursor, input.selection_anchor);
+    const selection_end = @max(input.cursor, input.selection_anchor);
+    if (input.focused and selection_start < selection_end) {
+        const selection_id = if (input.lane) |lane|
+            std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.selection.{d}", .{ row.component_index, row.field_index, lane }) catch return RenderError.OutOfMemory
+        else
+            std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.selection", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+        defer allocator.free(selection_id);
+        const start_x = std.math.clamp(
+            editor_inspector_input_padding_x + editorTextWidth(input.text[0..@min(selection_start, input.text.len)], editor_inspector_text_size),
+            editor_inspector_input_padding_x,
+            @max(input.width - editor_inspector_input_padding_x, editor_inspector_input_padding_x),
+        );
+        const end_x = std.math.clamp(
+            editor_inspector_input_padding_x + editorTextWidth(input.text[0..@min(selection_end, input.text.len)], editor_inspector_text_size),
+            editor_inspector_input_padding_x,
+            @max(input.width - editor_inspector_input_padding_x, editor_inspector_input_padding_x),
+        );
+        const selection = try extractEditorPanel(world, selection_id, "Editor Property Text Selection", .{
+            .x = start_x,
+            .y = editor_inspector_selection_padding_y,
+            .width = @max(end_x - start_x, 1.0),
+            .height = editorTextHeight(editor_inspector_text_size) - editor_inspector_selection_padding_y * 0.5,
+        }, editor_palette.input_selection, 2.0);
+        world.setUiLayoutItem(selection, .{
+            .parent = input_id,
+            .order = 0,
+        }) catch |err| return mapWorldError(err);
+    }
+
+    const text_max_width = @max(input.width - editor_inspector_input_padding_x * 2.0, 1.0);
+    const fitted_text = fitEditorTextToWidth(allocator, input.text, editor_inspector_text_size, text_max_width) catch return RenderError.OutOfMemory;
+    defer allocator.free(fitted_text);
+    const text_entity = try extractEditorChildText(world, value_id, "Editor Property Text Input Value", input_id, .{
+        editor_inspector_input_padding_x,
+        2.0,
+        0.0,
+    }, fitted_text, editor_inspector_text_size, if (input.focused) editor_palette.text else editor_palette.text_muted);
+    world.setUiLayoutItem(text_entity, .{
+        .parent = input_id,
+        .order = 1,
+    }) catch |err| return mapWorldError(err);
+
+    if (input.focused) {
+        const cursor_x = std.math.clamp(
+            editor_inspector_input_padding_x + editorTextWidth(input.text[0..@min(input.cursor, input.text.len)], editor_inspector_text_size),
+            editor_inspector_input_padding_x,
+            @max(input.width - editor_inspector_input_padding_x, editor_inspector_input_padding_x),
+        );
+        const caret_id = if (input.lane) |lane|
+            std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.caret.{d}", .{ row.component_index, row.field_index, lane }) catch return RenderError.OutOfMemory
+        else
+            std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.caret", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+        defer allocator.free(caret_id);
+        const caret = try extractEditorPanel(world, caret_id, "Editor Property Text Input Caret", .{
+            .x = cursor_x,
+            .y = 4.0,
+            .width = editor_inspector_caret_width,
+            .height = editorTextHeight(editor_inspector_text_size) - 4.0,
+        }, editor_palette.accent_soft, 0.0);
+        world.setUiLayoutItem(caret, .{
+            .parent = input_id,
+            .order = 2,
+        }) catch |err| return mapWorldError(err);
+    }
+}
+
+fn editorTextInputFocuses(input: EditorTextInputFrame, component_id: []const u8, field_name: []const u8, lane: u2) bool {
+    return input.active and
+        input.selection.vec3_lane == lane and
+        std.mem.eql(u8, input.selection.componentId(), component_id) and
+        std.mem.eql(u8, input.selection.fieldName(), field_name);
+}
+
+fn editorTextHeight(size: f32) f32 {
+    return @as(f32, @floatFromInt(ui_font.height)) * size;
+}
+
+fn editorTextWidth(value: []const u8, size: f32) f32 {
+    return @as(f32, @floatFromInt(value.len * ui_font.advance)) * size;
+}
+
+fn editorInspectorFieldValueX(card_width: f32) f32 {
+    const preferred = editor_inspector_field_value_column_x;
+    const max_start = @max(card_width - editor_inspector_card_padding_x - @as(f32, @floatFromInt(ui_font.advance)) * 3.0, editor_inspector_card_padding_x);
+    return std.math.clamp(preferred, editor_inspector_card_padding_x, max_start);
+}
+
+fn fitEditorTextToWidth(allocator: std.mem.Allocator, value: []const u8, size: f32, max_width: f32) error{OutOfMemory}![]u8 {
+    if (editorTextWidth(value, size) <= max_width) {
+        return allocator.dupe(u8, value);
+    }
+
+    const suffix = "...";
+    const glyph_width = @as(f32, @floatFromInt(ui_font.advance)) * size;
+    const suffix_width = editorTextWidth(suffix, size);
+    if (max_width <= 0.0 or glyph_width <= 0.0) {
+        return allocator.dupe(u8, "");
+    }
+    if (max_width < suffix_width) {
+        const glyph_count = @min(suffix.len, @as(usize, @intFromFloat(@floor(max_width / glyph_width))));
+        return allocator.dupe(u8, suffix[0..glyph_count]);
+    }
+    if (max_width == suffix_width) {
+        return allocator.dupe(u8, suffix);
+    }
+
+    const available_prefix_width = max_width - suffix_width;
+    const prefix_len = @min(value.len, @as(usize, @intFromFloat(@floor(available_prefix_width / glyph_width))));
+    return std.fmt.allocPrint(allocator, "{s}{s}", .{ value[0..prefix_len], suffix });
+}
+
+fn editorPanelTextPosition(panel: ScreenRect, local_y: f32) [3]f32 {
+    return .{ panel.x + editor_panel_padding_x, panel.y + local_y, 0.0 };
+}
+
+fn editorSystemHeaderYOffset() f32 {
+    return editor_panel_padding_y;
+}
+
+fn editorSystemRowsYOffset() f32 {
+    return editorSystemHeaderYOffset() + editorTextHeight(editor_system_text_size) + editor_panel_label_gap;
+}
+
+fn editorDebugPanelSize(input: FrameInput) [2]f32 {
+    const panel = editorSystemPanelRect(input);
+    return .{ panel.width, panel.height };
+}
+
+fn editorSystemPanelRect(input: FrameInput) ScreenRect {
+    const panel = editorLeftSidebarPanelRect(input);
+    const entity_height = editorEntityPanelHeight(panel.height);
+    return .{
+        .x = panel.x,
+        .y = panel.y,
+        .width = panel.width,
+        .height = @max(panel.height - editor_left_panel_gap - entity_height, 1.0),
+    };
+}
+
+fn editorEntityPanelRect(input: FrameInput) ScreenRect {
+    const panel = editorLeftSidebarPanelRect(input);
+    const entity_height = editorEntityPanelHeight(panel.height);
+    return .{
+        .x = panel.x,
+        .y = panel.y + @max(panel.height - entity_height, 0.0),
+        .width = panel.width,
+        .height = entity_height,
+    };
+}
+
+fn editorLeftSidebarPanelRect(input: FrameInput) ScreenRect {
+    return editorSidebarPanelRect(editorLeftSidebarRect(input));
+}
+
+fn editorEntityPanelHeight(total_height: f32) f32 {
+    if (total_height <= editor_left_panel_gap + 2.0) {
+        return @max(total_height * 0.5, 1.0);
+    }
+    const max_entity_height = @max(total_height * 0.5, 1.0);
+    const min_entity_height = @min(editor_entity_panel_min_height, max_entity_height);
+    var entity_height = std.math.clamp(total_height * 0.38, min_entity_height, max_entity_height);
+    const min_system = @min(editor_system_panel_min_height, @max(total_height - editor_left_panel_gap - 1.0, 1.0));
+    if (total_height - editor_left_panel_gap - entity_height < min_system) {
+        entity_height = @max(total_height - editor_left_panel_gap - min_system, 1.0);
+    }
+    return entity_height;
+}
+
+fn editorSidebarPanelRect(sidebar: ScreenRect) ScreenRect {
+    return insetScreenRect(sidebar, editor_sidebar_panel_margin);
+}
+
+fn insetScreenRect(rect: ScreenRect, inset: f32) ScreenRect {
+    const clamped = @max(inset, 0.0);
+    return .{
+        .x = rect.x + clamped,
+        .y = rect.y + clamped,
+        .width = @max(rect.width - clamped * 2.0, 1.0),
+        .height = @max(rect.height - clamped * 2.0, 1.0),
+    };
+}
+
+fn editorSystemHeaderY(input: FrameInput) f32 {
+    return editorSystemPanelRect(input).y + editorSystemHeaderYOffset();
+}
+
+fn editorSystemRowsY(input: FrameInput) f32 {
+    return editorSystemPanelRect(input).y + editorSystemRowsYOffset();
+}
+
+const EditorSystemVisibleRange = struct {
+    start: usize,
+    end: usize,
+    offset_y: f32,
+};
+
+fn editorSystemVisibleRange(input: FrameInput) EditorSystemVisibleRange {
+    const profile_count = input.system_profiles.len;
+    if (profile_count == 0) {
+        return .{ .start = 0, .end = 0, .offset_y = 0.0 };
+    }
+
+    const scroll_y = std.math.clamp(input.editor.system_scroll_y, 0.0, editorSystemMaxScrollY(input, profile_count));
+    const row_offset = scroll_y / editor_system_row_stride;
+    const start_float = @floor(row_offset);
+    const start: usize = @intFromFloat(start_float);
+    const offset_y = scroll_y - start_float * editor_system_row_stride;
+    const visible_rows = editorSystemVisibleRows(input);
+    const visible_count = @min(
+        profile_count - start,
+        visible_rows + if (offset_y > 0.0) @as(usize, 1) else @as(usize, 0),
+    );
+    return .{
+        .start = start,
+        .end = start + visible_count,
+        .offset_y = offset_y,
+    };
+}
+
+fn editorSystemListClipRect(input: FrameInput) UiClipRect {
+    const panel = editorSystemPanelRect(input);
+    const scrollbar_space = if (editorSystemNeedsScrollForInput(input, editorSystemProfileScrollCount(input)))
+        editor_scrollbar_width + editor_scrollbar_gap
+    else
+        0.0;
+    return .{
+        .position = .{ panel.x, editorSystemRowsY(input), 0.0 },
+        .size = .{
+            @max(panel.width - scrollbar_space, 1.0),
+            editorSystemTableContentHeight(editorSystemVisibleRows(input)),
+            0.0,
+        },
+    };
+}
+
+const EditorEntityVisibleRange = struct {
+    start: usize,
+    end: usize,
+    offset_y: f32,
+};
+
+fn editorEntityVisibleRange(scene_world: *const runtime.World, input: FrameInput) EditorEntityVisibleRange {
+    const entity_count = scene_world.entityCount();
+    if (entity_count == 0) {
+        return .{ .start = 0, .end = 0, .offset_y = 0.0 };
+    }
+
+    const scroll_y = std.math.clamp(input.editor.entity_scroll_y, 0.0, editorEntityMaxScrollY(scene_world, input));
+    const row_offset = scroll_y / editor_entity_row_stride;
+    const start_float = @floor(row_offset);
+    const start: usize = @intFromFloat(start_float);
+    const offset_y = scroll_y - start_float * editor_entity_row_stride;
+    const visible_rows = editorEntityVisibleRows(input);
+    const visible_count = @min(
+        entity_count - start,
+        visible_rows + if (offset_y > 0.0) @as(usize, 1) else @as(usize, 0),
+    );
+    return .{
+        .start = start,
+        .end = start + visible_count,
+        .offset_y = offset_y,
+    };
+}
+
+fn editorEntityListClipRect(scene_world: *const runtime.World, input: FrameInput) UiClipRect {
+    const panel = editorEntityPanelRect(input);
+    const scrollbar_space = if (editorEntityNeedsScroll(scene_world, input))
+        editor_scrollbar_width + editor_scrollbar_gap
+    else
+        0.0;
+    return .{
+        .position = .{ panel.x, panel.y + editorSystemRowsYOffset(), 0.0 },
+        .size = .{
+            @max(panel.width - scrollbar_space, 1.0),
+            editorEntityTableContentHeight(editorEntityVisibleRows(input)),
+            0.0,
+        },
+    };
+}
+
+fn editorSystemProfileScrollCount(input: FrameInput) usize {
+    return @max(input.system_profiles.len, input.system_profile_count_hint);
+}
+
+fn editorSystemVisibleRows(input: FrameInput) usize {
+    const panel = editorSystemPanelRect(input);
+    const rows_height = @max(panel.y + panel.height - editorSystemRowsY(input) - editor_panel_bottom_padding - editor_system_card_padding_y * 2.0, editor_system_row_stride);
+    return @max(@as(usize, @intFromFloat(@floor(rows_height / editor_system_row_stride))), 1);
+}
+
+fn editorSystemTableContentHeight(row_count: usize) f32 {
+    return editor_system_card_padding_y * 2.0 + @as(f32, @floatFromInt(row_count)) * editor_system_row_stride;
+}
+
+fn editorEntityVisibleRows(input: FrameInput) usize {
+    const panel = editorEntityPanelRect(input);
+    const rows_y = panel.y + editorSystemRowsYOffset();
+    const rows_height = @max(panel.y + panel.height - rows_y - editor_panel_bottom_padding - editor_entity_card_padding_y * 2.0, editor_entity_row_stride);
+    return @max(@as(usize, @intFromFloat(@floor(rows_height / editor_entity_row_stride))), 1);
+}
+
+fn editorEntityTableContentHeight(row_count: usize) f32 {
+    return editor_entity_card_padding_y * 2.0 + @as(f32, @floatFromInt(row_count)) * editor_entity_row_stride;
+}
+
+fn editorEntityNeedsScroll(scene_world: *const runtime.World, input: FrameInput) bool {
+    return scene_world.entityCount() > editorEntityVisibleRows(input);
+}
+
+fn editorEntityMaxScroll(scene_world: *const runtime.World, input: FrameInput) usize {
+    const visible_rows = editorEntityVisibleRows(input);
+    const entity_count = scene_world.entityCount();
+    return if (entity_count > visible_rows)
+        entity_count - visible_rows
+    else
+        0;
+}
+
+fn editorEntityMaxScrollY(scene_world: *const runtime.World, input: FrameInput) f32 {
+    return @as(f32, @floatFromInt(editorEntityMaxScroll(scene_world, input))) * editor_entity_row_stride;
+}
+
+fn editorEntityHandleAt(scene_world: *const runtime.World, entity_index: usize) ?runtime.EntityHandle {
+    if (entity_index >= scene_world.entityCount()) {
+        return null;
+    }
+    const index: u32 = @intCast(entity_index);
+    const entity = scene_world.entity(.{ .index = index }) catch return null;
+    return .{ .index = index, .generation = entity.generation };
+}
+
+fn editorEntityComponentCount(scene_world: *const runtime.World, handle: runtime.EntityHandle) usize {
+    var components = scene_world.entityComponents(handle) catch return 0;
+    var count: usize = 0;
+    while (components.next()) |_| {
+        count += 1;
+    }
+    return count;
+}
+
+fn editorEntityHandlesEqual(selected: ?runtime.EntityHandle, handle: runtime.EntityHandle) bool {
+    const candidate = selected orelse return false;
+    return candidate.index == handle.index and candidate.generation == handle.generation;
+}
+
+fn editorInspectorScrollClipRect(input: FrameInput) UiClipRect {
+    const sidebar = editorSidebarPanelRect(editorRightSidebarRect(input));
+    const y = sidebar.y + editor_panel_padding_y + editor_inspector_line_stride * 2.5;
+    const bottom = sidebar.y + sidebar.height;
+    return .{
+        .position = .{ sidebar.x, y, 0.0 },
+        .size = .{
+            @max(sidebar.width, 1.0),
+            @max(bottom - y, 1.0),
+            0.0,
+        },
+    };
+}
+
+fn editorInspectorComponentContentHeight(scene_world: *const runtime.World, selected: ?runtime.EntityHandle) f32 {
+    const selected_entity = selected orelse return 0.0;
+    var components = scene_world.entityComponents(selected_entity) catch return 0.0;
+    var height: f32 = 0.0;
+    var component_index: usize = 0;
+    while (components.next()) |component_id| {
+        if (component_index > 0) {
+            height += editor_inspector_separator_height;
+        }
+        height += editorInspectorComponentCardHeight(scene_world, component_id);
+        component_index += 1;
+    }
+    return height;
+}
+
+fn editorInspectorComponentCardHeight(scene_world: *const runtime.World, component_id: []const u8) f32 {
+    const field_count = scene_world.componentFieldCount(component_id);
+    return editor_inspector_card_padding_y * 2.0 +
+        editorTextHeight(editor_inspector_text_size) +
+        editor_panel_label_gap +
+        @as(f32, @floatFromInt(field_count)) * editor_inspector_field_row_stride;
+}
+
+fn editorInspectorNeedsScroll(scene_world: *const runtime.World, input: FrameInput) bool {
+    return editorInspectorMaxScrollY(scene_world, input) > 0.0;
+}
+
+fn editorInspectorMaxScrollY(scene_world: *const runtime.World, input: FrameInput) f32 {
+    const clip = editorInspectorScrollClipRect(input);
+    return @max(editorInspectorComponentContentHeight(scene_world, input.editor.selected_entity) - clip.size[1], 0.0);
+}
+
+fn editorSystemNeedsScrollForInput(input: FrameInput, profile_count: usize) bool {
+    return profile_count > editorSystemVisibleRows(input);
+}
+
+fn editorSystemMaxScroll(input: FrameInput, profile_count: usize) usize {
+    const visible_rows = editorSystemVisibleRows(input);
+    return if (profile_count > visible_rows)
+        profile_count - visible_rows
+    else
+        0;
+}
+
+fn editorSystemMaxScrollY(input: FrameInput, profile_count: usize) f32 {
+    return @as(f32, @floatFromInt(editorSystemMaxScroll(input, profile_count))) * editor_system_row_stride;
+}
+
+fn formatFpsLabel(allocator: std.mem.Allocator, fps: f32) error{OutOfMemory}![]const u8 {
+    return std.fmt.allocPrint(allocator, "FPS {d}", .{roundedFps(fps)});
+}
+
+fn formatSystemProfileHeader(allocator: std.mem.Allocator, profiles: []const runtime.SystemProfileSnapshot) error{OutOfMemory}![]const u8 {
+    const window_size = if (profiles.len == 0) 0 else profiles[0].window_size;
+    return std.fmt.allocPrint(allocator, "SYS {d} AVG {d}F SNAP 3HZ", .{ profiles.len, window_size });
+}
+
+fn formatSystemProfileDuration(allocator: std.mem.Allocator, profile: runtime.SystemProfileSnapshot) error{OutOfMemory}![]const u8 {
+    if (profile.sample_count == 0) {
+        return allocator.dupe(u8, "--");
+    }
+
+    var average_buffer: [16]u8 = undefined;
+    const average = formatDurationShort(&average_buffer, profile.rolling_average_ns);
+    return allocator.dupe(u8, average);
+}
+
+fn formatDurationShort(buffer: *[16]u8, ns: u64) []const u8 {
+    const micros = nsToMicrosRounded(ns);
+    if (micros < 10_000) {
+        return std.fmt.bufPrint(buffer, "{d}us", .{micros}) catch "----";
+    }
+    return std.fmt.bufPrint(buffer, "{d}ms", .{(micros + 500) / 1000}) catch "----";
+}
+
+fn nsToMicrosRounded(ns: u64) u64 {
+    return (ns + 500) / 1000;
+}
+
+fn elapsedNanosecondsSince(started_ns: i128) u64 {
+    const elapsed_ns = monotonicTimestampNs() - started_ns;
+    if (elapsed_ns <= 0) {
+        return 0;
+    }
+    return @intCast(@min(elapsed_ns, std.math.maxInt(u64)));
+}
+
+fn monotonicTimestampNs() i128 {
+    const io = Io.Threaded.global_single_threaded.io();
+    return Io.Timestamp.now(io, .awake).nanoseconds;
+}
+
+fn roundedFps(fps: f32) i32 {
+    if (!std.math.isFinite(fps) or fps <= 0.0) {
+        return 0;
+    }
+    const clamped = @min(fps, 9999.0);
+    return @intFromFloat(@round(clamped));
+}
+
+pub fn writeFrameInput(world: *runtime.World, input: FrameInput) runtime.WorldError!void {
+    const entity = world.findEntityById(runtime.input_entity_id) orelse try world.createEntity(runtime.input_entity_id, "Input Frame");
+    try world.setInputPointer(entity, .{
+        .position = .{ input.pointer.position[0], input.pointer.position[1], 0.0 },
+        .delta = .{ input.pointer.delta[0], input.pointer.delta[1], 0.0 },
+        .has_position = input.pointer.has_position,
+        .primary_down = input.pointer.primary_down,
+        .primary_pressed = input.pointer.primary_pressed,
+        .primary_released = input.pointer.primary_released,
+        .secondary_down = input.pointer.secondary_down,
+        .secondary_pressed = input.pointer.secondary_pressed,
+        .secondary_released = input.pointer.secondary_released,
+        .wheel_delta = .{ input.pointer.wheel_delta[0], input.pointer.wheel_delta[1], 0.0 },
+    });
+    try world.setInputKeyboard(entity, .{
+        .ctrl_down = input.keyboard.ctrl_down,
+        .shift_down = input.keyboard.shift_down,
+        .alt_down = input.keyboard.alt_down,
+        .super_down = input.keyboard.super_down,
+        .move_forward = input.keyboard.move_forward,
+        .move_back = input.keyboard.move_back,
+        .move_left = input.keyboard.move_left,
+        .move_right = input.keyboard.move_right,
+        .move_up = input.keyboard.move_up,
+        .move_down = input.keyboard.move_down,
+        .editor_toggle_pressed = input.keyboard.editor_toggle_pressed,
+    });
+    try world.setInputFrame(entity, .{
+        .ui_visible = input.ui_visible,
+        .debug_overlay_visible = input.debug_overlay_visible,
+        .viewport = .{ input.viewport_width, input.viewport_height, 0.0 },
+    });
+}
+
+fn setRenderFrameInput(world: *runtime.World, input: FrameInput) RenderError!void {
+    writeFrameInput(world, input) catch |err| return mapWorldError(err);
+}
+
+fn renderFrameInput(world: *const runtime.World) RenderError!FrameInput {
+    const entity = world.findEntityById(runtime.input_entity_id) orelse return RenderError.InvalidScene;
+    const position = world.getVec3(entity, runtime.input_pointer_component_id, "position") catch |err| return mapWorldError(err);
+    const delta = world.getVec3(entity, runtime.input_pointer_component_id, "delta") catch |err| return mapWorldError(err);
+    const wheel_delta = world.getVec3(entity, runtime.input_pointer_component_id, "wheel_delta") catch |err| return mapWorldError(err);
+    const viewport = world.getVec3(entity, runtime.input_frame_component_id, "viewport") catch |err| return mapWorldError(err);
+    return .{
+        .pointer = .{
+            .position = .{ position[0], position[1] },
+            .delta = .{ delta[0], delta[1] },
+            .has_position = world.getBoolean(entity, runtime.input_pointer_component_id, "has_position") catch |err| return mapWorldError(err),
+            .primary_down = world.getBoolean(entity, runtime.input_pointer_component_id, "primary_down") catch |err| return mapWorldError(err),
+            .primary_pressed = world.getBoolean(entity, runtime.input_pointer_component_id, "primary_pressed") catch |err| return mapWorldError(err),
+            .primary_released = world.getBoolean(entity, runtime.input_pointer_component_id, "primary_released") catch |err| return mapWorldError(err),
+            .secondary_down = world.getBoolean(entity, runtime.input_pointer_component_id, "secondary_down") catch |err| return mapWorldError(err),
+            .secondary_pressed = world.getBoolean(entity, runtime.input_pointer_component_id, "secondary_pressed") catch |err| return mapWorldError(err),
+            .secondary_released = world.getBoolean(entity, runtime.input_pointer_component_id, "secondary_released") catch |err| return mapWorldError(err),
+            .wheel_delta = .{ wheel_delta[0], wheel_delta[1] },
+        },
+        .keyboard = .{
+            .ctrl_down = world.getBoolean(entity, runtime.input_keyboard_component_id, "ctrl_down") catch |err| return mapWorldError(err),
+            .shift_down = world.getBoolean(entity, runtime.input_keyboard_component_id, "shift_down") catch |err| return mapWorldError(err),
+            .alt_down = world.getBoolean(entity, runtime.input_keyboard_component_id, "alt_down") catch |err| return mapWorldError(err),
+            .super_down = world.getBoolean(entity, runtime.input_keyboard_component_id, "super_down") catch |err| return mapWorldError(err),
+            .move_forward = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_forward") catch |err| return mapWorldError(err),
+            .move_back = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_back") catch |err| return mapWorldError(err),
+            .move_left = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_left") catch |err| return mapWorldError(err),
+            .move_right = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_right") catch |err| return mapWorldError(err),
+            .move_up = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_up") catch |err| return mapWorldError(err),
+            .move_down = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_down") catch |err| return mapWorldError(err),
+            .editor_toggle_pressed = world.getBoolean(entity, runtime.input_keyboard_component_id, "editor_toggle_pressed") catch |err| return mapWorldError(err),
+        },
+        .ui_visible = world.getBoolean(entity, runtime.input_frame_component_id, "ui_visible") catch |err| return mapWorldError(err),
+        .debug_overlay_visible = world.getBoolean(entity, runtime.input_frame_component_id, "debug_overlay_visible") catch |err| return mapWorldError(err),
+        .viewport_width = viewport[0],
+        .viewport_height = viewport[1],
+    };
+}
+
+fn setRenderUiButtonState(world: *runtime.World, entity: runtime.EntityHandle, state: UiButtonState) RenderError!void {
+    const fields = [_]runtime.ComponentFieldValue{
+        .{ .name = "hovered", .value = .{ .boolean = state.hovered } },
+        .{ .name = "held", .value = .{ .boolean = state.held } },
+        .{ .name = "pressed", .value = .{ .boolean = state.pressed } },
+    };
+    world.setComponent(entity, render_ui_button_state_component_id, &fields) catch |err| return mapWorldError(err);
+}
+
+fn setRenderUiClip(world: *runtime.World, entity: runtime.EntityHandle, clip: UiClipRect) RenderError!void {
+    const fields = [_]runtime.ComponentFieldValue{
+        .{ .name = "position", .value = .{ .vec3 = clip.position } },
+        .{ .name = "size", .value = .{ .vec3 = clip.size } },
+    };
+    world.setComponent(entity, render_ui_clip_component_id, &fields) catch |err| return mapWorldError(err);
+}
+
+fn renderUiButtonState(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!?UiButtonState {
+    if (!(world.hasComponent(entity, render_ui_button_state_component_id) catch |err| return mapWorldError(err))) {
+        return null;
+    }
+    return .{
+        .hovered = world.getBoolean(entity, render_ui_button_state_component_id, "hovered") catch |err| return mapWorldError(err),
+        .held = world.getBoolean(entity, render_ui_button_state_component_id, "held") catch |err| return mapWorldError(err),
+        .pressed = world.getBoolean(entity, render_ui_button_state_component_id, "pressed") catch |err| return mapWorldError(err),
+    };
+}
+
+fn renderUiClip(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!?UiClipRect {
+    if (!(world.hasComponent(entity, render_ui_clip_component_id) catch |err| return mapWorldError(err))) {
+        return null;
+    }
+    return .{
+        .position = world.getVec3(entity, render_ui_clip_component_id, "position") catch |err| return mapWorldError(err),
+        .size = world.getVec3(entity, render_ui_clip_component_id, "size") catch |err| return mapWorldError(err),
+    };
+}
+
+fn uiBorder(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!?UiBorder {
+    if (!(world.hasComponent(entity, runtime.ui_border_component_id) catch |err| return mapWorldError(err))) {
+        return null;
+    }
+    return .{
+        .color = world.getVec3(entity, runtime.ui_border_component_id, "color") catch |err| return mapWorldError(err),
+        .thickness = world.getFloat(entity, runtime.ui_border_component_id, "thickness") catch |err| return mapWorldError(err),
+    };
+}
+
+fn uiProgressBar(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!?UiProgressBar {
+    if (!(world.hasComponent(entity, runtime.ui_progress_bar_component_id) catch |err| return mapWorldError(err))) {
+        return null;
+    }
+    return .{
+        .value = world.getFloat(entity, runtime.ui_progress_bar_component_id, "value") catch |err| return mapWorldError(err),
+        .max = world.getFloat(entity, runtime.ui_progress_bar_component_id, "max") catch |err| return mapWorldError(err),
+        .fill_color = world.getVec3(entity, runtime.ui_progress_bar_component_id, "fill_color") catch |err| return mapWorldError(err),
+    };
+}
+
+fn uiToggleChecked(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!?bool {
+    if (!(world.hasComponent(entity, runtime.ui_toggle_component_id) catch |err| return mapWorldError(err))) {
+        return null;
+    }
+    return world.getBoolean(entity, runtime.ui_toggle_component_id, "checked") catch |err| return mapWorldError(err);
+}
+
+fn resolveUiLayout(world: *const runtime.World, entity: runtime.EntityHandle, local_position: [3]f32) RenderError!ui_layout.ResolvedLayout {
+    return ui_layout.resolve(world, entity, local_position) catch |err| return mapLayoutError(err);
+}
+
+fn combineUiClip(a: ?UiClipRect, b: ?UiClipRect) RenderError!?UiClipRect {
+    return ui_layout.combineClip(a, b) catch |err| return mapLayoutError(err);
+}
+
+fn resolveUiScreenLayout(input: FrameInput, entity_id: []const u8, layout: ui_layout.ResolvedLayout, item_size: [3]f32) RenderError!ui_layout.ResolvedLayout {
+    if (!input.debug_overlay_visible or isEditorUiEntityId(entity_id)) {
+        return layout;
+    }
+    return ui_layout.clipToTarget(layout, sceneUiTarget(input, 0.0, 0.0), item_size) catch |err| return mapLayoutError(err);
+}
+
+fn sceneUiCanvasTransform(world: *const runtime.World, input: FrameInput, width: f32, height: f32) RenderError!UiCanvasTransform {
+    return ui_layout.canvasTransform(world, sceneUiTarget(input, width, height)) catch |err| return mapLayoutError(err);
+}
+
+fn sceneUiTarget(input: FrameInput, width: f32, height: f32) ui_layout.Target {
+    if (input.debug_overlay_visible) {
+        const viewport = editorGameViewport(input);
+        return .{ .x = viewport.x, .y = viewport.y, .width = viewport.width, .height = viewport.height };
+    }
+    return .{ .width = width, .height = height };
+}
+
+fn isEditorUiEntityId(entity_id: []const u8) bool {
+    return std.mem.startsWith(u8, entity_id, "machina.editor.");
+}
+
+fn applyUiCanvasLayout(transform: UiCanvasTransform, entity_id: []const u8, layout: ui_layout.ResolvedLayout) ui_layout.ResolvedLayout {
+    if (isEditorUiEntityId(entity_id)) {
+        return layout;
+    }
+    return ui_layout.applyCanvasTransform(transform, layout);
+}
+
+fn scaleUiVec3(transform: UiCanvasTransform, value: [3]f32) [3]f32 {
+    return ui_layout.scaleVec3(transform, value);
+}
+
+fn scaleUiSize(transform: UiCanvasTransform, value: [3]f32) [3]f32 {
+    return ui_layout.scaleSize(transform, value);
+}
+
+fn uiLayoutItemSize(world: *const runtime.World, entity: runtime.EntityHandle) RenderError![3]f32 {
+    return ui_layout.itemSize(world, entity) catch |err| return mapLayoutError(err);
+}
+
+fn hitTestUiRect(point: [2]f32, position: [3]f32, size: [3]f32, clip: ?UiClipRect) bool {
+    return ui_layout.pointInsideRect(point, position, size, clip);
+}
+
+fn textPixelSize(value: []const u8, size: f32) [3]f32 {
+    return ui_layout.textPixelSize(value, size);
+}
+
+fn resolveUiTextPosition(world: *const runtime.World, entity: runtime.EntityHandle, text: runtime.UiText, position: [3]f32) RenderError![3]f32 {
+    return ui_layout.resolveTextPosition(world, entity, text, position) catch |err| return mapLayoutError(err);
+}
+
+fn evaluateUiButtonState(input: FrameInput, position: [3]f32, size: [3]f32, clip: ?UiClipRect) UiButtonState {
+    const hovered = input.pointer.has_position and hitTestUiRect(input.pointer.position, position, size, clip);
+    return .{
+        .hovered = hovered,
+        .held = hovered and input.pointer.primary_down,
+        .pressed = hovered and input.pointer.primary_released,
+    };
+}
+
+fn extractCameraInto(world: *runtime.World, camera: CameraState) RenderError!void {
+    const entity = world.createEntity("machina.render.extract.camera", "Render Camera") catch |err| return mapWorldError(err);
+    world.setTransform(entity, camera.transform) catch |err| return mapWorldError(err);
+    world.setCamera(entity, .{
+        .fov_y_degrees = camera.fov_y_degrees,
+        .near = camera.near,
+        .far = camera.far,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn extractDirectionalLightInto(world: *runtime.World, light: DirectionalLightState) RenderError!void {
+    const entity = world.createEntity("machina.render.extract.directional_light", "Render Directional Light") catch |err| return mapWorldError(err);
+    world.setDirectionalLight(entity, .{
+        .direction = light.direction,
+        .color = light.color,
+        .intensity = light.intensity,
+        .ambient = light.ambient,
+    }) catch |err| return mapWorldError(err);
+}
+
+fn batchIndexFromDrawEntity(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!usize {
+    const value = world.getComponentFieldValue(entity, render_draw_batch_component_id, "batch_index") catch |err| return mapWorldError(err);
+    const batch_index = switch (value) {
+        .int => |payload| payload,
+        else => return RenderError.InvalidScene,
+    };
+    if (batch_index < 0) {
+        return RenderError.InvalidScene;
+    }
+    return @intCast(batch_index);
+}
+
+fn mapEngineSetupError(err: anyerror) RenderError {
+    return switch (err) {
+        error.OutOfMemory => RenderError.OutOfMemory,
+        else => RenderError.InvalidScene,
+    };
+}
+
+fn mapWorldError(err: anyerror) RenderError {
+    return switch (err) {
+        error.OutOfMemory => RenderError.OutOfMemory,
+        else => RenderError.InvalidScene,
+    };
+}
+
+fn mapLayoutError(err: anyerror) RenderError {
+    return switch (err) {
+        error.OutOfMemory => RenderError.OutOfMemory,
+        else => RenderError.InvalidScene,
+    };
+}
+
+fn mapGeometryError(err: anyerror) RenderError {
+    return switch (err) {
+        error.OutOfMemory => RenderError.OutOfMemory,
+        else => RenderError.InvalidScene,
+    };
+}
+
+const BatchPlan = struct {
+    allocator: std.mem.Allocator,
+    renderables: []runtime.RenderableMesh,
+    batches: []BatchPlanEntry,
+
+    fn build(allocator: std.mem.Allocator, world: *const runtime.World) RenderError!BatchPlan {
+        var renderables: std.ArrayList(runtime.RenderableMesh) = .empty;
+        errdefer renderables.deinit(allocator);
+
+        var builds: std.ArrayList(BatchBuild) = .empty;
+        errdefer {
+            for (builds.items) |*pending_batch| {
+                pending_batch.deinit(allocator);
+            }
+            builds.deinit(allocator);
+        }
+
+        var meshes = world.renderableMeshes();
+        while (meshes.next()) |renderable| {
+            const render_index = renderables.items.len;
+            renderables.append(allocator, renderable) catch return RenderError.OutOfMemory;
+            const geometry_key = GeometryKey.fromRenderable(renderable) orelse return RenderError.InvalidScene;
+            const shadow_key = ShadowKey.fromRenderable(renderable);
+
+            var batch_index: ?usize = null;
+            for (builds.items, 0..) |pending_batch, index| {
+                if (pending_batch.geometry_key.eql(geometry_key) and
+                    pending_batch.shadow_key.eql(shadow_key))
+                {
+                    batch_index = index;
+                    break;
+                }
+            }
+
+            const index = batch_index orelse blk: {
+                try builds.append(allocator, .{
+                    .geometry_key = geometry_key,
+                    .shadow_key = shadow_key,
+                });
+                break :blk builds.items.len - 1;
+            };
+            builds.items[index].render_indices.append(allocator, render_index) catch return RenderError.OutOfMemory;
+        }
+
+        const renderable_slice = renderables.toOwnedSlice(allocator) catch return RenderError.OutOfMemory;
+        errdefer allocator.free(renderable_slice);
+
+        const batches = allocator.alloc(BatchPlanEntry, builds.items.len) catch return RenderError.OutOfMemory;
+        var copied: usize = 0;
+        errdefer {
+            for (batches[0..copied]) |entry| {
+                allocator.free(entry.render_indices);
+            }
+            allocator.free(batches);
+        }
+
+        for (builds.items, 0..) |*pending_batch, index| {
+            batches[index] = .{
+                .geometry_key = pending_batch.geometry_key,
+                .shadow_key = pending_batch.shadow_key,
+                .render_indices = pending_batch.render_indices.toOwnedSlice(allocator) catch return RenderError.OutOfMemory,
+            };
+            copied += 1;
+        }
+
+        builds.deinit(allocator);
+        return .{
+            .allocator = allocator,
+            .renderables = renderable_slice,
+            .batches = batches,
+        };
+    }
+
+    fn deinit(self: *BatchPlan) void {
+        const allocator = self.allocator;
+        for (self.batches) |entry| {
+            allocator.free(entry.render_indices);
+        }
+        allocator.free(self.batches);
+        allocator.free(self.renderables);
+        self.* = .{
+            .allocator = allocator,
+            .renderables = &.{},
+            .batches = &.{},
+        };
+    }
+};
+
+const BatchBuild = struct {
+    geometry_key: GeometryKey,
+    shadow_key: ShadowKey,
+    render_indices: std.ArrayList(usize) = .empty,
+
+    fn deinit(self: *BatchBuild, allocator: std.mem.Allocator) void {
+        self.render_indices.deinit(allocator);
+    }
+};
+
+const BatchPlanEntry = struct {
+    geometry_key: GeometryKey,
+    shadow_key: ShadowKey,
+    render_indices: []usize,
+};
+
+const UiDrawResources = struct {
+    vertex_buffer: ?*wgpu.Buffer = null,
+    vertex_buffer_size: u64 = 0,
+    vertex_count: u32 = 0,
+
+    fn update(
+        self: *UiDrawResources,
+        device: *wgpu.Device,
+        queue: *wgpu.Queue,
+        vertices: []const UiVertex,
+    ) RenderError!void {
+        if (vertices.len > std.math.maxInt(u32)) {
+            return RenderError.InvalidScene;
+        }
+
+        self.vertex_count = @intCast(vertices.len);
+        if (vertices.len == 0) {
+            return;
+        }
+
+        const bytes = std.mem.sliceAsBytes(vertices);
+        if (self.vertex_buffer == null or self.vertex_buffer_size < bytes.len) {
+            const buffer = device.createBuffer(&wgpu.BufferDescriptor{
+                .label = wgpu.StringView.fromSlice("Machina UI vertex buffer"),
+                .usage = wgpu.BufferUsages.vertex | wgpu.BufferUsages.copy_dst,
+                .size = @intCast(bytes.len),
+                .mapped_at_creation = @as(u32, @intFromBool(false)),
+            }) orelse return RenderError.NoDevice;
+            if (self.vertex_buffer) |old_buffer| {
+                old_buffer.release();
+            }
+            self.vertex_buffer = buffer;
+            self.vertex_buffer_size = @intCast(bytes.len);
+        }
+
+        queue.writeBuffer(self.vertex_buffer orelse return RenderError.NoDevice, 0, bytes.ptr, bytes.len);
+    }
+
+    fn deinit(self: *UiDrawResources) void {
+        if (self.vertex_buffer) |buffer| {
+            buffer.release();
+        }
+        self.* = .{};
+    }
+};
 
 const MeshDemo = struct {
     allocator: std.mem.Allocator,
+    texture_format: wgpu.TextureFormat,
+    scene_texture_format: wgpu.TextureFormat,
     pipeline: *wgpu.RenderPipeline,
     shadow_pipeline: *wgpu.RenderPipeline,
     ui_pipeline: *wgpu.RenderPipeline,
+    postprocess_pipeline: *wgpu.RenderPipeline,
+    bloom_extract_pipeline: *wgpu.RenderPipeline,
+    bloom_blur_pipeline: *wgpu.RenderPipeline,
     bind_group_layout: *wgpu.BindGroupLayout,
+    postprocess_bind_group_layout: *wgpu.BindGroupLayout,
+    bloom_bind_group_layout: *wgpu.BindGroupLayout,
     pipeline_layout: *wgpu.PipelineLayout,
     shadow_pipeline_layout: *wgpu.PipelineLayout,
     ui_pipeline_layout: *wgpu.PipelineLayout,
+    postprocess_pipeline_layout: *wgpu.PipelineLayout,
+    bloom_pipeline_layout: *wgpu.PipelineLayout,
     frame_uniform_buffer: *wgpu.Buffer,
+    postprocess_uniform_buffer: *wgpu.Buffer,
+    bloom_extract_uniform_buffer: *wgpu.Buffer,
+    bloom_blur_x_uniform_buffer: *wgpu.Buffer,
+    bloom_blur_y_uniform_buffer: *wgpu.Buffer,
     bind_group: *wgpu.BindGroup,
     shadow_target: ShadowTarget,
     shadow_sampler: *wgpu.Sampler,
+    postprocess_sampler: *wgpu.Sampler,
+    postprocess_target: PostProcessTarget = .{},
+    bloom_extract_targets: [bloom_level_count]PostProcessTarget = [_]PostProcessTarget{.{}} ** bloom_level_count,
+    bloom_ping_targets: [bloom_level_count]PostProcessTarget = [_]PostProcessTarget{.{}} ** bloom_level_count,
+    bloom_pong_targets: [bloom_level_count]PostProcessTarget = [_]PostProcessTarget{.{}} ** bloom_level_count,
     render_state: RenderEcsState,
     batches: []BatchResources,
     ui_draw: UiDrawResources = .{},
@@ -3129,6 +4899,9 @@ const MeshDemo = struct {
         texture_format: wgpu.TextureFormat,
         scene: Scene,
     ) RenderError!MeshDemo {
+        const initial_render_config = renderConfigFromWorld(scene.world);
+        const scene_texture_format = initial_render_config.sceneTextureFormat(texture_format);
+
         const bind_group_layout_entries = [_]wgpu.BindGroupLayoutEntry{
             .{
                 .binding = 0,
@@ -3161,6 +4934,110 @@ const MeshDemo = struct {
         }) orelse return RenderError.NoDevice;
         errdefer bind_group_layout.release();
 
+        const postprocess_bind_group_layout_entries = [_]wgpu.BindGroupLayoutEntry{
+            .{
+                .binding = 0,
+                .visibility = wgpu.ShaderStages.fragment,
+                .buffer = .{
+                    .type = .uniform,
+                    .min_binding_size = @sizeOf(PostProcessUniforms),
+                },
+            },
+            .{
+                .binding = 1,
+                .visibility = wgpu.ShaderStages.fragment,
+                .texture = .{
+                    .sample_type = .float,
+                    .view_dimension = .@"2d",
+                },
+            },
+            .{
+                .binding = 2,
+                .visibility = wgpu.ShaderStages.fragment,
+                .sampler = .{
+                    .type = .filtering,
+                },
+            },
+            .{
+                .binding = 3,
+                .visibility = wgpu.ShaderStages.fragment,
+                .texture = .{
+                    .sample_type = .float,
+                    .view_dimension = .@"2d",
+                },
+            },
+            .{
+                .binding = 4,
+                .visibility = wgpu.ShaderStages.fragment,
+                .texture = .{
+                    .sample_type = .float,
+                    .view_dimension = .@"2d",
+                },
+            },
+            .{
+                .binding = 5,
+                .visibility = wgpu.ShaderStages.fragment,
+                .texture = .{
+                    .sample_type = .float,
+                    .view_dimension = .@"2d",
+                },
+            },
+            .{
+                .binding = 6,
+                .visibility = wgpu.ShaderStages.fragment,
+                .texture = .{
+                    .sample_type = .float,
+                    .view_dimension = .@"2d",
+                },
+            },
+            .{
+                .binding = 7,
+                .visibility = wgpu.ShaderStages.fragment,
+                .texture = .{
+                    .sample_type = .float,
+                    .view_dimension = .@"2d",
+                },
+            },
+        };
+        const postprocess_bind_group_layout = device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina postprocess bind group layout"),
+            .entry_count = postprocess_bind_group_layout_entries.len,
+            .entries = &postprocess_bind_group_layout_entries,
+        }) orelse return RenderError.NoDevice;
+        errdefer postprocess_bind_group_layout.release();
+
+        const bloom_bind_group_layout_entries = [_]wgpu.BindGroupLayoutEntry{
+            .{
+                .binding = 0,
+                .visibility = wgpu.ShaderStages.fragment,
+                .buffer = .{
+                    .type = .uniform,
+                    .min_binding_size = @sizeOf(PostProcessUniforms),
+                },
+            },
+            .{
+                .binding = 1,
+                .visibility = wgpu.ShaderStages.fragment,
+                .texture = .{
+                    .sample_type = .float,
+                    .view_dimension = .@"2d",
+                },
+            },
+            .{
+                .binding = 2,
+                .visibility = wgpu.ShaderStages.fragment,
+                .sampler = .{
+                    .type = .filtering,
+                },
+            },
+        };
+        const bloom_bind_group_layout = device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina bloom bind group layout"),
+            .entry_count = bloom_bind_group_layout_entries.len,
+            .entries = &bloom_bind_group_layout_entries,
+        }) orelse return RenderError.NoDevice;
+        errdefer bloom_bind_group_layout.release();
+
         const frame_uniform_buffer = device.createBuffer(&wgpu.BufferDescriptor{
             .label = wgpu.StringView.fromSlice("Machina frame uniforms"),
             .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
@@ -3169,8 +5046,45 @@ const MeshDemo = struct {
         }) orelse return RenderError.NoDevice;
         errdefer frame_uniform_buffer.release();
 
+        const postprocess_uniform_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina postprocess uniforms"),
+            .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
+            .size = @sizeOf(PostProcessUniforms),
+            .mapped_at_creation = @as(u32, @intFromBool(false)),
+        }) orelse return RenderError.NoDevice;
+        errdefer postprocess_uniform_buffer.release();
+
+        const bloom_extract_uniform_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina bloom extract uniforms"),
+            .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
+            .size = @sizeOf(PostProcessUniforms),
+            .mapped_at_creation = @as(u32, @intFromBool(false)),
+        }) orelse return RenderError.NoDevice;
+        errdefer bloom_extract_uniform_buffer.release();
+
+        const bloom_blur_x_uniform_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina bloom horizontal blur uniforms"),
+            .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
+            .size = @sizeOf(PostProcessUniforms),
+            .mapped_at_creation = @as(u32, @intFromBool(false)),
+        }) orelse return RenderError.NoDevice;
+        errdefer bloom_blur_x_uniform_buffer.release();
+
+        const bloom_blur_y_uniform_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina bloom vertical blur uniforms"),
+            .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
+            .size = @sizeOf(PostProcessUniforms),
+            .mapped_at_creation = @as(u32, @intFromBool(false)),
+        }) orelse return RenderError.NoDevice;
+        errdefer bloom_blur_y_uniform_buffer.release();
+
         var initial_uniforms = try frameUniforms(.{});
         writeUniforms(queue, frame_uniform_buffer, &initial_uniforms);
+        var initial_postprocess_uniforms = postProcessUniforms(initial_render_config, 1, 1);
+        writePostProcessUniforms(queue, postprocess_uniform_buffer, &initial_postprocess_uniforms);
+        writePostProcessUniforms(queue, bloom_extract_uniform_buffer, &initial_postprocess_uniforms);
+        writePostProcessUniforms(queue, bloom_blur_x_uniform_buffer, &initial_postprocess_uniforms);
+        writePostProcessUniforms(queue, bloom_blur_y_uniform_buffer, &initial_postprocess_uniforms);
 
         var shadow_target = try ShadowTarget.create(device);
         errdefer shadow_target.deinit();
@@ -3186,6 +5100,17 @@ const MeshDemo = struct {
             .compare = .less_equal,
         }) orelse return RenderError.NoDevice;
         errdefer shadow_sampler.release();
+
+        const postprocess_sampler = device.createSampler(&wgpu.SamplerDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina postprocess sampler"),
+            .address_mode_u = .clamp_to_edge,
+            .address_mode_v = .clamp_to_edge,
+            .address_mode_w = .clamp_to_edge,
+            .mag_filter = .linear,
+            .min_filter = .linear,
+            .mipmap_filter = .nearest,
+        }) orelse return RenderError.NoDevice;
+        errdefer postprocess_sampler.release();
 
         const bind_group_entries = [_]wgpu.BindGroupEntry{
             .{
@@ -3225,7 +5150,7 @@ const MeshDemo = struct {
         }) orelse return RenderError.NoDevice;
         errdefer pipeline_layout.release();
 
-        const pipeline = try createMeshPipeline(device, texture_format, pipeline_layout);
+        const pipeline = try createMeshPipeline(device, scene_texture_format, pipeline_layout);
         errdefer pipeline.release();
 
         const empty_bind_group_layouts = [_]*wgpu.BindGroupLayout{};
@@ -3249,19 +5174,58 @@ const MeshDemo = struct {
         const ui_pipeline = try createUiPipeline(device, texture_format, ui_pipeline_layout);
         errdefer ui_pipeline.release();
 
+        const postprocess_bind_group_layouts = [_]*wgpu.BindGroupLayout{postprocess_bind_group_layout};
+        const postprocess_pipeline_layout = device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina postprocess pipeline layout"),
+            .bind_group_layout_count = postprocess_bind_group_layouts.len,
+            .bind_group_layouts = &postprocess_bind_group_layouts,
+        }) orelse return RenderError.NoDevice;
+        errdefer postprocess_pipeline_layout.release();
+
+        const postprocess_pipeline = try createPostProcessPipeline(device, texture_format, postprocess_pipeline_layout);
+        errdefer postprocess_pipeline.release();
+
+        const bloom_bind_group_layouts = [_]*wgpu.BindGroupLayout{bloom_bind_group_layout};
+        const bloom_pipeline_layout = device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina bloom pipeline layout"),
+            .bind_group_layout_count = bloom_bind_group_layouts.len,
+            .bind_group_layouts = &bloom_bind_group_layouts,
+        }) orelse return RenderError.NoDevice;
+        errdefer bloom_pipeline_layout.release();
+
+        const bloom_extract_pipeline = try createBloomExtractPipeline(device, scene_texture_format, bloom_pipeline_layout);
+        errdefer bloom_extract_pipeline.release();
+
+        const bloom_blur_pipeline = try createBloomBlurPipeline(device, scene_texture_format, bloom_pipeline_layout);
+        errdefer bloom_blur_pipeline.release();
+
         return .{
             .allocator = allocator,
+            .texture_format = texture_format,
+            .scene_texture_format = scene_texture_format,
             .pipeline = pipeline,
             .shadow_pipeline = shadow_pipeline,
             .ui_pipeline = ui_pipeline,
+            .postprocess_pipeline = postprocess_pipeline,
+            .bloom_extract_pipeline = bloom_extract_pipeline,
+            .bloom_blur_pipeline = bloom_blur_pipeline,
             .bind_group_layout = bind_group_layout,
+            .postprocess_bind_group_layout = postprocess_bind_group_layout,
+            .bloom_bind_group_layout = bloom_bind_group_layout,
             .pipeline_layout = pipeline_layout,
             .shadow_pipeline_layout = shadow_pipeline_layout,
             .ui_pipeline_layout = ui_pipeline_layout,
+            .postprocess_pipeline_layout = postprocess_pipeline_layout,
+            .bloom_pipeline_layout = bloom_pipeline_layout,
             .frame_uniform_buffer = frame_uniform_buffer,
+            .postprocess_uniform_buffer = postprocess_uniform_buffer,
+            .bloom_extract_uniform_buffer = bloom_extract_uniform_buffer,
+            .bloom_blur_x_uniform_buffer = bloom_blur_x_uniform_buffer,
+            .bloom_blur_y_uniform_buffer = bloom_blur_y_uniform_buffer,
             .bind_group = bind_group,
             .shadow_target = shadow_target,
             .shadow_sampler = shadow_sampler,
+            .postprocess_sampler = postprocess_sampler,
             .render_state = render_state,
             .batches = batches,
         };
@@ -3275,14 +5239,36 @@ const MeshDemo = struct {
         self.allocator.free(self.batches);
         self.bind_group.release();
         self.frame_uniform_buffer.release();
+        self.postprocess_uniform_buffer.release();
+        self.bloom_extract_uniform_buffer.release();
+        self.bloom_blur_x_uniform_buffer.release();
+        self.bloom_blur_y_uniform_buffer.release();
+        self.postprocess_target.deinit();
+        for (&self.bloom_extract_targets) |*target| {
+            target.deinit();
+        }
+        for (&self.bloom_ping_targets) |*target| {
+            target.deinit();
+        }
+        for (&self.bloom_pong_targets) |*target| {
+            target.deinit();
+        }
+        self.postprocess_sampler.release();
         self.shadow_sampler.release();
         self.shadow_target.deinit();
         self.pipeline.release();
         self.shadow_pipeline.release();
         self.ui_pipeline.release();
+        self.postprocess_pipeline.release();
+        self.bloom_extract_pipeline.release();
+        self.bloom_blur_pipeline.release();
         self.pipeline_layout.release();
         self.shadow_pipeline_layout.release();
         self.ui_pipeline_layout.release();
+        self.postprocess_pipeline_layout.release();
+        self.bloom_pipeline_layout.release();
+        self.bloom_bind_group_layout.release();
+        self.postprocess_bind_group_layout.release();
         self.bind_group_layout.release();
         self.ui_draw.deinit();
     }
@@ -3469,9 +5455,22 @@ const MeshDemo = struct {
 
         try self.drawShadowPass(encoder, draw_batch_indices.items);
 
+        const render_config = renderConfigFromWorld(&self.render_state.world);
+        const postprocess_active = render_config.requiresPostProcess();
+        const bloom_active = render_config.bloomActive();
+        const scene_target_view = if (postprocess_active) blk: {
+            try self.postprocess_target.ensure(
+                context.device,
+                context.frame.width,
+                context.frame.height,
+                self.scene_texture_format,
+            );
+            break :blk self.postprocess_target.view orelse return RenderError.NoDevice;
+        } else context.target_view;
+
         const color_attachments = [_]wgpu.ColorAttachment{
             .{
-                .view = context.target_view,
+                .view = scene_target_view,
                 .clear_value = .{
                     .r = 0.0006,
                     .g = 0.0018,
@@ -3511,6 +5510,14 @@ const MeshDemo = struct {
             render_pass.drawIndexed(batch.index_count, batch.instance_count, 0, 0, 0);
         }
         render_pass.end();
+
+        if (postprocess_active) {
+            const bloom_views = if (bloom_active)
+                try self.drawBloomPasses(render_config, context.device, encoder, context.queue, scene_target_view, context.frame.width, context.frame.height)
+            else
+                emptyBloomViews(scene_target_view);
+            try self.drawPostProcessPass(render_config, encoder, context.device, context.queue, context.target_view, scene_target_view, bloom_views, context.frame.width, context.frame.height);
+        }
 
         if (should_draw_ui) {
             try self.drawUiPass(encoder, context.target_view);
@@ -3577,14 +5584,315 @@ const MeshDemo = struct {
         render_pass.draw(self.ui_draw.vertex_count, 1, 0, 0);
         render_pass.end();
     }
+
+    fn drawPostProcessPass(
+        self: *MeshDemo,
+        render_config: RenderConfig,
+        encoder: *wgpu.CommandEncoder,
+        device: *wgpu.Device,
+        queue: *wgpu.Queue,
+        target_view: *wgpu.TextureView,
+        scene_view: *wgpu.TextureView,
+        bloom_views: BloomViews,
+        width: u32,
+        height: u32,
+    ) RenderError!void {
+        var uniforms = postProcessUniforms(render_config, width, height);
+        writePostProcessUniforms(queue, self.postprocess_uniform_buffer, &uniforms);
+        const bind_group = try createCompositeBindGroup(
+            device,
+            self.postprocess_bind_group_layout,
+            self.postprocess_uniform_buffer,
+            scene_view,
+            bloom_views,
+            self.postprocess_sampler,
+        );
+        defer bind_group.release();
+
+        const color_attachments = [_]wgpu.ColorAttachment{
+            .{
+                .view = target_view,
+                .clear_value = .{
+                    .r = 0.0,
+                    .g = 0.0,
+                    .b = 0.0,
+                    .a = 1.0,
+                },
+            },
+        };
+        const render_pass = encoder.beginRenderPass(&wgpu.RenderPassDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina postprocess pass"),
+            .color_attachment_count = color_attachments.len,
+            .color_attachments = &color_attachments,
+        }) orelse return RenderError.NoDevice;
+        defer render_pass.release();
+
+        render_pass.setPipeline(self.postprocess_pipeline);
+        render_pass.setBindGroup(0, bind_group, 0, null);
+        render_pass.draw(3, 1, 0, 0);
+        render_pass.end();
+    }
+
+    fn drawBloomPasses(
+        self: *MeshDemo,
+        render_config: RenderConfig,
+        device: *wgpu.Device,
+        encoder: *wgpu.CommandEncoder,
+        queue: *wgpu.Queue,
+        scene_view: *wgpu.TextureView,
+        width: u32,
+        height: u32,
+    ) RenderError!BloomViews {
+        var views: BloomViews = undefined;
+        var source_view = scene_view;
+        for (0..bloom_level_count) |level| {
+            const divisor = @as(u32, 1) << @intCast(level + 1);
+            const bloom_width = @max(width / divisor, 1);
+            const bloom_height = @max(height / divisor, 1);
+            try self.bloom_extract_targets[level].ensure(device, bloom_width, bloom_height, self.scene_texture_format);
+            try self.bloom_ping_targets[level].ensure(device, bloom_width, bloom_height, self.scene_texture_format);
+            try self.bloom_pong_targets[level].ensure(device, bloom_width, bloom_height, self.scene_texture_format);
+
+            var extract_uniforms = postProcessUniforms(render_config, width, height);
+            extract_uniforms.params4 = .{ @floatFromInt(level), 0.0, 0.0, 0.0 };
+            writePostProcessUniforms(queue, self.bloom_extract_uniform_buffer, &extract_uniforms);
+            try self.drawBloomSamplePass(
+                device,
+                encoder,
+                self.bloom_extract_pipeline,
+                self.bloom_extract_uniform_buffer,
+                source_view,
+                self.bloom_extract_targets[level].view orelse return RenderError.NoDevice,
+                "Machina bloom extract/downsample pass",
+            );
+
+            var blur_x_uniforms = postProcessUniforms(render_config, width, height);
+            blur_x_uniforms.params4 = .{ 1.0, 0.0, @floatFromInt(level), 0.0 };
+            writePostProcessUniforms(queue, self.bloom_blur_x_uniform_buffer, &blur_x_uniforms);
+            try self.drawBloomSamplePass(
+                device,
+                encoder,
+                self.bloom_blur_pipeline,
+                self.bloom_blur_x_uniform_buffer,
+                self.bloom_extract_targets[level].view orelse return RenderError.NoDevice,
+                self.bloom_ping_targets[level].view orelse return RenderError.NoDevice,
+                "Machina bloom horizontal blur pass",
+            );
+
+            var blur_y_uniforms = postProcessUniforms(render_config, width, height);
+            blur_y_uniforms.params4 = .{ 0.0, 1.0, @floatFromInt(level), 0.0 };
+            writePostProcessUniforms(queue, self.bloom_blur_y_uniform_buffer, &blur_y_uniforms);
+            try self.drawBloomSamplePass(
+                device,
+                encoder,
+                self.bloom_blur_pipeline,
+                self.bloom_blur_y_uniform_buffer,
+                self.bloom_ping_targets[level].view orelse return RenderError.NoDevice,
+                self.bloom_pong_targets[level].view orelse return RenderError.NoDevice,
+                "Machina bloom vertical blur pass",
+            );
+
+            views[level] = self.bloom_pong_targets[level].view orelse return RenderError.NoDevice;
+            source_view = views[level];
+        }
+
+        return views;
+    }
+
+    fn drawBloomSamplePass(
+        self: *MeshDemo,
+        device: *wgpu.Device,
+        encoder: *wgpu.CommandEncoder,
+        pipeline: *wgpu.RenderPipeline,
+        uniform_buffer: *wgpu.Buffer,
+        source_view: *wgpu.TextureView,
+        target_view: *wgpu.TextureView,
+        label: []const u8,
+    ) RenderError!void {
+        const bind_group = try createSingleTextureBindGroup(
+            device,
+            self.bloom_bind_group_layout,
+            uniform_buffer,
+            source_view,
+            self.postprocess_sampler,
+        );
+        defer bind_group.release();
+
+        const color_attachments = [_]wgpu.ColorAttachment{
+            .{
+                .view = target_view,
+                .clear_value = .{
+                    .r = 0.0,
+                    .g = 0.0,
+                    .b = 0.0,
+                    .a = 1.0,
+                },
+            },
+        };
+        const render_pass = encoder.beginRenderPass(&wgpu.RenderPassDescriptor{
+            .label = wgpu.StringView.fromSlice(label),
+            .color_attachment_count = color_attachments.len,
+            .color_attachments = &color_attachments,
+        }) orelse return RenderError.NoDevice;
+        defer render_pass.release();
+
+        render_pass.setPipeline(pipeline);
+        render_pass.setBindGroup(0, bind_group, 0, null);
+        render_pass.draw(3, 1, 0, 0);
+        render_pass.end();
+    }
 };
 
-const BatchResources = render_batching.BatchResources;
-const GeometryKey = render_batching.GeometryKey;
-const ShadowKey = render_batching.ShadowKey;
+const BatchResources = struct {
+    geometry_key: GeometryKey,
+    shadow_key: ShadowKey,
+    vertex_buffer: *wgpu.Buffer,
+    index_buffer: *wgpu.Buffer,
+    instance_buffer: *wgpu.Buffer,
+    vertex_buffer_size: u64,
+    index_buffer_size: u64,
+    instance_buffer_size: u64,
+    index_count: u32,
+    instance_count: u32,
 
-const openGpu = render_backend.openGpu;
-const chooseSurfaceFormat = render_backend.chooseSurfaceFormat;
+    fn create(
+        allocator: std.mem.Allocator,
+        device: *wgpu.Device,
+        entry: BatchPlanEntry,
+    ) RenderError!BatchResources {
+        var mesh = geometry.generatePrimitive(
+            allocator,
+            entry.geometry_key.primitive,
+            entry.geometry_key.segments,
+            entry.geometry_key.rings,
+        ) catch |err| return mapGeometryError(err);
+        defer mesh.deinit(allocator);
+
+        const vertex_bytes = std.mem.sliceAsBytes(mesh.vertices);
+        const index_bytes = std.mem.sliceAsBytes(mesh.indices);
+        const vertex_buffer = try createStaticBuffer(device, "Machina mesh vertex buffer", wgpu.BufferUsages.vertex, vertex_bytes);
+        errdefer vertex_buffer.release();
+
+        const index_buffer = try createStaticBuffer(device, "Machina mesh index buffer", wgpu.BufferUsages.index, index_bytes);
+        errdefer index_buffer.release();
+
+        if (entry.render_indices.len > std.math.maxInt(u32)) {
+            return RenderError.InvalidScene;
+        }
+        const instance_buffer_size = @sizeOf(InstanceAttributes) * entry.render_indices.len;
+        const instance_buffer = device.createBuffer(&wgpu.BufferDescriptor{
+            .label = wgpu.StringView.fromSlice("Machina mesh instance buffer"),
+            .usage = wgpu.BufferUsages.vertex | wgpu.BufferUsages.copy_dst,
+            .size = @intCast(instance_buffer_size),
+            .mapped_at_creation = @as(u32, @intFromBool(false)),
+        }) orelse return RenderError.NoDevice;
+        errdefer instance_buffer.release();
+
+        return .{
+            .geometry_key = entry.geometry_key,
+            .shadow_key = entry.shadow_key,
+            .vertex_buffer = vertex_buffer,
+            .index_buffer = index_buffer,
+            .instance_buffer = instance_buffer,
+            .vertex_buffer_size = @intCast(vertex_bytes.len),
+            .index_buffer_size = @intCast(index_bytes.len),
+            .instance_buffer_size = @intCast(instance_buffer_size),
+            .index_count = @intCast(mesh.indices.len),
+            .instance_count = @intCast(entry.render_indices.len),
+        };
+    }
+
+    fn matches(self: BatchResources, entry: BatchPlanEntry) bool {
+        if (entry.render_indices.len > std.math.maxInt(u32)) {
+            return false;
+        }
+        return self.geometry_key.eql(entry.geometry_key) and
+            self.shadow_key.eql(entry.shadow_key) and
+            self.instance_count == @as(u32, @intCast(entry.render_indices.len));
+    }
+
+    fn deinit(self: *BatchResources) void {
+        self.instance_buffer.release();
+        self.index_buffer.release();
+        self.vertex_buffer.release();
+    }
+};
+
+const GeometryKey = struct {
+    primitive: geometry.Primitive,
+    segments: i32,
+    rings: i32,
+
+    fn fromRenderable(renderable: runtime.RenderableMesh) ?GeometryKey {
+        return .{
+            .primitive = geometry.parsePrimitive(renderable.primitive) orelse return null,
+            .segments = renderable.segments,
+            .rings = renderable.rings,
+        };
+    }
+
+    fn eql(self: GeometryKey, other: GeometryKey) bool {
+        return self.primitive == other.primitive and self.segments == other.segments and self.rings == other.rings;
+    }
+};
+
+const ShadowKey = struct {
+    casts_shadow: bool,
+    receives_shadow: bool,
+
+    fn fromRenderable(renderable: runtime.RenderableMesh) ShadowKey {
+        return .{
+            .casts_shadow = renderable.casts_shadow,
+            .receives_shadow = renderable.receives_shadow,
+        };
+    }
+
+    fn eql(self: ShadowKey, other: ShadowKey) bool {
+        return self.casts_shadow == other.casts_shadow and self.receives_shadow == other.receives_shadow;
+    }
+};
+
+fn openGpu(instance: *wgpu.Instance, compatible_surface: ?*wgpu.Surface) RenderError!GpuContext {
+    const adapter_response = instance.requestAdapterSync(&wgpu.RequestAdapterOptions{
+        .compatible_surface = compatible_surface,
+    }, 200_000_000);
+    const adapter = switch (adapter_response.status) {
+        .success => adapter_response.adapter orelse return RenderError.NoAdapter,
+        else => return RenderError.NoAdapter,
+    };
+    errdefer adapter.release();
+
+    const device_response = adapter.requestDeviceSync(instance, &wgpu.DeviceDescriptor{
+        .required_limits = null,
+    }, 200_000_000);
+    const device = switch (device_response.status) {
+        .success => device_response.device orelse return RenderError.NoDevice,
+        else => return RenderError.NoDevice,
+    };
+    errdefer device.release();
+
+    const queue = device.getQueue() orelse return RenderError.NoDevice;
+    errdefer queue.release();
+
+    return .{
+        .adapter = adapter,
+        .device = device,
+        .queue = queue,
+    };
+}
+
+fn chooseSurfaceFormat(capabilities: wgpu.SurfaceCapabilities) ?wgpu.TextureFormat {
+    for (capabilities.formats[0..capabilities.format_count]) |format| {
+        if (format == .bgra8_unorm_srgb) {
+            return format;
+        }
+    }
+
+    if (capabilities.format_count == 0) {
+        return null;
+    }
+    return capabilities.formats[0];
+}
 
 fn updatePointerFromWindow(pointer: *PointerInput, window: *anyopaque, x: f32, y: f32) void {
     var window_width: c_int = 0;
@@ -3672,12 +5980,479 @@ fn drawMeshToSurface(
     }
 }
 
-const createMeshPipeline = render_pipelines.createMeshPipeline;
-const createShadowPipeline = render_pipelines.createShadowPipeline;
-const createUiPipeline = render_pipelines.createUiPipeline;
+fn createMeshPipeline(device: *wgpu.Device, texture_format: wgpu.TextureFormat, pipeline_layout: *wgpu.PipelineLayout) RenderError!*wgpu.RenderPipeline {
+    const shader_module = device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
+        .code = @embedFile("../shaders/demo.wgsl"),
+    })) orelse return RenderError.NoDevice;
+    defer shader_module.release();
 
-const createStaticBuffer = render_backend.createStaticBuffer;
-const writeUniforms = render_backend.writeUniforms;
+    const vertex_attributes = [_]wgpu.VertexAttribute{
+        .{
+            .format = .float32x3,
+            .offset = @offsetOf(geometry.Vertex, "position"),
+            .shader_location = 0,
+        },
+        .{
+            .format = .float32x3,
+            .offset = @offsetOf(geometry.Vertex, "normal"),
+            .shader_location = 1,
+        },
+    };
+    const vec4_size = @sizeOf([4]f32);
+    const instance_attributes = [_]wgpu.VertexAttribute{
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "mvp") + vec4_size * 0,
+            .shader_location = 2,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "mvp") + vec4_size * 1,
+            .shader_location = 3,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "mvp") + vec4_size * 2,
+            .shader_location = 4,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "mvp") + vec4_size * 3,
+            .shader_location = 5,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "model") + vec4_size * 0,
+            .shader_location = 6,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "model") + vec4_size * 1,
+            .shader_location = 7,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "model") + vec4_size * 2,
+            .shader_location = 8,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "model") + vec4_size * 3,
+            .shader_location = 9,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "object_color"),
+            .shader_location = 10,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "shadow_mvp") + vec4_size * 0,
+            .shader_location = 11,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "shadow_mvp") + vec4_size * 1,
+            .shader_location = 12,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "shadow_mvp") + vec4_size * 2,
+            .shader_location = 13,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "shadow_mvp") + vec4_size * 3,
+            .shader_location = 14,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "shadow_flags"),
+            .shader_location = 15,
+        },
+    };
+    const vertex_buffers = [_]wgpu.VertexBufferLayout{
+        .{
+            .step_mode = .vertex,
+            .array_stride = @sizeOf(geometry.Vertex),
+            .attribute_count = vertex_attributes.len,
+            .attributes = &vertex_attributes,
+        },
+        .{
+            .step_mode = .instance,
+            .array_stride = @sizeOf(InstanceAttributes),
+            .attribute_count = instance_attributes.len,
+            .attributes = &instance_attributes,
+        },
+    };
+
+    const color_targets = [_]wgpu.ColorTargetState{
+        .{
+            .format = texture_format,
+        },
+    };
+    const depth_stencil = wgpu.DepthStencilState{
+        .format = depth_format,
+        .depth_write_enabled = .true,
+        .depth_compare = .less,
+        .stencil_front = .{},
+        .stencil_back = .{},
+    };
+
+    return device.createRenderPipeline(&wgpu.RenderPipelineDescriptor{
+        .label = wgpu.StringView.fromSlice("Machina mesh pipeline"),
+        .layout = pipeline_layout,
+        .vertex = .{
+            .module = shader_module,
+            .entry_point = wgpu.StringView.fromSlice("vs_main"),
+            .buffer_count = vertex_buffers.len,
+            .buffers = &vertex_buffers,
+        },
+        .primitive = .{
+            .cull_mode = .none,
+        },
+        .depth_stencil = &depth_stencil,
+        .fragment = &wgpu.FragmentState{
+            .module = shader_module,
+            .entry_point = wgpu.StringView.fromSlice("fs_main"),
+            .target_count = color_targets.len,
+            .targets = &color_targets,
+        },
+        .multisample = .{},
+    }) orelse return RenderError.NoDevice;
+}
+
+fn createShadowPipeline(device: *wgpu.Device, pipeline_layout: *wgpu.PipelineLayout) RenderError!*wgpu.RenderPipeline {
+    const shader_module = device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
+        .code = @embedFile("../shaders/shadow.wgsl"),
+    })) orelse return RenderError.NoDevice;
+    defer shader_module.release();
+
+    const vertex_attributes = [_]wgpu.VertexAttribute{
+        .{
+            .format = .float32x3,
+            .offset = @offsetOf(geometry.Vertex, "position"),
+            .shader_location = 0,
+        },
+    };
+    const vec4_size = @sizeOf([4]f32);
+    const instance_attributes = [_]wgpu.VertexAttribute{
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "shadow_mvp") + vec4_size * 0,
+            .shader_location = 2,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "shadow_mvp") + vec4_size * 1,
+            .shader_location = 3,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "shadow_mvp") + vec4_size * 2,
+            .shader_location = 4,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(InstanceAttributes, "shadow_mvp") + vec4_size * 3,
+            .shader_location = 5,
+        },
+    };
+    const vertex_buffers = [_]wgpu.VertexBufferLayout{
+        .{
+            .step_mode = .vertex,
+            .array_stride = @sizeOf(geometry.Vertex),
+            .attribute_count = vertex_attributes.len,
+            .attributes = &vertex_attributes,
+        },
+        .{
+            .step_mode = .instance,
+            .array_stride = @sizeOf(InstanceAttributes),
+            .attribute_count = instance_attributes.len,
+            .attributes = &instance_attributes,
+        },
+    };
+
+    const depth_stencil = wgpu.DepthStencilState{
+        .format = shadow_depth_format,
+        .depth_write_enabled = .true,
+        .depth_compare = .less,
+        .stencil_front = .{},
+        .stencil_back = .{},
+        .depth_bias = 2,
+        .depth_bias_slope_scale = 2.0,
+    };
+
+    return device.createRenderPipeline(&wgpu.RenderPipelineDescriptor{
+        .label = wgpu.StringView.fromSlice("Machina shadow pipeline"),
+        .layout = pipeline_layout,
+        .vertex = .{
+            .module = shader_module,
+            .entry_point = wgpu.StringView.fromSlice("vs_main"),
+            .buffer_count = vertex_buffers.len,
+            .buffers = &vertex_buffers,
+        },
+        .primitive = .{
+            .cull_mode = .back,
+        },
+        .depth_stencil = &depth_stencil,
+        .multisample = .{},
+    }) orelse return RenderError.NoDevice;
+}
+
+fn createUiPipeline(device: *wgpu.Device, texture_format: wgpu.TextureFormat, pipeline_layout: *wgpu.PipelineLayout) RenderError!*wgpu.RenderPipeline {
+    const shader_module = device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
+        .code = @embedFile("../shaders/ui.wgsl"),
+    })) orelse return RenderError.NoDevice;
+    defer shader_module.release();
+
+    const vertex_attributes = [_]wgpu.VertexAttribute{
+        .{
+            .format = .float32x2,
+            .offset = @offsetOf(UiVertex, "position"),
+            .shader_location = 0,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(UiVertex, "color"),
+            .shader_location = 1,
+        },
+        .{
+            .format = .float32x2,
+            .offset = @offsetOf(UiVertex, "local_position"),
+            .shader_location = 2,
+        },
+        .{
+            .format = .float32x4,
+            .offset = @offsetOf(UiVertex, "rect_size_radius"),
+            .shader_location = 3,
+        },
+    };
+    const vertex_buffers = [_]wgpu.VertexBufferLayout{
+        .{
+            .step_mode = .vertex,
+            .array_stride = @sizeOf(UiVertex),
+            .attribute_count = vertex_attributes.len,
+            .attributes = &vertex_attributes,
+        },
+    };
+    const color_targets = [_]wgpu.ColorTargetState{
+        .{
+            .format = texture_format,
+            .blend = &wgpu.BlendState.alpha_blending,
+        },
+    };
+
+    return device.createRenderPipeline(&wgpu.RenderPipelineDescriptor{
+        .label = wgpu.StringView.fromSlice("Machina UI pipeline"),
+        .layout = pipeline_layout,
+        .vertex = .{
+            .module = shader_module,
+            .entry_point = wgpu.StringView.fromSlice("vs_main"),
+            .buffer_count = vertex_buffers.len,
+            .buffers = &vertex_buffers,
+        },
+        .primitive = .{},
+        .fragment = &wgpu.FragmentState{
+            .module = shader_module,
+            .entry_point = wgpu.StringView.fromSlice("fs_main"),
+            .target_count = color_targets.len,
+            .targets = &color_targets,
+        },
+        .multisample = .{},
+    }) orelse return RenderError.NoDevice;
+}
+
+fn createPostProcessPipeline(device: *wgpu.Device, texture_format: wgpu.TextureFormat, pipeline_layout: *wgpu.PipelineLayout) RenderError!*wgpu.RenderPipeline {
+    const shader_module = device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
+        .code = @embedFile("../shaders/postprocess.wgsl"),
+    })) orelse return RenderError.NoDevice;
+    defer shader_module.release();
+
+    const vertex_buffers = [_]wgpu.VertexBufferLayout{};
+    const color_targets = [_]wgpu.ColorTargetState{
+        .{
+            .format = texture_format,
+        },
+    };
+
+    return device.createRenderPipeline(&wgpu.RenderPipelineDescriptor{
+        .label = wgpu.StringView.fromSlice("Machina postprocess pipeline"),
+        .layout = pipeline_layout,
+        .vertex = .{
+            .module = shader_module,
+            .entry_point = wgpu.StringView.fromSlice("vs_main"),
+            .buffer_count = vertex_buffers.len,
+            .buffers = &vertex_buffers,
+        },
+        .primitive = .{},
+        .fragment = &wgpu.FragmentState{
+            .module = shader_module,
+            .entry_point = wgpu.StringView.fromSlice("fs_main"),
+            .target_count = color_targets.len,
+            .targets = &color_targets,
+        },
+        .multisample = .{},
+    }) orelse return RenderError.NoDevice;
+}
+
+fn createBloomExtractPipeline(device: *wgpu.Device, texture_format: wgpu.TextureFormat, pipeline_layout: *wgpu.PipelineLayout) RenderError!*wgpu.RenderPipeline {
+    return createFullscreenPipeline(device, texture_format, pipeline_layout, "Machina bloom extract pipeline", @embedFile("../shaders/bloom.wgsl"), "fs_extract");
+}
+
+fn createBloomBlurPipeline(device: *wgpu.Device, texture_format: wgpu.TextureFormat, pipeline_layout: *wgpu.PipelineLayout) RenderError!*wgpu.RenderPipeline {
+    return createFullscreenPipeline(device, texture_format, pipeline_layout, "Machina bloom blur pipeline", @embedFile("../shaders/bloom.wgsl"), "fs_blur");
+}
+
+fn createFullscreenPipeline(
+    device: *wgpu.Device,
+    texture_format: wgpu.TextureFormat,
+    pipeline_layout: *wgpu.PipelineLayout,
+    label: []const u8,
+    shader_code: []const u8,
+    fragment_entry: []const u8,
+) RenderError!*wgpu.RenderPipeline {
+    const shader_module = device.createShaderModule(&wgpu.shaderModuleWGSLDescriptor(.{
+        .code = shader_code,
+    })) orelse return RenderError.NoDevice;
+    defer shader_module.release();
+
+    const vertex_buffers = [_]wgpu.VertexBufferLayout{};
+    const color_targets = [_]wgpu.ColorTargetState{
+        .{
+            .format = texture_format,
+        },
+    };
+
+    return device.createRenderPipeline(&wgpu.RenderPipelineDescriptor{
+        .label = wgpu.StringView.fromSlice(label),
+        .layout = pipeline_layout,
+        .vertex = .{
+            .module = shader_module,
+            .entry_point = wgpu.StringView.fromSlice("vs_main"),
+            .buffer_count = vertex_buffers.len,
+            .buffers = &vertex_buffers,
+        },
+        .primitive = .{},
+        .fragment = &wgpu.FragmentState{
+            .module = shader_module,
+            .entry_point = wgpu.StringView.fromSlice(fragment_entry),
+            .target_count = color_targets.len,
+            .targets = &color_targets,
+        },
+        .multisample = .{},
+    }) orelse return RenderError.NoDevice;
+}
+
+fn createSingleTextureBindGroup(
+    device: *wgpu.Device,
+    layout: *wgpu.BindGroupLayout,
+    uniform_buffer: *wgpu.Buffer,
+    texture_view: *wgpu.TextureView,
+    sampler: *wgpu.Sampler,
+) RenderError!*wgpu.BindGroup {
+    const bind_group_entries = [_]wgpu.BindGroupEntry{
+        .{
+            .binding = 0,
+            .buffer = uniform_buffer,
+            .size = @sizeOf(PostProcessUniforms),
+        },
+        .{
+            .binding = 1,
+            .texture_view = texture_view,
+        },
+        .{
+            .binding = 2,
+            .sampler = sampler,
+        },
+    };
+    return device.createBindGroup(&wgpu.BindGroupDescriptor{
+        .label = wgpu.StringView.fromSlice("Machina texture pass bind group"),
+        .layout = layout,
+        .entry_count = bind_group_entries.len,
+        .entries = &bind_group_entries,
+    }) orelse return RenderError.NoDevice;
+}
+
+fn createCompositeBindGroup(
+    device: *wgpu.Device,
+    layout: *wgpu.BindGroupLayout,
+    uniform_buffer: *wgpu.Buffer,
+    scene_view: *wgpu.TextureView,
+    bloom_views: BloomViews,
+    sampler: *wgpu.Sampler,
+) RenderError!*wgpu.BindGroup {
+    const bind_group_entries = [_]wgpu.BindGroupEntry{
+        .{
+            .binding = 0,
+            .buffer = uniform_buffer,
+            .size = @sizeOf(PostProcessUniforms),
+        },
+        .{
+            .binding = 1,
+            .texture_view = scene_view,
+        },
+        .{
+            .binding = 2,
+            .sampler = sampler,
+        },
+        .{
+            .binding = 3,
+            .texture_view = bloom_views[0],
+        },
+        .{
+            .binding = 4,
+            .texture_view = bloom_views[1],
+        },
+        .{
+            .binding = 5,
+            .texture_view = bloom_views[2],
+        },
+        .{
+            .binding = 6,
+            .texture_view = bloom_views[3],
+        },
+        .{
+            .binding = 7,
+            .texture_view = bloom_views[4],
+        },
+    };
+    return device.createBindGroup(&wgpu.BindGroupDescriptor{
+        .label = wgpu.StringView.fromSlice("Machina postprocess composite bind group"),
+        .layout = layout,
+        .entry_count = bind_group_entries.len,
+        .entries = &bind_group_entries,
+    }) orelse return RenderError.NoDevice;
+}
+
+fn emptyBloomViews(view: *wgpu.TextureView) BloomViews {
+    return [_]*wgpu.TextureView{view} ** bloom_level_count;
+}
+
+fn createStaticBuffer(device: *wgpu.Device, label: []const u8, usage: wgpu.BufferUsage, data: []const u8) RenderError!*wgpu.Buffer {
+    const buffer = device.createBuffer(&wgpu.BufferDescriptor{
+        .label = wgpu.StringView.fromSlice(label),
+        .usage = usage,
+        .size = data.len,
+        .mapped_at_creation = @as(u32, @intFromBool(true)),
+    }) orelse return RenderError.NoDevice;
+    errdefer buffer.release();
+
+    const mapped: [*]u8 = @ptrCast(@alignCast(buffer.getMappedRange(0, data.len) orelse return RenderError.NoDevice));
+    @memcpy(mapped[0..data.len], data);
+    buffer.unmap();
+    return buffer;
+}
+
+fn writeUniforms(queue: *wgpu.Queue, buffer: *wgpu.Buffer, uniforms: *const FrameUniforms) void {
+    const bytes = std.mem.asBytes(uniforms);
+    queue.writeBuffer(buffer, 0, bytes.ptr, bytes.len);
+}
+
+fn writePostProcessUniforms(queue: *wgpu.Queue, buffer: *wgpu.Buffer, uniforms: *const PostProcessUniforms) void {
+    const bytes = std.mem.asBytes(uniforms);
+    queue.writeBuffer(buffer, 0, bytes.ptr, bytes.len);
+}
 
 fn frameUniforms(light_value: DirectionalLightState) RenderError!FrameUniforms {
     const light = try validateDirectionalLight(light_value);
@@ -3690,7 +6465,75 @@ fn frameUniforms(light_value: DirectionalLightState) RenderError!FrameUniforms {
     };
 }
 
-const instanceAttributes = render_batching.instanceAttributes;
+fn postProcessUniforms(config: RenderConfig, width: u32, height: u32) PostProcessUniforms {
+    const safe_width = @max(width, 1);
+    const safe_height = @max(height, 1);
+    return .{
+        .params0 = .{
+            1.0 / @as(f32, @floatFromInt(safe_width)),
+            1.0 / @as(f32, @floatFromInt(safe_height)),
+            if (config.postprocess.enabled and config.postprocess.antialiasing == .fxaa) 1.0 else 0.0,
+            if (config.postprocess.enabled and config.postprocess.chromatic_aberration.enabled) config.postprocess.chromatic_aberration.strength else 0.0,
+        },
+        .params1 = .{
+            if (config.postprocess.enabled and config.postprocess.vignette.enabled) 1.0 else 0.0,
+            config.postprocess.vignette.strength,
+            config.postprocess.vignette.radius,
+            0.0,
+        },
+        .params2 = .{
+            if (config.postprocess.enabled and config.postprocess.bloom.enabled) 1.0 else 0.0,
+            config.postprocess.bloom.threshold,
+            config.postprocess.bloom.intensity,
+            config.postprocess.bloom.radius,
+        },
+        .params3 = .{
+            if (config.color.hdr) 1.0 else 0.0,
+            config.color.exposure,
+            switch (config.color.tone_mapping) {
+                .none => 0.0,
+                .reinhard => 1.0,
+                .aces => 2.0,
+            },
+            0.0,
+        },
+        .params4 = .{ 0.0, 0.0, 0.0, 0.0 },
+    };
+}
+
+fn instanceAttributes(config: InstanceConfig) RenderError!InstanceAttributes {
+    const aspect = config.width / config.height;
+    const mesh = config.mesh;
+    const rotation = matMul(
+        rotationZ(mesh.rotation[2]),
+        matMul(
+            rotationY(mesh.rotation[1]),
+            rotationX(mesh.rotation[0]),
+        ),
+    );
+    const model = matMul(
+        translation(mesh.position[0], mesh.position[1], mesh.position[2]),
+        matMul(rotation, scaling(mesh.scale[0], mesh.scale[1], mesh.scale[2])),
+    );
+    const camera = try validateCamera(config.camera);
+    const view = cameraViewMatrix(camera.transform);
+    const projection = perspective(std.math.degreesToRadians(camera.fov_y_degrees), aspect, camera.near, camera.far);
+    const mvp = matMul(projection, matMul(view, model));
+    const shadow_mvp = matMul(config.light_view_projection, model);
+
+    return .{
+        .mvp = mvp,
+        .model = model,
+        .object_color = .{ mesh.base_color[0], mesh.base_color[1], mesh.base_color[2], 1.0 },
+        .shadow_mvp = shadow_mvp,
+        .shadow_flags = .{
+            @floatFromInt(@as(u32, @intFromBool(mesh.receives_shadow))),
+            @floatFromInt(@as(u32, @intFromBool(mesh.casts_shadow))),
+            0.0,
+            0.0,
+        },
+    };
+}
 
 fn shadowLightViewProjection(light_value: DirectionalLightState) RenderError![16]f32 {
     const light = try validateDirectionalLight(light_value);
@@ -3744,7 +6587,7 @@ fn liveRunDeltaSecondsFromElapsedNs(elapsed_ns: u64) f32 {
 }
 
 fn updateFlyCamera(state: *FlyCameraState, world: *const runtime.World, input: FrameInput, delta_seconds: f32) RenderError!?runtime.Transform {
-    const active = flyCameraInputActive(input);
+    const active = updateFlyCameraCapture(state, input);
     if (!state.initialized and !active) {
         return null;
     }
@@ -3803,10 +6646,24 @@ fn updateFlyCamera(state: *FlyCameraState, world: *const runtime.World, input: F
     return state.transform;
 }
 
-fn flyCameraInputActive(input: FrameInput) bool {
-    if (!input.pointer.secondary_down) {
+fn updateFlyCameraCapture(state: *FlyCameraState, input: FrameInput) bool {
+    if (!input.pointer.secondary_down or input.pointer.secondary_released) {
+        state.captured_look = false;
         return false;
     }
+
+    if (input.pointer.secondary_pressed and flyCameraCaptureStartAllowed(input)) {
+        state.captured_look = true;
+    }
+
+    return flyCameraInputActive(state.*, input);
+}
+
+fn flyCameraInputActive(state: FlyCameraState, input: FrameInput) bool {
+    return state.captured_look and input.pointer.secondary_down;
+}
+
+fn flyCameraCaptureStartAllowed(input: FrameInput) bool {
     if (!input.debug_overlay_visible) {
         return true;
     }
@@ -3864,14 +6721,6 @@ const EditorRay = struct {
 fn validatedEditorSelection(world: *const runtime.World, selected: ?runtime.EntityHandle) ?runtime.EntityHandle {
     const entity = selected orelse return null;
     _ = world.entity(entity) catch return null;
-    if (!(world.hasComponent(entity, runtime.transform_component_id) catch return null)) {
-        return null;
-    }
-    if (!(world.hasComponent(entity, runtime.geometry_primitive_component_id) catch false) and
-        !(world.hasComponent(entity, runtime.cube_renderer_component_id) catch false))
-    {
-        return null;
-    }
     return entity;
 }
 
@@ -4097,7 +6946,9 @@ const EditorUiRoute = union(enum) {
     command: EditorCommand,
     splitter: EditorSplitter,
     system_scroll: ui_layout.ScrollWheelRoute,
+    entity_scroll: ui_layout.ScrollWheelRoute,
     inspector_scroll: ui_layout.ScrollWheelRoute,
+    entity_select: runtime.EntityHandle,
 };
 
 const EditorButtonSpec = struct {
@@ -4134,6 +6985,28 @@ fn decodeEditorCommand(command: []const u8) ?EditorCommand {
     return null;
 }
 
+const editor_entity_select_command_prefix = "machina.editor.entity.select.";
+
+fn formatEditorEntitySelectCommand(buffer: []u8, handle: runtime.EntityHandle) ?[]const u8 {
+    return std.fmt.bufPrint(buffer, "{s}{d}.{d}", .{ editor_entity_select_command_prefix, handle.index, handle.generation }) catch null;
+}
+
+fn decodeEditorEntitySelect(command: []const u8) ?runtime.EntityHandle {
+    if (!std.mem.startsWith(u8, command, editor_entity_select_command_prefix)) {
+        return null;
+    }
+    var parts = std.mem.splitScalar(u8, command[editor_entity_select_command_prefix.len..], '.');
+    const index_text = parts.next() orelse return null;
+    const generation_text = parts.next() orelse return null;
+    if (parts.next() != null) {
+        return null;
+    }
+    return .{
+        .index = std.fmt.parseInt(u32, index_text, 10) catch return null,
+        .generation = std.fmt.parseInt(u32, generation_text, 10) catch return null,
+    };
+}
+
 fn decodeEditorSplitter(command: []const u8) ?EditorSplitter {
     if (std.mem.eql(u8, command, editor_command_splitter_left)) {
         return .left;
@@ -4148,6 +7021,7 @@ fn routeEditorUi(
     allocator: std.mem.Allocator,
     scene_world: ?*const runtime.World,
     system_scroll_target_y: f32,
+    entity_scroll_target_y: f32,
     inspector_scroll_target_y: f32,
     input: FrameInput,
     profile_count: usize,
@@ -4163,7 +7037,7 @@ fn routeEditorUi(
     var input_world = runtime.World.init(allocator);
     defer input_world.deinit();
 
-    try addEditorChromeControlsForRouting(&input_world, scene_world, system_scroll_target_y, inspector_scroll_target_y, input, profile_count);
+    try addEditorChromeControlsForRouting(&input_world, scene_world, system_scroll_target_y, entity_scroll_target_y, inspector_scroll_target_y, input, profile_count);
 
     const route = ui_layout.routePointer(&input_world, .{
         .position = input.pointer.position,
@@ -4179,6 +7053,9 @@ fn routeEditorUi(
         if (std.mem.eql(u8, scroll_entity.id, "machina.editor.debug.systems.scroll")) {
             return .{ .system_scroll = scroll_route };
         }
+        if (std.mem.eql(u8, scroll_entity.id, "machina.editor.entities.scroll")) {
+            return .{ .entity_scroll = scroll_route };
+        }
         if (std.mem.eql(u8, scroll_entity.id, "machina.editor.inspector.scroll")) {
             return .{ .inspector_scroll = scroll_route };
         }
@@ -4191,12 +7068,15 @@ fn routeEditorUi(
         if (decodeEditorCommand(command_hit.command)) |command| {
             return .{ .command = command };
         }
+        if (decodeEditorEntitySelect(command_hit.command)) |entity| {
+            return .{ .entity_select = entity };
+        }
     }
     return null;
 }
 
 fn routeEditorSplitterAt(allocator: std.mem.Allocator, input: FrameInput) EditorError!?EditorSplitter {
-    const route = (try routeEditorUi(allocator, null, input.editor.system_scroll_y, input.editor.inspector_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
+    const route = (try routeEditorUi(allocator, null, input.editor.system_scroll_y, input.editor.entity_scroll_y, input.editor.inspector_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
     return switch (route) {
         .splitter => |splitter| splitter,
         else => null,
@@ -4204,7 +7084,7 @@ fn routeEditorSplitterAt(allocator: std.mem.Allocator, input: FrameInput) Editor
 }
 
 fn routeEditorCommandAt(allocator: std.mem.Allocator, input: FrameInput) EditorError!?EditorCommand {
-    const route = (try routeEditorUi(allocator, null, input.editor.system_scroll_y, input.editor.inspector_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
+    const route = (try routeEditorUi(allocator, null, input.editor.system_scroll_y, input.editor.entity_scroll_y, input.editor.inspector_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
     return switch (route) {
         .command => |command| command,
         else => null,
@@ -4215,6 +7095,7 @@ fn addEditorChromeControlsForRouting(
     world: *runtime.World,
     scene_world: ?*const runtime.World,
     system_scroll_target_y: f32,
+    entity_scroll_target_y: f32,
     inspector_scroll_target_y: f32,
     input: FrameInput,
     profile_count: usize,
@@ -4227,6 +7108,7 @@ fn addEditorChromeControlsForRouting(
     try addEditorSplitterHitTargetForRouting(world, input, .right);
     try addEditorSystemScrollForRouting(world, system_scroll_target_y, input, profile_count);
     if (scene_world) |loaded_scene_world| {
+        try addEditorEntityListForRouting(world, loaded_scene_world, entity_scroll_target_y, input);
         try addEditorInspectorScrollForRouting(world, loaded_scene_world, inspector_scroll_target_y, input);
     }
 }
@@ -4309,6 +7191,65 @@ fn addEditorSystemScrollForRouting(
     });
 }
 
+fn addEditorEntityListForRouting(
+    world: *runtime.World,
+    scene_world: *const runtime.World,
+    entity_scroll_target_y: f32,
+    input: FrameInput,
+) EditorError!void {
+    if (scene_world.entityCount() == 0) {
+        return;
+    }
+
+    const list_clip = editorEntityListClipRect(scene_world, input);
+    const hit_width = list_clip.size[0] + if (editorEntityNeedsScroll(scene_world, input)) editor_scrollbar_gap + editor_scrollbar_width else 0.0;
+    const scroll = try world.createEntity("machina.editor.entities.scroll", "Editor Entities Scroll View");
+    try world.setUiScrollView(scroll, .{
+        .position = list_clip.position,
+        .size = .{ hit_width, list_clip.size[1], 0.0 },
+        .content_offset = .{ 0.0, entity_scroll_target_y, 0.0 },
+    });
+
+    const content = try world.createEntity("machina.editor.entities.scroll.content", "Editor Entities Scroll Content");
+    try world.setUiSpacer(content, .{
+        .size = .{
+            list_clip.size[0],
+            editorEntityTableContentHeight(scene_world.entityCount()),
+            0.0,
+        },
+    });
+    try world.setUiLayoutItem(content, .{
+        .parent = "machina.editor.entities.scroll",
+        .order = 0,
+    });
+
+    var route_input = input;
+    route_input.editor.entity_scroll_y = entity_scroll_target_y;
+    const range = editorEntityVisibleRange(scene_world, route_input);
+    for (range.start..range.end) |entity_index| {
+        const handle = editorEntityHandleAt(scene_world, entity_index) orelse continue;
+        const id = std.fmt.allocPrint(world.allocator, "machina.editor.entities.row.{d}.hit", .{entity_index}) catch return error.OutOfMemory;
+        defer world.allocator.free(id);
+        var command_buffer: [96]u8 = undefined;
+        const command = formatEditorEntitySelectCommand(&command_buffer, handle) orelse return error.InvalidScene;
+        const hit = try world.createEntity(id, "Editor Entity Row Hit Area");
+        try world.setUiHitArea(hit, .{
+            .position = .{
+                0.0,
+                editor_entity_card_padding_y + @as(f32, @floatFromInt(entity_index)) * editor_entity_row_stride - 8.0,
+                0.0,
+            },
+            .size = .{ list_clip.size[0], editor_entity_row_stride, 0.0 },
+        });
+        try world.setUiButton(hit);
+        try world.setUiCommand(hit, .{ .command = command });
+        try world.setUiLayoutItem(hit, .{
+            .parent = "machina.editor.entities.scroll",
+            .order = @intCast(entity_index + 1),
+        });
+    }
+}
+
 fn addEditorInspectorScrollForRouting(
     world: *runtime.World,
     scene_world: *const runtime.World,
@@ -4372,7 +7313,7 @@ fn pickEditorInspectorProperty(world: *const runtime.World, input: FrameInput) E
             };
             if (row_rect.contains(input.pointer.position)) {
                 const value = world.getComponentFieldValue(selected, component_id, field_name) catch return null;
-                return try makeEditorFieldSelection(selected, component_id, field_name, pickEditorPropertyVec3Lane(value, input.pointer.position[0], clip.position[0] + value_x, card_width));
+                return try makeEditorFieldSelection(selected, component_id, field_name, pickEditorPropertyVec3Lane(value, field_name, input.pointer.position[0], clip.position[0] + value_x, card_width));
             }
         }
         content_y += editorInspectorComponentCardHeight(world, component_id);
@@ -4382,13 +7323,15 @@ fn pickEditorInspectorProperty(world: *const runtime.World, input: FrameInput) E
     return null;
 }
 
-fn pickEditorPropertyVec3Lane(value: runtime.ComponentValue, pointer_x: f32, value_screen_x: f32, card_width: f32) u2 {
+fn pickEditorPropertyVec3Lane(value: runtime.ComponentValue, field_name: []const u8, pointer_x: f32, value_screen_x: f32, card_width: f32) u2 {
     return switch (value) {
         .vec3 => blk: {
-            const value_width = @max(card_width - editorInspectorFieldValueX(card_width) - editor_inspector_card_padding_x, 1.0);
-            const lane_width = @max(value_width / 3.0, 1.0);
-            const local_x = std.math.clamp(pointer_x - value_screen_x, 0.0, value_width - 0.001);
-            break :blk @intCast(@min(@as(i32, @intFromFloat(@floor(local_x / lane_width))), 2));
+            const swatch_total_width = if (editorFieldLooksLikeColor(field_name)) editor_inspector_swatch_size + editor_inspector_input_gap else 0.0;
+            const total_width = @max(card_width - editorInspectorFieldValueX(card_width) - editor_inspector_card_padding_x, 1.0);
+            const lane_total_width = @max(total_width - swatch_total_width, 1.0);
+            const lane_slot_width = @max((lane_total_width - editor_inspector_input_gap * 2.0) / 3.0, 1.0);
+            const local_x = std.math.clamp(pointer_x - value_screen_x - swatch_total_width, 0.0, lane_total_width - 0.001);
+            break :blk @intCast(@min(@as(i32, @intFromFloat(@floor(local_x / lane_slot_width))), 2));
         },
         else => 0,
     };
@@ -4428,9 +7371,9 @@ fn routeEditorScrollWheel(
 ) EditorError!?EditorUiRoute {
     var route_input = input;
     route_input.pointer.wheel_delta[1] = wheel_delta_y;
-    const route = (try routeEditorUi(allocator, world, state.system_scroll_target_y, state.inspector_scroll_target_y, route_input, profile_count)) orelse return null;
+    const route = (try routeEditorUi(allocator, world, state.system_scroll_target_y, state.entity_scroll_target_y, state.inspector_scroll_target_y, route_input, profile_count)) orelse return null;
     return switch (route) {
-        .system_scroll, .inspector_scroll => route,
+        .system_scroll, .entity_scroll, .inspector_scroll => route,
         else => null,
     };
 }
@@ -4478,7 +7421,7 @@ fn editorDefaultSideWidths(window_width: f32) EditorSideWidths {
         return .{ .left = editor_left_sidebar_target_width, .right = editor_right_sidebar_target_width };
     }
     var left = std.math.clamp(window_width * 0.24, editor_left_sidebar_min_width, editor_left_sidebar_target_width);
-    var right = std.math.clamp(window_width * 0.26, editor_right_sidebar_min_width, editor_right_sidebar_target_width);
+    var right = std.math.clamp(window_width * 0.32, editor_right_sidebar_min_width, editor_right_sidebar_target_width);
     const max_side_total = @max(window_width - editor_min_game_viewport_width, 1.0);
     if (left + right > max_side_total) {
         const scale = max_side_total / (left + right);
@@ -4680,24 +7623,127 @@ pub fn editorGameViewportBounds(input: FrameInput) EditorViewportBounds {
     };
 }
 
-const cameraViewMatrix = render_math.cameraViewMatrix;
-const lookAt = render_math.lookAt;
-const isFiniteVec3 = render_math.isFiniteVec3;
-const addVec3 = render_math.addVec3;
-const subtractVec3 = render_math.subtractVec3;
-const scaleVec3 = render_math.scaleVec3;
-const dotVec3 = render_math.dotVec3;
-const crossVec3 = render_math.crossVec3;
-const normalizeVec3 = render_math.normalizeVec3;
-const vec3Length = render_math.vec3Length;
-const addVec2 = render_math.addVec2;
-const subtractVec2 = render_math.subtractVec2;
-const scaleVec2 = render_math.scaleVec2;
-const dotVec2 = render_math.dotVec2;
-const vec2Length = render_math.vec2Length;
-const distancePointToScreenSegment = render_math.distancePointToScreenSegment;
-const rotateDirection = render_math.rotateDirection;
-const transformPoint = render_math.transformPoint;
+fn cameraViewMatrix(transform_value: runtime.Transform) [16]f32 {
+    const inverse_translation = translation(
+        -transform_value.position[0],
+        -transform_value.position[1],
+        -transform_value.position[2],
+    );
+    return matMul(
+        rotationX(-transform_value.rotation[0]),
+        matMul(
+            rotationY(-transform_value.rotation[1]),
+            matMul(rotationZ(-transform_value.rotation[2]), inverse_translation),
+        ),
+    );
+}
+
+fn lookAt(eye: [3]f32, target: [3]f32, up: [3]f32) [16]f32 {
+    const z = normalizeVec3(subtractVec3(eye, target));
+    const x = normalizeVec3(crossVec3(up, z));
+    const y = crossVec3(z, x);
+
+    return .{
+        x[0],             y[0],             z[0],             0.0,
+        x[1],             y[1],             z[1],             0.0,
+        x[2],             y[2],             z[2],             0.0,
+        -dotVec3(x, eye), -dotVec3(y, eye), -dotVec3(z, eye), 1.0,
+    };
+}
+
+fn isFiniteVec3(value: [3]f32) bool {
+    return std.math.isFinite(value[0]) and std.math.isFinite(value[1]) and std.math.isFinite(value[2]);
+}
+
+fn addVec3(left: [3]f32, right: [3]f32) [3]f32 {
+    return .{ left[0] + right[0], left[1] + right[1], left[2] + right[2] };
+}
+
+fn subtractVec3(left: [3]f32, right: [3]f32) [3]f32 {
+    return .{ left[0] - right[0], left[1] - right[1], left[2] - right[2] };
+}
+
+fn scaleVec3(value: [3]f32, scalar: f32) [3]f32 {
+    return .{ value[0] * scalar, value[1] * scalar, value[2] * scalar };
+}
+
+fn dotVec3(left: [3]f32, right: [3]f32) f32 {
+    return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+}
+
+fn crossVec3(left: [3]f32, right: [3]f32) [3]f32 {
+    return .{
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    };
+}
+
+fn normalizeVec3(value: [3]f32) [3]f32 {
+    const length = vec3Length(value);
+    if (length == 0.0) {
+        return .{ 0.0, 0.0, 1.0 };
+    }
+    return .{ value[0] / length, value[1] / length, value[2] / length };
+}
+
+fn vec3Length(value: [3]f32) f32 {
+    return @sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2]);
+}
+
+fn addVec2(left: [2]f32, right: [2]f32) [2]f32 {
+    return .{ left[0] + right[0], left[1] + right[1] };
+}
+
+fn subtractVec2(left: [2]f32, right: [2]f32) [2]f32 {
+    return .{ left[0] - right[0], left[1] - right[1] };
+}
+
+fn scaleVec2(value: [2]f32, scalar: f32) [2]f32 {
+    return .{ value[0] * scalar, value[1] * scalar };
+}
+
+fn dotVec2(left: [2]f32, right: [2]f32) f32 {
+    return left[0] * right[0] + left[1] * right[1];
+}
+
+fn vec2Length(value: [2]f32) f32 {
+    return @sqrt(value[0] * value[0] + value[1] * value[1]);
+}
+
+fn distancePointToScreenSegment(point: [2]f32, start: [2]f32, end: [2]f32) f32 {
+    const segment = subtractVec2(end, start);
+    const segment_len_sq = dotVec2(segment, segment);
+    if (segment_len_sq <= 0.00001) {
+        return vec2Length(subtractVec2(point, start));
+    }
+    const raw_t = dotVec2(subtractVec2(point, start), segment) / segment_len_sq;
+    const t = @max(0.0, @min(1.0, raw_t));
+    const closest = addVec2(start, scaleVec2(segment, t));
+    return vec2Length(subtractVec2(point, closest));
+}
+
+fn rotateDirection(rotation: [3]f32, direction: [3]f32) [3]f32 {
+    const matrix = matMul(
+        rotationZ(rotation[2]),
+        matMul(
+            rotationY(rotation[1]),
+            rotationX(rotation[0]),
+        ),
+    );
+    const rotated = transformPoint(matrix, .{ direction[0], direction[1], direction[2], 0.0 });
+    return normalizeVec3(.{ rotated[0], rotated[1], rotated[2] });
+}
+
+fn transformPoint(matrix: [16]f32, point: [4]f32) [4]f32 {
+    return .{
+        matrix[0] * point[0] + matrix[4] * point[1] + matrix[8] * point[2] + matrix[12] * point[3],
+        matrix[1] * point[0] + matrix[5] * point[1] + matrix[9] * point[2] + matrix[13] * point[3],
+        matrix[2] * point[0] + matrix[6] * point[1] + matrix[10] * point[2] + matrix[14] * point[3],
+        matrix[3] * point[0] + matrix[7] * point[1] + matrix[11] * point[2] + matrix[15] * point[3],
+    };
+}
+
 test "camera state falls back only when no camera component exists" {
     var world = runtime.World.init(std.testing.allocator);
     defer world.deinit();
@@ -4728,6 +7774,7 @@ test "fly camera initializes from scene camera and moves while secondary mouse i
     const moved = (try updateFlyCamera(&state, &world, .{
         .pointer = .{
             .secondary_down = true,
+            .secondary_pressed = true,
             .delta = .{ 10.0, -5.0 },
         },
         .keyboard = .{
@@ -4737,6 +7784,7 @@ test "fly camera initializes from scene camera and moves while secondary mouse i
     }, 0.05)) orelse return error.TestExpectedEqual;
 
     try std.testing.expect(state.initialized);
+    try std.testing.expect(state.captured_look);
     try std.testing.expect(moved.position[2] < 6.0);
     try std.testing.expect(moved.position[1] > 1.0);
     try std.testing.expect(moved.rotation[1] < 0.0);
@@ -4759,6 +7807,7 @@ test "fly camera ignores right mouse held over editor sidebar" {
             .position = .{ 1240.0, 80.0 },
             .has_position = true,
             .secondary_down = true,
+            .secondary_pressed = true,
             .delta = .{ 100.0, 0.0 },
         },
         .keyboard = .{ .move_forward = true },
@@ -4766,6 +7815,69 @@ test "fly camera ignores right mouse held over editor sidebar" {
 
     try std.testing.expect(ignored == null);
     try std.testing.expect(!state.initialized);
+    try std.testing.expect(!state.captured_look);
+}
+
+test "fly camera remains captured after starting in editor game viewport" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const camera_entity = try world.createEntity("camera", "Camera");
+    try world.setTransform(camera_entity, .{ .position = .{ 0.0, 1.0, 6.0 } });
+    try world.setCamera(camera_entity, .{});
+
+    var state = FlyCameraState{};
+    const base_input = FrameInput{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+    };
+    const game_viewport = editorGameViewport(base_input);
+    const started = (try updateFlyCamera(&state, &world, .{
+        .debug_overlay_visible = true,
+        .viewport_width = base_input.viewport_width,
+        .viewport_height = base_input.viewport_height,
+        .pointer = .{
+            .position = .{ game_viewport.x + game_viewport.width * 0.5, game_viewport.y + game_viewport.height * 0.5 },
+            .has_position = true,
+            .secondary_down = true,
+            .secondary_pressed = true,
+            .delta = .{ 10.0, 0.0 },
+        },
+    }, 0.016)) orelse return error.TestExpectedEqual;
+
+    try std.testing.expect(state.initialized);
+    try std.testing.expect(state.captured_look);
+
+    const continued = (try updateFlyCamera(&state, &world, .{
+        .debug_overlay_visible = true,
+        .viewport_width = base_input.viewport_width,
+        .viewport_height = base_input.viewport_height,
+        .pointer = .{
+            .position = .{ 1240.0, 80.0 },
+            .has_position = true,
+            .secondary_down = true,
+            .delta = .{ 30.0, 0.0 },
+        },
+    }, 0.016)) orelse return error.TestExpectedEqual;
+
+    try std.testing.expect(state.captured_look);
+    try std.testing.expect(continued.rotation[1] < started.rotation[1]);
+
+    const released = (try updateFlyCamera(&state, &world, .{
+        .debug_overlay_visible = true,
+        .viewport_width = base_input.viewport_width,
+        .viewport_height = base_input.viewport_height,
+        .pointer = .{
+            .position = .{ 1240.0, 80.0 },
+            .has_position = true,
+            .secondary_released = true,
+            .delta = .{ 100.0, 0.0 },
+        },
+    }, 0.016)) orelse return error.TestExpectedEqual;
+
+    try std.testing.expect(!state.captured_look);
+    try std.testing.expectApproxEqAbs(continued.rotation[1], released.rotation[1], 0.0001);
 }
 
 test "editor raycast selects nearest renderable mesh" {
@@ -4908,7 +8020,7 @@ test "editor chrome routes pointer through one retained ui route" {
         .system_profile_count_hint = 20,
     };
     const play_rect = editorPlayButtonRect(frame_input);
-    const command_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, .{
+    const command_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, 0.0, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -4922,7 +8034,7 @@ test "editor chrome routes pointer through one retained ui route" {
     try std.testing.expectEqual(EditorCommand.play_toggle, command_route.command);
 
     const left_splitter = editorSplitterRect(frame_input, .left) orelse return error.TestExpectedEqual;
-    const splitter_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, .{
+    const splitter_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, 0.0, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -4936,7 +8048,7 @@ test "editor chrome routes pointer through one retained ui route" {
     try std.testing.expectEqual(EditorSplitter.left, splitter_route.splitter);
 
     const scroll_point = editorSystemListHitTestPoint(&profiles, 20);
-    const scroll_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, .{
+    const scroll_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, 0.0, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -6377,6 +9489,157 @@ test "debug overlay extracts system profile rows when available" {
     try std.testing.expectEqualStrings("57us", try state.world.getString(row1_duration, runtime.ui_text_component_id, "value"));
 }
 
+test "debug overlay extracts entity list below system list" {
+    var scene_world = runtime.World.init(std.testing.allocator);
+    defer scene_world.deinit();
+
+    const player = try scene_world.createEntity("player", "Player");
+    try scene_world.setTransform(player, .{});
+    const crate = try scene_world.createEntity("crate", "Crate");
+    try scene_world.setTransform(crate, .{});
+
+    const profiles = [_]runtime.SystemProfileSnapshot{
+        .{ .id = "tick", .phase = .update, .sample_count = 1, .window_size = 120, .last_ns = 1, .rolling_average_ns = 1 },
+    };
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+    const frame_input = FrameInput{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .system_profiles = &profiles,
+        .editor = .{ .selected_entity = crate },
+    };
+    try state.extractSceneWithInput(.{ .world = &scene_world }, frame_input);
+
+    const system_panel = state.world.findEntityById("machina.editor.debug.panel") orelse return error.TestExpectedEqual;
+    const entity_panel = state.world.findEntityById("machina.editor.entities.panel") orelse return error.TestExpectedEqual;
+    const entity_header = state.world.findEntityById("machina.editor.entities.header") orelse return error.TestExpectedEqual;
+    const row0_label = state.world.findEntityById("machina.editor.entities.row.0.label") orelse return error.TestExpectedEqual;
+    const row1_label = state.world.findEntityById("machina.editor.entities.row.1.label") orelse return error.TestExpectedEqual;
+    const row1_components = state.world.findEntityById("machina.editor.entities.row.1.components") orelse return error.TestExpectedEqual;
+    try std.testing.expect(state.world.findEntityById("machina.editor.entities.row.1.highlight") != null);
+
+    const system_position = try state.world.getVec3(system_panel, runtime.ui_rect_component_id, "position");
+    const system_size = try state.world.getVec3(system_panel, runtime.ui_rect_component_id, "size");
+    const entity_position = try state.world.getVec3(entity_panel, runtime.ui_rect_component_id, "position");
+    try std.testing.expect(entity_position[1] >= system_position[1] + system_size[1] + editor_left_panel_gap - 0.001);
+    try std.testing.expectEqualStrings("ENTITIES 2", try state.world.getString(entity_header, runtime.ui_text_component_id, "value"));
+    try std.testing.expectEqualStrings("Player", try state.world.getString(row0_label, runtime.ui_text_component_id, "value"));
+    try std.testing.expectEqualStrings("Crate", try state.world.getString(row1_label, runtime.ui_text_component_id, "value"));
+    try std.testing.expectEqualStrings("1C", try state.world.getString(row1_components, runtime.ui_text_component_id, "value"));
+}
+
+test "editor entity list scroll state responds to wheel input" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    for (0..12) |index| {
+        const id = try std.fmt.allocPrint(std.testing.allocator, "entity-{d}", .{index});
+        defer std.testing.allocator.free(id);
+        const name = try std.fmt.allocPrint(std.testing.allocator, "Entity {d}", .{index});
+        defer std.testing.allocator.free(name);
+        _ = try world.createEntity(id, name);
+    }
+
+    var editor_state = EditorState{};
+    const frame_input = FrameInput{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+    };
+    const list_clip = editorEntityListClipRect(&world, frame_input);
+    const update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .delta_seconds = 1.0,
+        .pointer = .{
+            .position = .{ list_clip.position[0] + 4.0, list_clip.position[1] + 4.0 },
+            .has_position = true,
+            .wheel_delta = .{ 0.0, -1.0 },
+        },
+    });
+
+    try std.testing.expect(update.consumed_pointer);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_scroll_pixels_per_wheel), editor_state.entity_scroll_target_y, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), editor_state.system_scroll_target_y, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), editor_state.inspector_scroll_target_y, 0.001);
+}
+
+test "editor entity list row click selects entity" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    _ = try world.createEntity("first", "First");
+    const second = try world.createEntity("second", "Second");
+    _ = try world.createEntity("third", "Third");
+
+    var editor_state = EditorState{};
+    const frame_input = FrameInput{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+    };
+    const list_clip = editorEntityListClipRect(&world, frame_input);
+    const press = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .pointer = .{
+            .position = .{
+                list_clip.position[0] + editor_entity_row_label_padding_x,
+                list_clip.position[1] + editor_entity_card_padding_y + editor_entity_row_stride + 2.0,
+            },
+            .has_position = true,
+            .primary_pressed = true,
+        },
+    });
+
+    try std.testing.expect(press.consumed_pointer);
+    try std.testing.expect(editorEntityHandlesEqual(editor_state.selected_entity, second));
+    try std.testing.expect(editorEntityHandlesEqual(editorFrameState(&world, editor_state).selected_entity, second));
+}
+
+test "editor renders inspector for non-renderable entity list selection" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    _ = try world.createEntity("visible", "Visible");
+    const resource = try world.createEntity("resource", "Resource");
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+    try state.extractSceneWithInput(.{ .world = &world }, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = .{ .selected_entity = resource },
+    });
+
+    const entity_label = state.world.findEntityById("machina.editor.inspector.entity") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings("Resource  resource", try state.world.getString(entity_label, runtime.ui_text_component_id, "value"));
+    try std.testing.expect(state.world.findEntityById("machina.editor.gizmo.x") == null);
+}
+
+test "editor render skips stale selected entity handles" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+    try state.extractSceneWithInput(.{ .world = &world }, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = .{ .selected_entity = .{ .index = 99, .generation = 99 } },
+    });
+
+    try std.testing.expect(state.world.findEntityById("machina.editor.gizmo.x") == null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.inspector.unavailable") != null);
+}
+
 test "debug overlay renders a scrolled system profile window" {
     var scene_world = runtime.World.init(std.testing.allocator);
     defer scene_world.deinit();
@@ -6432,6 +9695,7 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
         .rings = 8,
     });
     try scene_world.setSurfaceMaterial(entity, .{ .base_color = .{ 0.8, 0.4, 0.2 } });
+    try scene_world.setUiToggle(entity, .{ .checked = true });
 
     var state = try RenderEcsState.init(std.testing.allocator);
     defer state.deinit();
@@ -6472,11 +9736,18 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     const geometry_card = state.world.findEntityById("machina.editor.inspector.component.1") orelse return error.TestExpectedEqual;
     const geometry_title = state.world.findEntityById("machina.editor.inspector.component.1.title") orelse return error.TestExpectedEqual;
     const transform_position_label = state.world.findEntityById("machina.editor.inspector.component.0.field.0.label") orelse return error.TestExpectedEqual;
+    const transform_x_label = state.world.findEntityById("machina.editor.inspector.component.0.field.0.lane_label.0") orelse return error.TestExpectedEqual;
     const transform_position_input_0 = state.world.findEntityById("machina.editor.inspector.component.0.field.0.input.0") orelse return error.TestExpectedEqual;
     const transform_position_value_0 = state.world.findEntityById("machina.editor.inspector.component.0.field.0.value.0") orelse return error.TestExpectedEqual;
     const geometry_field_label = state.world.findEntityById("machina.editor.inspector.component.1.field.0.label") orelse return error.TestExpectedEqual;
-    const geometry_field_input = state.world.findEntityById("machina.editor.inspector.component.1.field.0.input") orelse return error.TestExpectedEqual;
-    const geometry_field_value = state.world.findEntityById("machina.editor.inspector.component.1.field.0.value") orelse return error.TestExpectedEqual;
+    const geometry_field_input = state.world.findEntityById("machina.editor.inspector.component.1.field.0.select") orelse return error.TestExpectedEqual;
+    const geometry_field_value = state.world.findEntityById("machina.editor.inspector.component.1.field.0.select.value") orelse return error.TestExpectedEqual;
+    const material_swatch = state.world.findEntityById("machina.editor.inspector.component.2.field.0.swatch") orelse return error.TestExpectedEqual;
+    const material_red = state.world.findEntityById("machina.editor.inspector.component.2.field.0.lane_label.0") orelse return error.TestExpectedEqual;
+    const material_green = state.world.findEntityById("machina.editor.inspector.component.2.field.0.lane_label.1") orelse return error.TestExpectedEqual;
+    const material_blue = state.world.findEntityById("machina.editor.inspector.component.2.field.0.lane_label.2") orelse return error.TestExpectedEqual;
+    const toggle_input = state.world.findEntityById("machina.editor.inspector.component.3.field.0.toggle") orelse return error.TestExpectedEqual;
+    const toggle_value = state.world.findEntityById("machina.editor.inspector.component.3.field.0.toggle.label") orelse return error.TestExpectedEqual;
     const separator = state.world.findEntityById("machina.editor.inspector.component.separator.1") orelse return error.TestExpectedEqual;
     const card_position = try state.world.getVec3(geometry_card, runtime.ui_rect_component_id, "position");
     const card_size = try state.world.getVec3(geometry_card, runtime.ui_rect_component_id, "size");
@@ -6489,8 +9760,18 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     const label_value = try state.world.getString(geometry_field_label, runtime.ui_text_component_id, "value");
     const field_value = try state.world.getString(geometry_field_value, runtime.ui_text_component_id, "value");
     try std.testing.expectEqualStrings("position", try state.world.getString(transform_position_label, runtime.ui_text_component_id, "value"));
+    try std.testing.expectEqualStrings("X", try state.world.getString(transform_x_label, runtime.ui_text_component_id, "value"));
     try std.testing.expect(try state.world.hasComponent(transform_position_input_0, runtime.ui_rect_component_id));
     try std.testing.expectEqualStrings("0.25", try state.world.getString(transform_position_value_0, runtime.ui_text_component_id, "value"));
+    try std.testing.expect(try state.world.hasComponent(material_swatch, runtime.ui_rect_component_id));
+    const red_color = try state.world.getVec3(material_red, runtime.ui_text_component_id, "color");
+    const green_color = try state.world.getVec3(material_green, runtime.ui_text_component_id, "color");
+    const blue_color = try state.world.getVec3(material_blue, runtime.ui_text_component_id, "color");
+    try std.testing.expect(red_color[0] > red_color[1]);
+    try std.testing.expect(green_color[1] > green_color[0]);
+    try std.testing.expect(blue_color[2] > blue_color[0]);
+    try std.testing.expect(try state.world.hasComponent(toggle_input, runtime.ui_rect_component_id));
+    try std.testing.expectEqualStrings("ON", try state.world.getString(toggle_value, runtime.ui_text_component_id, "value"));
     const separator_size = try state.world.getVec3(separator, runtime.ui_separator_component_id, "size");
     const sidebar = editorSidebarPanelRect(editorRightSidebarRect(frame_input));
     const resolved_card_layout = try resolveUiLayout(&state.world, geometry_card, card_position);
@@ -6513,7 +9794,7 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     try std.testing.expectApproxEqAbs(editorInspectorFieldValueX(card_size[0]), input_position[0], 0.001);
     try std.testing.expectApproxEqAbs(editor_inspector_input_padding_x, value_position[0], 0.001);
     try std.testing.expectEqualStrings("primitive", label_value);
-    try std.testing.expectEqualStrings("uv_sphere", field_value);
+    try std.testing.expectEqualStrings("uv_sphere >", field_value);
 }
 
 test "editor inspector component stack resolves inside scroll view clip" {
@@ -6613,6 +9894,7 @@ test "editor inspector property inputs edit text and commit with undo" {
         .segments = 16,
         .rings = 8,
     });
+    try world.setUiToggle(entity, .{ .checked = false });
 
     var editor_state = EditorState{ .selected_entity = entity };
     const frame_input = FrameInput{
@@ -6834,6 +10116,42 @@ test "editor inspector property inputs edit text and commit with undo" {
     try std.testing.expect(!editor_state.text_input.active);
     try std.testing.expectApproxEqAbs(@as(f32, 2.5), (try world.getVec3(entity, runtime.transform_component_id, "position"))[1], 0.001);
 
+    const primitive_selection = try makeEditorFieldSelection(entity, runtime.geometry_primitive_component_id, "primitive", 0);
+    try std.testing.expect(try applyEditorTypedControlClick(&world, &editor_state, primitive_selection));
+    try std.testing.expect(!editor_state.text_input.active);
+    try std.testing.expectEqualStrings("ico_sphere", try world.getString(entity, runtime.geometry_primitive_component_id, "primitive"));
+
+    const primitive_undo_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .keyboard = .{ .editor_undo_pressed = true },
+    });
+    try std.testing.expect(primitive_undo_update.consumed_pointer);
+    try std.testing.expectEqualStrings("uv_sphere", try world.getString(entity, runtime.geometry_primitive_component_id, "primitive"));
+
+    const primitive_redo_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .keyboard = .{ .editor_redo_pressed = true },
+    });
+    try std.testing.expect(primitive_redo_update.consumed_pointer);
+    try std.testing.expectEqualStrings("ico_sphere", try world.getString(entity, runtime.geometry_primitive_component_id, "primitive"));
+
+    const toggle_selection = try makeEditorFieldSelection(entity, runtime.ui_toggle_component_id, "checked", 0);
+    try std.testing.expect(try applyEditorTypedControlClick(&world, &editor_state, toggle_selection));
+    try std.testing.expect(try world.getBoolean(entity, runtime.ui_toggle_component_id, "checked"));
+
+    const toggle_undo_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .keyboard = .{ .editor_undo_pressed = true },
+    });
+    try std.testing.expect(toggle_undo_update.consumed_pointer);
+    try std.testing.expect(!try world.getBoolean(entity, runtime.ui_toggle_component_id, "checked"));
+
     try focusEditorTextInput(&world, &editor_state, try makeEditorFieldSelection(entity, runtime.geometry_primitive_component_id, "primitive", 0), .{ .select_all_on_focus = false });
     try std.testing.expect(editor_state.text_input.active);
     try std.testing.expect(!editor_state.text_input.hasSelection());
@@ -7025,14 +10343,89 @@ fn addBatchTestRenderable(
     }
 }
 
-const perspective = render_math.perspective;
-const orthographic = render_math.orthographic;
-const translation = render_math.translation;
-const scaling = render_math.scaling;
-const rotationX = render_math.rotationX;
-const rotationY = render_math.rotationY;
-const rotationZ = render_math.rotationZ;
-const matMul = render_math.matMul;
+fn perspective(fovy_radians: f32, aspect: f32, near: f32, far: f32) [16]f32 {
+    const f = 1.0 / @tan(fovy_radians * 0.5);
+    return .{
+        f / aspect, 0.0, 0.0,                         0.0,
+        0.0,        f,   0.0,                         0.0,
+        0.0,        0.0, far / (near - far),          -1.0,
+        0.0,        0.0, (far * near) / (near - far), 0.0,
+    };
+}
+
+fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) [16]f32 {
+    return .{
+        2.0 / (right - left),             0.0,                              0.0,                 0.0,
+        0.0,                              2.0 / (top - bottom),             0.0,                 0.0,
+        0.0,                              0.0,                              1.0 / (near - far),  0.0,
+        -(right + left) / (right - left), -(top + bottom) / (top - bottom), near / (near - far), 1.0,
+    };
+}
+
+fn translation(x: f32, y: f32, z: f32) [16]f32 {
+    return .{
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        x,   y,   z,   1.0,
+    };
+}
+
+fn scaling(x: f32, y: f32, z: f32) [16]f32 {
+    return .{
+        x,   0.0, 0.0, 0.0,
+        0.0, y,   0.0, 0.0,
+        0.0, 0.0, z,   0.0,
+        0.0, 0.0, 0.0, 1.0,
+    };
+}
+
+fn rotationX(angle: f32) [16]f32 {
+    const c = @cos(angle);
+    const s = @sin(angle);
+    return .{
+        1.0, 0.0, 0.0, 0.0,
+        0.0, c,   s,   0.0,
+        0.0, -s,  c,   0.0,
+        0.0, 0.0, 0.0, 1.0,
+    };
+}
+
+fn rotationY(angle: f32) [16]f32 {
+    const c = @cos(angle);
+    const s = @sin(angle);
+    return .{
+        c,   0.0, -s,  0.0,
+        0.0, 1.0, 0.0, 0.0,
+        s,   0.0, c,   0.0,
+        0.0, 0.0, 0.0, 1.0,
+    };
+}
+
+fn rotationZ(angle: f32) [16]f32 {
+    const c = @cos(angle);
+    const s = @sin(angle);
+    return .{
+        c,   s,   0.0, 0.0,
+        -s,  c,   0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    };
+}
+
+fn matMul(a: [16]f32, b: [16]f32) [16]f32 {
+    var out: [16]f32 = undefined;
+    for (0..4) |column| {
+        for (0..4) |row| {
+            var sum: f32 = 0.0;
+            for (0..4) |k| {
+                sum += a[k * 4 + row] * b[column * 4 + k];
+            }
+            out[column * 4 + row] = sum;
+        }
+    }
+    return out;
+}
 
 fn buildUiVertices(allocator: std.mem.Allocator, world: *const runtime.World, width: u32, height: u32) RenderError!std.ArrayList(UiVertex) {
     if (width == 0 or height == 0) {
@@ -7346,9 +10739,34 @@ fn clamp01(value: f32) f32 {
     return @min(@max(value, 0.0), 1.0);
 }
 
-const FrameUniforms = render_types.FrameUniforms;
-const InstanceAttributes = render_types.InstanceAttributes;
-const UiVertex = render_types.UiVertex;
+const FrameUniforms = extern struct {
+    light_dir: [4]f32,
+    light_color: [4]f32,
+    lighting: [4]f32,
+};
+
+const PostProcessUniforms = extern struct {
+    params0: [4]f32,
+    params1: [4]f32,
+    params2: [4]f32,
+    params3: [4]f32,
+    params4: [4]f32,
+};
+
+const InstanceAttributes = extern struct {
+    mvp: [16]f32,
+    model: [16]f32,
+    object_color: [4]f32,
+    shadow_mvp: [16]f32,
+    shadow_flags: [4]f32,
+};
+
+const UiVertex = extern struct {
+    position: [2]f32,
+    color: [4]f32,
+    local_position: [2]f32,
+    rect_size_radius: [4]f32,
+};
 
 fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?*anyopaque, userdata2: ?*anyopaque) callconv(.c) void {
     const complete: *bool = @ptrCast(@alignCast(userdata1));
@@ -7358,4 +10776,61 @@ fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?
     map_status.* = status;
 }
 
-const write24BitBmp = render_bmp.write24BitBmp;
+fn write24BitBmp(io: Io, allocator: std.mem.Allocator, output_path: []const u8, bgra_data: []const u8) !void {
+    const bytes = try allocator.alloc(u8, bmpFileSize());
+    defer allocator.free(bytes);
+    @memset(bytes, 0);
+
+    var cursor: usize = 0;
+    putBytes(bytes, &cursor, "BM");
+    putInt(u32, bytes, &cursor, bmpFileSize());
+    putInt(u32, bytes, &cursor, 0);
+    putInt(u32, bytes, &cursor, 54);
+    putInt(u32, bytes, &cursor, 40);
+    putInt(u32, bytes, &cursor, output_width);
+    putInt(u32, bytes, &cursor, output_height);
+    putInt(u16, bytes, &cursor, 1);
+    putInt(u16, bytes, &cursor, 24);
+    cursor += 4 * 6;
+
+    var line_buffer = [_]u8{0} ** bmp_bytes_per_line;
+    const bgra_pixels_per_line = output_width * 4;
+    for (0..output_height) |i_y| {
+        const y = output_height - i_y - 1;
+        const line_offset = y * bgra_pixels_per_line;
+        for (0..output_width) |x| {
+            const bgr_pixel_offset = x * 3;
+            const bgra_pixel_offset = line_offset + (x * 4);
+            line_buffer[bgr_pixel_offset] = bgra_data[bgra_pixel_offset];
+            line_buffer[bgr_pixel_offset + 1] = bgra_data[bgra_pixel_offset + 1];
+            line_buffer[bgr_pixel_offset + 2] = bgra_data[bgra_pixel_offset + 2];
+        }
+        putBytes(bytes, &cursor, &line_buffer);
+    }
+
+    try Io.Dir.cwd().writeFile(io, .{
+        .sub_path = output_path,
+        .data = bytes,
+    });
+}
+
+fn putBytes(output: []u8, cursor: *usize, bytes: []const u8) void {
+    @memcpy(output[cursor.*..][0..bytes.len], bytes);
+    cursor.* += bytes.len;
+}
+
+fn putInt(comptime T: type, output: []u8, cursor: *usize, value: anytype) void {
+    const size = @sizeOf(T);
+    std.mem.writeInt(T, output[cursor.*..][0..size], @intCast(value), .little);
+    cursor.* += size;
+}
+
+const bmp_colors_per_line = output_width * 3;
+const bmp_bytes_per_line = if (bmp_colors_per_line & 0x00000003 == 0)
+    bmp_colors_per_line
+else
+    (bmp_colors_per_line | 0x00000003) + 1;
+
+fn bmpFileSize() usize {
+    return 54 + (bmp_bytes_per_line * output_height);
+}

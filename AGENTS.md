@@ -75,6 +75,10 @@ Machina is an experimental, text-first game engine written in Zig with embedded 
 
 ## Documentation and Decision Records
 
+- Use the `todo-list` skill when creating, updating, or auditing task tracking.
+- Keep `docs/TODO.md` synchronized with legitimate follow-up work discovered during planning, implementation, review, and verification.
+- Read `docs/TODO.md` before choosing the next slice or making roadmap claims, and remove or rewrite completed items as work lands.
+- Keep `docs/TODO.md` as a concise task index; put detailed rationale in ADRs, FDRs, issues, or docs and link out when useful.
 - Update ADRs when changing architecture, backend choices, runtime model, or persistent implementation strategy.
 - Update FDRs when changing feature behavior, command behavior, scene schema, validation semantics, diagnostics, examples that define supported behavior, or user-visible workflows.
 - Update `docs/fdr/INDEX.md` and `docs/adr/INDEX.md` when adding records.
@@ -99,6 +103,7 @@ Machina is an experimental, text-first game engine written in Zig with embedded 
 
 ## Project Map
 
+- Project task index: `docs/TODO.md`
 - CLI entry point and command routing: `src/main.zig`
 - Project and scene loading/validation: `src/root.zig`
 - ECS runtime, registry, and scheduling: `src/runtime.zig`
@@ -114,6 +119,7 @@ Machina is an experimental, text-first game engine written in Zig with embedded 
 
 ## Further Reading
 
+- Outstanding work: `docs/TODO.md`
 - Architecture decisions: `docs/adr/INDEX.md`
 - Feature behavior: `docs/fdr/INDEX.md`
 - UI/editor model: `docs/adr/ADR-007-engine-hosted-ui-for-editor-tooling.md`, `docs/adr/ADR-020-transient-ecs-input-resources.md`, `docs/fdr/FDR-005-engine-ui-primitives.md`, `docs/fdr/FDR-018-editor-entity-inspector.md`
