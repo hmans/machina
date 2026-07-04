@@ -66,6 +66,8 @@ const editor_panel_corner_radius: f32 = 8.0;
 const editor_button_corner_radius: f32 = 6.0;
 const editor_command_play_toggle = "machina.editor.play_toggle";
 const editor_command_step = "machina.editor.step";
+const editor_command_splitter_left = "machina.editor.splitter.left";
+const editor_command_splitter_right = "machina.editor.splitter.right";
 const fly_camera_move_speed: f32 = 6.0;
 const fly_camera_look_sensitivity: f32 = 0.0035;
 const fly_camera_max_pitch: f32 = std.math.degreesToRadians(89.0);
@@ -391,23 +393,6 @@ fn ensureEditorSidebarWidths(state: *EditorState, input: FrameInput) void {
     state.right_sidebar_width = widths.right;
 }
 
-fn pickEditorSplitter(input: FrameInput) ?EditorSplitter {
-    if (!input.debug_overlay_visible or !input.pointer.has_position) {
-        return null;
-    }
-    if (editorSplitterHitRect(input, .left)) |rect| {
-        if (rect.contains(input.pointer.position)) {
-            return .left;
-        }
-    }
-    if (editorSplitterHitRect(input, .right)) |rect| {
-        if (rect.contains(input.pointer.position)) {
-            return .right;
-        }
-    }
-    return null;
-}
-
 fn dragEditorSplitter(state: *EditorState, input: FrameInput) void {
     if (!state.has_last_pointer) {
         state.last_pointer = input.pointer.position;
@@ -490,7 +475,7 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
     }
 
     if (input.pointer.primary_pressed) {
-        if (pickEditorSplitter(input)) |splitter| {
+        if (try routeEditorSplitterAt(allocator, input)) |splitter| {
             state.dragging_splitter = splitter;
             state.captured_pointer = true;
             state.last_pointer = input.pointer.position;
@@ -964,7 +949,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
         if (options.frame_update) |frame_update| {
             frame_update.step(frame_update.context, delta_seconds, &input);
         }
-        const desired_cursor = if (relative_mouse_enabled) EditorCursorKind.default else editorCursorKind(input);
+        const desired_cursor = if (relative_mouse_enabled) EditorCursorKind.default else editorCursorKind(allocator, input) catch .default;
         if (desired_cursor != active_cursor_kind) {
             setEditorCursor(desired_cursor, resize_ew_cursor);
             active_cursor_kind = desired_cursor;
@@ -1305,7 +1290,21 @@ const RenderEcsState = struct {
             const canvas_layout = applyUiCanvasLayout(canvas_transform, stored_entity.id, layout);
             const screen_size = if (isEditorUiEntityId(stored_entity.id)) size else scaleUiSize(canvas_transform, size);
             const screen_layout = try resolveUiScreenLayout(input, stored_entity.id, canvas_layout, screen_size);
-            const state = evaluateUiButtonState(input, screen_layout.position, screen_size, screen_layout.clip);
+            var interaction_position = screen_layout.position;
+            var interaction_size = screen_size;
+            var interaction_clip = screen_layout.clip;
+            if (self.world.hasComponent(entity, runtime.ui_hit_area_component_id) catch |err| return mapWorldError(err)) {
+                const hit_position = self.world.getVec3(entity, runtime.ui_hit_area_component_id, "position") catch |err| return mapWorldError(err);
+                const hit_size = self.world.getVec3(entity, runtime.ui_hit_area_component_id, "size") catch |err| return mapWorldError(err);
+                const hit_layout = try resolveUiLayout(&self.world, entity, hit_position);
+                const hit_canvas_layout = applyUiCanvasLayout(canvas_transform, stored_entity.id, hit_layout);
+                const hit_screen_size = if (isEditorUiEntityId(stored_entity.id)) hit_size else scaleUiSize(canvas_transform, hit_size);
+                const hit_screen_layout = try resolveUiScreenLayout(input, stored_entity.id, hit_canvas_layout, hit_screen_size);
+                interaction_position = hit_screen_layout.position;
+                interaction_size = hit_screen_size;
+                interaction_clip = hit_screen_layout.clip;
+            }
+            const state = evaluateUiButtonState(input, interaction_position, interaction_size, interaction_clip);
             try setRenderUiButtonState(&self.world, entity, state);
         }
     }
@@ -1760,6 +1759,7 @@ fn extractSceneUiInto(allocator: std.mem.Allocator, render_world: *runtime.World
         try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_border_component_id);
         try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_text_component_id);
         try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_button_component_id);
+        try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_hit_area_component_id);
         try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_command_component_id);
         try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_scroll_view_component_id);
         try copyUiComponent(allocator, scene_world, render_world, source, target, runtime.ui_vbox_component_id);
@@ -1780,6 +1780,7 @@ fn hasExtractableUiComponent(world: *const runtime.World, entity: runtime.Entity
         (world.hasComponent(entity, runtime.ui_border_component_id) catch false) or
         (world.hasComponent(entity, runtime.ui_text_component_id) catch false) or
         (world.hasComponent(entity, runtime.ui_button_component_id) catch false) or
+        (world.hasComponent(entity, runtime.ui_hit_area_component_id) catch false) or
         (world.hasComponent(entity, runtime.ui_command_component_id) catch false) or
         (world.hasComponent(entity, runtime.ui_scroll_view_component_id) catch false) or
         (world.hasComponent(entity, runtime.ui_vbox_component_id) catch false) or
@@ -1884,12 +1885,13 @@ const EditorVBox = struct {
     }
 };
 
-fn extractEditorShellInto(world: *runtime.World, input: FrameInput) RenderError!void {
+fn extractEditorShellInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
     const top = editorTopBarRect(input);
     const bottom = editorBottomBarRect(input);
     const body = editorBodyRect(input);
     const layout = editorBodyLayout(input);
     const game_viewport = editorGameViewport(input);
+    const hovered_splitter = routeEditorSplitterAt(allocator, input) catch null;
 
     try extractEditorShellRect(world, "machina.editor.shell.top_bar", top, editor_palette.shell);
     try extractEditorShellRect(world, "machina.editor.shell.bottom_bar", bottom, editor_palette.shell);
@@ -1903,9 +1905,11 @@ fn extractEditorShellInto(world: *runtime.World, input: FrameInput) RenderError!
     }) catch |err| return mapWorldError(err);
 
     try extractEditorShellLayoutRect(world, "machina.editor.shell.left_sidebar", "Editor Left Sidebar", layout.left.size3(), 0, editor_palette.panel);
-    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, editorSplitterColor(input, .left));
+    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, editorSplitterColor(input, .left, hovered_splitter));
+    try extractEditorSplitterHitTarget(world, input, .left);
     try extractEditorShellLayoutSpacer(world, "machina.editor.shell.game_viewport", "Editor Game Viewport Slot", .{ editor_min_game_viewport_width, body.height, 0.0 }, 2, 1.0);
-    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, editorSplitterColor(input, .right));
+    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, editorSplitterColor(input, .right, hovered_splitter));
+    try extractEditorSplitterHitTarget(world, input, .right);
     try extractEditorShellLayoutRect(world, "machina.editor.shell.right_sidebar", "Editor Right Sidebar", layout.right.size3(), 4, editor_palette.panel);
 
     const frame_color = editor_palette.panel_muted;
@@ -1933,6 +1937,42 @@ fn extractEditorShellInto(world: *runtime.World, input: FrameInput) RenderError!
         .width = 2.0,
         .height = game_viewport.height,
     }, frame_color);
+}
+
+fn extractEditorSplitterHitTarget(world: *runtime.World, input: FrameInput, splitter: EditorSplitter) RenderError!void {
+    const visual = editorSplitterRect(input, splitter) orelse return;
+    const hit_rect = editorSplitterHitRect(input, splitter) orelse return;
+    const id = switch (splitter) {
+        .none => return,
+        .left => "machina.editor.shell.splitter.left.hit_area",
+        .right => "machina.editor.shell.splitter.right.hit_area",
+    };
+    const name = switch (splitter) {
+        .none => return,
+        .left => "Editor Left Splitter Hit Area",
+        .right => "Editor Right Splitter Hit Area",
+    };
+    const parent = switch (splitter) {
+        .none => return,
+        .left => "machina.editor.shell.splitter.left",
+        .right => "machina.editor.shell.splitter.right",
+    };
+    const command = switch (splitter) {
+        .none => return,
+        .left => editor_command_splitter_left,
+        .right => editor_command_splitter_right,
+    };
+    const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
+    world.setUiHitArea(entity, .{
+        .position = .{ hit_rect.x - visual.x, 0.0, 0.0 },
+        .size = hit_rect.size3(),
+    }) catch |err| return mapWorldError(err);
+    world.setUiButton(entity) catch |err| return mapWorldError(err);
+    world.setUiCommand(entity, .{ .command = command }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(entity, .{
+        .parent = parent,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
 }
 
 fn extractEditorShellRect(world: *runtime.World, id: []const u8, rect: ScreenRect, color: [3]f32) RenderError!void {
@@ -1992,7 +2032,7 @@ fn extractDebugOverlayInto(
     input: FrameInput,
     scene_world: *const runtime.World,
 ) RenderError!void {
-    try extractEditorShellInto(world, input);
+    try extractEditorShellInto(allocator, world, input);
     try extractEditorTopBarInto(allocator, world, input);
     try extractEditorBottomBarInto(allocator, world, input);
 
@@ -4437,6 +4477,32 @@ const EditorCommand = enum {
     step,
 };
 
+fn routeEditorSplitterAt(allocator: std.mem.Allocator, input: FrameInput) EditorError!?EditorSplitter {
+    if (!input.debug_overlay_visible or
+        !input.pointer.has_position or
+        std.math.isNan(input.pointer.position[0]) or
+        std.math.isNan(input.pointer.position[1]))
+    {
+        return null;
+    }
+
+    var input_world = runtime.World.init(allocator);
+    defer input_world.deinit();
+
+    try addEditorSplitterHitTargetForRouting(&input_world, input, .left);
+    try addEditorSplitterHitTargetForRouting(&input_world, input, .right);
+
+    const hit = ui_layout.commandAt(&input_world, input.pointer.position) catch |err| return mapEditorLayoutError(err);
+    const command = hit orelse return null;
+    if (std.mem.eql(u8, command.command, editor_command_splitter_left)) {
+        return .left;
+    }
+    if (std.mem.eql(u8, command.command, editor_command_splitter_right)) {
+        return .right;
+    }
+    return null;
+}
+
 fn routeEditorCommandAt(allocator: std.mem.Allocator, input: FrameInput) EditorError!?EditorCommand {
     if (!input.pointer.has_position or
         std.math.isNan(input.pointer.position[0]) or
@@ -4478,6 +4544,36 @@ fn addEditorCommandButtonForRouting(
     });
     try world.setUiButton(button);
     try world.setUiCommand(button, .{ .command = command });
+}
+
+fn addEditorSplitterHitTargetForRouting(
+    world: *runtime.World,
+    input: FrameInput,
+    splitter: EditorSplitter,
+) EditorError!void {
+    const id = switch (splitter) {
+        .none => return,
+        .left => "machina.editor.shell.splitter.left.hit_area",
+        .right => "machina.editor.shell.splitter.right.hit_area",
+    };
+    const name = switch (splitter) {
+        .none => return,
+        .left => "Editor Left Splitter Hit Area",
+        .right => "Editor Right Splitter Hit Area",
+    };
+    const command = switch (splitter) {
+        .none => return,
+        .left => editor_command_splitter_left,
+        .right => editor_command_splitter_right,
+    };
+    const hit_rect = editorSplitterHitRect(input, splitter) orelse return;
+    const hit = try world.createEntity(id, name);
+    try world.setUiHitArea(hit, .{
+        .position = hit_rect.position(),
+        .size = hit_rect.size3(),
+    });
+    try world.setUiButton(hit);
+    try world.setUiCommand(hit, .{ .command = command });
 }
 
 fn hitEditorChrome(input: FrameInput) bool {
@@ -4702,32 +4798,24 @@ fn editorSplitterHitRect(input: FrameInput, splitter: EditorSplitter) ?ScreenRec
     };
 }
 
-fn editorSplitterHovered(input: FrameInput, splitter: EditorSplitter) bool {
-    if (!input.debug_overlay_visible or !input.pointer.has_position) {
-        return false;
-    }
-    const hit_rect = editorSplitterHitRect(input, splitter) orelse return false;
-    return hit_rect.contains(input.pointer.position);
-}
-
-fn editorSplitterColor(input: FrameInput, splitter: EditorSplitter) [3]f32 {
+fn editorSplitterColor(input: FrameInput, splitter: EditorSplitter, hovered_splitter: ?EditorSplitter) [3]f32 {
     if (input.editor.dragging_splitter == splitter) {
         return editor_palette.text_muted;
     }
-    if (editorSplitterHovered(input, splitter)) {
+    if (hovered_splitter != null and hovered_splitter.? == splitter) {
         return editor_palette.text_dim;
     }
     return editor_palette.panel_muted;
 }
 
-fn editorCursorKind(input: FrameInput) EditorCursorKind {
+fn editorCursorKind(allocator: std.mem.Allocator, input: FrameInput) EditorError!EditorCursorKind {
     if (!input.debug_overlay_visible) {
         return .default;
     }
     if (input.editor.dragging_splitter != .none) {
         return .resize_ew;
     }
-    if (editorSplitterHovered(input, .left) or editorSplitterHovered(input, .right)) {
+    if ((try routeEditorSplitterAt(allocator, input)) != null) {
         return .resize_ew;
     }
     return .default;
@@ -6257,20 +6345,24 @@ test "editor shell body uses hgroup slot for the game viewport" {
     const game_slot = state.world.findEntityById("machina.editor.shell.game_viewport") orelse return error.TestExpectedEqual;
     const slot_rect = try ui_layout.resolvedItemRect(&state.world, game_slot);
     const left_splitter = editorSplitterRect(input, .left) orelse return error.TestExpectedEqual;
-    const left_splitter_hit = editorSplitterHitRect(input, .left) orelse return error.TestExpectedEqual;
     const viewport = editorGameViewport(input);
     try std.testing.expectApproxEqAbs(@as(f32, 2.0), left_splitter.width, 0.001);
-    try std.testing.expectApproxEqAbs(@as(f32, 12.0), left_splitter_hit.width, 0.001);
     try std.testing.expectApproxEqAbs(viewport.x, slot_rect.position[0], 0.001);
     try std.testing.expectApproxEqAbs(viewport.y, slot_rect.position[1], 0.001);
     try std.testing.expectApproxEqAbs(viewport.width, slot_rect.size[0], 0.001);
     try std.testing.expectApproxEqAbs(viewport.height, slot_rect.size[1], 0.001);
+    const splitter_hit_area = state.world.findEntityById("machina.editor.shell.splitter.left.hit_area") orelse return error.TestExpectedEqual;
+    try std.testing.expect(try state.world.hasComponent(splitter_hit_area, runtime.ui_hit_area_component_id));
+    try std.testing.expect(try state.world.hasComponent(splitter_hit_area, runtime.ui_button_component_id));
+    try std.testing.expect(try state.world.hasComponent(splitter_hit_area, runtime.ui_command_component_id));
+    try std.testing.expect(!(try state.world.hasComponent(splitter_hit_area, runtime.ui_rect_component_id)));
+    const hit_area_size = try state.world.getVec3(splitter_hit_area, runtime.ui_hit_area_component_id, "size");
+    try std.testing.expectApproxEqAbs(@as(f32, 12.0), hit_area_size[0], 0.001);
 
     var hover_state = try RenderEcsState.init(std.testing.allocator);
     defer hover_state.deinit();
     const hover_point = [2]f32{ left_splitter.x + left_splitter.width + 3.0, left_splitter.y + 40.0 };
     try std.testing.expect(!left_splitter.contains(hover_point));
-    try std.testing.expect(left_splitter_hit.contains(hover_point));
     try hover_state.extractSceneWithInput(.{ .world = &scene_world }, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
@@ -6281,6 +6373,8 @@ test "editor shell body uses hgroup slot for the game viewport" {
             .has_position = true,
         },
     });
+    const hit = (try ui_layout.commandAt(&hover_state.world, hover_point)) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings(editor_command_splitter_left, hit.command);
     const hover_splitter = hover_state.world.findEntityById("machina.editor.shell.splitter.left") orelse return error.TestExpectedEqual;
     const hover_color = try hover_state.world.getVec3(hover_splitter, runtime.ui_separator_component_id, "color");
     for (0..3) |channel| {
@@ -6299,10 +6393,14 @@ test "editor splitters resize sidebars through editor state" {
         .viewport_height = 720.0,
     };
     const left_splitter = editorSplitterRect(initial_input, .left) orelse return error.TestExpectedEqual;
-    const left_splitter_hit = editorSplitterHitRect(initial_input, .left) orelse return error.TestExpectedEqual;
     const press_point = [2]f32{ left_splitter.x + left_splitter.width + 3.0, left_splitter.y + 40.0 };
     try std.testing.expect(!left_splitter.contains(press_point));
-    try std.testing.expect(left_splitter_hit.contains(press_point));
+    try std.testing.expectEqual(EditorSplitter.left, (try routeEditorSplitterAt(std.testing.allocator, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .pointer = .{ .position = press_point, .has_position = true },
+    })).?);
 
     const press = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
         .debug_overlay_visible = true,
@@ -6357,8 +6455,8 @@ test "editor cursor changes over and during splitter drag" {
     const left_splitter = editorSplitterRect(input, .left) orelse return error.TestExpectedEqual;
     const hover_point = [2]f32{ left_splitter.x + left_splitter.width + 3.0, left_splitter.y + 40.0 };
 
-    try std.testing.expectEqual(EditorCursorKind.default, editorCursorKind(input));
-    try std.testing.expectEqual(EditorCursorKind.resize_ew, editorCursorKind(.{
+    try std.testing.expectEqual(EditorCursorKind.default, try editorCursorKind(std.testing.allocator, input));
+    try std.testing.expectEqual(EditorCursorKind.resize_ew, try editorCursorKind(std.testing.allocator, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -6367,7 +6465,7 @@ test "editor cursor changes over and during splitter drag" {
             .has_position = true,
         },
     }));
-    try std.testing.expectEqual(EditorCursorKind.resize_ew, editorCursorKind(.{
+    try std.testing.expectEqual(EditorCursorKind.resize_ew, try editorCursorKind(std.testing.allocator, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -6377,7 +6475,7 @@ test "editor cursor changes over and during splitter drag" {
             .has_position = true,
         },
     }));
-    try std.testing.expectEqual(EditorCursorKind.default, editorCursorKind(.{
+    try std.testing.expectEqual(EditorCursorKind.default, try editorCursorKind(std.testing.allocator, .{
         .debug_overlay_visible = false,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,

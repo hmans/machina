@@ -58,6 +58,11 @@ pub const ScrollView = struct {
     content_offset: [3]f32,
 };
 
+pub const HitArea = struct {
+    position: [3]f32,
+    size: [3]f32,
+};
+
 pub const ScrollWheelRoute = struct {
     entity: runtime.EntityHandle,
     current_offset: [3]f32,
@@ -163,6 +168,16 @@ pub fn canvas(world: *const runtime.World, entity: runtime.EntityHandle) Error!?
     return .{
         .design_size = try world.getVec3(entity, runtime.ui_canvas_component_id, "design_size"),
         .scale_mode = try world.getString(entity, runtime.ui_canvas_component_id, "scale_mode"),
+    };
+}
+
+pub fn hitArea(world: *const runtime.World, entity: runtime.EntityHandle) Error!?HitArea {
+    if (!(try world.hasComponent(entity, runtime.ui_hit_area_component_id))) {
+        return null;
+    }
+    return .{
+        .position = try world.getVec3(entity, runtime.ui_hit_area_component_id, "position"),
+        .size = try world.getVec3(entity, runtime.ui_hit_area_component_id, "size"),
     };
 }
 
@@ -310,14 +325,20 @@ pub fn commandAt(world: *const runtime.World, point: [2]f32) Error!?CommandHit {
     var selected: ?CommandHit = null;
     var cursor: usize = 0;
     const command_query = [_][]const u8{
-        runtime.ui_rect_component_id,
         runtime.ui_button_component_id,
         runtime.ui_command_component_id,
     };
     while (world.queryNext(&command_query, &cursor)) |entity| {
-        const position = try world.getVec3(entity, runtime.ui_rect_component_id, "position");
-        const size = try world.getVec3(entity, runtime.ui_rect_component_id, "size");
-        const rect = (try hitTestRect(world, entity, position, size, point)) orelse continue;
+        const rect = if (try hitArea(world, entity)) |area|
+            (try hitTestRect(world, entity, area.position, area.size, point)) orelse continue
+        else blk: {
+            if (!(try world.hasComponent(entity, runtime.ui_rect_component_id))) {
+                continue;
+            }
+            const position = try world.getVec3(entity, runtime.ui_rect_component_id, "position");
+            const size = try world.getVec3(entity, runtime.ui_rect_component_id, "size");
+            break :blk (try hitTestRect(world, entity, position, size, point)) orelse continue;
+        };
         const command = try world.getString(entity, runtime.ui_command_component_id, "command");
         selected = .{
             .entity = entity,
@@ -515,6 +536,9 @@ fn itemNaturalSize(world: *const runtime.World, entity: runtime.EntityHandle) Er
     if (try world.hasComponent(entity, runtime.ui_separator_component_id)) {
         return try world.getVec3(entity, runtime.ui_separator_component_id, "size");
     }
+    if (try world.hasComponent(entity, runtime.ui_hit_area_component_id)) {
+        return try world.getVec3(entity, runtime.ui_hit_area_component_id, "size");
+    }
     if (try world.hasComponent(entity, runtime.ui_spacer_component_id)) {
         return try world.getVec3(entity, runtime.ui_spacer_component_id, "size");
     }
@@ -552,6 +576,9 @@ fn parentAnchorPosition(world: *const runtime.World, entity: runtime.EntityHandl
     }
     if (try world.hasComponent(entity, runtime.ui_text_component_id)) {
         return try world.getVec3(entity, runtime.ui_text_component_id, "position");
+    }
+    if (try world.hasComponent(entity, runtime.ui_hit_area_component_id)) {
+        return try world.getVec3(entity, runtime.ui_hit_area_component_id, "position");
     }
     return .{ 0.0, 0.0, 0.0 };
 }
@@ -873,6 +900,58 @@ test "command routing targets the topmost command button under the pointer" {
     try std.testing.expectEqual(second.index, hit.entity.index);
     try std.testing.expectEqualStrings("second", hit.source);
     try std.testing.expectEqualStrings("second_command", hit.command);
+}
+
+test "command routing can use non-rendering hit areas" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const visual = try world.createEntity("thin-control", "Thin Control");
+    try world.setUiRect(visual, .{
+        .position = .{ 100.0, 20.0, 0.0 },
+        .size = .{ 2.0, 80.0, 0.0 },
+        .color = .{ 0.0, 0.0, 0.0 },
+    });
+    try world.setUiHitArea(visual, .{
+        .position = .{ 95.0, 20.0, 0.0 },
+        .size = .{ 12.0, 80.0, 0.0 },
+    });
+    try world.setUiButton(visual);
+    try world.setUiCommand(visual, .{ .command = "drag.thin-control" });
+
+    try std.testing.expect((try commandAt(&world, .{ 94.0, 30.0 })) == null);
+    const hit = (try commandAt(&world, .{ 105.0, 30.0 })) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(visual.index, hit.entity.index);
+    try std.testing.expectEqualStrings("thin-control", hit.source);
+    try std.testing.expectEqualStrings("drag.thin-control", hit.command);
+    try std.testing.expectApproxEqAbs(@as(f32, 95.0), hit.rect.position[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 12.0), hit.rect.size[0], 0.001);
+}
+
+test "command routing preserves order across rects and hit areas" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const hit_target = try world.createEntity("wide-hit", "Wide Hit");
+    try world.setUiHitArea(hit_target, .{
+        .position = .{ 10.0, 10.0, 0.0 },
+        .size = .{ 100.0, 40.0, 0.0 },
+    });
+    try world.setUiButton(hit_target);
+    try world.setUiCommand(hit_target, .{ .command = "wide_hit" });
+
+    const visual_button = try world.createEntity("visual", "Visual");
+    try world.setUiRect(visual_button, .{
+        .position = .{ 10.0, 10.0, 0.0 },
+        .size = .{ 100.0, 40.0, 0.0 },
+        .color = .{ 0.0, 0.0, 0.0 },
+    });
+    try world.setUiButton(visual_button);
+    try world.setUiCommand(visual_button, .{ .command = "visual_button" });
+
+    const hit = (try commandAt(&world, .{ 20.0, 20.0 })) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(visual_button.index, hit.entity.index);
+    try std.testing.expectEqualStrings("visual_button", hit.command);
 }
 
 test "hgroup distributes grow space across horizontal children" {

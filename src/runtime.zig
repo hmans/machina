@@ -40,6 +40,7 @@ pub const ui_rect_component_id = "machina.ui.rect";
 pub const ui_border_component_id = "machina.ui.border";
 pub const ui_text_component_id = "machina.ui.text";
 pub const ui_button_component_id = "machina.ui.button";
+pub const ui_hit_area_component_id = "machina.ui.hit_area";
 pub const ui_command_component_id = "machina.ui.command";
 pub const ui_command_event_component_id = "machina.ui.command_event";
 pub const ui_command_event_entity_id = "machina.ui.command_event.current";
@@ -651,6 +652,16 @@ pub fn registerEngineComponents(registry: *ComponentRegistry) !void {
         .version = 1,
     });
 
+    const ui_hit_area_fields = [_]ComponentFieldDefinition{
+        .{ .name = "position", .value_type = .vec3 },
+        .{ .name = "size", .value_type = .vec3 },
+    };
+    try registry.registerEngineComponent(.{
+        .id = ui_hit_area_component_id,
+        .version = 1,
+        .fields = &ui_hit_area_fields,
+    });
+
     const ui_command_fields = [_]ComponentFieldDefinition{
         .{ .name = "command", .value_type = .string },
     };
@@ -972,6 +983,11 @@ pub const UiTextComponent = struct {
     size: f32 = 2.0,
     color: [3]f32 = .{ 1.0, 1.0, 1.0 },
     value: []const u8 = "",
+};
+
+pub const UiHitAreaComponent = struct {
+    position: [3]f32 = .{ 0.0, 0.0, 0.0 },
+    size: [3]f32 = .{ 1.0, 1.0, 0.0 },
 };
 
 pub const UiCommandComponent = struct {
@@ -1532,6 +1548,14 @@ pub const World = struct {
 
     pub fn setUiButton(self: *World, handle: EntityHandle) WorldError!void {
         try self.setComponent(handle, ui_button_component_id, &.{});
+    }
+
+    pub fn setUiHitArea(self: *World, handle: EntityHandle, hit_area: UiHitAreaComponent) WorldError!void {
+        const fields = [_]ComponentFieldValue{
+            .{ .name = "position", .value = .{ .vec3 = hit_area.position } },
+            .{ .name = "size", .value = .{ .vec3 = hit_area.size } },
+        };
+        try self.setComponent(handle, ui_hit_area_component_id, &fields);
     }
 
     pub fn setUiCommand(self: *World, handle: EntityHandle, command: UiCommandComponent) WorldError!void {
@@ -3300,6 +3324,7 @@ test "engine component schemas are registered from runtime" {
     try std.testing.expect(registry.findComponent(ui_border_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_text_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_button_component_id) != null);
+    try std.testing.expect(registry.findComponent(ui_hit_area_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_command_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_command_event_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_scroll_view_component_id) != null);
@@ -3315,7 +3340,7 @@ test "engine component schemas are registered from runtime" {
     try std.testing.expect(registry.findComponent(input_pointer_component_id) != null);
     try std.testing.expect(registry.findComponent(input_keyboard_component_id) != null);
     try std.testing.expect(registry.findComponent(input_frame_component_id) != null);
-    try std.testing.expectEqual(@as(usize, 28), registry.componentCount());
+    try std.testing.expectEqual(@as(usize, 29), registry.componentCount());
 
     const transform = registry.findComponent(transform_component_id) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 3), transform.fields.len);

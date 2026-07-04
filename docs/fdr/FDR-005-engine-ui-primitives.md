@@ -10,7 +10,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 ## Behavior
 
 - The engine can render text-authored UI overlays in offscreen renders and interactive windows.
-- Scene entities can define a UI canvas, screen-space colored rectangles, rounded borders, fixed-pixel text labels, button markers, button command ids, scroll views, vertical stacks, horizontal groups, direction-aware stacks, layout child metadata, spacers, text blocks, toggles, progress bars, and separators.
+- Scene entities can define a UI canvas, screen-space colored rectangles, rounded borders, fixed-pixel text labels, button markers, non-rendering hit areas, button command ids, scroll views, vertical stacks, horizontal groups, direction-aware stacks, layout child metadata, spacers, text blocks, toggles, progress bars, and separators.
 - `machina.ui.canvas` stores `design_size` and `scale_mode`. `scale_mode = "none"` preserves raw screen pixels. `scale_mode = "fit"` scales and centers scene-authored UI into the current scene UI target while preserving aspect ratio. `scale_mode = "fill"` scales enough to cover that target. The target is the full window in normal runs and the editor game viewport while the editor shell is visible.
 - UI rectangles use screen-space positions and sizes with a top-left origin, plus an optional `corner_radius` field in pixels. Missing `corner_radius` values default to `0.0` for compatibility with older scene data.
 - UI rectangle corners render through the UI shader using rounded-rectangle SDF coverage with alpha blending. Text glyph quads use the same UI pipeline with `corner_radius = 0.0`.
@@ -20,12 +20,12 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - Button markers derive hover, held, and pressed interaction state in headful runs and use that state for button visuals.
 - UI interaction consumes transient `machina.input.*` ECS resources instead of reading raw platform events directly.
 - Releasing the primary pointer over a command button emits a transient ECS command event that Luau systems can consume during the same frame.
-- Command button hit routing is centralized in the retained UI layout module. Scene-authored command events and engine-owned editor command controls resolve the same rect layout and clipping rules before dispatch.
+- Command button hit routing is centralized in the retained UI layout module. Scene-authored command events and engine-owned editor command controls resolve the same rect or hit-area layout and clipping rules before dispatch.
 - Headful runs can toggle the engine-owned editor/debug overlay with Ctrl+Tab.
 - Headful runs hide the engine-owned editor/debug overlay by default; `machina run --editor` starts with it visible.
 - The engine-owned editor/debug shell displays current FPS in a top bar.
 - In editor mode, 3D scene content and scene-authored game UI render into the full remaining viewport between the top bar, bottom bar, left sidebar, and right sidebar. The editor viewport is not forced to 16:9.
-- The left sidebar hosts the system performance inspector. The right sidebar is reserved for selected-entity component inspection and eventual component editing. The sidebars are separated from the game viewport by draggable splitters. Splitters render as thin dividers but use a wider hover/click target, change color when hovered or dragged, and use the platform east-west resize cursor in headful runs.
+- The left sidebar hosts the system performance inspector. The right sidebar is reserved for selected-entity component inspection and eventual component editing. The sidebars are separated from the game viewport by draggable splitters. Splitters render as thin dividers, use public non-rendering hit-area command buttons for wider hover/click targets, change color when hovered or dragged, and use the platform east-west resize cursor in headful runs.
 - The engine-owned editor/debug shell also hosts the first editor playback controls and selected-entity inspector; detailed behavior is tracked in FDR-018.
 - When live system profiling data is available, the editor/debug overlay lists active systems with their full system id and rolling average runtime over the current profiling window.
 - The editor/debug overlay also lists engine-internal render systems profiled through the render ECS schedule.
@@ -43,6 +43,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - `machina.ui.layout.item` can also parent a child to a non-container UI rect, text, or separator. In that case the child inherits the parent's resolved position and continues through the parent's layout chain. This is the preferred pattern for button labels and small composite controls.
 - `machina.ui.spacer` participates in layout without rendering.
 - `machina.ui.text_block` gives a text entity a content box and horizontal/vertical `start`, `center`, or `end` alignment.
+- `machina.ui.hit_area` defines a non-rendering interaction rectangle with `position` and `size`. Command routing and button interaction state prefer it over the visual rect when present.
 - `machina.ui.toggle` stores checked state and influences button/rect visuals. It does not yet toggle itself automatically; scripts or editor systems own state mutation.
 - `machina.ui.progress_bar` stores value, max, and fill color. It renders as a fill inside the entity's rect.
 - `machina.ui.separator` renders a thin semantic divider through the same UI vertex path as rectangles.
@@ -110,7 +111,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 
 ### 7. Route button presses through command events
 
-**Decision:** Button entities can author a command id, and a successful release emits a one-frame command event containing the command id and source entity id.
+**Decision:** Button entities can author a command id, and a successful release emits a one-frame command event containing the command id and source entity id. A button can optionally provide `machina.ui.hit_area` when its interaction target should differ from its visual rectangle.
 **Why:** This gives scripts and future editor systems a simple ECS-native way to react to UI without embedding callbacks in scene data.
 **Tradeoff:** The current event shape is intentionally small and does not yet model bubbling, capture, disabled state, modifiers, typed payloads, or persistent focus. Engine-owned editor commands may consume routed hits directly instead of emitting project-world `machina.ui.command_event` data.
 

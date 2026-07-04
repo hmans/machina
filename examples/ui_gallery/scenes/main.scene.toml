@@ -279,6 +279,10 @@ thickness = 1.0
 
 [entities.components."machina.ui.button"]
 
+[entities.components."machina.ui.hit_area"]
+position = [-8.0, -8.0, 0.0]
+size = [128.0, 66.0, 0.0]
+
 [entities.components."machina.ui.layout.item"]
 parent = "action-stack"
 order = 0

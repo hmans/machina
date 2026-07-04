@@ -220,6 +220,11 @@ export type MachinaUiText = {
 
 export type MachinaUiButton = {}
 
+export type MachinaUiHitArea = {
+    position: MachinaVec3,
+    size: MachinaVec3,
+}
+
 export type MachinaUiCommand = {
     command: string,
 }

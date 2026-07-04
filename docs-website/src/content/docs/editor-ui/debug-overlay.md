@@ -28,7 +28,7 @@ The current shell uses:
 - A right sidebar reserved for selected-entity component inspection/editing.
 - A bottom bar with compact runtime status.
 - A game viewport that fills all remaining space between those editor regions.
-- Draggable separators between the sidebars and the game viewport. They render as thin dividers, but use a wider hover/click target, highlight when hovered or dragged, and switch to the platform east-west resize cursor.
+- Draggable separators between the sidebars and the game viewport. They render as thin dividers, but use public `machina.ui.hit_area` command buttons for wider hover/click targets, highlight when hovered or dragged, and switch to the platform east-west resize cursor.
 
 System timings are captured at scheduler dispatch boundaries. Render system timings are captured from the render ECS schedule and displayed alongside project systems.
 
@@ -49,6 +49,7 @@ The editor shell is generated into the render ECS world, but the same retained U
 - `machina.ui.border`
 - `machina.ui.text`
 - `machina.ui.button`
+- `machina.ui.hit_area`
 - `machina.ui.command`
 - `machina.ui.scroll_view`
 - `machina.ui.vbox`

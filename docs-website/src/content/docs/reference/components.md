@@ -27,6 +27,7 @@ Machina registers these engine component types before project scripts and native
 | `machina.ui.border` | `color: vec3`, `thickness: f32` | Uniform rounded border for a rect. |
 | `machina.ui.text` | `position: vec3`, `size: f32`, `color: vec3`, `value: string` | Screen-space bitmap text. |
 | `machina.ui.button` | Marker | Adds button interaction behavior to a rect. |
+| `machina.ui.hit_area` | `position: vec3`, `size: vec3` | Optional non-rendering interaction rectangle for a button. Use it when the hit target should differ from the visual rect. |
 | `machina.ui.command` | `command: string` | Command id emitted by a button press. |
 | `machina.ui.command_event` | `command: string`, `source: string` | Runtime-only transient event. Do not author in scenes. |
 | `machina.ui.scroll_view` | `position: vec3`, `size: vec3`, `content_offset: vec3` | Clips and offsets descendant layout items. |
@@ -43,7 +44,7 @@ Machina registers these engine component types before project scripts and native
 | `machina.input.keyboard` | modifier state, movement key state, `editor_toggle_pressed: bool` | Runtime-only current keyboard frame state. Do not author in scenes. |
 | `machina.input.frame` | `ui_visible: bool`, `debug_overlay_visible: bool`, `viewport: vec3` | Runtime-only frame input state. Do not author in scenes. |
 
-Retained UI layout is resolved consistently for rendering and input. Scene UI hit testing, button hover/press visuals, command dispatch, scroll handling, clipping, and canvas fit/fill scaling use the same `scroll_view`, `vbox`, `hgroup`, `stack`, and `layout.item` semantics that render the controls. Command buttons are ordinary retained UI entities: `machina.ui.rect` + `machina.ui.button` + `machina.ui.command`.
+Retained UI layout is resolved consistently for rendering and input. Scene UI hit testing, button hover/press visuals, command dispatch, scroll handling, clipping, and canvas fit/fill scaling use the same `scroll_view`, `vbox`, `hgroup`, `stack`, and `layout.item` semantics that render the controls. Command buttons are ordinary retained UI entities: `machina.ui.rect` + `machina.ui.button` + `machina.ui.command`, or `machina.ui.hit_area` + `machina.ui.button` + `machina.ui.command` when the control needs a non-rendering hit target.
 
 ## Built-In But Project-Local Today
 
