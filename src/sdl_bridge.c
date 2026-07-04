@@ -34,6 +34,16 @@ static MachinaSdlKey machina_sdl_key(SDL_Keycode key) {
             return MACHINA_SDL_KEY_RCTRL;
         case SDLK_F1:
             return MACHINA_SDL_KEY_F1;
+        case SDLK_Z:
+            return MACHINA_SDL_KEY_Z;
+        case SDLK_Y:
+            return MACHINA_SDL_KEY_Y;
+        case SDLK_EQUALS:
+        case SDLK_KP_PLUS:
+            return MACHINA_SDL_KEY_EQUALS;
+        case SDLK_MINUS:
+        case SDLK_KP_MINUS:
+            return MACHINA_SDL_KEY_MINUS;
         default:
             return MACHINA_SDL_KEY_UNKNOWN;
     }

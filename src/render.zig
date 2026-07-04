@@ -47,13 +47,19 @@ const editor_min_game_viewport_width: f32 = 320.0;
 const editor_splitter_width: f32 = 2.0;
 const editor_splitter_hit_width: f32 = 12.0;
 const editor_performance_display_interval_ns: u64 = 333_000_000;
+const live_run_default_delta_seconds: f32 = 1.0 / 60.0;
+const live_run_max_delta_seconds: f32 = 0.1;
 const editor_system_text_size: f32 = 1.0;
 const editor_panel_padding_x: f32 = 16.0;
 const editor_panel_padding_y: f32 = 22.0;
 const editor_panel_section_gap: f32 = 18.0;
 const editor_panel_label_gap: f32 = 10.0;
 const editor_panel_bottom_padding: f32 = 18.0;
-const editor_system_row_stride: f32 = 36.0;
+const editor_system_row_stride: f32 = 40.0;
+const editor_system_row_label_padding_x: f32 = 16.0;
+const editor_system_row_duration_padding_x: f32 = 16.0;
+const editor_system_field_column_gap: f32 = 4.0;
+const editor_system_card_padding_y: f32 = 16.0;
 const editor_system_scroll_pixels_per_wheel: f32 = 18.0;
 const editor_system_scroll_smoothing: f32 = 22.0;
 const editor_scrollbar_width: f32 = 6.0;
@@ -62,8 +68,8 @@ const render_system_profile_window_frames: usize = 120;
 const editor_control_button_width: f32 = 104.0;
 const editor_control_button_height: f32 = 36.0;
 const editor_control_button_gap: f32 = 14.0;
-const editor_panel_corner_radius: f32 = 8.0;
-const editor_sidebar_panel_margin: f32 = 4.0;
+const editor_panel_corner_radius: f32 = 16.0;
+const editor_sidebar_panel_margin: f32 = 6.0;
 const editor_button_corner_radius: f32 = 6.0;
 const editor_command_play_toggle = "machina.editor.play_toggle";
 const editor_command_step = "machina.editor.step";
@@ -81,6 +87,9 @@ const editor_inspector_card_padding_x: f32 = 16.0;
 const editor_inspector_card_padding_y: f32 = 16.0;
 const editor_inspector_field_value_column_x: f32 = 204.0;
 const editor_inspector_field_column_gap: f32 = 8.0;
+const editor_component_id_buffer_len = 128;
+const editor_field_name_buffer_len = 64;
+const editor_undo_capacity = 64;
 const editor_gizmo_axis_length: f32 = 1.25;
 const editor_gizmo_axis_thickness: f32 = 0.035;
 const editor_gizmo_pick_radius_px: f32 = 18.0;
@@ -180,9 +189,17 @@ pub const KeyboardInput = struct {
     move_up: bool = false,
     move_down: bool = false,
     editor_toggle_pressed: bool = false,
+    editor_increment_pressed: bool = false,
+    editor_decrement_pressed: bool = false,
+    editor_undo_pressed: bool = false,
+    editor_redo_pressed: bool = false,
 
     fn beginFrame(self: *KeyboardInput) void {
         self.editor_toggle_pressed = false;
+        self.editor_increment_pressed = false;
+        self.editor_decrement_pressed = false;
+        self.editor_undo_pressed = false;
+        self.editor_redo_pressed = false;
     }
 };
 
@@ -193,19 +210,72 @@ pub const EditorAxis = enum {
     z,
 };
 
+const EditorFieldSelection = struct {
+    active: bool = false,
+    entity: runtime.EntityHandle = .{ .index = 0, .generation = 0 },
+    component_id: [editor_component_id_buffer_len]u8 = [_]u8{0} ** editor_component_id_buffer_len,
+    component_id_len: usize = 0,
+    field_name: [editor_field_name_buffer_len]u8 = [_]u8{0} ** editor_field_name_buffer_len,
+    field_name_len: usize = 0,
+    vec3_lane: u2 = 0,
+
+    fn componentId(self: *const EditorFieldSelection) []const u8 {
+        return self.component_id[0..self.component_id_len];
+    }
+
+    fn fieldName(self: *const EditorFieldSelection) []const u8 {
+        return self.field_name[0..self.field_name_len];
+    }
+
+    fn matches(self: *const EditorFieldSelection, entity: runtime.EntityHandle, component_id: []const u8, field_name: []const u8) bool {
+        return self.active and
+            self.entity.index == entity.index and
+            self.entity.generation == entity.generation and
+            std.mem.eql(u8, self.componentId(), component_id) and
+            std.mem.eql(u8, self.fieldName(), field_name);
+    }
+};
+
+const EditorFieldEditCommand = struct {
+    active: bool = false,
+    entity: runtime.EntityHandle = .{ .index = 0, .generation = 0 },
+    component_id: [editor_component_id_buffer_len]u8 = [_]u8{0} ** editor_component_id_buffer_len,
+    component_id_len: usize = 0,
+    field_name: [editor_field_name_buffer_len]u8 = [_]u8{0} ** editor_field_name_buffer_len,
+    field_name_len: usize = 0,
+    old_value: runtime.ComponentValue = .{ .boolean = false },
+    new_value: runtime.ComponentValue = .{ .boolean = false },
+
+    fn componentId(self: *const EditorFieldEditCommand) []const u8 {
+        return self.component_id[0..self.component_id_len];
+    }
+
+    fn fieldName(self: *const EditorFieldEditCommand) []const u8 {
+        return self.field_name[0..self.field_name_len];
+    }
+};
+
 pub const EditorState = struct {
     paused: bool = false,
     selected_entity: ?runtime.EntityHandle = null,
+    selected_property: EditorFieldSelection = .{},
     dragging_axis: EditorAxis = .none,
     dragging_splitter: EditorSplitter = .none,
     captured_pointer: bool = false,
     system_scroll_y: f32 = 0.0,
     system_scroll_target_y: f32 = 0.0,
     system_scroll_boundary: EditorScrollBoundary = .none,
+    inspector_scroll_y: f32 = 0.0,
+    inspector_scroll_target_y: f32 = 0.0,
+    inspector_scroll_boundary: EditorScrollBoundary = .none,
     left_sidebar_width: f32 = 0.0,
     right_sidebar_width: f32 = 0.0,
     last_pointer: [2]f32 = .{ 0.0, 0.0 },
     has_last_pointer: bool = false,
+    undo_stack: [editor_undo_capacity]EditorFieldEditCommand = [_]EditorFieldEditCommand{.{}} ** editor_undo_capacity,
+    undo_len: usize = 0,
+    redo_stack: [editor_undo_capacity]EditorFieldEditCommand = [_]EditorFieldEditCommand{.{}} ** editor_undo_capacity,
+    redo_len: usize = 0,
 };
 
 pub const EditorSplitter = enum {
@@ -228,9 +298,11 @@ const EditorScrollBoundary = enum {
 pub const EditorFrameState = struct {
     paused: bool = false,
     selected_entity: ?runtime.EntityHandle = null,
+    selected_property: EditorFieldSelection = .{},
     dragging_axis: EditorAxis = .none,
     dragging_splitter: EditorSplitter = .none,
     system_scroll_y: f32 = 0.0,
+    inspector_scroll_y: f32 = 0.0,
     left_sidebar_width: f32 = 0.0,
     right_sidebar_width: f32 = 0.0,
     entity_count: usize = 0,
@@ -306,13 +378,32 @@ fn updateKeyboardKeyState(keyboard: *KeyboardInput, key: sdl.MachinaSdlKey, down
     }
 }
 
+fn updateEditorKeyboardActions(keyboard: *KeyboardInput, event: sdl.MachinaSdlEvent) void {
+    if (event.kind != sdl.MACHINA_SDL_EVENT_KEY_DOWN) {
+        return;
+    }
+    if (event.key == sdl.MACHINA_SDL_KEY_EQUALS) {
+        keyboard.editor_increment_pressed = true;
+    } else if (event.key == sdl.MACHINA_SDL_KEY_MINUS) {
+        keyboard.editor_decrement_pressed = true;
+    } else if (event.repeat == 0 and event.key == sdl.MACHINA_SDL_KEY_Z and event.ctrl_down != 0 and event.shift_down == 0) {
+        keyboard.editor_undo_pressed = true;
+    } else if (event.repeat == 0 and event.key == sdl.MACHINA_SDL_KEY_Z and event.ctrl_down != 0 and event.shift_down != 0) {
+        keyboard.editor_redo_pressed = true;
+    } else if (event.repeat == 0 and event.key == sdl.MACHINA_SDL_KEY_Y and event.ctrl_down != 0) {
+        keyboard.editor_redo_pressed = true;
+    }
+}
+
 pub fn editorFrameState(world: *const runtime.World, state: EditorState) EditorFrameState {
     return .{
         .paused = state.paused,
         .selected_entity = validatedEditorSelection(world, state.selected_entity),
+        .selected_property = validatedEditorFieldSelection(world, state.selected_entity, state.selected_property),
         .dragging_axis = state.dragging_axis,
         .dragging_splitter = state.dragging_splitter,
         .system_scroll_y = state.system_scroll_y,
+        .inspector_scroll_y = state.inspector_scroll_y,
         .left_sidebar_width = state.left_sidebar_width,
         .right_sidebar_width = state.right_sidebar_width,
         .entity_count = world.entityCount(),
@@ -327,42 +418,54 @@ fn clampEditorSystemScroll(state: *EditorState, input: FrameInput, profile_count
     state.system_scroll_y = std.math.clamp(state.system_scroll_y, 0.0, max_scroll_y);
 }
 
-fn applyEditorSystemScrollRoute(state: *EditorState, route: ui_layout.ScrollWheelRoute, wheel_delta_y: f32) void {
+fn clampEditorInspectorScroll(state: *EditorState, world: *const runtime.World, input: FrameInput) void {
+    const max_scroll_y = editorInspectorMaxScrollY(world, input);
+    state.inspector_scroll_target_y = std.math.clamp(state.inspector_scroll_target_y, 0.0, max_scroll_y);
+    state.inspector_scroll_y = std.math.clamp(state.inspector_scroll_y, 0.0, max_scroll_y);
+}
+
+fn applyEditorScrollRoute(
+    scroll_y: *f32,
+    scroll_target_y: *f32,
+    scroll_boundary: *EditorScrollBoundary,
+    route: ui_layout.ScrollWheelRoute,
+    wheel_delta_y: f32,
+) void {
     if (route.max_offset_y == 0.0) {
-        state.system_scroll_y = 0.0;
-        state.system_scroll_target_y = 0.0;
+        scroll_y.* = 0.0;
+        scroll_target_y.* = 0.0;
         return;
     }
 
-    if (state.system_scroll_boundary == .top and wheel_delta_y > 0.0) {
+    if (scroll_boundary.* == .top and wheel_delta_y > 0.0) {
         return;
     }
-    if (state.system_scroll_boundary == .bottom and wheel_delta_y < 0.0) {
+    if (scroll_boundary.* == .bottom and wheel_delta_y < 0.0) {
         return;
     }
-    state.system_scroll_boundary = .none;
+    scroll_boundary.* = .none;
 
-    state.system_scroll_target_y = route.next_offset[1];
+    scroll_target_y.* = route.next_offset[1];
     if (route.next_offset[1] <= 0.0 and wheel_delta_y > 0.0) {
-        state.system_scroll_boundary = .top;
+        scroll_boundary.* = .top;
         return;
     }
     if (route.next_offset[1] >= route.max_offset_y and wheel_delta_y < 0.0) {
-        state.system_scroll_boundary = .bottom;
+        scroll_boundary.* = .bottom;
         return;
     }
 }
 
-fn animateEditorSystemScroll(state: *EditorState, delta_seconds: f32) void {
-    if (!std.math.isFinite(state.system_scroll_y) or !std.math.isFinite(state.system_scroll_target_y)) {
-        state.system_scroll_y = 0.0;
-        state.system_scroll_target_y = 0.0;
+fn animateEditorScroll(scroll_y: *f32, scroll_target_y: *f32, delta_seconds: f32) void {
+    if (!std.math.isFinite(scroll_y.*) or !std.math.isFinite(scroll_target_y.*)) {
+        scroll_y.* = 0.0;
+        scroll_target_y.* = 0.0;
         return;
     }
 
-    const remaining = state.system_scroll_target_y - state.system_scroll_y;
+    const remaining = scroll_target_y.* - scroll_y.*;
     if (@abs(remaining) < 0.01) {
-        state.system_scroll_y = state.system_scroll_target_y;
+        scroll_y.* = scroll_target_y.*;
         return;
     }
 
@@ -372,7 +475,7 @@ fn animateEditorSystemScroll(state: *EditorState, delta_seconds: f32) void {
 
     const clamped_delta = @min(delta_seconds, 0.1);
     const alpha = 1.0 - @exp(-editor_system_scroll_smoothing * clamped_delta);
-    state.system_scroll_y += remaining * alpha;
+    scroll_y.* += remaining * alpha;
 }
 
 fn ensureEditorSidebarWidths(state: *EditorState, input: FrameInput) void {
@@ -419,8 +522,188 @@ fn dragEditorSplitter(state: *EditorState, input: FrameInput) void {
     state.right_sidebar_width = widths.right;
 }
 
+fn applyEditorKeyboardEdits(world: *runtime.World, state: *EditorState, input: FrameInput) EditorError!bool {
+    if (input.keyboard.editor_undo_pressed) {
+        return try undoEditorFieldEdit(world, state);
+    }
+    if (input.keyboard.editor_redo_pressed) {
+        return try redoEditorFieldEdit(world, state);
+    }
+    if (input.keyboard.editor_increment_pressed) {
+        return try nudgeSelectedEditorField(world, state, input, 1.0);
+    }
+    if (input.keyboard.editor_decrement_pressed) {
+        return try nudgeSelectedEditorField(world, state, input, -1.0);
+    }
+    return false;
+}
+
+fn nudgeSelectedEditorField(world: *runtime.World, state: *EditorState, input: FrameInput, direction: f32) EditorError!bool {
+    state.selected_property = validatedEditorFieldSelection(world, state.selected_entity, state.selected_property);
+    if (!state.selected_property.active) {
+        return false;
+    }
+    const old_value = world.getComponentFieldValue(state.selected_property.entity, state.selected_property.componentId(), state.selected_property.fieldName()) catch return false;
+    const new_value = nudgeEditorComponentValue(old_value, state.selected_property.vec3_lane, editorNudgeStep(input), direction) orelse return false;
+    try applyEditorFieldValue(world, state, state.selected_property, old_value, new_value);
+    return true;
+}
+
+fn editorNudgeStep(input: FrameInput) f32 {
+    if (input.keyboard.alt_down) {
+        return 1.0;
+    }
+    if (input.keyboard.shift_down) {
+        return 0.01;
+    }
+    return 0.1;
+}
+
+fn nudgeEditorComponentValue(value: runtime.ComponentValue, vec3_lane: u2, step: f32, direction: f32) ?runtime.ComponentValue {
+    return switch (value) {
+        .boolean => .{ .boolean = direction > 0.0 },
+        .int => |payload| .{ .int = payload + @as(i32, if (direction > 0.0) 1 else -1) },
+        .float => |payload| .{ .float = payload + step * direction },
+        .vec3 => |payload| blk: {
+            var next = payload;
+            next[vec3_lane] += step * direction;
+            break :blk .{ .vec3 = next };
+        },
+        .string => null,
+    };
+}
+
+fn applyEditorFieldValue(
+    world: *runtime.World,
+    state: *EditorState,
+    selected_property: EditorFieldSelection,
+    old_value: runtime.ComponentValue,
+    new_value: runtime.ComponentValue,
+) EditorError!void {
+    if (componentValuesEqual(old_value, new_value)) {
+        return;
+    }
+    try world.setComponentFieldValue(selected_property.entity, selected_property.componentId(), selected_property.fieldName(), new_value);
+    var command = EditorFieldEditCommand{
+        .active = true,
+        .entity = selected_property.entity,
+        .old_value = old_value,
+        .new_value = new_value,
+    };
+    if (!copyEditorBytes(&command.component_id, selected_property.componentId())) {
+        return error.InvalidScene;
+    }
+    command.component_id_len = selected_property.component_id_len;
+    if (!copyEditorBytes(&command.field_name, selected_property.fieldName())) {
+        return error.InvalidScene;
+    }
+    command.field_name_len = selected_property.field_name_len;
+    pushEditorUndo(state, command);
+}
+
+fn undoEditorFieldEdit(world: *runtime.World, state: *EditorState) EditorError!bool {
+    if (state.undo_len == 0) {
+        return false;
+    }
+    state.undo_len -= 1;
+    const command = state.undo_stack[state.undo_len];
+    if (!command.active) {
+        return false;
+    }
+    world.setComponentFieldValue(command.entity, command.componentId(), command.fieldName(), command.old_value) catch return false;
+    pushEditorRedo(state, command);
+    state.selected_property = editorSelectionFromCommand(command);
+    return true;
+}
+
+fn redoEditorFieldEdit(world: *runtime.World, state: *EditorState) EditorError!bool {
+    if (state.redo_len == 0) {
+        return false;
+    }
+    state.redo_len -= 1;
+    const command = state.redo_stack[state.redo_len];
+    if (!command.active) {
+        return false;
+    }
+    world.setComponentFieldValue(command.entity, command.componentId(), command.fieldName(), command.new_value) catch return false;
+    pushEditorUndoPreservingRedo(state, command);
+    state.selected_property = editorSelectionFromCommand(command);
+    return true;
+}
+
+fn pushEditorUndo(state: *EditorState, command: EditorFieldEditCommand) void {
+    pushEditorUndoPreservingRedo(state, command);
+    state.redo_len = 0;
+}
+
+fn pushEditorUndoPreservingRedo(state: *EditorState, command: EditorFieldEditCommand) void {
+    pushEditorCommand(&state.undo_stack, &state.undo_len, command);
+}
+
+fn pushEditorRedo(state: *EditorState, command: EditorFieldEditCommand) void {
+    pushEditorCommand(&state.redo_stack, &state.redo_len, command);
+}
+
+fn pushEditorCommand(stack: *[editor_undo_capacity]EditorFieldEditCommand, len: *usize, command: EditorFieldEditCommand) void {
+    if (len.* == editor_undo_capacity) {
+        std.mem.copyForwards(EditorFieldEditCommand, stack[0 .. editor_undo_capacity - 1], stack[1..editor_undo_capacity]);
+        len.* -= 1;
+    }
+    stack[len.*] = command;
+    len.* += 1;
+}
+
+fn editorSelectionFromCommand(command: EditorFieldEditCommand) EditorFieldSelection {
+    var selection = EditorFieldSelection{
+        .active = true,
+        .entity = command.entity,
+        .component_id_len = command.component_id_len,
+        .field_name_len = command.field_name_len,
+    };
+    @memcpy(selection.component_id[0..command.component_id_len], command.componentId());
+    @memcpy(selection.field_name[0..command.field_name_len], command.fieldName());
+    return selection;
+}
+
+fn copyEditorBytes(target: anytype, value: []const u8) bool {
+    const target_info = @typeInfo(@TypeOf(target)).pointer;
+    const target_len = @typeInfo(target_info.child).array.len;
+    if (value.len > target_len) {
+        return false;
+    }
+    @memset(target[0..], 0);
+    @memcpy(target[0..value.len], value);
+    return true;
+}
+
+fn componentValuesEqual(a: runtime.ComponentValue, b: runtime.ComponentValue) bool {
+    return switch (a) {
+        .boolean => |payload| switch (b) {
+            .boolean => |other| payload == other,
+            else => false,
+        },
+        .int => |payload| switch (b) {
+            .int => |other| payload == other,
+            else => false,
+        },
+        .float => |payload| switch (b) {
+            .float => |other| payload == other,
+            else => false,
+        },
+        .vec3 => |payload| switch (b) {
+            .vec3 => |other| payload[0] == other[0] and payload[1] == other[1] and payload[2] == other[2],
+            else => false,
+        },
+        .string => |payload| switch (b) {
+            .string => |other| std.mem.eql(u8, payload, other),
+            else => false,
+        },
+    };
+}
+
 pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, state: *EditorState, input: FrameInput) EditorError!EditorUpdate {
     state.selected_entity = validatedEditorSelection(world, state.selected_entity);
+    state.selected_property = validatedEditorFieldSelection(world, state.selected_entity, state.selected_property);
     if (!input.debug_overlay_visible) {
         state.dragging_axis = .none;
         state.dragging_splitter = .none;
@@ -429,30 +712,55 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
         return .{};
     }
     ensureEditorSidebarWidths(state, input);
+    var effective_input = input;
+    effective_input.editor.selected_entity = state.selected_entity;
+    effective_input.editor.left_sidebar_width = state.left_sidebar_width;
+    effective_input.editor.right_sidebar_width = state.right_sidebar_width;
+    effective_input.editor.system_scroll_y = state.system_scroll_y;
+    effective_input.editor.inspector_scroll_y = state.inspector_scroll_y;
+
     const profile_count = editorSystemProfileScrollCount(input);
-    clampEditorSystemScroll(state, input, profile_count);
+    clampEditorSystemScroll(state, effective_input, profile_count);
+    clampEditorInspectorScroll(state, world, effective_input);
 
     const wheel_y = input.pointer.wheel_delta[1];
-    const system_scroll_route = if (wheel_y != 0.0 and
-        editorSystemNeedsScrollForInput(input, profile_count) and
+    const scroll_route = if (wheel_y != 0.0 and
         input.pointer.has_position and
         !std.math.isNan(input.pointer.position[0]) and
         !std.math.isNan(input.pointer.position[1]))
-        try routeEditorSystemScrollWheel(allocator, state, input, profile_count, wheel_y)
+        try routeEditorScrollWheel(allocator, world, state, effective_input, profile_count, wheel_y)
     else
         null;
 
-    if (wheel_y == 0.0 or system_scroll_route == null) {
+    if (wheel_y == 0.0 or scroll_route == null) {
         state.system_scroll_boundary = .none;
+        state.inspector_scroll_boundary = .none;
     }
 
-    if (system_scroll_route) |route| {
-        applyEditorSystemScrollRoute(state, route, wheel_y);
-        animateEditorSystemScroll(state, input.delta_seconds);
+    if (scroll_route) |route| {
+        switch (route) {
+            .system_scroll => |scroll| {
+                applyEditorScrollRoute(&state.system_scroll_y, &state.system_scroll_target_y, &state.system_scroll_boundary, scroll, wheel_y);
+                animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+                animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
+                return .{ .consumed_pointer = true };
+            },
+            .inspector_scroll => |scroll| {
+                applyEditorScrollRoute(&state.inspector_scroll_y, &state.inspector_scroll_target_y, &state.inspector_scroll_boundary, scroll, wheel_y);
+                animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+                animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
+                return .{ .consumed_pointer = true };
+            },
+            else => {},
+        }
+    }
+
+    animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+    animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
+
+    if (try applyEditorKeyboardEdits(world, state, input)) {
         return .{ .consumed_pointer = true };
     }
-
-    animateEditorSystemScroll(state, input.delta_seconds);
 
     if (!input.pointer.has_position) {
         state.dragging_axis = .none;
@@ -476,7 +784,7 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
     }
 
     if (input.pointer.primary_pressed) {
-        if (try routeEditorUi(allocator, state.system_scroll_target_y, input, profile_count)) |route| {
+        if (try routeEditorUi(allocator, world, state.system_scroll_target_y, state.inspector_scroll_target_y, effective_input, profile_count)) |route| {
             switch (route) {
                 .splitter => |splitter| {
                     state.dragging_splitter = splitter;
@@ -499,7 +807,13 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
                     };
                 },
                 .system_scroll => {},
+                .inspector_scroll => {},
             }
+        }
+        if (try pickEditorInspectorProperty(world, effective_input)) |property| {
+            state.selected_property = property;
+            state.captured_pointer = true;
+            return .{ .consumed_pointer = true };
         }
         if (hitEditorChrome(input)) {
             state.captured_pointer = true;
@@ -517,7 +831,11 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
             }
         }
 
+        const previous_selection = state.selected_entity;
         state.selected_entity = try pickRenderableEntity(world, input);
+        if (previous_selection == null or state.selected_entity == null or previous_selection.?.index != state.selected_entity.?.index or previous_selection.?.generation != state.selected_entity.?.generation) {
+            state.selected_property = .{};
+        }
         state.captured_pointer = state.selected_entity != null;
         return .{ .consumed_pointer = state.selected_entity != null };
     }
@@ -869,6 +1187,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
                 sdl.MACHINA_SDL_EVENT_KEY_DOWN => {
                     updateKeyboardKeyState(&input.keyboard, event.key, true);
                     updateKeyboardModifiers(&input.keyboard, event);
+                    updateEditorKeyboardActions(&input.keyboard, event);
                     if (event.repeat == 0 and isEditorToggleShortcut(event.key, event.ctrl_down != 0)) {
                         toggleDebugOverlay(&input);
                     }
@@ -919,8 +1238,8 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
         }
 
         const frame_ticks = sdl.machina_sdl_get_ticks_ns();
+        const elapsed_ns = if (frame_ticks > last_frame_ticks) frame_ticks - last_frame_ticks else 0;
         if (frame_ticks > last_frame_ticks) {
-            const elapsed_ns = frame_ticks - last_frame_ticks;
             last_frame_ticks = frame_ticks;
             const instant_fps = 1_000_000_000.0 / @as(f32, @floatFromInt(elapsed_ns));
             smoothed_fps = if (smoothed_fps == 0.0) instant_fps else smoothed_fps * 0.9 + instant_fps * 0.1;
@@ -941,7 +1260,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
             }
         }
 
-        const delta_seconds: f32 = 0.025;
+        const delta_seconds = liveRunDeltaSecondsFromElapsedNs(elapsed_ns);
         input.delta_seconds = delta_seconds;
         input.viewport_width = @floatFromInt(width);
         input.viewport_height = @floatFromInt(height);
@@ -1910,38 +2229,20 @@ fn extractEditorShellInto(allocator: std.mem.Allocator, world: *runtime.World, i
         .padding = .{ 0.0, 0.0, 0.0 },
     }) catch |err| return mapWorldError(err);
 
-    try extractEditorShellLayoutRect(world, "machina.editor.shell.left_sidebar", "Editor Left Sidebar", layout.left.size3(), 0, editor_palette.shell);
-    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, editorSplitterColor(input, .left, hovered_splitter));
+    try extractEditorShellLayoutRect(world, "machina.editor.shell.left_sidebar", "Editor Left Sidebar", layout.left.size3(), 0, editor_palette.panel);
+    try extractEditorShellLayoutSplitter(world, input, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, .left, hovered_splitter);
     try extractEditorSplitterHitTarget(world, input, .left);
     try extractEditorShellLayoutSpacer(world, "machina.editor.shell.game_viewport", "Editor Game Viewport Slot", .{ editor_min_game_viewport_width, body.height, 0.0 }, 2, 1.0);
-    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, editorSplitterColor(input, .right, hovered_splitter));
+    try extractEditorShellLayoutSplitter(world, input, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, .right, hovered_splitter);
     try extractEditorSplitterHitTarget(world, input, .right);
-    try extractEditorShellLayoutRect(world, "machina.editor.shell.right_sidebar", "Editor Right Sidebar", layout.right.size3(), 4, editor_palette.shell);
+    try extractEditorShellLayoutRect(world, "machina.editor.shell.right_sidebar", "Editor Right Sidebar", layout.right.size3(), 4, editor_palette.panel);
 
     const frame_color = editor_palette.panel_muted;
-    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.top", .{
-        .x = game_viewport.x,
-        .y = game_viewport.y,
-        .width = game_viewport.width,
-        .height = 2.0,
-    }, frame_color);
     try extractEditorShellRect(world, "machina.editor.shell.viewport.border.bottom", .{
         .x = game_viewport.x,
         .y = game_viewport.y + game_viewport.height - 2.0,
         .width = game_viewport.width,
         .height = 2.0,
-    }, frame_color);
-    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.left", .{
-        .x = game_viewport.x,
-        .y = game_viewport.y,
-        .width = 2.0,
-        .height = game_viewport.height,
-    }, frame_color);
-    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.right", .{
-        .x = game_viewport.x + game_viewport.width - 2.0,
-        .y = game_viewport.y,
-        .width = 2.0,
-        .height = game_viewport.height,
     }, frame_color);
 }
 
@@ -2020,6 +2321,24 @@ fn extractEditorShellLayoutSeparator(world: *runtime.World, id: []const u8, name
     }) catch |err| return mapWorldError(err);
 }
 
+fn extractEditorShellLayoutSplitter(
+    world: *runtime.World,
+    input: FrameInput,
+    id: []const u8,
+    name: []const u8,
+    size: [3]f32,
+    order: i32,
+    splitter: EditorSplitter,
+    hovered_splitter: ?EditorSplitter,
+) RenderError!void {
+    if (editorSplitterVisible(input, splitter, hovered_splitter)) {
+        try extractEditorShellLayoutSeparator(world, id, name, size, order, editorSplitterColor(input, splitter, hovered_splitter));
+        return;
+    }
+
+    try extractEditorShellLayoutSpacer(world, id, name, size, order, 0.0);
+}
+
 fn extractEditorShellLayoutSpacer(world: *runtime.World, id: []const u8, name: []const u8, min_size: [3]f32, order: i32, grow: f32) RenderError!void {
     const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
     world.setUiSpacer(entity, .{ .size = .{ 0.0, 0.0, 0.0 } }) catch |err| return mapWorldError(err);
@@ -2054,7 +2373,7 @@ fn extractDebugOverlayInto(
         .y = panel.y,
         .width = panel_size[0],
         .height = panel_size[1],
-    }, editor_palette.panel, editor_panel_corner_radius);
+    }, editor_palette.panel, 0.0);
 
     if (!has_profiles) {
         try extractEditorComponentInspectorInto(allocator, world, scene_world, input);
@@ -2080,7 +2399,7 @@ fn extractDebugOverlayInto(
     }) catch |err| return mapWorldError(err);
 
     const row_width = list_clip.size[0];
-    const table_height = @as(f32, @floatFromInt(input.system_profiles.len)) * editor_system_row_stride;
+    const table_height = editorSystemTableContentHeight(input.system_profiles.len);
     const system_table = world.createEntity("machina.editor.debug.systems.table", "Editor Debug Systems Table") catch |err| return mapWorldError(err);
     world.setUiRect(system_table, .{
         .position = .{
@@ -2090,7 +2409,7 @@ fn extractDebugOverlayInto(
         },
         .size = .{ row_width, table_height, 0.0 },
         .color = editor_palette.shell,
-        .corner_radius = 0.0,
+        .corner_radius = editor_panel_corner_radius,
     }) catch |err| return mapWorldError(err);
     world.setUiLayoutItem(system_table, .{
         .parent = "machina.editor.debug.systems.scroll",
@@ -2098,20 +2417,20 @@ fn extractDebugOverlayInto(
     }) catch |err| return mapWorldError(err);
 
     for (input.system_profiles, 0..) |profile, profile_index| {
-        const row_y = @as(f32, @floatFromInt(profile_index)) * editor_system_row_stride;
+        const row_y = editor_system_card_padding_y + @as(f32, @floatFromInt(profile_index)) * editor_system_row_stride;
         const duration_text = formatSystemProfileDuration(allocator, profile) catch return RenderError.OutOfMemory;
         defer allocator.free(duration_text);
         const duration_width = editorTextWidth(duration_text, editor_system_text_size);
-        const duration_x = @max(row_width - editor_inspector_card_padding_x - duration_width, editor_inspector_card_padding_x);
-        const label_max_width = @max(duration_x - editor_inspector_card_padding_x - editor_inspector_field_column_gap, 1.0);
+        const duration_x = @max(row_width - editor_system_row_duration_padding_x - duration_width, editor_system_row_label_padding_x);
+        const label_max_width = @max(duration_x - editor_system_row_label_padding_x - editor_system_field_column_gap, 1.0);
         const label_text = fitEditorTextToWidth(allocator, profile.id, editor_system_text_size, label_max_width) catch return RenderError.OutOfMemory;
         defer allocator.free(label_text);
 
         const label_id = std.fmt.allocPrint(allocator, "machina.editor.debug.systems.row.{d}.label", .{profile_index}) catch return RenderError.OutOfMemory;
         defer allocator.free(label_id);
         _ = try extractEditorChildText(world, label_id, "Editor System Row Label", "machina.editor.debug.systems.table", .{
-            editor_inspector_card_padding_x,
-            row_y + 2.0,
+            editor_system_row_label_padding_x,
+            row_y,
             0.0,
         }, label_text, editor_system_text_size, editor_palette.text);
 
@@ -2119,7 +2438,7 @@ fn extractDebugOverlayInto(
         defer allocator.free(duration_id);
         _ = try extractEditorChildText(world, duration_id, "Editor System Row Duration", "machina.editor.debug.systems.table", .{
             duration_x,
-            row_y + 2.0,
+            row_y,
             0.0,
         }, duration_text, editor_system_text_size, editor_palette.text_muted);
     }
@@ -2266,13 +2585,13 @@ fn extractEditorComponentInspectorInto(
         .y = panel_y,
         .width = panel_width,
         .height = panel_height,
-    }, editor_palette.panel, editor_panel_corner_radius);
+    }, editor_palette.panel, 0.0);
 
     try extractEditorText(world, "machina.editor.inspector.title", "Editor Inspector Title", .{
         panel_x + editor_panel_padding_x,
         panel_y + editor_panel_padding_y,
         0.0,
-    }, "COMPONENTS", 1.15, editor_palette.text);
+    }, "COMPONENTS", editor_inspector_text_size, editor_palette.text);
 
     const selected = input.editor.selected_entity orelse {
         try extractEditorText(world, "machina.editor.inspector.empty", "Editor Inspector Empty", .{
@@ -2305,15 +2624,26 @@ fn extractEditorComponentInspectorInto(
         0.0,
     }, entity_header, editor_inspector_text_size, editor_palette.text_muted);
 
-    const stack_id = "machina.editor.inspector.components";
-    const stack_y = panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.5;
-    const stack = world.createEntity(stack_id, "Editor Component Stack") catch |err| return mapWorldError(err);
-    world.setUiVBox(stack, .{
-        .position = .{ panel_x, stack_y, 0.0 },
-        .spacing = editor_inspector_card_gap,
+    const scroll_clip = editorInspectorScrollClipRect(input);
+    const scroll = world.createEntity("machina.editor.inspector.scroll", "Editor Inspector Scroll View") catch |err| return mapWorldError(err);
+    world.setUiScrollView(scroll, .{
+        .position = scroll_clip.position,
+        .size = scroll_clip.size,
+        .content_offset = .{ 0.0, input.editor.inspector_scroll_y, 0.0 },
     }) catch |err| return mapWorldError(err);
 
-    const card_width = @max(panel_width, 1.0);
+    const stack_id = "machina.editor.inspector.components";
+    const stack = world.createEntity(stack_id, "Editor Component Stack") catch |err| return mapWorldError(err);
+    world.setUiVBox(stack, .{
+        .position = .{ 0.0, 0.0, 0.0 },
+        .spacing = editor_inspector_card_gap,
+    }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(stack, .{
+        .parent = "machina.editor.inspector.scroll",
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+
+    const card_width = @max(scroll_clip.size[0], 1.0);
     const field_stride = editor_inspector_field_row_stride;
     var component_index: usize = 0;
     var stack_order: i32 = 0;
@@ -2338,10 +2668,7 @@ fn extractEditorComponentInspectorInto(
         }
 
         const field_count = scene_world.componentFieldCount(component_id);
-        const card_height = editor_inspector_card_padding_y * 2.0 +
-            editorTextHeight(editor_inspector_text_size) +
-            editor_panel_label_gap +
-            @as(f32, @floatFromInt(field_count)) * field_stride;
+        const card_height = editorInspectorComponentCardHeight(scene_world, component_id);
         const card_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}", .{component_index}) catch return RenderError.OutOfMemory;
         defer allocator.free(card_id);
         const card = try extractEditorPanel(world, card_id, "Editor Component Card", .{
@@ -2370,33 +2697,19 @@ fn extractEditorComponentInspectorInto(
         for (0..field_count) |field_index| {
             const field_name = scene_world.componentFieldNameAt(component_id, field_index) orelse continue;
             const value = scene_world.getComponentFieldValue(selected, component_id, field_name) catch continue;
-            const value_text = formatInspectorFieldValue(allocator, value) catch return RenderError.OutOfMemory;
-            defer allocator.free(value_text);
-            const label_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.label", .{ component_index, field_index }) catch return RenderError.OutOfMemory;
-            defer allocator.free(label_id);
-            const value_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.value", .{ component_index, field_index }) catch return RenderError.OutOfMemory;
-            defer allocator.free(value_id);
-
             const field_y = editor_inspector_card_padding_y + editorTextHeight(editor_inspector_text_size) + editor_panel_label_gap + @as(f32, @floatFromInt(field_index)) * field_stride;
-            const value_x = editorInspectorFieldValueX(card_width);
-            const label_max_width = @max(value_x - editor_inspector_card_padding_x - editor_inspector_field_column_gap, 1.0);
-            const value_max_width = @max(card_width - value_x - editor_inspector_card_padding_x, 1.0);
-            const label_text = fitEditorTextToWidth(allocator, field_name, editor_inspector_text_size, label_max_width) catch return RenderError.OutOfMemory;
-            defer allocator.free(label_text);
-            const fitted_value_text = fitEditorTextToWidth(allocator, value_text, editor_inspector_text_size, value_max_width) catch return RenderError.OutOfMemory;
-            defer allocator.free(fitted_value_text);
-
-            _ = try extractEditorChildText(world, label_id, "Editor Component Field Label", card_id, .{
-                editor_inspector_card_padding_x,
-                field_y,
-                0.0,
-            }, label_text, editor_inspector_text_size, editor_palette.text_muted);
-
-            _ = try extractEditorChildText(world, value_id, "Editor Component Field Value", card_id, .{
-                value_x,
-                field_y,
-                0.0,
-            }, fitted_value_text, editor_inspector_text_size, editor_palette.text);
+            try extractEditorPropertyRow(allocator, world, .{
+                .parent_id = card_id,
+                .component_index = component_index,
+                .field_index = field_index,
+                .component_id = component_id,
+                .field_name = field_name,
+                .value = value,
+                .card_width = card_width,
+                .field_y = field_y,
+                .selected = input.editor.selected_property.matches(selected, component_id, field_name),
+                .selected_vec3_lane = input.editor.selected_property.vec3_lane,
+            });
         }
 
         component_index += 1;
@@ -2467,6 +2780,91 @@ fn formatInspectorFieldValue(allocator: std.mem.Allocator, value: runtime.Compon
             const suffix = if (payload.len > max_len) "..." else "";
             break :blk std.fmt.allocPrint(allocator, "{s}{s}", .{ visible, suffix });
         },
+    };
+}
+
+const EditorPropertyRowSpec = struct {
+    parent_id: []const u8,
+    component_index: usize,
+    field_index: usize,
+    component_id: []const u8,
+    field_name: []const u8,
+    value: runtime.ComponentValue,
+    card_width: f32,
+    field_y: f32,
+    selected: bool,
+    selected_vec3_lane: u2 = 0,
+};
+
+fn extractEditorPropertyRow(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    spec: EditorPropertyRowSpec,
+) RenderError!void {
+    if (spec.selected) {
+        const selected_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.selected", .{ spec.component_index, spec.field_index }) catch return RenderError.OutOfMemory;
+        defer allocator.free(selected_id);
+        const selected_rect = try extractEditorPanel(world, selected_id, "Editor Component Field Selection", .{
+            .x = editor_inspector_card_padding_x * 0.5,
+            .y = spec.field_y - 4.0,
+            .width = @max(spec.card_width - editor_inspector_card_padding_x, 1.0),
+            .height = editorTextHeight(editor_inspector_text_size) + 8.0,
+        }, editor_palette.panel_muted, editor_button_corner_radius);
+        world.setUiLayoutItem(selected_rect, .{
+            .parent = spec.parent_id,
+            .order = -1,
+        }) catch |err| return mapWorldError(err);
+    }
+
+    const value_text = formatInspectorFieldValue(allocator, spec.value) catch return RenderError.OutOfMemory;
+    defer allocator.free(value_text);
+    const label_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.label", .{ spec.component_index, spec.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(label_id);
+    const value_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.value", .{ spec.component_index, spec.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(value_id);
+
+    const value_x = editorInspectorFieldValueX(spec.card_width);
+    const label_max_width = @max(value_x - editor_inspector_card_padding_x - editor_inspector_field_column_gap, 1.0);
+    const value_max_width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0);
+    const label_text = fitEditorTextToWidth(allocator, spec.field_name, editor_inspector_text_size, label_max_width) catch return RenderError.OutOfMemory;
+    defer allocator.free(label_text);
+    const display_value = formatEditorPropertyDisplayValue(allocator, spec.value, value_text, spec.selected, spec.selected_vec3_lane) catch return RenderError.OutOfMemory;
+    defer allocator.free(display_value);
+    const fitted_value_text = fitEditorTextToWidth(allocator, display_value, editor_inspector_text_size, value_max_width) catch return RenderError.OutOfMemory;
+    defer allocator.free(fitted_value_text);
+
+    const label_color = if (spec.selected) editor_palette.text else editor_palette.text_muted;
+    const value_color = if (spec.selected) editor_palette.accent_soft else editor_palette.text;
+    _ = try extractEditorChildText(world, label_id, "Editor Component Field Label", spec.parent_id, .{
+        editor_inspector_card_padding_x,
+        spec.field_y,
+        0.0,
+    }, label_text, editor_inspector_text_size, label_color);
+
+    _ = try extractEditorChildText(world, value_id, "Editor Component Field Value", spec.parent_id, .{
+        value_x,
+        spec.field_y,
+        0.0,
+    }, fitted_value_text, editor_inspector_text_size, value_color);
+}
+
+fn formatEditorPropertyDisplayValue(
+    allocator: std.mem.Allocator,
+    value: runtime.ComponentValue,
+    plain_value: []const u8,
+    selected: bool,
+    selected_vec3_lane: u2,
+) error{OutOfMemory}![]const u8 {
+    if (!selected) {
+        return allocator.dupe(u8, plain_value);
+    }
+    return switch (value) {
+        .vec3 => |payload| switch (selected_vec3_lane) {
+            0 => std.fmt.allocPrint(allocator, "[{d:.2}] {d:.2} {d:.2}", .{ payload[0], payload[1], payload[2] }),
+            1 => std.fmt.allocPrint(allocator, "{d:.2} [{d:.2}] {d:.2}", .{ payload[0], payload[1], payload[2] }),
+            else => std.fmt.allocPrint(allocator, "{d:.2} {d:.2} [{d:.2}]", .{ payload[0], payload[1], payload[2] }),
+        },
+        else => std.fmt.allocPrint(allocator, "[{s}]", .{plain_value}),
     };
 }
 
@@ -2590,7 +2988,7 @@ fn editorSystemListClipRect(input: FrameInput) UiClipRect {
         .position = .{ panel.x, editorSystemRowsY(input), 0.0 },
         .size = .{
             @max(panel.width - scrollbar_space, 1.0),
-            @as(f32, @floatFromInt(editorSystemVisibleRows(input))) * editor_system_row_stride,
+            editorSystemTableContentHeight(editorSystemVisibleRows(input)),
             0.0,
         },
     };
@@ -2602,8 +3000,58 @@ fn editorSystemProfileScrollCount(input: FrameInput) usize {
 
 fn editorSystemVisibleRows(input: FrameInput) usize {
     const panel = editorSystemPanelRect(input);
-    const rows_height = @max(panel.y + panel.height - editorSystemRowsY(input) - editor_panel_bottom_padding, editor_system_row_stride);
+    const rows_height = @max(panel.y + panel.height - editorSystemRowsY(input) - editor_panel_bottom_padding - editor_system_card_padding_y * 2.0, editor_system_row_stride);
     return @max(@as(usize, @intFromFloat(@floor(rows_height / editor_system_row_stride))), 1);
+}
+
+fn editorSystemTableContentHeight(row_count: usize) f32 {
+    return editor_system_card_padding_y * 2.0 + @as(f32, @floatFromInt(row_count)) * editor_system_row_stride;
+}
+
+fn editorInspectorScrollClipRect(input: FrameInput) UiClipRect {
+    const sidebar = editorSidebarPanelRect(editorRightSidebarRect(input));
+    const y = sidebar.y + editor_panel_padding_y + editor_inspector_line_stride * 2.5;
+    const bottom = sidebar.y + sidebar.height;
+    return .{
+        .position = .{ sidebar.x, y, 0.0 },
+        .size = .{
+            @max(sidebar.width, 1.0),
+            @max(bottom - y, 1.0),
+            0.0,
+        },
+    };
+}
+
+fn editorInspectorComponentContentHeight(scene_world: *const runtime.World, selected: ?runtime.EntityHandle) f32 {
+    const selected_entity = selected orelse return 0.0;
+    var components = scene_world.entityComponents(selected_entity) catch return 0.0;
+    var height: f32 = 0.0;
+    var component_index: usize = 0;
+    while (components.next()) |component_id| {
+        if (component_index > 0) {
+            height += editor_inspector_separator_height;
+        }
+        height += editorInspectorComponentCardHeight(scene_world, component_id);
+        component_index += 1;
+    }
+    return height;
+}
+
+fn editorInspectorComponentCardHeight(scene_world: *const runtime.World, component_id: []const u8) f32 {
+    const field_count = scene_world.componentFieldCount(component_id);
+    return editor_inspector_card_padding_y * 2.0 +
+        editorTextHeight(editor_inspector_text_size) +
+        editor_panel_label_gap +
+        @as(f32, @floatFromInt(field_count)) * editor_inspector_field_row_stride;
+}
+
+fn editorInspectorNeedsScroll(scene_world: *const runtime.World, input: FrameInput) bool {
+    return editorInspectorMaxScrollY(scene_world, input) > 0.0;
+}
+
+fn editorInspectorMaxScrollY(scene_world: *const runtime.World, input: FrameInput) f32 {
+    const clip = editorInspectorScrollClipRect(input);
+    return @max(editorInspectorComponentContentHeight(scene_world, input.editor.selected_entity) - clip.size[1], 0.0);
 }
 
 fn editorSystemNeedsScrollForInput(input: FrameInput, profile_count: usize) bool {
@@ -4190,6 +4638,19 @@ fn cameraStateForInput(world: *const runtime.World, input: FrameInput) RenderErr
     return validateCamera(camera);
 }
 
+fn liveRunDeltaSecondsFromElapsedNs(elapsed_ns: u64) f32 {
+    if (elapsed_ns == 0) {
+        return live_run_default_delta_seconds;
+    }
+
+    const elapsed_seconds = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(std.time.ns_per_s));
+    if (!std.math.isFinite(elapsed_seconds) or elapsed_seconds <= 0.0) {
+        return live_run_default_delta_seconds;
+    }
+
+    return @floatCast(@min(elapsed_seconds, @as(f64, live_run_max_delta_seconds)));
+}
+
 fn updateFlyCamera(state: *FlyCameraState, world: *const runtime.World, input: FrameInput, delta_seconds: f32) RenderError!?runtime.Transform {
     const active = flyCameraInputActive(input);
     if (!state.initialized and !active) {
@@ -4320,6 +4781,22 @@ fn validatedEditorSelection(world: *const runtime.World, selected: ?runtime.Enti
         return null;
     }
     return entity;
+}
+
+fn validatedEditorFieldSelection(world: *const runtime.World, selected: ?runtime.EntityHandle, field: EditorFieldSelection) EditorFieldSelection {
+    if (!field.active) {
+        return .{};
+    }
+    const entity = selected orelse return .{};
+    if (entity.index != field.entity.index or entity.generation != field.entity.generation) {
+        return .{};
+    }
+    _ = world.entity(entity) catch return .{};
+    if (!(world.hasComponent(entity, field.componentId()) catch false)) {
+        return .{};
+    }
+    _ = world.getComponentFieldValue(entity, field.componentId(), field.fieldName()) catch return .{};
+    return field;
 }
 
 fn pickRenderableEntity(world: *const runtime.World, input: FrameInput) EditorError!?runtime.EntityHandle {
@@ -4513,6 +4990,7 @@ const EditorUiRoute = union(enum) {
     command: EditorCommand,
     splitter: EditorSplitter,
     system_scroll: ui_layout.ScrollWheelRoute,
+    inspector_scroll: ui_layout.ScrollWheelRoute,
 };
 
 const EditorButtonSpec = struct {
@@ -4559,7 +5037,14 @@ fn decodeEditorSplitter(command: []const u8) ?EditorSplitter {
     return null;
 }
 
-fn routeEditorUi(allocator: std.mem.Allocator, system_scroll_target_y: f32, input: FrameInput, profile_count: usize) EditorError!?EditorUiRoute {
+fn routeEditorUi(
+    allocator: std.mem.Allocator,
+    scene_world: ?*const runtime.World,
+    system_scroll_target_y: f32,
+    inspector_scroll_target_y: f32,
+    input: FrameInput,
+    profile_count: usize,
+) EditorError!?EditorUiRoute {
     if (!input.debug_overlay_visible or
         !input.pointer.has_position or
         std.math.isNan(input.pointer.position[0]) or
@@ -4571,7 +5056,7 @@ fn routeEditorUi(allocator: std.mem.Allocator, system_scroll_target_y: f32, inpu
     var input_world = runtime.World.init(allocator);
     defer input_world.deinit();
 
-    try addEditorChromeControlsForRouting(&input_world, system_scroll_target_y, input, profile_count);
+    try addEditorChromeControlsForRouting(&input_world, scene_world, system_scroll_target_y, inspector_scroll_target_y, input, profile_count);
 
     const route = ui_layout.routePointer(&input_world, .{
         .position = input.pointer.position,
@@ -4583,7 +5068,14 @@ fn routeEditorUi(allocator: std.mem.Allocator, system_scroll_target_y: f32, inpu
     }) catch |err| return mapEditorLayoutError(err);
 
     if (route.scroll) |scroll_route| {
-        return .{ .system_scroll = scroll_route };
+        const scroll_entity = input_world.entity(scroll_route.entity) catch return error.InvalidScene;
+        if (std.mem.eql(u8, scroll_entity.id, "machina.editor.debug.systems.scroll")) {
+            return .{ .system_scroll = scroll_route };
+        }
+        if (std.mem.eql(u8, scroll_entity.id, "machina.editor.inspector.scroll")) {
+            return .{ .inspector_scroll = scroll_route };
+        }
+        return null;
     }
     if (route.command) |command_hit| {
         if (decodeEditorSplitter(command_hit.command)) |splitter| {
@@ -4597,7 +5089,7 @@ fn routeEditorUi(allocator: std.mem.Allocator, system_scroll_target_y: f32, inpu
 }
 
 fn routeEditorSplitterAt(allocator: std.mem.Allocator, input: FrameInput) EditorError!?EditorSplitter {
-    const route = (try routeEditorUi(allocator, input.editor.system_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
+    const route = (try routeEditorUi(allocator, null, input.editor.system_scroll_y, input.editor.inspector_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
     return switch (route) {
         .splitter => |splitter| splitter,
         else => null,
@@ -4605,7 +5097,7 @@ fn routeEditorSplitterAt(allocator: std.mem.Allocator, input: FrameInput) Editor
 }
 
 fn routeEditorCommandAt(allocator: std.mem.Allocator, input: FrameInput) EditorError!?EditorCommand {
-    const route = (try routeEditorUi(allocator, input.editor.system_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
+    const route = (try routeEditorUi(allocator, null, input.editor.system_scroll_y, input.editor.inspector_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
     return switch (route) {
         .command => |command| command,
         else => null,
@@ -4614,7 +5106,9 @@ fn routeEditorCommandAt(allocator: std.mem.Allocator, input: FrameInput) EditorE
 
 fn addEditorChromeControlsForRouting(
     world: *runtime.World,
+    scene_world: ?*const runtime.World,
     system_scroll_target_y: f32,
+    inspector_scroll_target_y: f32,
     input: FrameInput,
     profile_count: usize,
 ) EditorError!void {
@@ -4625,6 +5119,9 @@ fn addEditorChromeControlsForRouting(
     try addEditorSplitterHitTargetForRouting(world, input, .left);
     try addEditorSplitterHitTargetForRouting(world, input, .right);
     try addEditorSystemScrollForRouting(world, system_scroll_target_y, input, profile_count);
+    if (scene_world) |loaded_scene_world| {
+        try addEditorInspectorScrollForRouting(world, loaded_scene_world, inspector_scroll_target_y, input);
+    }
 }
 
 fn addEditorCommandButtonForRouting(
@@ -4695,7 +5192,7 @@ fn addEditorSystemScrollForRouting(
     try world.setUiSpacer(content, .{
         .size = .{
             list_clip.size[0],
-            @as(f32, @floatFromInt(profile_count)) * editor_system_row_stride,
+            editorSystemTableContentHeight(profile_count),
             0.0,
         },
     });
@@ -4705,6 +5202,108 @@ fn addEditorSystemScrollForRouting(
     });
 }
 
+fn addEditorInspectorScrollForRouting(
+    world: *runtime.World,
+    scene_world: *const runtime.World,
+    inspector_scroll_target_y: f32,
+    input: FrameInput,
+) EditorError!void {
+    if (!editorInspectorNeedsScroll(scene_world, input)) {
+        return;
+    }
+
+    const clip = editorInspectorScrollClipRect(input);
+    const scroll = try world.createEntity("machina.editor.inspector.scroll", "Editor Inspector Scroll View");
+    try world.setUiScrollView(scroll, .{
+        .position = clip.position,
+        .size = clip.size,
+        .content_offset = .{ 0.0, inspector_scroll_target_y, 0.0 },
+    });
+
+    const content = try world.createEntity("machina.editor.inspector.scroll.content", "Editor Inspector Scroll Content");
+    try world.setUiSpacer(content, .{
+        .size = .{
+            clip.size[0],
+            editorInspectorComponentContentHeight(scene_world, input.editor.selected_entity),
+            0.0,
+        },
+    });
+    try world.setUiLayoutItem(content, .{
+        .parent = "machina.editor.inspector.scroll",
+        .order = 0,
+    });
+}
+
+fn pickEditorInspectorProperty(world: *const runtime.World, input: FrameInput) EditorError!?EditorFieldSelection {
+    const selected = input.editor.selected_entity orelse return null;
+    _ = world.entity(selected) catch return null;
+    const clip = editorInspectorScrollClipRect(input);
+    if (!pointInsideScreenRect(input.pointer.position, .{ clip.position[0], clip.position[1] }, .{ clip.size[0], clip.size[1] })) {
+        return null;
+    }
+
+    const card_width = @max(clip.size[0], 1.0);
+    const value_x = editorInspectorFieldValueX(card_width);
+    var content_y: f32 = -input.editor.inspector_scroll_y;
+    var component_index: usize = 0;
+    var components = world.entityComponents(selected) catch return null;
+    while (components.next()) |component_id| {
+        if (component_index > 0) {
+            content_y += editor_inspector_separator_height;
+        }
+        const card_y = content_y;
+        const field_count = world.componentFieldCount(component_id);
+        const field_start_y = editor_inspector_card_padding_y + editorTextHeight(editor_inspector_text_size) + editor_panel_label_gap;
+        for (0..field_count) |field_index| {
+            const field_name = world.componentFieldNameAt(component_id, field_index) orelse continue;
+            const field_y = clip.position[1] + card_y + field_start_y + @as(f32, @floatFromInt(field_index)) * editor_inspector_field_row_stride;
+            const row_rect = ScreenRect{
+                .x = clip.position[0],
+                .y = field_y - 4.0,
+                .width = card_width,
+                .height = editorTextHeight(editor_inspector_text_size) + 8.0,
+            };
+            if (row_rect.contains(input.pointer.position)) {
+                const value = world.getComponentFieldValue(selected, component_id, field_name) catch return null;
+                return try makeEditorFieldSelection(selected, component_id, field_name, pickEditorPropertyVec3Lane(value, input.pointer.position[0], clip.position[0] + value_x, card_width));
+            }
+        }
+        content_y += editorInspectorComponentCardHeight(world, component_id);
+        component_index += 1;
+    }
+
+    return null;
+}
+
+fn pickEditorPropertyVec3Lane(value: runtime.ComponentValue, pointer_x: f32, value_screen_x: f32, card_width: f32) u2 {
+    return switch (value) {
+        .vec3 => blk: {
+            const value_width = @max(card_width - editorInspectorFieldValueX(card_width) - editor_inspector_card_padding_x, 1.0);
+            const lane_width = @max(value_width / 3.0, 1.0);
+            const local_x = std.math.clamp(pointer_x - value_screen_x, 0.0, value_width - 0.001);
+            break :blk @intCast(@min(@as(i32, @intFromFloat(@floor(local_x / lane_width))), 2));
+        },
+        else => 0,
+    };
+}
+
+fn makeEditorFieldSelection(entity: runtime.EntityHandle, component_id: []const u8, field_name: []const u8, vec3_lane: u2) EditorError!EditorFieldSelection {
+    var selection = EditorFieldSelection{
+        .active = true,
+        .entity = entity,
+        .component_id_len = component_id.len,
+        .field_name_len = field_name.len,
+        .vec3_lane = vec3_lane,
+    };
+    if (!copyEditorBytes(&selection.component_id, component_id)) {
+        return error.InvalidScene;
+    }
+    if (!copyEditorBytes(&selection.field_name, field_name)) {
+        return error.InvalidScene;
+    }
+    return selection;
+}
+
 fn hitEditorChrome(input: FrameInput) bool {
     if (!input.debug_overlay_visible) {
         return false;
@@ -4712,18 +5311,19 @@ fn hitEditorChrome(input: FrameInput) bool {
     return !editorGameViewport(input).contains(input.pointer.position);
 }
 
-fn routeEditorSystemScrollWheel(
+fn routeEditorScrollWheel(
     allocator: std.mem.Allocator,
+    world: *const runtime.World,
     state: *const EditorState,
     input: FrameInput,
     profile_count: usize,
     wheel_delta_y: f32,
-) EditorError!?ui_layout.ScrollWheelRoute {
+) EditorError!?EditorUiRoute {
     var route_input = input;
     route_input.pointer.wheel_delta[1] = wheel_delta_y;
-    const route = (try routeEditorUi(allocator, state.system_scroll_target_y, route_input, profile_count)) orelse return null;
+    const route = (try routeEditorUi(allocator, world, state.system_scroll_target_y, state.inspector_scroll_target_y, route_input, profile_count)) orelse return null;
     return switch (route) {
-        .system_scroll => |scroll| scroll,
+        .system_scroll, .inspector_scroll => route,
         else => null,
     };
 }
@@ -4915,7 +5515,11 @@ fn editorSplitterColor(input: FrameInput, splitter: EditorSplitter, hovered_spli
     if (hovered_splitter != null and hovered_splitter.? == splitter) {
         return editor_palette.text_dim;
     }
-    return editor_palette.panel_muted;
+    return editor_palette.panel;
+}
+
+fn editorSplitterVisible(input: FrameInput, splitter: EditorSplitter, hovered_splitter: ?EditorSplitter) bool {
+    return input.editor.dragging_splitter == splitter or (hovered_splitter != null and hovered_splitter.? == splitter);
 }
 
 fn editorCursorKind(allocator: std.mem.Allocator, input: FrameInput) EditorError!EditorCursorKind {
@@ -5300,7 +5904,7 @@ test "editor chrome routes pointer through one retained ui route" {
         .system_profile_count_hint = 20,
     };
     const play_rect = editorPlayButtonRect(frame_input);
-    const command_route = (try routeEditorUi(std.testing.allocator, 0.0, .{
+    const command_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -5314,7 +5918,7 @@ test "editor chrome routes pointer through one retained ui route" {
     try std.testing.expectEqual(EditorCommand.play_toggle, command_route.command);
 
     const left_splitter = editorSplitterRect(frame_input, .left) orelse return error.TestExpectedEqual;
-    const splitter_route = (try routeEditorUi(std.testing.allocator, 0.0, .{
+    const splitter_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -5328,7 +5932,7 @@ test "editor chrome routes pointer through one retained ui route" {
     try std.testing.expectEqual(EditorSplitter.left, splitter_route.splitter);
 
     const scroll_point = editorSystemListHitTestPoint(&profiles, 20);
-    const scroll_route = (try routeEditorUi(std.testing.allocator, 0.0, .{
+    const scroll_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -6415,6 +7019,21 @@ test "ctrl-tab debug overlay toggle updates editor visibility only" {
     try std.testing.expect(!isEditorToggleShortcut(sdl.MACHINA_SDL_KEY_F1, true));
 }
 
+test "live run delta conversion uses measured elapsed seconds" {
+    const delta = liveRunDeltaSecondsFromElapsedNs(16_666_667);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0 / 60.0), delta, 0.000001);
+}
+
+test "live run delta conversion falls back for non-advancing ticks" {
+    const delta = liveRunDeltaSecondsFromElapsedNs(0);
+    try std.testing.expectApproxEqAbs(live_run_default_delta_seconds, delta, 0.000001);
+}
+
+test "live run delta conversion clamps large spikes" {
+    const delta = liveRunDeltaSecondsFromElapsedNs(2 * std.time.ns_per_s);
+    try std.testing.expectApproxEqAbs(live_run_max_delta_seconds, delta, 0.000001);
+}
+
 test "debug overlay extracts FPS label when visible" {
     var scene_world = runtime.World.init(std.testing.allocator);
     defer scene_world.deinit();
@@ -6482,7 +7101,7 @@ test "debug overlay extracts FPS label when visible" {
     const debug_panel_x = state.world.getVec3(debug_panel, runtime.ui_rect_component_id, "position") catch |err| return mapWorldError(err);
     const debug_panel_radius = try state.world.getFloat(debug_panel, runtime.ui_rect_component_id, "corner_radius");
     try std.testing.expectApproxEqAbs(expected_left_panel.x, debug_panel_x[0], 0.001);
-    try std.testing.expectApproxEqAbs(editor_panel_corner_radius, debug_panel_radius, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), debug_panel_radius, 0.001);
     try std.testing.expect(state.world.findEntityById("machina.editor.shell.top_bar") != null);
     try std.testing.expect(state.world.findEntityById("machina.editor.shell.bottom_bar") != null);
     const left_sidebar_entity = state.world.findEntityById("machina.editor.shell.left_sidebar") orelse return error.TestExpectedEqual;
@@ -6490,11 +7109,13 @@ test "debug overlay extracts FPS label when visible" {
     const left_sidebar_color = try state.world.getVec3(left_sidebar_entity, runtime.ui_rect_component_id, "color");
     const debug_panel_color = try state.world.getVec3(debug_panel, runtime.ui_rect_component_id, "color");
     for (0..3) |channel| {
-        try std.testing.expectApproxEqAbs(editor_palette.shell[channel], left_sidebar_color[channel], 0.001);
+        try std.testing.expectApproxEqAbs(editor_palette.panel[channel], left_sidebar_color[channel], 0.001);
         try std.testing.expectApproxEqAbs(editor_palette.panel[channel], debug_panel_color[channel], 0.001);
     }
-    try std.testing.expect(left_sidebar_color[0] != debug_panel_color[0]);
     try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.frame") == null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.border.top") == null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.border.left") == null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.border.right") == null);
     const bottom = editorBottomBarRect(input);
     const status = state.world.findEntityById("machina.editor.bottom.status") orelse return error.TestExpectedEqual;
     const status_position = try state.world.getVec3(status, runtime.ui_text_component_id, "position");
@@ -6534,6 +7155,9 @@ test "editor shell body uses hgroup slot for the game viewport" {
     try std.testing.expectApproxEqAbs(viewport.y, slot_rect.position[1], 0.001);
     try std.testing.expectApproxEqAbs(viewport.width, slot_rect.size[0], 0.001);
     try std.testing.expectApproxEqAbs(viewport.height, slot_rect.size[1], 0.001);
+    const inactive_splitter = state.world.findEntityById("machina.editor.shell.splitter.left") orelse return error.TestExpectedEqual;
+    try std.testing.expect(try state.world.hasComponent(inactive_splitter, runtime.ui_spacer_component_id));
+    try std.testing.expect(!(try state.world.hasComponent(inactive_splitter, runtime.ui_separator_component_id)));
     const splitter_hit_area = state.world.findEntityById("machina.editor.shell.splitter.left.hit_area") orelse return error.TestExpectedEqual;
     try std.testing.expect(try state.world.hasComponent(splitter_hit_area, runtime.ui_hit_area_component_id));
     try std.testing.expect(try state.world.hasComponent(splitter_hit_area, runtime.ui_button_component_id));
@@ -6739,7 +7363,7 @@ test "debug overlay extracts system profile rows when available" {
     const list_clip = editorSystemListClipRect(frame_input);
     const table_size = try state.world.getVec3(table, runtime.ui_rect_component_id, "size");
     try std.testing.expectApproxEqAbs(list_clip.size[0], table_size[0], 0.001);
-    try std.testing.expectApproxEqAbs(editor_system_row_stride * 2.0, table_size[1], 0.001);
+    try std.testing.expectApproxEqAbs(editorSystemTableContentHeight(2), table_size[1], 0.001);
     try std.testing.expect(state.world.findEntityById("machina.editor.debug.systems.row.0") == null);
     try std.testing.expect(state.world.findEntityById("machina.editor.debug.systems.row.1") == null);
     try std.testing.expect(state.world.findEntityById("machina.editor.debug.systems.separator.1") == null);
@@ -6881,6 +7505,174 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     try std.testing.expectApproxEqAbs(editorInspectorFieldValueX(card_size[0]), value_position[0], 0.001);
     try std.testing.expectEqualStrings("primitive", label_value);
     try std.testing.expectEqualStrings("uv_sphere", field_value);
+}
+
+test "editor inspector component stack resolves inside scroll view clip" {
+    var scene_world = runtime.World.init(std.testing.allocator);
+    defer scene_world.deinit();
+
+    const entity = try scene_world.createEntity("selected", "Selected Box");
+    try scene_world.setTransform(entity, .{ .position = .{ 0.25, 0.5, 0.0 } });
+    try scene_world.setGeometryPrimitive(entity, .{
+        .primitive = "uv_sphere",
+        .segments = 16,
+        .rings = 8,
+    });
+    try scene_world.setSurfaceMaterial(entity, .{ .base_color = .{ 0.8, 0.4, 0.2 } });
+    try scene_world.setShadowCaster(entity);
+    try scene_world.setShadowReceiver(entity);
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+    const frame_input = FrameInput{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = .{
+            .selected_entity = entity,
+            .inspector_scroll_y = 80.0,
+        },
+    };
+    try state.extractSceneWithInput(.{ .world = &scene_world }, frame_input);
+
+    const scroll = state.world.findEntityById("machina.editor.inspector.scroll") orelse return error.TestExpectedEqual;
+    const stack = state.world.findEntityById("machina.editor.inspector.components") orelse return error.TestExpectedEqual;
+    const first_card = state.world.findEntityById("machina.editor.inspector.component.0") orelse return error.TestExpectedEqual;
+    try std.testing.expect(try state.world.hasComponent(scroll, runtime.ui_scroll_view_component_id));
+    try std.testing.expectEqualStrings("machina.editor.inspector.scroll", try state.world.getString(stack, runtime.ui_layout_item_component_id, "parent"));
+
+    const clip = editorInspectorScrollClipRect(frame_input);
+    const card_position = try state.world.getVec3(first_card, runtime.ui_rect_component_id, "position");
+    const resolved = try resolveUiLayout(&state.world, first_card, card_position);
+    const resolved_clip = resolved.clip orelse return error.TestExpectedEqual;
+    try std.testing.expectApproxEqAbs(clip.position[0], resolved_clip.position[0], 0.001);
+    try std.testing.expectApproxEqAbs(clip.position[1], resolved_clip.position[1], 0.001);
+    try std.testing.expectApproxEqAbs(clip.size[0], resolved_clip.size[0], 0.001);
+    try std.testing.expectApproxEqAbs(clip.size[1], resolved_clip.size[1], 0.001);
+    try std.testing.expectApproxEqAbs(clip.position[1] - 80.0, resolved.position[1], 0.001);
+}
+
+test "editor inspector scroll state responds to wheel input" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const entity = try world.createEntity("selected", "Selected Box");
+    try world.setTransform(entity, .{ .position = .{ 0.25, 0.5, 0.0 } });
+    try world.setGeometryPrimitive(entity, .{
+        .primitive = "uv_sphere",
+        .segments = 16,
+        .rings = 8,
+    });
+    try world.setSurfaceMaterial(entity, .{ .base_color = .{ 0.8, 0.4, 0.2 } });
+    try world.setShadowCaster(entity);
+    try world.setShadowReceiver(entity);
+
+    var editor_state = EditorState{ .selected_entity = entity };
+    const clip = editorInspectorScrollClipRect(.{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = .{ .selected_entity = entity },
+    });
+    const update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .delta_seconds = 1.0,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .pointer = .{
+            .position = .{ clip.position[0] + 8.0, clip.position[1] + 8.0 },
+            .has_position = true,
+            .wheel_delta = .{ 0.0, -1.0 },
+        },
+    });
+
+    try std.testing.expect(update.consumed_pointer);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_scroll_pixels_per_wheel), editor_state.inspector_scroll_target_y, 0.001);
+    try std.testing.expect(editor_state.inspector_scroll_y > 0.0);
+    try std.testing.expect(editor_state.inspector_scroll_y < editor_state.inspector_scroll_target_y);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), editor_state.system_scroll_target_y, 0.001);
+}
+
+test "editor inspector property rows focus and nudge component fields with undo" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const entity = try world.createEntity("selected", "Selected Box");
+    try world.setTransform(entity, .{ .position = .{ 0.25, 0.5, 0.0 } });
+    try world.setGeometryPrimitive(entity, .{
+        .primitive = "uv_sphere",
+        .segments = 16,
+        .rings = 8,
+    });
+
+    var editor_state = EditorState{ .selected_entity = entity };
+    const frame_input = FrameInput{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = .{ .selected_entity = entity },
+    };
+    const clip = editorInspectorScrollClipRect(frame_input);
+    const value_x = editorInspectorFieldValueX(clip.size[0]);
+    const first_field_y = clip.position[1] +
+        editor_inspector_card_padding_y +
+        editorTextHeight(editor_inspector_text_size) +
+        editor_panel_label_gap;
+
+    const focus_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .pointer = .{
+            .position = .{ clip.position[0] + value_x + 4.0, first_field_y + 2.0 },
+            .has_position = true,
+            .primary_pressed = true,
+            .primary_down = true,
+        },
+    });
+    try std.testing.expect(focus_update.consumed_pointer);
+    try std.testing.expect(editor_state.selected_property.matches(entity, runtime.transform_component_id, "position"));
+    try std.testing.expectEqual(@as(u2, 0), editor_state.selected_property.vec3_lane);
+
+    var render_state = try RenderEcsState.init(std.testing.allocator);
+    defer render_state.deinit();
+    var selected_frame = frame_input;
+    selected_frame.editor = editorFrameState(&world, editor_state);
+    try render_state.extractSceneWithInput(.{ .world = &world }, selected_frame);
+    try std.testing.expect(render_state.world.findEntityById("machina.editor.inspector.component.0.field.0.selected") != null);
+
+    const nudge_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .keyboard = .{ .editor_increment_pressed = true },
+    });
+    try std.testing.expect(nudge_update.consumed_pointer);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.35), (try world.getVec3(entity, runtime.transform_component_id, "position"))[0], 0.001);
+    try std.testing.expectEqual(@as(usize, 1), editor_state.undo_len);
+    try std.testing.expectEqual(@as(usize, 0), editor_state.redo_len);
+
+    const undo_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .keyboard = .{ .editor_undo_pressed = true },
+    });
+    try std.testing.expect(undo_update.consumed_pointer);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.25), (try world.getVec3(entity, runtime.transform_component_id, "position"))[0], 0.001);
+    try std.testing.expectEqual(@as(usize, 0), editor_state.undo_len);
+    try std.testing.expectEqual(@as(usize, 1), editor_state.redo_len);
+
+    const redo_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .keyboard = .{ .editor_redo_pressed = true },
+    });
+    try std.testing.expect(redo_update.consumed_pointer);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.35), (try world.getVec3(entity, runtime.transform_component_id, "position"))[0], 0.001);
+    try std.testing.expectEqual(@as(usize, 1), editor_state.undo_len);
+    try std.testing.expectEqual(@as(usize, 0), editor_state.redo_len);
 }
 
 test "render ECS profiles internal systems for editor overlay" {

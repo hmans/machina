@@ -40,6 +40,24 @@ The shell body is generated as a retained `machina.ui.hgroup`: left sidebar, lef
 
 The system inspector and selected-entity inspector both use retained sidebar content with consistent internal padding. The system list is one table panel with aligned text rows, not separate row panels. Component boxes fill the right sidebar width and keep labels and values aligned instead of drawing loose overlay text.
 
+## Selected-Entity Inspector
+
+Click a visible mesh in the game viewport to select its entity.
+
+The right sidebar shows the selected entity name/id and one component box per attached component. Component fields use a reusable inspector row shape: label on the left, value on the right, clipping inside the panel, and a visible focus state when selected.
+
+Click a field row to focus it for editing. The current editing slice supports primitive runtime edits:
+
+- `+` or `=` increments numeric values and enables booleans.
+- `-` decrements numeric values and disables booleans.
+- Shift uses a smaller floating-point step.
+- Alt uses a larger floating-point step.
+- `vec3` values focus one lane from the value column and nudge that lane only.
+- Ctrl+Z undoes inspector field edits.
+- Ctrl+Shift+Z or Ctrl+Y redoes inspector field edits.
+
+Inspector edits mutate the live ECS world. They do not yet persist back to TOML scene files, and string fields are still read-only until the editor has a proper text-input primitive.
+
 Editor chrome pointer ownership is resolved through the same retained UI routing used by project UI. Playback buttons, splitter hit areas, and the systems scroll view are generated as ordinary `machina.ui.*` entities, then routed through the shared pointer route instead of private editor hit-test ladders.
 
 ## UI Is ECS Data
