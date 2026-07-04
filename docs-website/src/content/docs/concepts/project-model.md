@@ -71,6 +71,7 @@ machina bench . --frames 240
 machina test .
 machina run . --editor
 machina render . output.bmp
+machina render --editor --select some-entity . editor-output.bmp
 machina render-test . output.bmp
 ```
 

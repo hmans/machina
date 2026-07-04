@@ -17,8 +17,8 @@ Usage:
   machina bench [path] [--frames N] [--dt seconds] [--format text|json]
   machina test [tests-path|project-path] [--format text|json]
   machina run [path] [--frames N] [--editor]
-  machina render [path] [output.bmp]
-  machina render-test [path] [output.bmp]
+  machina render [--editor] [--select entity-id] [path] [output.bmp]
+  machina render-test [--editor] [--select entity-id] [path] [output.bmp]
 ```
 
 ## Commands
@@ -33,8 +33,8 @@ Usage:
 | `machina bench [path]` | Run headless benchmark smoke coverage. |
 | `machina test [path]` | Run game-shaped project tests. |
 | `machina run [path]` | Run a headful interactive project. |
-| `machina render [path] [output.bmp]` | Render one offscreen BMP artifact. |
-| `machina render-test [path] [output.bmp]` | Render and verify visible output. |
+| `machina render [--editor] [--select entity-id] [path] [output.bmp]` | Render one offscreen BMP artifact. |
+| `machina render-test [--editor] [--select entity-id] [path] [output.bmp]` | Render and verify visible output. |
 
 ## Format Options
 
@@ -46,6 +46,16 @@ These commands support `--format text|json`:
 - `test`
 
 Use JSON for editor, CI, and agent integrations.
+
+## Render Options
+
+```sh
+machina render examples/native_motion zig-out/native-motion.bmp
+machina render --editor --select native-cyan-box examples/native_motion zig-out/native-motion-editor.bmp
+```
+
+- `--editor` renders the engine editor shell into the offscreen frame.
+- `--select entity-id` implies `--editor` and preselects a scene entity for inspector layout verification.
 
 ## Run Options
 

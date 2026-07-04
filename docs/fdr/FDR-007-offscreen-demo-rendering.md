@@ -9,10 +9,11 @@ Offscreen demo rendering proves that Machina can initialize the WebGPU backend, 
 
 ## Behavior
 
-- Users can run `machina render [path] [output.bmp]` against a valid project.
-- Users can run `machina render-test [path] [output.bmp]` to render offscreen and verify the generated BMP.
+- Users can run `machina render [--editor] [--select entity-id] [path] [output.bmp]` against a valid project.
+- Users can run `machina render-test [--editor] [--select entity-id] [path] [output.bmp]` to render offscreen and verify the generated BMP.
 - The command validates the project before rendering.
 - The command loads the project's default scene and draws one frame of its renderable mesh and UI overlay entities into an offscreen texture.
+- `--editor` renders the engine editor shell into the offscreen frame; `--select` implies editor rendering and preselects the named scene entity for inspector verification.
 - Renderable entity position, rotation, scale, geometry, material base color, and spin values come from scene data.
 - Legacy cube entities remain supported and render as box geometry with inline color material data.
 - Camera projection/view data and the first directional light can come from scene data, with compatibility defaults when absent.
@@ -22,7 +23,7 @@ Offscreen demo rendering proves that Machina can initialize the WebGPU backend, 
 - Renderable meshes render with depth testing, scene-driven directional diffuse shading, and receiver-side shadowing.
 - The rendered pixels are copied back to CPU memory and written as a 24-bit BMP file.
 - Render verification parses the BMP and checks dimensions, foreground pixel coverage, visible connected components, and expected warm/cool color groups derived from scene material and UI colors.
-- The command works without a platform window or editor.
+- The command works without a platform window. Editor chrome rendering is optional and driven through normal frame input.
 
 ## Design Decisions
 
@@ -43,6 +44,12 @@ Offscreen demo rendering proves that Machina can initialize the WebGPU backend, 
 **Decision:** Offscreen rendering extracts scene data into a renderer-owned `runtime.World` and queues draw commands as internal ECS component data before issuing GPU commands.
 **Why:** This keeps offscreen rendering aligned with the same world, query, and scheduling model used by scenes and scripts. It follows ADR-013.
 **Tradeoff:** GPU buffers and bind groups are still renderer-owned side resources until native/internal component storage is designed.
+
+### 4. Let offscreen rendering exercise editor frame input
+
+**Decision:** `machina render` and `machina render-test` can render editor chrome and selected-entity inspector state by supplying editor-shaped frame input to the same offscreen renderer.
+**Why:** Agent and CI workflows need to verify editor layout bugs without relying on OS window screenshots or manual clicks.
+**Tradeoff:** The first selected-entity option is an inspection/debugging affordance, not a general editor automation API.
 
 ## Related
 

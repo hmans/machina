@@ -131,13 +131,19 @@ Render one BMP:
 machina render examples/showcase zig-out/showcase.bmp
 ```
 
+Render an editor/inspector state without clicking in a headful window:
+
+```sh
+machina render --editor --select native-cyan-box examples/native_motion zig-out/native-motion-editor.bmp
+```
+
 Render and verify visible output:
 
 ```sh
 machina render-test examples/showcase zig-out/showcase-render-test.bmp
 ```
 
-Render tests are deterministic and should be used before relying on headful screenshots for renderer work.
+Render tests are deterministic and should be used before relying on headful screenshots for renderer or editor-layout work.
 
 ## Full Suite
 

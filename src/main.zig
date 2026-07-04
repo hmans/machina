@@ -118,55 +118,73 @@ fn run(
     }
 
     if (std.mem.eql(u8, command, "render")) {
-        const target_path = if (args.len >= 3) args[2] else ".";
-        const output_path = if (args.len >= 4) args[3] else "zig-out/machina-cube.bmp";
-        const result = try checkProjectForCommand(io, allocator, target_path, stderr) orelse return 1;
+        const options = parseRenderOptions(args[2..], "zig-out/machina-cube.bmp") catch |err| {
+            try printArgumentError(stderr, err);
+            return 1;
+        };
+        const result = try checkProjectForCommand(io, allocator, options.target_path, stderr) orelse return 1;
         defer machina.freeCheckResult(allocator, result);
-        var live_project = machina.LiveProject.init(io, allocator, target_path) catch |err| {
-            try printProjectError(stderr, target_path, err);
+        var live_project = machina.LiveProject.init(io, allocator, options.target_path) catch |err| {
+            try printProjectError(stderr, options.target_path, err);
             return 1;
         };
         defer live_project.deinit();
         if (!live_project.runStartup()) {
             if (live_project.lastDiagnostic()) |diagnostic| {
-                try printScriptDiagnostic(stderr, target_path, diagnostic.*);
+                try printScriptDiagnostic(stderr, options.target_path, diagnostic.*);
             }
             return 1;
         }
 
-        machina.renderDemoBmp(io, allocator, output_path, live_project.renderScene()) catch |err| {
+        if (options.selected_entity_id) |entity_id| {
+            if (live_project.scene.world.findEntityById(entity_id) == null) {
+                try stderr.print("render selected entity not found: {s}\n", .{entity_id});
+                return 1;
+            }
+        }
+
+        machina.renderDemoBmpWithInput(io, allocator, options.output_path, live_project.renderScene(), renderCommandFrameInput(&live_project, options)) catch |err| {
             try stderr.print("render failed: {s}\n", .{@errorName(err)});
             return 1;
         };
 
-        try stdout.print("Rendered cube: {s}\n", .{output_path});
+        try stdout.print("Rendered artifact: {s}\n", .{options.output_path});
         return 0;
     }
 
     if (std.mem.eql(u8, command, "render-test")) {
-        const target_path = if (args.len >= 3) args[2] else ".";
-        const output_path = if (args.len >= 4) args[3] else "zig-out/machina-render-test.bmp";
-        const result = try checkProjectForCommand(io, allocator, target_path, stderr) orelse return 1;
+        const options = parseRenderOptions(args[2..], "zig-out/machina-render-test.bmp") catch |err| {
+            try printArgumentError(stderr, err);
+            return 1;
+        };
+        const result = try checkProjectForCommand(io, allocator, options.target_path, stderr) orelse return 1;
         defer machina.freeCheckResult(allocator, result);
-        var live_project = machina.LiveProject.init(io, allocator, target_path) catch |err| {
-            try printProjectError(stderr, target_path, err);
+        var live_project = machina.LiveProject.init(io, allocator, options.target_path) catch |err| {
+            try printProjectError(stderr, options.target_path, err);
             return 1;
         };
         defer live_project.deinit();
         if (!live_project.runStartup()) {
             if (live_project.lastDiagnostic()) |diagnostic| {
-                try printScriptDiagnostic(stderr, target_path, diagnostic.*);
+                try printScriptDiagnostic(stderr, options.target_path, diagnostic.*);
             }
             return 1;
         }
         const scene = live_project.scene;
 
-        machina.renderDemoBmp(io, allocator, output_path, live_project.renderScene()) catch |err| {
+        if (options.selected_entity_id) |entity_id| {
+            if (live_project.scene.world.findEntityById(entity_id) == null) {
+                try stderr.print("render-test selected entity not found: {s}\n", .{entity_id});
+                return 1;
+            }
+        }
+
+        machina.renderDemoBmpWithInput(io, allocator, options.output_path, live_project.renderScene(), renderCommandFrameInput(&live_project, options)) catch |err| {
             try stderr.print("render-test render failed: {s}\n", .{@errorName(err)});
             return 1;
         };
 
-        const verification = machina.verifyRenderBmp(io, allocator, output_path, .{
+        const verification = machina.verifyRenderBmp(io, allocator, options.output_path, .{
             .min_visible_components = 1,
             .min_color_groups = expectedColorGroups(scene),
         }) catch |err| {
@@ -184,7 +202,7 @@ fn run(
                 verification.color_groups,
             },
         );
-        try stdout.print("Rendered artifact: {s}\n", .{output_path});
+        try stdout.print("Rendered artifact: {s}\n", .{options.output_path});
         return 0;
     }
 
@@ -239,6 +257,13 @@ const BenchResult = struct {
 const TestCommandOptions = struct {
     target_path: []const u8 = "tests/projects",
     format: CheckOutputFormat = .text,
+};
+
+const RenderCommandOptions = struct {
+    target_path: []const u8 = ".",
+    output_path: []const u8,
+    editor: bool = false,
+    selected_entity_id: ?[]const u8 = null,
 };
 
 fn checkCommand(
@@ -521,8 +546,8 @@ fn printHelp(writer: *Io.Writer) !void {
         \\  machina bench [path] [--frames N] [--dt seconds] [--format text|json]
         \\  machina test [tests-path|project-path] [--format text|json]
         \\  machina run [path] [--frames N] [--editor]
-        \\  machina render [path] [output.bmp]
-        \\  machina render-test [path] [output.bmp]
+        \\  machina render [--editor] [--select entity-id] [path] [output.bmp]
+        \\  machina render-test [--editor] [--select entity-id] [path] [output.bmp]
         \\
     );
 }
@@ -585,6 +610,21 @@ fn stepLiveProject(raw_context: *anyopaque, delta_seconds: f32, input: *machina.
     }
 }
 
+fn renderCommandFrameInput(live_project: *machina.LiveProject, options: RenderCommandOptions) machina.FrameInput {
+    const selected_entity = if (options.selected_entity_id) |id| live_project.scene.world.findEntityById(id) else null;
+    if (!options.editor and selected_entity == null) {
+        return .{};
+    }
+    var editor = live_project.editorFrameState();
+    editor.selected_entity = selected_entity;
+    return .{
+        .debug_overlay_visible = true,
+        .fps = 60.0,
+        .editor = editor,
+        .system_profiles = live_project.systemProfileSnapshots(),
+    };
+}
+
 fn parseWindowOptions(args: []const []const u8) ArgumentError!machina.WindowOptions {
     var options = machina.WindowOptions{};
     var index: usize = 0;
@@ -609,6 +649,43 @@ fn parseWindowOptions(args: []const []const u8) ArgumentError!machina.WindowOpti
         return ArgumentError.UnknownArgument;
     }
 
+    return options;
+}
+
+fn parseRenderOptions(args: []const []const u8, default_output_path: []const u8) ArgumentError!RenderCommandOptions {
+    var options = RenderCommandOptions{ .output_path = default_output_path };
+    var positional_count: usize = 0;
+    var index: usize = 0;
+    while (index < args.len) : (index += 1) {
+        const arg = args[index];
+        if (std.mem.eql(u8, arg, "--editor")) {
+            options.editor = true;
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--select")) {
+            index += 1;
+            if (index >= args.len) {
+                return ArgumentError.UnknownArgument;
+            }
+            options.selected_entity_id = args[index];
+            options.editor = true;
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--select=")) {
+            options.selected_entity_id = arg["--select=".len..];
+            options.editor = true;
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--")) {
+            return ArgumentError.UnknownArgument;
+        }
+        switch (positional_count) {
+            0 => options.target_path = arg,
+            1 => options.output_path = arg,
+            else => return ArgumentError.UnknownArgument,
+        }
+        positional_count += 1;
+    }
     return options;
 }
 
@@ -2130,6 +2207,36 @@ test "parseWindowOptions accepts frames and editor flag" {
     const options = try parseWindowOptions(&args);
     try std.testing.expectEqual(@as(u32, 12), options.max_frames.?);
     try std.testing.expect(options.editor);
+}
+
+test "parseRenderOptions accepts editor flag before path" {
+    const args = [_][]const u8{ "--editor", "examples/spawn_swarm", "zig-out/spawn-editor.bmp" };
+    const options = try parseRenderOptions(&args, "zig-out/default.bmp");
+    try std.testing.expect(options.editor);
+    try std.testing.expectEqualStrings("examples/spawn_swarm", options.target_path);
+    try std.testing.expectEqualStrings("zig-out/spawn-editor.bmp", options.output_path);
+}
+
+test "parseRenderOptions accepts editor flag after output" {
+    const args = [_][]const u8{ "examples/spawn_swarm", "zig-out/spawn-editor.bmp", "--editor" };
+    const options = try parseRenderOptions(&args, "zig-out/default.bmp");
+    try std.testing.expect(options.editor);
+    try std.testing.expectEqualStrings("examples/spawn_swarm", options.target_path);
+    try std.testing.expectEqualStrings("zig-out/spawn-editor.bmp", options.output_path);
+}
+
+test "parseRenderOptions accepts selected entity" {
+    const args = [_][]const u8{ "examples/spawn_swarm", "zig-out/spawn-editor.bmp", "--select", "swarm.0" };
+    const options = try parseRenderOptions(&args, "zig-out/default.bmp");
+    try std.testing.expect(options.editor);
+    try std.testing.expectEqualStrings("examples/spawn_swarm", options.target_path);
+    try std.testing.expectEqualStrings("zig-out/spawn-editor.bmp", options.output_path);
+    try std.testing.expectEqualStrings("swarm.0", options.selected_entity_id.?);
+}
+
+test "parseRenderOptions rejects extra positionals" {
+    const args = [_][]const u8{ "examples/minimal", "one.bmp", "two.bmp" };
+    try std.testing.expectError(ArgumentError.UnknownArgument, parseRenderOptions(&args, "zig-out/default.bmp"));
 }
 
 test "parseCheckOptions accepts path and json format" {

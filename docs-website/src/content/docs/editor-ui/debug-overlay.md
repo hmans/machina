@@ -24,7 +24,7 @@ Ctrl+Tab
 The current shell uses:
 
 - A top bar with FPS and playback controls.
-- A left sidebar with active project system count, rolling average runtime over the profiling window, project Luau/native systems, engine-internal render systems, and a visible scrollbar when the system list overflows.
+- A left sidebar with active project system count, rolling average runtime over the profiling window, project Luau/native systems, engine-internal render systems, retained full-width system rows, and a visible scrollbar when the system list overflows.
 - A right sidebar reserved for selected-entity component inspection/editing.
 - A bottom bar with compact runtime status.
 - A game viewport that fills all remaining space between those editor regions.
@@ -37,6 +37,8 @@ The visible table updates at a throttled cadence for readability while the under
 When editor chrome is visible, scene content and scene-authored UI render into the game viewport. The editor viewport is not forced to 16:9.
 
 The shell body is generated as a retained `machina.ui.hgroup`: left sidebar, left splitter, growable game viewport, right splitter, and right sidebar. Splitter drag state is engine-owned, but layout resolution still flows through the shared retained UI path.
+
+The system inspector and selected-entity inspector both use retained sidebar content with consistent internal padding. System rows and component boxes fill their sidebar width, use one-pixel separators, and keep labels and values aligned instead of drawing loose overlay text.
 
 ## UI Is ECS Data
 

@@ -13,6 +13,7 @@ pub const project_file_name = "project.machina.toml";
 pub const default_scene_path = "scenes/main.scene.toml";
 
 pub const renderDemoBmp = render.renderDemoBmp;
+pub const renderDemoBmpWithInput = render.renderDemoBmpWithInput;
 pub const renderStats = render.stats;
 pub const runDemoWindow = render.runDemoWindow;
 pub const WindowOptions = render.WindowOptions;

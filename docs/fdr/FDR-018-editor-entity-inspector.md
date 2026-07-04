@@ -17,7 +17,10 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 - Clicking a visible renderable mesh selects that entity.
 - The bottom bar shows live world counts and viewport size.
 - The right sidebar is reserved for selected-entity component inspection and eventual editing.
-- The selected entity inspector shows the selected entity name/id and renders one rounded component card per attached component. Cards display current field values read through ECS component reflection.
+- The selected entity inspector shows the selected entity name/id and renders one full-width component box per attached component. Boxes use consistent sidebar padding and display current field values read through ECS component reflection.
+- Component boxes are arranged as a retained vertical group with one-pixel separators between boxes.
+- Component titles are fitted to the card width and should not overdraw adjacent content.
+- Component fields render as table-like rows with property labels on the left and values on the right.
 - The inspector does not show a full entity list by default.
 - A selected renderable gets a world-space translate gizmo with X, Y, and Z handles.
 - Dragging a gizmo axis mutates the selected entity's transform position.
@@ -55,6 +58,12 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 **Decision:** Inspector component cards read selected entity components and fields from the shared ECS world.
 **Why:** Editor inspection should reflect the actual runtime state used by scripts, native systems, rendering, and tests. This follows ADR-013 and ADR-016.
 **Tradeoff:** The first field listing is display-only. Editable fields need validation, undo, type-specific widgets, scrolling/virtualization for very large component sets, and reload-safe write rules.
+
+### 5a. Keep component boxes bounded
+
+**Decision:** Inspector component boxes fill the right sidebar width, stack in a retained vertical group, use one-pixel separators, and render fields as left-label/right-value rows. Component titles and field rows use consistent internal padding and are clipped to the available width for the built-in bitmap font.
+**Why:** Component ids can be long qualified strings, especially engine-owned `machina.*` ids, and editor chrome must remain legible without text escaping rounded cards.
+**Tradeoff:** Truncated ids need future hover, copy, tooltip, or expandable-detail affordances before the inspector is comfortable for editing.
 
 ### 5b. Reserve the right sidebar for selected-entity components
 

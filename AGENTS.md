@@ -20,7 +20,8 @@ Please see `docs/fdr/INDEX.md` for a complete list of features and `docs/adr/IND
 
 ## Development Tooling
 
-- The engine can be instructed to run for n frames and/or generate screenshots. Use this for debugging and visual verificiation of your work.
+- The engine can be instructed to run for n frames and/or generate screenshots. Use this for debugging and visual verification of your work.
+- Use `machina render --editor --select <entity-id> ...` when verifying selected-entity inspector or editor layout states that otherwise require clicking in a headful window.
 
 ## Project Shape
 
@@ -99,6 +100,7 @@ Rendering and UI:
 - The debug overlay performance table uses `machina.ui.scroll_view`, `machina.ui.vbox`, and `machina.ui.layout.item` for its clipped animated pixel-scroll viewport. It should not truncate the list to unreachable rows or regress to row-only, row-snapped, instant-jump scroll state, or private renderer-only list layout.
 - The debug overlay performance table should show a visible scrollbar when the system list overflows. Keep it generated as normal ECS UI rect data rather than a renderer-side overlay.
 - The debug overlay performance table should favor readable full system ids and rolling average duration. Do not reintroduce phase prefixes or last-sample columns into the compact row format without a deliberate UI redesign.
+- Editor sidebars should use consistent panel padding. System timing rows and component inspector boxes should be retained full-width rows/boxes with one-pixel separators, not floating cards with uneven gutters.
 - The editor overlay also owns playback controls, selected-entity inspection, click selection, and the first translate gizmo.
 - Editor selection is generation-aware and should reject stale handles instead of silently selecting whatever now lives at the old dense index.
 - The first click-selection path is CPU renderable-bounds picking; treat triangle-accurate picking, ID-buffer picking, acceleration structures, and selectable non-renderable entities as future design work.
@@ -209,6 +211,7 @@ Live reload:
 - Keep project-native source modules small and explicit: registration entrypoint, component definitions, system definitions, and access-checked host API calls.
 - Remember the static packaging direction: dynamic native loading is for the dev loop, while future `machina build` should be able to statically link the same native registration source for restricted targets.
 - For rendering changes, use deterministic offscreen verification before relying on visible-window inspection.
+- For editor layout changes, prefer engine-generated offscreen artifacts with `machina render --editor`; use `--select <entity-id>` when the selected-entity inspector matters.
 - When a render example depends on startup-spawned content, run startup before offscreen verification and keep the example covered by `mise test`.
 - For window-loop, surface, or live-reload changes in `machina run`, also run a bounded headful smoke test such as `mise machina run examples/minimal --frames 2`.
 - Treat `examples/minimal/` as the smoke-test fixture; update it when the supported scene schema changes.

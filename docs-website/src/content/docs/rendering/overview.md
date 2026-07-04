@@ -44,6 +44,7 @@ Offscreen rendering writes BMP artifacts:
 
 ```sh
 machina render examples/showcase zig-out/showcase.bmp
+machina render --editor --select native-cyan-box examples/native_motion zig-out/native-motion-editor.bmp
 ```
 
 Offscreen verification checks for visible rendered content:
@@ -52,7 +53,7 @@ Offscreen verification checks for visible rendered content:
 machina render-test examples/showcase zig-out/showcase-render-test.bmp
 ```
 
-Use offscreen verification before relying on visible-window inspection for renderer changes.
+Use offscreen verification before relying on visible-window inspection for renderer or editor-layout changes. `--editor` includes engine chrome in the offscreen frame, and `--select` preselects an entity for inspector verification.
 
 ## Camera and Lighting
 
