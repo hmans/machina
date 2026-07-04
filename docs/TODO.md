@@ -2,14 +2,14 @@
 
 ## Landed Baseline
 
-- Text-first Zig engine with Luau scripting, project manifests, and TOML scenes.
-- Shared ECS runtime with generation-aware entities, component tables, system schedules, and script/native access.
-- Live reload for project metadata, scenes, scripts, and project-local native Zig modules.
-- WebGPU renderer with headful SDL windows, offscreen render verification, batching, shadows, and postprocess settings.
-- Built-in primitive geometry, surface materials, camera, light, and shadow components.
-- Engine-owned ECS UI primitives, editor shell, playback controls, system profiler, entity picking, translate gizmo, and component inspector.
-- Automated test coverage through `machina test`, render tests, benchmarks, Luau checks, and game-shaped fixtures.
-- ADRs, FDRs, glossary, docs website, NOTICE, and local agent skills.
+- [x] Text-first Zig engine with Luau scripting, project manifests, and TOML scenes.
+- [x] Shared ECS runtime with generation-aware entities, component tables, system schedules, and script/native access.
+- [x] Live reload for project metadata, scenes, scripts, and project-local native Zig modules.
+- [x] WebGPU renderer with headful SDL windows, offscreen render verification, batching, shadows, and postprocess settings.
+- [x] Built-in primitive geometry, surface materials, camera, light, and shadow components.
+- [x] Engine-owned ECS UI primitives, editor shell, playback controls, system profiler, entity picking, translate gizmo, and component inspector.
+- [x] Automated test coverage through `machina test`, render tests, benchmarks, Luau checks, and game-shaped fixtures.
+- [x] ADRs, FDRs, glossary, docs website, NOTICE, and local agent skills.
 
 ## Next Slice
 
