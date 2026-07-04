@@ -53,8 +53,11 @@ const editor_panel_padding_y: f32 = 22.0;
 const editor_panel_section_gap: f32 = 18.0;
 const editor_panel_label_gap: f32 = 10.0;
 const editor_panel_bottom_padding: f32 = 18.0;
-const editor_system_row_stride: f32 = 36.0;
-const editor_system_row_padding_x: f32 = 12.0;
+const editor_system_row_stride: f32 = 40.0;
+const editor_system_row_label_padding_x: f32 = 16.0;
+const editor_system_row_duration_padding_x: f32 = 16.0;
+const editor_system_field_column_gap: f32 = 4.0;
+const editor_system_card_padding_y: f32 = 16.0;
 const editor_system_scroll_pixels_per_wheel: f32 = 18.0;
 const editor_system_scroll_smoothing: f32 = 22.0;
 const editor_scrollbar_width: f32 = 6.0;
@@ -1912,37 +1915,19 @@ fn extractEditorShellInto(allocator: std.mem.Allocator, world: *runtime.World, i
     }) catch |err| return mapWorldError(err);
 
     try extractEditorShellLayoutRect(world, "machina.editor.shell.left_sidebar", "Editor Left Sidebar", layout.left.size3(), 0, editor_palette.panel);
-    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, editorSplitterColor(input, .left, hovered_splitter));
+    try extractEditorShellLayoutSplitter(world, input, "machina.editor.shell.splitter.left", "Editor Left Splitter", layout.left_splitter.size3(), 1, .left, hovered_splitter);
     try extractEditorSplitterHitTarget(world, input, .left);
     try extractEditorShellLayoutSpacer(world, "machina.editor.shell.game_viewport", "Editor Game Viewport Slot", .{ editor_min_game_viewport_width, body.height, 0.0 }, 2, 1.0);
-    try extractEditorShellLayoutSeparator(world, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, editorSplitterColor(input, .right, hovered_splitter));
+    try extractEditorShellLayoutSplitter(world, input, "machina.editor.shell.splitter.right", "Editor Right Splitter", layout.right_splitter.size3(), 3, .right, hovered_splitter);
     try extractEditorSplitterHitTarget(world, input, .right);
     try extractEditorShellLayoutRect(world, "machina.editor.shell.right_sidebar", "Editor Right Sidebar", layout.right.size3(), 4, editor_palette.panel);
 
     const frame_color = editor_palette.panel_muted;
-    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.top", .{
-        .x = game_viewport.x,
-        .y = game_viewport.y,
-        .width = game_viewport.width,
-        .height = 2.0,
-    }, frame_color);
     try extractEditorShellRect(world, "machina.editor.shell.viewport.border.bottom", .{
         .x = game_viewport.x,
         .y = game_viewport.y + game_viewport.height - 2.0,
         .width = game_viewport.width,
         .height = 2.0,
-    }, frame_color);
-    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.left", .{
-        .x = game_viewport.x,
-        .y = game_viewport.y,
-        .width = 2.0,
-        .height = game_viewport.height,
-    }, frame_color);
-    try extractEditorShellRect(world, "machina.editor.shell.viewport.border.right", .{
-        .x = game_viewport.x + game_viewport.width - 2.0,
-        .y = game_viewport.y,
-        .width = 2.0,
-        .height = game_viewport.height,
     }, frame_color);
 }
 
@@ -2021,6 +2006,24 @@ fn extractEditorShellLayoutSeparator(world: *runtime.World, id: []const u8, name
     }) catch |err| return mapWorldError(err);
 }
 
+fn extractEditorShellLayoutSplitter(
+    world: *runtime.World,
+    input: FrameInput,
+    id: []const u8,
+    name: []const u8,
+    size: [3]f32,
+    order: i32,
+    splitter: EditorSplitter,
+    hovered_splitter: ?EditorSplitter,
+) RenderError!void {
+    if (editorSplitterVisible(input, splitter, hovered_splitter)) {
+        try extractEditorShellLayoutSeparator(world, id, name, size, order, editorSplitterColor(input, splitter, hovered_splitter));
+        return;
+    }
+
+    try extractEditorShellLayoutSpacer(world, id, name, size, order, 0.0);
+}
+
 fn extractEditorShellLayoutSpacer(world: *runtime.World, id: []const u8, name: []const u8, min_size: [3]f32, order: i32, grow: f32) RenderError!void {
     const entity = world.createEntity(id, name) catch |err| return mapWorldError(err);
     world.setUiSpacer(entity, .{ .size = .{ 0.0, 0.0, 0.0 } }) catch |err| return mapWorldError(err);
@@ -2081,7 +2084,7 @@ fn extractDebugOverlayInto(
     }) catch |err| return mapWorldError(err);
 
     const row_width = list_clip.size[0];
-    const table_height = @as(f32, @floatFromInt(input.system_profiles.len)) * editor_system_row_stride;
+    const table_height = editorSystemTableContentHeight(input.system_profiles.len);
     const system_table = world.createEntity("machina.editor.debug.systems.table", "Editor Debug Systems Table") catch |err| return mapWorldError(err);
     world.setUiRect(system_table, .{
         .position = .{
@@ -2091,7 +2094,7 @@ fn extractDebugOverlayInto(
         },
         .size = .{ row_width, table_height, 0.0 },
         .color = editor_palette.shell,
-        .corner_radius = 0.0,
+        .corner_radius = editor_panel_corner_radius,
     }) catch |err| return mapWorldError(err);
     world.setUiLayoutItem(system_table, .{
         .parent = "machina.editor.debug.systems.scroll",
@@ -2099,20 +2102,20 @@ fn extractDebugOverlayInto(
     }) catch |err| return mapWorldError(err);
 
     for (input.system_profiles, 0..) |profile, profile_index| {
-        const row_y = @as(f32, @floatFromInt(profile_index)) * editor_system_row_stride;
+        const row_y = editor_system_card_padding_y + @as(f32, @floatFromInt(profile_index)) * editor_system_row_stride;
         const duration_text = formatSystemProfileDuration(allocator, profile) catch return RenderError.OutOfMemory;
         defer allocator.free(duration_text);
         const duration_width = editorTextWidth(duration_text, editor_system_text_size);
-        const duration_x = @max(row_width - editor_system_row_padding_x - duration_width, editor_system_row_padding_x);
-        const label_max_width = @max(duration_x - editor_system_row_padding_x - editor_inspector_field_column_gap, 1.0);
+        const duration_x = @max(row_width - editor_system_row_duration_padding_x - duration_width, editor_system_row_label_padding_x);
+        const label_max_width = @max(duration_x - editor_system_row_label_padding_x - editor_system_field_column_gap, 1.0);
         const label_text = fitEditorTextToWidth(allocator, profile.id, editor_system_text_size, label_max_width) catch return RenderError.OutOfMemory;
         defer allocator.free(label_text);
 
         const label_id = std.fmt.allocPrint(allocator, "machina.editor.debug.systems.row.{d}.label", .{profile_index}) catch return RenderError.OutOfMemory;
         defer allocator.free(label_id);
         _ = try extractEditorChildText(world, label_id, "Editor System Row Label", "machina.editor.debug.systems.table", .{
-            editor_system_row_padding_x,
-            row_y + 2.0,
+            editor_system_row_label_padding_x,
+            row_y,
             0.0,
         }, label_text, editor_system_text_size, editor_palette.text);
 
@@ -2120,7 +2123,7 @@ fn extractDebugOverlayInto(
         defer allocator.free(duration_id);
         _ = try extractEditorChildText(world, duration_id, "Editor System Row Duration", "machina.editor.debug.systems.table", .{
             duration_x,
-            row_y + 2.0,
+            row_y,
             0.0,
         }, duration_text, editor_system_text_size, editor_palette.text_muted);
     }
@@ -2273,7 +2276,7 @@ fn extractEditorComponentInspectorInto(
         panel_x + editor_panel_padding_x,
         panel_y + editor_panel_padding_y,
         0.0,
-    }, "COMPONENTS", 1.15, editor_palette.text);
+    }, "COMPONENTS", editor_inspector_text_size, editor_palette.text);
 
     const selected = input.editor.selected_entity orelse {
         try extractEditorText(world, "machina.editor.inspector.empty", "Editor Inspector Empty", .{
@@ -2591,7 +2594,7 @@ fn editorSystemListClipRect(input: FrameInput) UiClipRect {
         .position = .{ panel.x, editorSystemRowsY(input), 0.0 },
         .size = .{
             @max(panel.width - scrollbar_space, 1.0),
-            @as(f32, @floatFromInt(editorSystemVisibleRows(input))) * editor_system_row_stride,
+            editorSystemTableContentHeight(editorSystemVisibleRows(input)),
             0.0,
         },
     };
@@ -2603,8 +2606,12 @@ fn editorSystemProfileScrollCount(input: FrameInput) usize {
 
 fn editorSystemVisibleRows(input: FrameInput) usize {
     const panel = editorSystemPanelRect(input);
-    const rows_height = @max(panel.y + panel.height - editorSystemRowsY(input) - editor_panel_bottom_padding, editor_system_row_stride);
+    const rows_height = @max(panel.y + panel.height - editorSystemRowsY(input) - editor_panel_bottom_padding - editor_system_card_padding_y * 2.0, editor_system_row_stride);
     return @max(@as(usize, @intFromFloat(@floor(rows_height / editor_system_row_stride))), 1);
+}
+
+fn editorSystemTableContentHeight(row_count: usize) f32 {
+    return editor_system_card_padding_y * 2.0 + @as(f32, @floatFromInt(row_count)) * editor_system_row_stride;
 }
 
 fn editorSystemNeedsScrollForInput(input: FrameInput, profile_count: usize) bool {
@@ -4696,7 +4703,7 @@ fn addEditorSystemScrollForRouting(
     try world.setUiSpacer(content, .{
         .size = .{
             list_clip.size[0],
-            @as(f32, @floatFromInt(profile_count)) * editor_system_row_stride,
+            editorSystemTableContentHeight(profile_count),
             0.0,
         },
     });
@@ -4916,7 +4923,11 @@ fn editorSplitterColor(input: FrameInput, splitter: EditorSplitter, hovered_spli
     if (hovered_splitter != null and hovered_splitter.? == splitter) {
         return editor_palette.text_dim;
     }
-    return editor_palette.panel_muted;
+    return editor_palette.panel;
+}
+
+fn editorSplitterVisible(input: FrameInput, splitter: EditorSplitter, hovered_splitter: ?EditorSplitter) bool {
+    return input.editor.dragging_splitter == splitter or (hovered_splitter != null and hovered_splitter.? == splitter);
 }
 
 fn editorCursorKind(allocator: std.mem.Allocator, input: FrameInput) EditorError!EditorCursorKind {
@@ -6495,6 +6506,9 @@ test "debug overlay extracts FPS label when visible" {
         try std.testing.expectApproxEqAbs(editor_palette.panel[channel], debug_panel_color[channel], 0.001);
     }
     try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.frame") == null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.border.top") == null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.border.left") == null);
+    try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.border.right") == null);
     const bottom = editorBottomBarRect(input);
     const status = state.world.findEntityById("machina.editor.bottom.status") orelse return error.TestExpectedEqual;
     const status_position = try state.world.getVec3(status, runtime.ui_text_component_id, "position");
@@ -6534,6 +6548,9 @@ test "editor shell body uses hgroup slot for the game viewport" {
     try std.testing.expectApproxEqAbs(viewport.y, slot_rect.position[1], 0.001);
     try std.testing.expectApproxEqAbs(viewport.width, slot_rect.size[0], 0.001);
     try std.testing.expectApproxEqAbs(viewport.height, slot_rect.size[1], 0.001);
+    const inactive_splitter = state.world.findEntityById("machina.editor.shell.splitter.left") orelse return error.TestExpectedEqual;
+    try std.testing.expect(try state.world.hasComponent(inactive_splitter, runtime.ui_spacer_component_id));
+    try std.testing.expect(!(try state.world.hasComponent(inactive_splitter, runtime.ui_separator_component_id)));
     const splitter_hit_area = state.world.findEntityById("machina.editor.shell.splitter.left.hit_area") orelse return error.TestExpectedEqual;
     try std.testing.expect(try state.world.hasComponent(splitter_hit_area, runtime.ui_hit_area_component_id));
     try std.testing.expect(try state.world.hasComponent(splitter_hit_area, runtime.ui_button_component_id));
@@ -6739,7 +6756,7 @@ test "debug overlay extracts system profile rows when available" {
     const list_clip = editorSystemListClipRect(frame_input);
     const table_size = try state.world.getVec3(table, runtime.ui_rect_component_id, "size");
     try std.testing.expectApproxEqAbs(list_clip.size[0], table_size[0], 0.001);
-    try std.testing.expectApproxEqAbs(editor_system_row_stride * 2.0, table_size[1], 0.001);
+    try std.testing.expectApproxEqAbs(editorSystemTableContentHeight(2), table_size[1], 0.001);
     try std.testing.expect(state.world.findEntityById("machina.editor.debug.systems.row.0") == null);
     try std.testing.expect(state.world.findEntityById("machina.editor.debug.systems.row.1") == null);
     try std.testing.expect(state.world.findEntityById("machina.editor.debug.systems.separator.1") == null);
