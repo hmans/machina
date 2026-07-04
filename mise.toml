@@ -1,10 +1,16 @@
 [tools]
+node = "24"
 pnpm = "10"
 zig = "latest"
 
 [tasks.build]
 description = "Build the machina CLI optimized for interactive use"
 run = "zig build -Doptimize=ReleaseFast"
+
+[tasks.setup]
+description = "Install workspace dependencies"
+dir = "docs-website"
+run = "pnpm install --frozen-lockfile"
 
 [tasks.build-debug]
 description = "Build the machina CLI with Debug safety checks"
