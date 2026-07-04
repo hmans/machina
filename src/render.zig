@@ -207,6 +207,11 @@ pub const EditorSplitter = enum {
     right,
 };
 
+const EditorCursorKind = enum {
+    default,
+    resize_ew,
+};
+
 const EditorScrollBoundary = enum {
     none,
     top,
@@ -757,6 +762,9 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
     var frame_count: u32 = 0;
     var input: FrameInput = .{ .debug_overlay_visible = options.editor };
     var relative_mouse_enabled = false;
+    const resize_ew_cursor: ?*sdl.SDL_Cursor = sdl.SDL_CreateSystemCursor(sdl.SDL_SYSTEM_CURSOR_EW_RESIZE);
+    defer if (resize_ew_cursor) |cursor| sdl.SDL_DestroyCursor(cursor);
+    var active_cursor_kind: EditorCursorKind = .default;
     var last_frame_ticks = sdl.SDL_GetTicksNS();
     var last_performance_display_ticks: u64 = 0;
     var smoothed_fps: f32 = 0.0;
@@ -860,6 +868,11 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
         input.camera_override = updateFlyCamera(&fly_camera, scene.world, input, delta_seconds) catch null;
         if (options.frame_update) |frame_update| {
             frame_update.step(frame_update.context, delta_seconds, &input);
+        }
+        const desired_cursor = if (relative_mouse_enabled) EditorCursorKind.default else editorCursorKind(input);
+        if (desired_cursor != active_cursor_kind) {
+            setEditorCursor(desired_cursor, resize_ew_cursor);
+            active_cursor_kind = desired_cursor;
         }
 
         try configureSurfaceFromWindow(surface, gpu.device, window, surface_format, &width, &height);
@@ -4508,6 +4521,32 @@ fn editorSplitterColor(input: FrameInput, splitter: EditorSplitter) [3]f32 {
     return editor_palette.panel_muted;
 }
 
+fn editorCursorKind(input: FrameInput) EditorCursorKind {
+    if (!input.debug_overlay_visible) {
+        return .default;
+    }
+    if (input.editor.dragging_splitter != .none) {
+        return .resize_ew;
+    }
+    if (editorSplitterHovered(input, .left) or editorSplitterHovered(input, .right)) {
+        return .resize_ew;
+    }
+    return .default;
+}
+
+fn setEditorCursor(kind: EditorCursorKind, resize_ew_cursor: ?*sdl.SDL_Cursor) void {
+    switch (kind) {
+        .default => _ = sdl.SDL_SetCursor(sdl.SDL_GetDefaultCursor()),
+        .resize_ew => {
+            if (resize_ew_cursor) |cursor| {
+                _ = sdl.SDL_SetCursor(cursor);
+            } else {
+                _ = sdl.SDL_SetCursor(sdl.SDL_GetDefaultCursor());
+            }
+        },
+    }
+}
+
 fn editorGameViewport(input: FrameInput) ScreenRect {
     const window_width = editorViewportWidth(input);
     const window_height = editorViewportHeight(input);
@@ -6119,6 +6158,47 @@ test "editor splitters resize sidebars through editor state" {
         },
     });
     try std.testing.expectEqual(EditorSplitter.none, editor_state.dragging_splitter);
+}
+
+test "editor cursor changes over and during splitter drag" {
+    const input = FrameInput{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+    };
+    const left_splitter = editorSplitterRect(input, .left) orelse return error.TestExpectedEqual;
+    const hover_point = [2]f32{ left_splitter.x + left_splitter.width + 3.0, left_splitter.y + 40.0 };
+
+    try std.testing.expectEqual(EditorCursorKind.default, editorCursorKind(input));
+    try std.testing.expectEqual(EditorCursorKind.resize_ew, editorCursorKind(.{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .pointer = .{
+            .position = hover_point,
+            .has_position = true,
+        },
+    }));
+    try std.testing.expectEqual(EditorCursorKind.resize_ew, editorCursorKind(.{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = .{ .dragging_splitter = .left },
+        .pointer = .{
+            .position = .{ 900.0, 200.0 },
+            .has_position = true,
+        },
+    }));
+    try std.testing.expectEqual(EditorCursorKind.default, editorCursorKind(.{
+        .debug_overlay_visible = false,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = .{ .dragging_splitter = .left },
+        .pointer = .{
+            .position = hover_point,
+            .has_position = true,
+        },
+    }));
 }
 
 test "debug overlay extracts system profile rows when available" {

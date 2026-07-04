@@ -28,7 +28,7 @@ The current shell uses:
 - A right sidebar reserved for selected-entity component inspection/editing.
 - A bottom bar with compact runtime status.
 - A game viewport that fills all remaining space between those editor regions.
-- Draggable separators between the sidebars and the game viewport. They render as thin dividers, but use a wider hover/click target and highlight when hovered or dragged.
+- Draggable separators between the sidebars and the game viewport. They render as thin dividers, but use a wider hover/click target, highlight when hovered or dragged, and switch to the platform east-west resize cursor.
 
 System timings are captured at scheduler dispatch boundaries. Render system timings are captured from the render ECS schedule and displayed alongside project systems.
 
