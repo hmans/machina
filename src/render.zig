@@ -47,7 +47,6 @@ const editor_min_game_viewport_width: f32 = 320.0;
 const editor_splitter_width: f32 = 2.0;
 const editor_splitter_hit_width: f32 = 12.0;
 const editor_performance_display_interval_ns: u64 = 333_000_000;
-const editor_debug_fps_size: f32 = 1.6;
 const editor_system_text_size: f32 = 1.0;
 const editor_panel_padding_x: f32 = 16.0;
 const editor_panel_padding_y: f32 = 22.0;
@@ -1986,8 +1985,8 @@ fn extractEditorTopBarInto(allocator: std.mem.Allocator, world: *runtime.World, 
     defer allocator.free(fps_text);
     const fps = world.createEntity("machina.editor.debug.fps", "Editor Debug FPS") catch |err| return mapWorldError(err);
     world.setUiText(fps, .{
-        .position = .{ 150.0, top.y + 8.0, 0.0 },
-        .size = editor_debug_fps_size,
+        .position = .{ 150.0, top.y + 14.0, 0.0 },
+        .size = editor_system_text_size,
         .color = editor_palette.text,
         .value = fps_text,
     }) catch |err| return mapWorldError(err);
@@ -2008,8 +2007,8 @@ fn extractEditorBottomBarInto(allocator: std.mem.Allocator, world: *runtime.Worl
     defer allocator.free(status);
     const status_text = world.createEntity("machina.editor.bottom.status", "Editor Bottom Status") catch |err| return mapWorldError(err);
     world.setUiText(status_text, .{
-        .position = .{ editor_panel_padding_x, bottom.y + 6.0, 0.0 },
-        .size = 1.0,
+        .position = .{ editor_panel_padding_x, bottom.y + 14.0, 0.0 },
+        .size = editor_system_text_size,
         .color = editor_palette.text_muted,
         .value = status,
     }) catch |err| return mapWorldError(err);
@@ -5996,6 +5995,7 @@ test "debug overlay extracts FPS label when visible" {
     const fps_position = try state.world.getVec3(label, runtime.ui_text_component_id, "position");
     const fps_size = try state.world.getFloat(label, runtime.ui_text_component_id, "size");
     try std.testing.expectEqualStrings("FPS 60", fps_value);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_text_size), fps_size, 0.001);
 
     const play_button = state.world.findEntityById("machina.editor.controls.play") orelse return error.TestExpectedEqual;
     const play_position = try state.world.getVec3(play_button, runtime.ui_rect_component_id, "position");
@@ -6043,6 +6043,12 @@ test "debug overlay extracts FPS label when visible" {
     try std.testing.expect(state.world.findEntityById("machina.editor.shell.left_sidebar") != null);
     try std.testing.expect(state.world.findEntityById("machina.editor.shell.right_sidebar") != null);
     try std.testing.expect(state.world.findEntityById("machina.editor.shell.viewport.frame") == null);
+    const bottom = editorBottomBarRect(input);
+    const status = state.world.findEntityById("machina.editor.bottom.status") orelse return error.TestExpectedEqual;
+    const status_position = try state.world.getVec3(status, runtime.ui_text_component_id, "position");
+    const status_size = try state.world.getFloat(status, runtime.ui_text_component_id, "size");
+    try std.testing.expectApproxEqAbs(bottom.y + 14.0, status_position[1], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_text_size), status_size, 0.001);
 
     try state.queueUiDraw();
     try std.testing.expectEqual(@as(usize, 1), state.uiDrawCommandCount());
