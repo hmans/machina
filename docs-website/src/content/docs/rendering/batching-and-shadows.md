@@ -79,7 +79,7 @@ Renderable objects usually cast shadows:
 For rendering changes, run deterministic offscreen checks:
 
 ```sh
-machina render-test examples/batching zig-out/batching-render-test.bmp
+machina render-test examples/showcase zig-out/showcase-render-test.bmp
 machina render-test examples/spawn_swarm zig-out/spawn-swarm-render-test.bmp
 ```
 

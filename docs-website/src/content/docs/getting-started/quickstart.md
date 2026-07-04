@@ -166,7 +166,6 @@ The full suite includes Zig tests, project-shaped gameplay tests, a benchmark sm
 
 - `examples/minimal/`: canonical smoke-test project.
 - `examples/showcase/`: text-authored renderables, scripted animation, camera, and lighting.
-- `examples/comet_garden/`: startup-spawned entities, deferred lifecycle commands, and buffer-backed hot loops.
 - `examples/spawn_swarm/`: larger script-spawned scene with batching and editor profiling.
+- `examples/ui_gallery/`: retained ECS UI primitives and layout controls.
 - `examples/native_motion/`: project-local Zig native module.
-- `examples/ui_overlay/`: retained ECS UI primitives.

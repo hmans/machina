@@ -16,9 +16,9 @@ Render batching lets Machina draw many scene-authored entities that share compat
 - Shadow caster/receiver state participates in render batch compatibility.
 - The render schedule queues one internal draw command per batch, not one command per renderable entity.
 - Legacy cube renderables participate in batching after being normalized to box geometry and material data.
-- The batching demo example contains many independent animated scene entities that collapse into a small number of render batches.
 - The spawn swarm example contains hundreds of script-spawned renderables while still collapsing into a few render batches.
-- Offscreen render verification covers the batching demo as part of the standard test suite.
+- The batching animation fixture covers animated scene entities that collapse into a small number of render batches.
+- Offscreen render verification covers the spawn swarm example as part of the standard test suite.
 - Headless benchmark output reports renderable and render-batch counts so batching regressions are visible without opening a window.
 
 ## Design Decisions

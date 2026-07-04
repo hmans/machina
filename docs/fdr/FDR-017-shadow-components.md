@@ -15,7 +15,7 @@ Shadow components let scene authors opt renderable entities into casting and rec
 - Shadow casting and receiving are independent; an entity may cast, receive, both, or neither.
 - The current renderer supports shadows from the first directional light.
 - Shadow receivers keep ambient lighting and darken only the direct-light contribution where occluded.
-- The batching demo uses a static receiver floor and animated caster objects.
+- The spawn swarm example uses a static receiver floor and animated caster objects.
 - Legacy cube renderables can use the shadow marker components after being normalized to box geometry.
 
 ## Design Decisions
