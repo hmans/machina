@@ -28,12 +28,15 @@ The current shell uses:
 - A right sidebar reserved for selected-entity component inspection/editing.
 - A bottom bar with compact runtime status.
 - A game viewport that fills all remaining space between those editor regions.
+- Draggable separators between the sidebars and the game viewport.
 
 System timings are captured at scheduler dispatch boundaries. Render system timings are captured from the render ECS schedule and displayed alongside project systems.
 
 The visible table updates at a throttled cadence for readability while the underlying profiler keeps sampling every frame.
 
 When editor chrome is visible, scene content and scene-authored UI render into the game viewport. The editor viewport is not forced to 16:9.
+
+The shell body is generated as a retained `machina.ui.hgroup`: left sidebar, left splitter, growable game viewport, right splitter, and right sidebar. Splitter drag state is engine-owned, but layout resolution still flows through the shared retained UI path.
 
 ## UI Is ECS Data
 
@@ -47,6 +50,7 @@ The editor shell is generated into the render ECS world, but the same retained U
 - `machina.ui.command`
 - `machina.ui.scroll_view`
 - `machina.ui.vbox`
+- `machina.ui.hgroup`
 - `machina.ui.stack`
 - `machina.ui.layout.item`
 - `machina.ui.spacer`

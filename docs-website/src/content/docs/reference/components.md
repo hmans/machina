@@ -31,8 +31,9 @@ Machina registers these engine component types before project scripts and native
 | `machina.ui.command_event` | `command: string`, `source: string` | Runtime-only transient event. Do not author in scenes. |
 | `machina.ui.scroll_view` | `position: vec3`, `size: vec3`, `content_offset: vec3` | Clips and offsets descendant layout items. |
 | `machina.ui.vbox` | `position: vec3`, `spacing: f32` | Vertical layout container. |
+| `machina.ui.hgroup` | `position: vec3`, `size: vec3`, `spacing: f32`, `padding: vec3` | Horizontal layout container with proportional grow-width distribution. |
 | `machina.ui.stack` | `position: vec3`, `spacing: f32`, `direction: string`, `padding: vec3` | Direction-aware layout container. `direction` supports `vertical`, `column`, `horizontal`, and `row`. |
-| `machina.ui.layout.item` | `parent: string`, `order: int`, `min_size: vec3`, `grow: f32`, `align: string`, `margin: vec3` | Attaches an entity to a layout parent by stable scene id. Children can also target a non-container UI rect/text/separator to inherit that parent's resolved position. |
+| `machina.ui.layout.item` | `parent: string`, `order: int`, `min_size: vec3`, `grow: f32`, `align: string`, `margin: vec3` | Attaches an entity to a layout parent by stable scene id. Children can also target a non-container UI rect/text/separator to inherit that parent's resolved position. `grow` distributes extra width in `machina.ui.hgroup`. |
 | `machina.ui.spacer` | `size: vec3` | Non-rendering layout item. |
 | `machina.ui.text_block` | `size: vec3`, `horizontal_align: string`, `vertical_align: string` | Gives a text entity a content box with `start`, `center`, or `end` alignment. |
 | `machina.ui.toggle` | `checked: bool` | State marker that influences rect/button visuals. Scripts own mutation for now. |
@@ -42,7 +43,7 @@ Machina registers these engine component types before project scripts and native
 | `machina.input.keyboard` | modifier state, movement key state, `editor_toggle_pressed: bool` | Runtime-only current keyboard frame state. Do not author in scenes. |
 | `machina.input.frame` | `ui_visible: bool`, `debug_overlay_visible: bool`, `viewport: vec3` | Runtime-only frame input state. Do not author in scenes. |
 
-Retained UI layout is resolved consistently for rendering and input. Scene UI hit testing, button hover/press visuals, command dispatch, scroll handling, clipping, and canvas fit/fill scaling use the same `scroll_view`, `vbox`, `stack`, and `layout.item` semantics that render the controls. Command buttons are ordinary retained UI entities: `machina.ui.rect` + `machina.ui.button` + `machina.ui.command`.
+Retained UI layout is resolved consistently for rendering and input. Scene UI hit testing, button hover/press visuals, command dispatch, scroll handling, clipping, and canvas fit/fill scaling use the same `scroll_view`, `vbox`, `hgroup`, `stack`, and `layout.item` semantics that render the controls. Command buttons are ordinary retained UI entities: `machina.ui.rect` + `machina.ui.button` + `machina.ui.command`.
 
 ## Built-In But Project-Local Today
 

@@ -45,6 +45,7 @@ pub const ui_command_event_component_id = "machina.ui.command_event";
 pub const ui_command_event_entity_id = "machina.ui.command_event.current";
 pub const ui_scroll_view_component_id = "machina.ui.scroll_view";
 pub const ui_vbox_component_id = "machina.ui.vbox";
+pub const ui_hgroup_component_id = "machina.ui.hgroup";
 pub const ui_stack_component_id = "machina.ui.stack";
 pub const ui_layout_item_component_id = "machina.ui.layout.item";
 pub const ui_spacer_component_id = "machina.ui.spacer";
@@ -690,6 +691,18 @@ pub fn registerEngineComponents(registry: *ComponentRegistry) !void {
         .fields = &ui_vbox_fields,
     });
 
+    const ui_hgroup_fields = [_]ComponentFieldDefinition{
+        .{ .name = "position", .value_type = .vec3 },
+        .{ .name = "size", .value_type = .vec3 },
+        .{ .name = "spacing", .value_type = .float },
+        .{ .name = "padding", .value_type = .vec3 },
+    };
+    try registry.registerEngineComponent(.{
+        .id = ui_hgroup_component_id,
+        .version = 1,
+        .fields = &ui_hgroup_fields,
+    });
+
     const ui_stack_fields = [_]ComponentFieldDefinition{
         .{ .name = "position", .value_type = .vec3 },
         .{ .name = "spacing", .value_type = .float },
@@ -974,6 +987,13 @@ pub const UiScrollViewComponent = struct {
 pub const UiVBoxComponent = struct {
     position: [3]f32 = .{ 0.0, 0.0, 0.0 },
     spacing: f32 = 0.0,
+};
+
+pub const UiHGroupComponent = struct {
+    position: [3]f32 = .{ 0.0, 0.0, 0.0 },
+    size: [3]f32 = .{ 1.0, 1.0, 0.0 },
+    spacing: f32 = 0.0,
+    padding: [3]f32 = .{ 0.0, 0.0, 0.0 },
 };
 
 pub const UiStackComponent = struct {
@@ -1536,6 +1556,16 @@ pub const World = struct {
             .{ .name = "spacing", .value = .{ .float = vbox.spacing } },
         };
         try self.setComponent(handle, ui_vbox_component_id, &fields);
+    }
+
+    pub fn setUiHGroup(self: *World, handle: EntityHandle, hgroup: UiHGroupComponent) WorldError!void {
+        const fields = [_]ComponentFieldValue{
+            .{ .name = "position", .value = .{ .vec3 = hgroup.position } },
+            .{ .name = "size", .value = .{ .vec3 = hgroup.size } },
+            .{ .name = "spacing", .value = .{ .float = hgroup.spacing } },
+            .{ .name = "padding", .value = .{ .vec3 = hgroup.padding } },
+        };
+        try self.setComponent(handle, ui_hgroup_component_id, &fields);
     }
 
     pub fn setUiStack(self: *World, handle: EntityHandle, stack: UiStackComponent) WorldError!void {
@@ -2957,6 +2987,14 @@ test "world stores expanded UI semantic components" {
         .padding = .{ 8.0, 4.0, 0.0 },
     });
 
+    const hgroup = try world.createEntity("hgroup", "HGroup");
+    try world.setUiHGroup(hgroup, .{
+        .position = .{ 0.0, 0.0, 0.0 },
+        .size = .{ 200.0, 40.0, 0.0 },
+        .spacing = 4.0,
+        .padding = .{ 2.0, 2.0, 0.0 },
+    });
+
     const slot = try world.createEntity("slot", "Slot");
     try world.setUiLayoutItem(slot, .{
         .parent = "toolbar",
@@ -2991,6 +3029,7 @@ test "world stores expanded UI semantic components" {
     });
 
     try std.testing.expectEqual(@as(usize, 1), world.componentInstanceCountFor(ui_stack_component_id));
+    try std.testing.expectEqual(@as(usize, 1), world.componentInstanceCountFor(ui_hgroup_component_id));
     try std.testing.expectEqual(@as(usize, 1), world.componentInstanceCountFor(ui_spacer_component_id));
     try std.testing.expectEqual(@as(usize, 1), world.componentInstanceCountFor(ui_text_block_component_id));
     try std.testing.expectEqual(@as(usize, 1), world.componentInstanceCountFor(ui_toggle_component_id));
@@ -3265,6 +3304,7 @@ test "engine component schemas are registered from runtime" {
     try std.testing.expect(registry.findComponent(ui_command_event_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_scroll_view_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_vbox_component_id) != null);
+    try std.testing.expect(registry.findComponent(ui_hgroup_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_stack_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_layout_item_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_spacer_component_id) != null);
@@ -3275,7 +3315,7 @@ test "engine component schemas are registered from runtime" {
     try std.testing.expect(registry.findComponent(input_pointer_component_id) != null);
     try std.testing.expect(registry.findComponent(input_keyboard_component_id) != null);
     try std.testing.expect(registry.findComponent(input_frame_component_id) != null);
-    try std.testing.expectEqual(@as(usize, 27), registry.componentCount());
+    try std.testing.expectEqual(@as(usize, 28), registry.componentCount());
 
     const transform = registry.findComponent(transform_component_id) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 3), transform.fields.len);
@@ -3302,6 +3342,11 @@ test "engine component schemas are registered from runtime" {
     const ui_stack = registry.findComponent(ui_stack_component_id) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 4), ui_stack.fields.len);
     try std.testing.expectEqual(FieldType.string, ui_stack.fields[2].value_type);
+
+    const ui_hgroup = registry.findComponent(ui_hgroup_component_id) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 4), ui_hgroup.fields.len);
+    try std.testing.expectEqual(FieldType.vec3, ui_hgroup.fields[1].value_type);
+    try std.testing.expectEqual(FieldType.float, ui_hgroup.fields[2].value_type);
 
     const ui_layout_item = registry.findComponent(ui_layout_item_component_id) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 6), ui_layout_item.fields.len);

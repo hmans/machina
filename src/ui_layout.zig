@@ -77,6 +77,13 @@ pub const VBox = struct {
     spacing: f32,
 };
 
+pub const HGroup = struct {
+    position: [3]f32,
+    size: [3]f32,
+    spacing: f32,
+    padding: [3]f32,
+};
+
 pub const Stack = struct {
     position: [3]f32,
     spacing: f32,
@@ -108,6 +115,18 @@ pub fn vbox(world: *const runtime.World, entity: runtime.EntityHandle) Error!?VB
     return .{
         .position = try world.getVec3(entity, runtime.ui_vbox_component_id, "position"),
         .spacing = try world.getFloat(entity, runtime.ui_vbox_component_id, "spacing"),
+    };
+}
+
+pub fn hgroup(world: *const runtime.World, entity: runtime.EntityHandle) Error!?HGroup {
+    if (!(try world.hasComponent(entity, runtime.ui_hgroup_component_id))) {
+        return null;
+    }
+    return .{
+        .position = try world.getVec3(entity, runtime.ui_hgroup_component_id, "position"),
+        .size = try world.getVec3(entity, runtime.ui_hgroup_component_id, "size"),
+        .spacing = try world.getFloat(entity, runtime.ui_hgroup_component_id, "spacing"),
+        .padding = try world.getVec3(entity, runtime.ui_hgroup_component_id, "padding"),
     };
 }
 
@@ -175,6 +194,7 @@ pub fn resolve(world: *const runtime.World, entity: runtime.EntityHandle, local_
         resolved.position[2] += item.margin[2];
 
         const has_vbox = try vbox(world, parent);
+        const has_hgroup = try hgroup(world, parent);
         const has_stack = try stack(world, parent);
         const has_scroll = try scrollView(world, parent);
 
@@ -182,6 +202,13 @@ pub fn resolve(world: *const runtime.World, entity: runtime.EntityHandle, local_
             resolved.position[0] += box.position[0];
             resolved.position[1] += box.position[1] + try vboxChildOffsetY(world, parent, child, item);
             resolved.position[2] += box.position[2];
+        }
+
+        if (has_hgroup) |group| {
+            const group_offset = try hgroupChildOffset(world, parent, child, item, group);
+            resolved.position[0] += group.position[0] + group.padding[0] + group_offset[0];
+            resolved.position[1] += group.position[1] + group.padding[1] + group_offset[1];
+            resolved.position[2] += group.position[2] + group_offset[2];
         }
 
         if (has_stack) |stack_value| {
@@ -204,7 +231,7 @@ pub fn resolve(world: *const runtime.World, entity: runtime.EntityHandle, local_
             });
         }
 
-        if (has_vbox == null and has_stack == null and has_scroll == null) {
+        if (has_vbox == null and has_hgroup == null and has_stack == null and has_scroll == null) {
             const anchor = try parentAnchorPosition(world, parent);
             resolved.position[0] += anchor[0];
             resolved.position[1] += anchor[1];
@@ -254,6 +281,18 @@ pub fn resolvedRect(world: *const runtime.World, entity: runtime.EntityHandle, l
         .id = stored.id,
         .position = layout.position,
         .size = size,
+        .clip = layout.clip,
+    };
+}
+
+pub fn resolvedItemRect(world: *const runtime.World, entity: runtime.EntityHandle) Error!ResolvedRect {
+    const stored = try world.entity(entity);
+    const layout = try resolve(world, entity, .{ 0.0, 0.0, 0.0 });
+    return .{
+        .entity = entity,
+        .id = stored.id,
+        .position = layout.position,
+        .size = try resolvedItemSize(world, entity),
         .clip = layout.clip,
     };
 }
@@ -460,6 +499,15 @@ pub fn itemSize(world: *const runtime.World, entity: runtime.EntityHandle) Error
     return size;
 }
 
+pub fn resolvedItemSize(world: *const runtime.World, entity: runtime.EntityHandle) Error![3]f32 {
+    const item = (try layoutItem(world, entity)) orelse return itemSize(world, entity);
+    const parent = world.findEntityById(item.parent) orelse return error.InvalidLayout;
+    if (try hgroup(world, parent)) |group| {
+        return hgroupChildSize(world, parent, entity, item, group);
+    }
+    return itemSize(world, entity);
+}
+
 fn itemNaturalSize(world: *const runtime.World, entity: runtime.EntityHandle) Error![3]f32 {
     if (try world.hasComponent(entity, runtime.ui_rect_component_id)) {
         return try world.getVec3(entity, runtime.ui_rect_component_id, "size");
@@ -475,6 +523,10 @@ fn itemNaturalSize(world: *const runtime.World, entity: runtime.EntityHandle) Er
     }
     if (try world.hasComponent(entity, runtime.ui_vbox_component_id)) {
         return try containerContentSize(world, entity, false);
+    }
+    if (try world.hasComponent(entity, runtime.ui_hgroup_component_id)) {
+        const group = (try hgroup(world, entity)) orelse return .{ 0.0, 0.0, 0.0 };
+        return group.size;
     }
     if (try world.hasComponent(entity, runtime.ui_stack_component_id)) {
         const stack_value = (try stack(world, entity)) orelse return .{ 0.0, 0.0, 0.0 };
@@ -514,6 +566,10 @@ fn containerContentSize(world: *const runtime.World, parent: runtime.EntityHandl
 
     if (try vbox(world, parent)) |box| {
         spacing = box.spacing;
+    }
+    if (try hgroup(world, parent)) |group| {
+        spacing = group.spacing;
+        padding = group.padding;
     }
     if (try stack(world, parent)) |stack_value| {
         spacing = stack_value.spacing;
@@ -587,6 +643,81 @@ pub fn resolveTextPosition(world: *const runtime.World, entity: runtime.EntityHa
         return error.InvalidLayout;
     }
     return resolved;
+}
+
+fn hgroupChildOffset(world: *const runtime.World, parent: runtime.EntityHandle, child: runtime.EntityHandle, child_item: LayoutItem, group: HGroup) Error![3]f32 {
+    const parent_entity = try world.entity(parent);
+    try validateHGroup(group);
+    var offset = [3]f32{ 0.0, 0.0, 0.0 };
+
+    for (0..world.entityCount()) |index| {
+        const sibling = runtime.EntityHandle{ .index = @intCast(index) };
+        const sibling_item = (try layoutItem(world, sibling)) orelse continue;
+        if (!std.mem.eql(u8, sibling_item.parent, parent_entity.id)) {
+            continue;
+        }
+        const before_child = sibling_item.order < child_item.order or
+            (sibling_item.order == child_item.order and sibling.index < child.index);
+        if (!before_child) {
+            continue;
+        }
+        offset[0] += (try hgroupChildSize(world, parent, sibling, sibling_item, group))[0];
+        offset[0] += group.spacing;
+    }
+
+    const child_size = try hgroupChildSize(world, parent, child, child_item, group);
+    const inner_height = @max(group.size[1] - group.padding[1] * 2.0, 0.0);
+    if (std.mem.eql(u8, child_item.@"align", "center")) {
+        offset[1] += @max((inner_height - child_size[1]) * 0.5, 0.0);
+    } else if (std.mem.eql(u8, child_item.@"align", "end")) {
+        offset[1] += @max(inner_height - child_size[1], 0.0);
+    } else if (!std.mem.eql(u8, child_item.@"align", "start") and !std.mem.eql(u8, child_item.@"align", "fill")) {
+        return error.InvalidLayout;
+    }
+
+    return offset;
+}
+
+fn hgroupChildSize(world: *const runtime.World, parent: runtime.EntityHandle, child: runtime.EntityHandle, child_item: LayoutItem, group: HGroup) Error![3]f32 {
+    const parent_entity = try world.entity(parent);
+    try validateHGroup(group);
+
+    var child_count: usize = 0;
+    var base_width_sum: f32 = 0.0;
+    var grow_sum: f32 = 0.0;
+    for (0..world.entityCount()) |index| {
+        const sibling = runtime.EntityHandle{ .index = @intCast(index) };
+        const sibling_item = (try layoutItem(world, sibling)) orelse continue;
+        if (!std.mem.eql(u8, sibling_item.parent, parent_entity.id)) {
+            continue;
+        }
+        base_width_sum += (try itemSize(world, sibling))[0];
+        grow_sum += sibling_item.grow;
+        child_count += 1;
+    }
+
+    var size = try itemSize(world, child);
+    const spacing_total = if (child_count > 1) group.spacing * @as(f32, @floatFromInt(child_count - 1)) else 0.0;
+    const inner_width = @max(group.size[0] - group.padding[0] * 2.0 - spacing_total, 0.0);
+    const extra_width = @max(inner_width - base_width_sum, 0.0);
+    if (grow_sum > 0.0 and child_item.grow > 0.0) {
+        size[0] += extra_width * child_item.grow / grow_sum;
+    }
+
+    if (std.mem.eql(u8, child_item.@"align", "fill")) {
+        size[1] = @max(group.size[1] - group.padding[1] * 2.0, 0.0);
+    }
+    return size;
+}
+
+fn validateHGroup(group: HGroup) Error!void {
+    if (!isFiniteVec3(group.position) or !isFiniteVec3(group.size) or !isFiniteVec3(group.padding) or
+        !std.math.isFinite(group.spacing) or group.spacing < 0.0 or
+        group.size[0] < 0.0 or group.size[1] < 0.0 or group.size[2] < 0.0 or
+        group.padding[0] < 0.0 or group.padding[1] < 0.0 or group.padding[2] < 0.0)
+    {
+        return error.InvalidLayout;
+    }
 }
 
 fn vboxChildOffsetY(world: *const runtime.World, parent: runtime.EntityHandle, child: runtime.EntityHandle, child_item: LayoutItem) Error!f32 {
@@ -742,4 +873,51 @@ test "command routing targets the topmost command button under the pointer" {
     try std.testing.expectEqual(second.index, hit.entity.index);
     try std.testing.expectEqualStrings("second", hit.source);
     try std.testing.expectEqualStrings("second_command", hit.command);
+}
+
+test "hgroup distributes grow space across horizontal children" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const group = try world.createEntity("body", "Body HGroup");
+    try world.setUiHGroup(group, .{
+        .position = .{ 10.0, 20.0, 0.0 },
+        .size = .{ 500.0, 100.0, 0.0 },
+        .spacing = 2.0,
+        .padding = .{ 4.0, 6.0, 0.0 },
+    });
+
+    const left = try world.createEntity("left", "Left");
+    try world.setUiSpacer(left, .{ .size = .{ 120.0, 20.0, 0.0 } });
+    try world.setUiLayoutItem(left, .{ .parent = "body", .order = 0, .@"align" = "fill" });
+
+    const center = try world.createEntity("center", "Center");
+    try world.setUiSpacer(center, .{ .size = .{ 0.0, 0.0, 0.0 } });
+    try world.setUiLayoutItem(center, .{
+        .parent = "body",
+        .order = 1,
+        .min_size = .{ 100.0, 10.0, 0.0 },
+        .grow = 1.0,
+        .@"align" = "fill",
+    });
+
+    const right = try world.createEntity("right", "Right");
+    try world.setUiSpacer(right, .{ .size = .{ 80.0, 30.0, 0.0 } });
+    try world.setUiLayoutItem(right, .{ .parent = "body", .order = 2, .@"align" = "center" });
+
+    const left_rect = try resolvedItemRect(&world, left);
+    try std.testing.expectApproxEqAbs(@as(f32, 14.0), left_rect.position[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 26.0), left_rect.position[1], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 120.0), left_rect.size[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 88.0), left_rect.size[1], 0.001);
+
+    const center_rect = try resolvedItemRect(&world, center);
+    try std.testing.expectApproxEqAbs(@as(f32, 136.0), center_rect.position[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 288.0), center_rect.size[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 88.0), center_rect.size[1], 0.001);
+
+    const right_rect = try resolvedItemRect(&world, right);
+    try std.testing.expectApproxEqAbs(@as(f32, 426.0), right_rect.position[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 55.0), right_rect.position[1], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 80.0), right_rect.size[0], 0.001);
 }

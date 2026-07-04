@@ -10,7 +10,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 ## Behavior
 
 - The engine can render text-authored UI overlays in offscreen renders and interactive windows.
-- Scene entities can define a UI canvas, screen-space colored rectangles, rounded borders, fixed-pixel text labels, button markers, button command ids, scroll views, vertical stacks, direction-aware stacks, layout child metadata, spacers, text blocks, toggles, progress bars, and separators.
+- Scene entities can define a UI canvas, screen-space colored rectangles, rounded borders, fixed-pixel text labels, button markers, button command ids, scroll views, vertical stacks, horizontal groups, direction-aware stacks, layout child metadata, spacers, text blocks, toggles, progress bars, and separators.
 - `machina.ui.canvas` stores `design_size` and `scale_mode`. `scale_mode = "none"` preserves raw screen pixels. `scale_mode = "fit"` scales and centers scene-authored UI into the current scene UI target while preserving aspect ratio. `scale_mode = "fill"` scales enough to cover that target. The target is the full window in normal runs and the editor game viewport while the editor shell is visible.
 - UI rectangles use screen-space positions and sizes with a top-left origin, plus an optional `corner_radius` field in pixels. Missing `corner_radius` values default to `0.0` for compatibility with older scene data.
 - UI rectangle corners render through the UI shader using rounded-rectangle SDF coverage with alpha blending. Text glyph quads use the same UI pipeline with `corner_radius = 0.0`.
@@ -25,7 +25,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - Headful runs hide the engine-owned editor/debug overlay by default; `machina run --editor` starts with it visible.
 - The engine-owned editor/debug shell displays current FPS in a top bar.
 - In editor mode, 3D scene content and scene-authored game UI render into the full remaining viewport between the top bar, bottom bar, left sidebar, and right sidebar. The editor viewport is not forced to 16:9.
-- The left sidebar hosts the system performance inspector. The right sidebar is reserved for selected-entity component inspection and eventual component editing.
+- The left sidebar hosts the system performance inspector. The right sidebar is reserved for selected-entity component inspection and eventual component editing. The sidebars are separated from the game viewport by draggable splitters.
 - The engine-owned editor/debug shell also hosts the first editor playback controls and selected-entity inspector; detailed behavior is tracked in FDR-018.
 - When live system profiling data is available, the editor/debug overlay lists active systems with their full system id and rolling average runtime over the current profiling window.
 - The editor/debug overlay also lists engine-internal render systems profiled through the render ECS schedule.
@@ -33,12 +33,13 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - The system performance view uses compact fixed-width rows and a scene-shaped clipped smooth-scroll viewport so long system lists remain legible and every system can be reached without inline pagination text.
 - The system performance view shows a generated scrollbar when its clipped system list overflows.
 - While the editor/debug overlay is visible, mouse wheel input scrolls the visible system viewport only when the pointer is over that viewport or its scrollbar and the system list overflows. Wheel input over the game viewport remains available to scene-authored scroll views. Scroll state uses a target pixel offset plus an animated visible pixel offset, and wheel distance is intentionally independent from row height so content can settle between rows.
-- The UI gallery example demonstrates the retained primitive set with panels, text, buttons, command events, scroll views, vertical stacks, horizontal stacks, spacers, centered text blocks, toggles, progress bars, separators, and script-mutated UI state.
+- The UI gallery example demonstrates the retained primitive set with panels, text, buttons, command events, scroll views, vertical stacks, horizontal groups, horizontal stacks, spacers, centered text blocks, toggles, progress bars, separators, and script-mutated UI state.
 - `machina.ui.scroll_view` defines a screen-space viewport with `position`, `size`, and `content_offset` fields. Descendants are offset by `content_offset` and clipped to the viewport.
 - In live headful runs, scene-authored scroll views under the pointer update their `content_offset` from mouse wheel input before project update systems run.
 - `machina.ui.vbox` defines a vertical stack origin and spacing. Direct children are ordered by `machina.ui.layout.item.order` and stacked by their current primitive height.
+- `machina.ui.hgroup` defines a horizontal group with `position`, `size`, `spacing`, and `padding`. Direct children are ordered by `machina.ui.layout.item.order`, and children with positive `grow` receive proportional extra width after fixed/minimum widths, padding, and spacing are accounted for.
 - `machina.ui.stack` defines a direction-aware stack origin, spacing, direction, and padding. Supported directions are `vertical`, `column`, `horizontal`, and `row`.
-- `machina.ui.layout.item` attaches an entity to a parent entity id and gives it integer order, minimum size, grow ratio, cross-axis alignment metadata, and symmetric x/y/z margin. Parent ids are stable scene entity ids, not dense runtime handles. Grow ratios are stored and validated but do not redistribute extra space yet.
+- `machina.ui.layout.item` attaches an entity to a parent entity id and gives it integer order, minimum size, grow ratio, cross-axis alignment metadata, and symmetric x/y/z margin. Parent ids are stable scene entity ids, not dense runtime handles. Grow ratios redistribute extra width for `machina.ui.hgroup` children and remain metadata for older stack/vbox paths.
 - `machina.ui.layout.item` can also parent a child to a non-container UI rect, text, or separator. In that case the child inherits the parent's resolved position and continues through the parent's layout chain. This is the preferred pattern for button labels and small composite controls.
 - `machina.ui.spacer` participates in layout without rendering.
 - `machina.ui.text_block` gives a text entity a content box and horizontal/vertical `start`, `center`, or `end` alignment.
@@ -121,9 +122,9 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 
 ### 9. Expose the first layout containers as ECS data
 
-**Decision:** Machina exposes `machina.ui.scroll_view`, `machina.ui.vbox`, and `machina.ui.layout.item` as retained ECS components. The editor performance table uses the same public primitives that project scenes can author.
+**Decision:** Machina exposes `machina.ui.scroll_view`, `machina.ui.vbox`, `machina.ui.hgroup`, and `machina.ui.layout.item` as retained ECS components. The editor performance table and editor shell body use the same public primitives that project scenes can author.
 **Why:** Smooth canvas scrolling requires target/display state, fractional content offsets that can settle between rows, frame-time animation, clipping, and explicit child ordering. Keeping that shape in ECS avoids a renderer-private layout path and gives examples, tools, and future editor surfaces the same data model.
-**Tradeoff:** The first layout model is deliberately small. It has vertical stacking and clipping, but not hbox, flex/grid sizing, padding, focus, scroll bars, virtualization, keyboard navigation, or style inheritance.
+**Tradeoff:** The first layout model is deliberately small. It has vertical stacking, horizontal groups, padding, and clipping, but not full flex/grid sizing, focus, scroll bars, virtualization, keyboard navigation, or style inheritance.
 
 ### 9a. Add a Machina-native control library shape
 
@@ -149,6 +150,12 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 **Why:** The editor needs stable regions for tools as it grows. Systems belong in a dedicated inspector, component editing needs an exclusive selected-entity surface, and the game should use all area not occupied by editor chrome.
 **Tradeoff:** This is still a fixed chrome layout rather than dockable panels, tabs, splitters, collapsible sidebars, or persisted editor workspace state.
 
+### 9e. Use retained hgroups for editor splitters
+
+**Decision:** The editor shell body is generated as a retained `machina.ui.hgroup` with left sidebar, left splitter, growable game viewport, right splitter, and right sidebar children. Dragging a splitter mutates engine-owned editor width state, and the generated hgroup resolves the resulting layout.
+**Why:** Resizable editor regions should exercise and harden the same ECS UI layout path that projects can use. This avoids a private renderer-only layout model for one of the editor's most important surfaces.
+**Tradeoff:** Splitter persistence, collapsed panels, minimum-size negotiation across nested groups, cursor styling, keyboard resizing, and user-configured workspace layouts remain future work.
+
 ### 10. Treat examples as the primitive gallery
 
 **Decision:** The UI gallery example is the proving ground for retained UI primitives until Machina has a richer widget/layout library.
@@ -166,7 +173,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - How should command ids be namespaced and routed into editor tools or engine services?
 - When should focus and text input become active behavior?
 - What should full keyboard state and text input look like beyond the current modifier/action edge fields?
-- What exact ECS shape should grid/flex sizing, scroll bars, asymmetric margins/padding, and grow-ratio space distribution use?
+- What exact ECS shape should grid/flex sizing, scroll bars, asymmetric margins/padding, and grow-ratio space distribution beyond `machina.ui.hgroup` use?
 - How should UI containers express focus, keyboard navigation, virtualization, and style inheritance?
 - What text editing capability is needed before the editor becomes practical?
 - How should the editor expose system-list sorting and drill-down timing history?
