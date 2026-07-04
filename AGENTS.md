@@ -64,6 +64,7 @@ Rendering and UI:
 - `machina.ui.layout.item` attaches an entity to a parent by stable entity id and `order`; do not use dense runtime entity indices as UI parent references. It also carries `min_size`, `grow`, and `align`; `grow` is stored for API shape but does not redistribute extra space yet.
 - `machina.ui.text_block` gives text a content box and `start`/`center`/`end` alignment. Plain `machina.ui.text` remains top-left positioned.
 - `machina.ui.progress_bar`, `machina.ui.toggle`, `machina.ui.separator`, and `machina.ui.spacer` are semantic UI components layered over the same ECS render path; prefer these over hand-rolled rect-only conventions when they match the intent.
+- Scene-authored UI input routing must use the retained layout model (`scroll_view`, `vbox`, `stack`, and `layout.item`) for hit testing and scroll handling. Do not hit-test raw `machina.ui.rect.position` unless you have first resolved parent layout and clipping.
 - Headful input is translated into ECS frame input.
 - Runtime input is represented as transient engine-owned ECS components on `machina.input.frame`: `machina.input.pointer`, `machina.input.keyboard`, and `machina.input.frame`.
 - Input components are runtime resources, not scene-authored project data.

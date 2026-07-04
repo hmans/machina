@@ -30,6 +30,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - While the editor/debug overlay is visible, mouse wheel input scrolls the visible system viewport when the system list overflows. Scroll state uses a target pixel offset plus an animated visible pixel offset, and wheel distance is intentionally independent from row height so content can settle between rows.
 - The UI gallery example demonstrates the retained primitive set with panels, text, buttons, command events, scroll views, vertical stacks, horizontal stacks, spacers, centered text blocks, toggles, progress bars, separators, and script-mutated UI state.
 - `machina.ui.scroll_view` defines a screen-space viewport with `position`, `size`, and `content_offset` fields. Descendants are offset by `content_offset` and clipped to the viewport.
+- In live headful runs, scene-authored scroll views under the pointer update their `content_offset` from mouse wheel input before project update systems run.
 - `machina.ui.vbox` defines a vertical stack origin and spacing. Direct children are ordered by `machina.ui.layout.item.order` and stacked by their current primitive height.
 - `machina.ui.stack` defines a direction-aware stack origin, spacing, direction, and padding. Supported directions are `vertical`, `column`, `horizontal`, and `row`.
 - `machina.ui.layout.item` attaches an entity to a parent entity id and gives it integer order, minimum size, grow ratio, and cross-axis alignment metadata. Parent ids are stable scene entity ids, not dense runtime handles. Grow ratios are stored and validated but do not redistribute extra space yet.
@@ -85,6 +86,12 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 **Decision:** Platform input is translated into transient `machina.input.pointer`, `machina.input.keyboard`, and `machina.input.frame` ECS resources. UI button visuals are derived by render-phase ECS systems, and command events are emitted into the live project world before update systems run.
 **Why:** This keeps UI behavior aligned with the engine-wide ECS model, follows ADR-020, and avoids a separate immediate-mode renderer input channel.
 **Tradeoff:** Command routing is string-id based for now; richer action payloads, focus, text input, and editor service dispatch still need later design.
+
+### 6a. Resolve retained layout for scene UI input
+
+**Decision:** Project UI input routing resolves `scroll_view`, `vbox`, `stack`, and `layout.item` before hit-testing command buttons or scrolling viewports.
+**Why:** Scene-authored controls can be local to layout containers, so raw component positions are not authoritative screen positions. Rendering, command events, and scroll interaction must agree on the retained layout model.
+**Tradeoff:** Layout resolution currently exists in both render and live-project input paths. A shared UI layout module should replace that duplication when the layout model grows further.
 
 ### 7. Route button presses through command events
 

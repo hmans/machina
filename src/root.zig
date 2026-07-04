@@ -6,6 +6,7 @@ const geometry = @import("geometry.zig");
 const native = @import("native.zig");
 const runtime = @import("runtime.zig");
 const script = @import("script.zig");
+const ui_font = @import("ui_font.zig");
 
 pub const version = "0.1.0-dev";
 pub const project_file_name = "project.machina.toml";
@@ -340,6 +341,15 @@ pub const LiveProject = struct {
             }
             return;
         };
+        updateSceneUiScrollViews(&self.scene.world) catch |err| {
+            if (std.fmt.allocPrint(self.allocator, "UI scroll routing failed: {s}", .{@errorName(err)})) |message| {
+                defer self.allocator.free(message);
+                self.last_diagnostic = makeSyntheticRuntimeDiagnostic(self.allocator, message) catch null;
+            } else |_| {
+                self.last_diagnostic = makeSyntheticRuntimeDiagnostic(self.allocator, "UI scroll routing failed") catch null;
+            }
+            return;
+        };
         updateUiCommandEvents(&self.scene.world) catch |err| {
             if (std.fmt.allocPrint(self.allocator, "UI command routing failed: {s}", .{@errorName(err)})) |message| {
                 defer self.allocator.free(message);
@@ -642,6 +652,79 @@ const UiCommandHit = struct {
     source: []const u8,
 };
 
+const UiClipRect = struct {
+    position: [3]f32,
+    size: [3]f32,
+};
+
+const UiResolvedLayout = struct {
+    position: [3]f32,
+    clip: ?UiClipRect = null,
+};
+
+const UiLayoutItem = struct {
+    parent: []const u8,
+    order: i32,
+    min_size: [3]f32,
+    grow: f32,
+    @"align": []const u8,
+};
+
+const UiScrollView = struct {
+    position: [3]f32,
+    size: [3]f32,
+    content_offset: [3]f32,
+};
+
+const UiVBox = struct {
+    position: [3]f32,
+    spacing: f32,
+};
+
+const UiStack = struct {
+    position: [3]f32,
+    spacing: f32,
+    direction: []const u8,
+    padding: [3]f32,
+};
+
+fn updateSceneUiScrollViews(world: *World) !void {
+    const input_entity = world.findEntityById(runtime.input_entity_id) orelse return;
+    const ui_visible = try world.getBoolean(input_entity, runtime.input_frame_component_id, "ui_visible");
+    const has_position = try world.getBoolean(input_entity, runtime.input_pointer_component_id, "has_position");
+    const wheel_delta = try world.getVec3(input_entity, runtime.input_pointer_component_id, "wheel_delta");
+    if (!ui_visible or !has_position or wheel_delta[1] == 0.0) {
+        return;
+    }
+
+    const pointer_position_vec3 = try world.getVec3(input_entity, runtime.input_pointer_component_id, "position");
+    const pointer_position = [2]f32{ pointer_position_vec3[0], pointer_position_vec3[1] };
+    var selected: ?runtime.EntityHandle = null;
+
+    var cursor: usize = 0;
+    const scroll_query = [_][]const u8{runtime.ui_scroll_view_component_id};
+    while (world.queryNext(&scroll_query, &cursor)) |entity| {
+        const scroll_view = try uiScrollView(world, entity) orelse continue;
+        const layout = try resolveSceneUiLayout(world, entity, scroll_view.position);
+        const clip = try combineUiClip(layout.clip, .{ .position = layout.position, .size = scroll_view.size });
+        if (!runtime.pointInsideUiRect(pointer_position, layout.position, scroll_view.size) or !pointInsideUiClip(pointer_position, clip)) {
+            continue;
+        }
+        selected = entity;
+    }
+
+    const entity = selected orelse return;
+    const scroll_view = try uiScrollView(world, entity) orelse return;
+    const max_scroll_y = try sceneUiScrollMaxY(world, entity, scroll_view);
+    const delta_pixels = -wheel_delta[1] * 24.0;
+    if (delta_pixels == 0.0) {
+        return;
+    }
+    var next_offset = scroll_view.content_offset;
+    next_offset[1] = std.math.clamp(next_offset[1] + delta_pixels, 0.0, max_scroll_y);
+    try world.setVec3(entity, runtime.ui_scroll_view_component_id, "content_offset", next_offset);
+}
+
 fn updateUiCommandEvents(world: *World) !void {
     try clearUiCommandEvent(world);
     const input_entity = world.findEntityById(runtime.input_entity_id) orelse return;
@@ -664,7 +747,8 @@ fn updateUiCommandEvents(world: *World) !void {
     while (world.queryNext(&command_button_query, &cursor)) |entity| {
         const position = try world.getVec3(entity, runtime.ui_rect_component_id, "position");
         const size = try world.getVec3(entity, runtime.ui_rect_component_id, "size");
-        if (!runtime.pointInsideUiRect(pointer_position, position, size)) {
+        const layout = try resolveSceneUiLayout(world, entity, position);
+        if (!runtime.pointInsideUiRect(pointer_position, layout.position, size) or !pointInsideUiClip(pointer_position, layout.clip)) {
             continue;
         }
 
@@ -678,6 +762,301 @@ fn updateUiCommandEvents(world: *World) !void {
     if (selected) |hit| {
         try emitUiCommandEvent(world, hit.command, hit.source);
     }
+}
+
+fn uiScrollView(world: *World, entity: runtime.EntityHandle) !?UiScrollView {
+    if (!(try world.hasComponent(entity, runtime.ui_scroll_view_component_id))) {
+        return null;
+    }
+    return .{
+        .position = try world.getVec3(entity, runtime.ui_scroll_view_component_id, "position"),
+        .size = try world.getVec3(entity, runtime.ui_scroll_view_component_id, "size"),
+        .content_offset = try world.getVec3(entity, runtime.ui_scroll_view_component_id, "content_offset"),
+    };
+}
+
+fn uiVBox(world: *World, entity: runtime.EntityHandle) !?UiVBox {
+    if (!(try world.hasComponent(entity, runtime.ui_vbox_component_id))) {
+        return null;
+    }
+    return .{
+        .position = try world.getVec3(entity, runtime.ui_vbox_component_id, "position"),
+        .spacing = try world.getFloat(entity, runtime.ui_vbox_component_id, "spacing"),
+    };
+}
+
+fn uiStack(world: *World, entity: runtime.EntityHandle) !?UiStack {
+    if (!(try world.hasComponent(entity, runtime.ui_stack_component_id))) {
+        return null;
+    }
+    return .{
+        .position = try world.getVec3(entity, runtime.ui_stack_component_id, "position"),
+        .spacing = try world.getFloat(entity, runtime.ui_stack_component_id, "spacing"),
+        .direction = try world.getString(entity, runtime.ui_stack_component_id, "direction"),
+        .padding = try world.getVec3(entity, runtime.ui_stack_component_id, "padding"),
+    };
+}
+
+fn uiLayoutItem(world: *World, entity: runtime.EntityHandle) !?UiLayoutItem {
+    if (!(try world.hasComponent(entity, runtime.ui_layout_item_component_id))) {
+        return null;
+    }
+    return .{
+        .parent = try world.getString(entity, runtime.ui_layout_item_component_id, "parent"),
+        .order = try world.getInt(entity, runtime.ui_layout_item_component_id, "order"),
+        .min_size = try world.getVec3(entity, runtime.ui_layout_item_component_id, "min_size"),
+        .grow = try world.getFloat(entity, runtime.ui_layout_item_component_id, "grow"),
+        .@"align" = try world.getString(entity, runtime.ui_layout_item_component_id, "align"),
+    };
+}
+
+fn resolveSceneUiLayout(world: *World, entity: runtime.EntityHandle, local_position: [3]f32) !UiResolvedLayout {
+    var resolved: UiResolvedLayout = .{ .position = local_position };
+    var child = entity;
+
+    const max_depth = 32;
+    for (0..max_depth) |_| {
+        const item = (try uiLayoutItem(world, child)) orelse return resolved;
+        const parent = world.findEntityById(item.parent) orelse return ProjectError.InvalidSceneEntity;
+
+        if (try uiVBox(world, parent)) |vbox| {
+            resolved.position[0] += vbox.position[0];
+            resolved.position[1] += vbox.position[1] + try uiVBoxChildOffsetY(world, parent, child, item);
+            resolved.position[2] += vbox.position[2];
+        }
+
+        if (try uiStack(world, parent)) |stack| {
+            const stack_offset = try uiStackChildOffset(world, parent, child, item, stack);
+            resolved.position[0] += stack.position[0] + stack.padding[0] + stack_offset[0];
+            resolved.position[1] += stack.position[1] + stack.padding[1] + stack_offset[1];
+            resolved.position[2] += stack.position[2] + stack_offset[2];
+        }
+
+        if (try uiScrollView(world, parent)) |scroll_view| {
+            if (!isFiniteVec3(scroll_view.position) or !isFiniteVec3(scroll_view.size) or !isFiniteVec3(scroll_view.content_offset)) {
+                return ProjectError.InvalidSceneEntity;
+            }
+            resolved.position[0] += scroll_view.position[0] - scroll_view.content_offset[0];
+            resolved.position[1] += scroll_view.position[1] - scroll_view.content_offset[1];
+            resolved.position[2] += scroll_view.position[2] - scroll_view.content_offset[2];
+            resolved.clip = try combineUiClip(resolved.clip, .{
+                .position = scroll_view.position,
+                .size = scroll_view.size,
+            });
+        }
+
+        child = parent;
+    }
+    return ProjectError.InvalidSceneEntity;
+}
+
+fn combineUiClip(a: ?UiClipRect, b: ?UiClipRect) !?UiClipRect {
+    if (a == null) return b;
+    if (b == null) return a;
+    const left = @max(a.?.position[0], b.?.position[0]);
+    const top = @max(a.?.position[1], b.?.position[1]);
+    const right = @min(a.?.position[0] + a.?.size[0], b.?.position[0] + b.?.size[0]);
+    const bottom = @min(a.?.position[1] + a.?.size[1], b.?.position[1] + b.?.size[1]);
+    if (right <= left or bottom <= top) {
+        return .{ .position = .{ 0.0, 0.0, 0.0 }, .size = .{ 0.0, 0.0, 0.0 } };
+    }
+    return .{
+        .position = .{ left, top, 0.0 },
+        .size = .{ right - left, bottom - top, 0.0 },
+    };
+}
+
+fn pointInsideUiClip(point: [2]f32, clip: ?UiClipRect) bool {
+    if (clip) |clip_rect| {
+        return runtime.pointInsideUiRect(point, clip_rect.position, clip_rect.size);
+    }
+    return true;
+}
+
+fn uiVBoxChildOffsetY(world: *World, parent: runtime.EntityHandle, child: runtime.EntityHandle, child_item: UiLayoutItem) !f32 {
+    const parent_entity = try world.entity(parent);
+    const vbox = (try uiVBox(world, parent)) orelse return 0.0;
+    if (!std.math.isFinite(vbox.spacing)) {
+        return ProjectError.InvalidSceneEntity;
+    }
+
+    var offset: f32 = 0.0;
+    for (0..world.entityCount()) |index| {
+        const sibling = runtime.EntityHandle{ .index = @intCast(index) };
+        const sibling_item = (try uiLayoutItem(world, sibling)) orelse continue;
+        if (!std.mem.eql(u8, sibling_item.parent, parent_entity.id)) {
+            continue;
+        }
+        const before_child = sibling_item.order < child_item.order or
+            (sibling_item.order == child_item.order and sibling.index < child.index);
+        if (!before_child) {
+            continue;
+        }
+        offset += (try uiLayoutItemSize(world, sibling))[1];
+        offset += vbox.spacing;
+    }
+    return offset;
+}
+
+fn uiStackChildOffset(world: *World, parent: runtime.EntityHandle, child: runtime.EntityHandle, child_item: UiLayoutItem, stack: UiStack) ![3]f32 {
+    const parent_entity = try world.entity(parent);
+    if (!isFiniteVec3(stack.position) or !isFiniteVec3(stack.padding) or !std.math.isFinite(stack.spacing)) {
+        return ProjectError.InvalidSceneEntity;
+    }
+    const horizontal = try stackDirectionIsHorizontal(stack.direction);
+    const main_axis: usize = if (horizontal) 0 else 1;
+    const cross_axis: usize = if (horizontal) 1 else 0;
+    var offset = [3]f32{ 0.0, 0.0, 0.0 };
+
+    for (0..world.entityCount()) |index| {
+        const sibling = runtime.EntityHandle{ .index = @intCast(index) };
+        const sibling_item = (try uiLayoutItem(world, sibling)) orelse continue;
+        if (!std.mem.eql(u8, sibling_item.parent, parent_entity.id)) {
+            continue;
+        }
+        const before_child = sibling_item.order < child_item.order or
+            (sibling_item.order == child_item.order and sibling.index < child.index);
+        if (!before_child) {
+            continue;
+        }
+        offset[main_axis] += (try uiLayoutItemSize(world, sibling))[main_axis];
+        offset[main_axis] += stack.spacing;
+    }
+
+    const parent_size = try uiLayoutItemSize(world, parent);
+    const child_size = try uiLayoutItemSize(world, child);
+    const inner_cross_size = @max(parent_size[cross_axis] - stack.padding[cross_axis] * 2.0, 0.0);
+    if (std.mem.eql(u8, child_item.@"align", "center")) {
+        offset[cross_axis] += @max((inner_cross_size - child_size[cross_axis]) * 0.5, 0.0);
+    } else if (std.mem.eql(u8, child_item.@"align", "end")) {
+        offset[cross_axis] += @max(inner_cross_size - child_size[cross_axis], 0.0);
+    } else if (!std.mem.eql(u8, child_item.@"align", "start") and !std.mem.eql(u8, child_item.@"align", "fill")) {
+        return ProjectError.InvalidSceneEntity;
+    }
+    return offset;
+}
+
+fn stackDirectionIsHorizontal(direction: []const u8) !bool {
+    if (std.mem.eql(u8, direction, "horizontal") or std.mem.eql(u8, direction, "row")) {
+        return true;
+    }
+    if (std.mem.eql(u8, direction, "vertical") or std.mem.eql(u8, direction, "column")) {
+        return false;
+    }
+    return ProjectError.InvalidSceneEntity;
+}
+
+fn sceneUiScrollMaxY(world: *World, scroll_entity: runtime.EntityHandle, scroll_view: UiScrollView) anyerror!f32 {
+    const content_size = try uiContainerContentSize(world, scroll_entity, false);
+    return @max(content_size[1] - scroll_view.size[1], 0.0);
+}
+
+fn uiLayoutItemSize(world: *World, entity: runtime.EntityHandle) anyerror![3]f32 {
+    var size = try uiLayoutItemNaturalSize(world, entity);
+    if (try uiLayoutItem(world, entity)) |item| {
+        if (!isFiniteVec3(item.min_size) or !std.math.isFinite(item.grow) or item.grow < 0.0) {
+            return ProjectError.InvalidSceneEntity;
+        }
+        size[0] = @max(size[0], item.min_size[0]);
+        size[1] = @max(size[1], item.min_size[1]);
+        size[2] = @max(size[2], item.min_size[2]);
+    }
+    return size;
+}
+
+fn uiLayoutItemNaturalSize(world: *World, entity: runtime.EntityHandle) anyerror![3]f32 {
+    if (try world.hasComponent(entity, runtime.ui_rect_component_id)) {
+        return try world.getVec3(entity, runtime.ui_rect_component_id, "size");
+    }
+    if (try world.hasComponent(entity, runtime.ui_separator_component_id)) {
+        return try world.getVec3(entity, runtime.ui_separator_component_id, "size");
+    }
+    if (try world.hasComponent(entity, runtime.ui_spacer_component_id)) {
+        return try world.getVec3(entity, runtime.ui_spacer_component_id, "size");
+    }
+    if (try world.hasComponent(entity, runtime.ui_scroll_view_component_id)) {
+        return try world.getVec3(entity, runtime.ui_scroll_view_component_id, "size");
+    }
+    if (try world.hasComponent(entity, runtime.ui_vbox_component_id)) {
+        return try uiContainerContentSize(world, entity, false);
+    }
+    if (try world.hasComponent(entity, runtime.ui_stack_component_id)) {
+        const stack = (try uiStack(world, entity)) orelse return .{ 0.0, 0.0, 0.0 };
+        return try uiContainerContentSize(world, entity, try stackDirectionIsHorizontal(stack.direction));
+    }
+    if (try world.hasComponent(entity, runtime.ui_text_block_component_id)) {
+        return try world.getVec3(entity, runtime.ui_text_block_component_id, "size");
+    }
+    if (try world.hasComponent(entity, runtime.ui_text_component_id)) {
+        const size = try world.getFloat(entity, runtime.ui_text_component_id, "size");
+        const value = try world.getString(entity, runtime.ui_text_component_id, "value");
+        return textPixelSize(value, size);
+    }
+    return .{ 0.0, 0.0, 0.0 };
+}
+
+fn uiContainerContentSize(world: *World, parent: runtime.EntityHandle, horizontal: bool) anyerror![3]f32 {
+    const parent_entity = try world.entity(parent);
+    var main_size: f32 = 0.0;
+    var cross_size: f32 = 0.0;
+    var child_count: usize = 0;
+    var spacing: f32 = 0.0;
+    var padding = [3]f32{ 0.0, 0.0, 0.0 };
+
+    if (try uiVBox(world, parent)) |vbox| {
+        spacing = vbox.spacing;
+    }
+    if (try uiStack(world, parent)) |stack| {
+        spacing = stack.spacing;
+        padding = stack.padding;
+    }
+
+    const main_axis: usize = if (horizontal) 0 else 1;
+    const cross_axis: usize = if (horizontal) 1 else 0;
+    for (0..world.entityCount()) |index| {
+        const child = runtime.EntityHandle{ .index = @intCast(index) };
+        const item = (try uiLayoutItem(world, child)) orelse continue;
+        if (!std.mem.eql(u8, item.parent, parent_entity.id)) {
+            continue;
+        }
+        const child_size = try uiLayoutItemSize(world, child);
+        main_size += child_size[main_axis];
+        cross_size = @max(cross_size, child_size[cross_axis]);
+        child_count += 1;
+    }
+    if (child_count > 1) {
+        main_size += spacing * @as(f32, @floatFromInt(child_count - 1));
+    }
+
+    var out = [3]f32{ 0.0, 0.0, 0.0 };
+    out[main_axis] = main_size + padding[main_axis] * 2.0;
+    out[cross_axis] = cross_size + padding[cross_axis] * 2.0;
+    return out;
+}
+
+fn textPixelSize(value: []const u8, size: f32) [3]f32 {
+    var line_width: usize = 0;
+    var max_width: usize = 0;
+    var line_count: usize = 1;
+    for (value) |byte| {
+        if (byte == '\n') {
+            max_width = @max(max_width, line_width);
+            line_width = 0;
+            line_count += 1;
+        } else {
+            line_width += 1;
+        }
+    }
+    max_width = @max(max_width, line_width);
+    return .{
+        @as(f32, @floatFromInt(max_width * ui_font.advance)) * size,
+        @as(f32, @floatFromInt(line_count * ui_font.height)) * size,
+        0.0,
+    };
+}
+
+fn isFiniteVec3(value: [3]f32) bool {
+    return std.math.isFinite(value[0]) and std.math.isFinite(value[1]) and std.math.isFinite(value[2]);
 }
 
 fn clearUiCommandEvent(world: *World) !void {
@@ -2705,6 +3084,214 @@ test "LiveProject emits UI command events before scheduled scripts run" {
     live_project.updateWithInput(0.016, .{});
     try std.testing.expect(live_project.scene.world.uiCommandEvent() == null);
     try std.testing.expect(try live_project.scene.world.getBoolean(flag, "flag", "active"));
+}
+
+test "LiveProject routes UI command hits through retained layout" {
+    const root_path = ".zig-cache/test-live-project-ui-command-layout";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.createDirPath(io, "scripts");
+
+    try root_dir.writeFile(io, .{
+        .sub_path = project_file_name,
+        .data = "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n",
+    });
+    try root_dir.writeFile(io, .{
+        .sub_path = "scenes/main.scene.toml",
+        .data =
+        \\name = "Main"
+        \\version = 1
+        \\
+        \\[[entities]]
+        \\id = "toolbar"
+        \\name = "Toolbar"
+        \\
+        \\[entities.components."machina.ui.stack"]
+        \\position = [100.0, 24.0, 0.0]
+        \\spacing = 12.0
+        \\direction = "horizontal"
+        \\padding = [0.0, 0.0, 0.0]
+        \\
+        \\[[entities]]
+        \\id = "button"
+        \\name = "Button"
+        \\
+        \\[entities.components."machina.ui.rect"]
+        \\position = [0.0, 0.0, 0.0]
+        \\size = [120.0, 48.0, 0.0]
+        \\color = [0.0, 0.2, 0.4]
+        \\
+        \\[entities.components."machina.ui.button"]
+        \\
+        \\[entities.components."machina.ui.layout.item"]
+        \\parent = "toolbar"
+        \\order = 0
+        \\
+        \\[entities.components."machina.ui.command"]
+        \\command = "activate_flag"
+        \\
+        \\[[entities]]
+        \\id = "flag"
+        \\name = "Flag"
+        \\
+        \\[entities.components.flag]
+        \\active = false
+        \\
+        ,
+    });
+    try root_dir.writeFile(io, .{
+        .sub_path = "scripts/gameplay.luau",
+        .data =
+        \\--!strict
+        \\
+        \\local CommandEvent = ecs.component<<MachinaUiCommandEvent>>("machina.ui.command_event")
+        \\local Flag = ecs.component("flag", {
+        \\  fields = ecs.fields({
+        \\    active = "boolean",
+        \\  }),
+        \\})
+        \\local CommandEvents = ecs.query(CommandEvent)
+        \\local Flags = ecs.query(Flag)
+        \\
+        \\ecs.system("handle_ui_commands", {
+        \\  query = CommandEvents,
+        \\  reads = ecs.refs(CommandEvent),
+        \\  writes = ecs.refs(Flag),
+        \\  run = function(world, _dt)
+        \\    for _event_entity, event in CommandEvents:iter(world) do
+        \\      if event.command == "activate_flag" then
+        \\        for _flag_entity, flag in Flags:iter(world) do
+        \\          flag.active = true
+        \\        end
+        \\      end
+        \\    end
+        \\  end,
+        \\})
+        ,
+    });
+
+    var live_project = try LiveProject.init(io, std.testing.allocator, root_path);
+    defer live_project.deinit();
+
+    const flag = live_project.scene.world.findEntityById("flag") orelse return error.TestExpectedEqual;
+    try std.testing.expect(!try live_project.scene.world.getBoolean(flag, "flag", "active"));
+
+    live_project.updateWithInput(0.016, .{
+        .pointer = .{
+            .position = .{ 150.0, 36.0 },
+            .has_position = true,
+            .primary_released = true,
+        },
+    });
+
+    try std.testing.expect(try live_project.scene.world.getBoolean(flag, "flag", "active"));
+    const event = live_project.scene.world.uiCommandEvent() orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings("button", event.source);
+}
+
+test "LiveProject scrolls scene-authored scroll views under pointer" {
+    const root_path = ".zig-cache/test-live-project-ui-scroll-view";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Game");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.writeFile(io, .{
+        .sub_path = "scenes/main.scene.toml",
+        .data =
+        \\name = "Main"
+        \\version = 1
+        \\
+        \\[[entities]]
+        \\id = "scroll"
+        \\name = "Scroll"
+        \\
+        \\[entities.components."machina.ui.scroll_view"]
+        \\position = [10.0, 10.0, 0.0]
+        \\size = [100.0, 40.0, 0.0]
+        \\content_offset = [0.0, 0.0, 0.0]
+        \\
+        \\[[entities]]
+        \\id = "stack"
+        \\name = "Stack"
+        \\
+        \\[entities.components."machina.ui.vbox"]
+        \\position = [0.0, 0.0, 0.0]
+        \\spacing = 0.0
+        \\
+        \\[entities.components."machina.ui.layout.item"]
+        \\parent = "scroll"
+        \\order = 0
+        \\
+        \\[[entities]]
+        \\id = "row-1"
+        \\name = "Row 1"
+        \\
+        \\[entities.components."machina.ui.text"]
+        \\position = [0.0, 0.0, 0.0]
+        \\size = 1.0
+        \\color = [1.0, 1.0, 1.0]
+        \\value = "ROW 1"
+        \\
+        \\[entities.components."machina.ui.layout.item"]
+        \\parent = "stack"
+        \\order = 0
+        \\
+        \\[[entities]]
+        \\id = "row-2"
+        \\name = "Row 2"
+        \\
+        \\[entities.components."machina.ui.text"]
+        \\position = [0.0, 0.0, 0.0]
+        \\size = 1.0
+        \\color = [1.0, 1.0, 1.0]
+        \\value = "ROW 2"
+        \\
+        \\[entities.components."machina.ui.layout.item"]
+        \\parent = "stack"
+        \\order = 1
+        \\
+        \\[[entities]]
+        \\id = "row-3"
+        \\name = "Row 3"
+        \\
+        \\[entities.components."machina.ui.text"]
+        \\position = [0.0, 0.0, 0.0]
+        \\size = 1.0
+        \\color = [1.0, 1.0, 1.0]
+        \\value = "ROW 3"
+        \\
+        \\[entities.components."machina.ui.layout.item"]
+        \\parent = "stack"
+        \\order = 2
+        \\
+        ,
+    });
+
+    var live_project = try LiveProject.init(io, std.testing.allocator, root_path);
+    defer live_project.deinit();
+
+    const scroll = live_project.scene.world.findEntityById("scroll") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(f32, 0.0), (try live_project.scene.world.getVec3(scroll, runtime.ui_scroll_view_component_id, "content_offset"))[1]);
+
+    live_project.updateWithInput(0.016, .{
+        .pointer = .{
+            .position = .{ 20.0, 20.0 },
+            .has_position = true,
+            .wheel_delta = .{ 0.0, -1.0 },
+        },
+    });
+
+    try std.testing.expectApproxEqAbs(@as(f32, 24.0), (try live_project.scene.world.getVec3(scroll, runtime.ui_scroll_view_component_id, "content_offset"))[1], 0.001);
 }
 
 test "stepProjectDetailed runs requested frames headlessly" {
