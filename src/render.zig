@@ -40,10 +40,10 @@ const default_window_width = 1280;
 const default_window_height = 720;
 const editor_top_bar_height: f32 = 56.0;
 const editor_bottom_bar_height: f32 = 60.0;
-const editor_left_sidebar_target_width: f32 = 420.0;
-const editor_left_sidebar_min_width: f32 = 260.0;
-const editor_right_sidebar_target_width: f32 = 460.0;
-const editor_right_sidebar_min_width: f32 = 300.0;
+const editor_left_sidebar_target_width: f32 = 440.0;
+const editor_left_sidebar_min_width: f32 = 280.0;
+const editor_right_sidebar_target_width: f32 = 560.0;
+const editor_right_sidebar_min_width: f32 = 360.0;
 const editor_min_game_viewport_width: f32 = 320.0;
 const editor_splitter_width: f32 = 2.0;
 const editor_splitter_hit_width: f32 = 12.0;
@@ -106,11 +106,19 @@ const editor_inspector_caret_width: f32 = 2.0;
 const editor_inspector_selection_padding_y: f32 = 4.0;
 const editor_inspector_toggle_width: f32 = 60.0;
 const editor_inspector_swatch_size: f32 = 28.0;
+const editor_inspector_lane_label_width: f32 = 14.0;
+const editor_inspector_lane_label_gap: f32 = 4.0;
 const editor_component_id_buffer_len = 128;
 const editor_field_name_buffer_len = 64;
 const editor_input_text_buffer_len = 128;
 const editor_undo_capacity = 64;
 const editor_geometry_primitives = [_][]const u8{ "box", "plane", "uv_sphere", "ico_sphere" };
+const editor_color_channels = [_][3]f32{
+    .{ 0.941, 0.267, 0.267 },
+    .{ 0.133, 0.773, 0.369 },
+    .{ 0.231, 0.51, 0.965 },
+};
+const editor_vec3_lane_labels = [_][]const u8{ "X", "Y", "Z" };
 const editor_gizmo_axis_length: f32 = 1.25;
 const editor_gizmo_axis_thickness: f32 = 0.035;
 const editor_gizmo_pick_radius_px: f32 = 18.0;
@@ -988,6 +996,14 @@ fn editorFieldIsPrimitiveSelector(component_id: []const u8, field_name: []const 
 fn editorFieldLooksLikeColor(field_name: []const u8) bool {
     return std.mem.indexOf(u8, field_name, "color") != null or
         std.mem.indexOf(u8, field_name, "colour") != null;
+}
+
+fn editorVec3LaneColor(lane: u2) [3]f32 {
+    return editor_color_channels[@as(usize, lane)];
+}
+
+fn editorVec3LaneLabel(lane: u2) []const u8 {
+    return editor_vec3_lane_labels[@as(usize, lane)];
 }
 
 fn commitEditorTextInput(world: *runtime.World, state: *EditorState) EditorError!void {
@@ -3685,10 +3701,17 @@ fn extractEditorPropertyRow(
             }
             const lane_start_x = value_x + swatch_total_width;
             const lane_total_width = @max(total_width - swatch_total_width, 1.0);
-            const lane_width = @max((lane_total_width - editor_inspector_input_gap * 2.0) / 3.0, 1.0);
+            const lane_label_total_width = editor_inspector_lane_label_width + editor_inspector_lane_label_gap;
+            const lane_width = @max((lane_total_width - lane_label_total_width * 3.0 - editor_inspector_input_gap * 2.0) / 3.0, 1.0);
             for (0..3) |lane_index| {
                 var lane_buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len;
                 const lane: u2 = @intCast(lane_index);
+                const label_x = lane_start_x + @as(f32, @floatFromInt(lane_index)) * (lane_label_total_width + lane_width + editor_inspector_input_gap);
+                try extractEditorVec3LaneLabel(allocator, world, spec, .{
+                    .lane = lane,
+                    .x = label_x,
+                    .color = editorVec3LaneColor(lane),
+                });
                 const is_focused = editorTextInputFocuses(spec.text_input, spec.component_id, spec.field_name, lane);
                 const value_text = if (is_focused)
                     spec.text_input.text()
@@ -3696,7 +3719,7 @@ fn extractEditorPropertyRow(
                     std.fmt.bufPrint(&lane_buffer, "{d:.2}", .{payload[lane]}) catch "";
                 try extractEditorPropertyInputBox(allocator, world, spec, .{
                     .lane = lane,
-                    .x = lane_start_x + @as(f32, @floatFromInt(lane_index)) * (lane_width + editor_inspector_input_gap),
+                    .x = label_x + lane_label_total_width,
                     .width = lane_width,
                     .text = value_text,
                     .focused = is_focused,
@@ -3766,6 +3789,27 @@ const EditorPropertyInputBoxSpec = struct {
     cursor: usize,
     selection_anchor: usize,
 };
+
+const EditorVec3LaneLabelSpec = struct {
+    lane: u2,
+    x: f32,
+    color: [3]f32,
+};
+
+fn extractEditorVec3LaneLabel(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    row: EditorPropertyRowSpec,
+    label: EditorVec3LaneLabelSpec,
+) RenderError!void {
+    const label_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.lane_label.{d}", .{ row.component_index, row.field_index, label.lane }) catch return RenderError.OutOfMemory;
+    defer allocator.free(label_id);
+    _ = try extractEditorChildText(world, label_id, "Editor Property Vec3 Lane Label", row.parent_id, .{
+        label.x,
+        row.field_y,
+        0.0,
+    }, editorVec3LaneLabel(label.lane), editor_inspector_text_size, label.color);
+}
 
 const EditorBooleanToggleSpec = struct {
     x: f32,
@@ -7269,7 +7313,7 @@ fn pickEditorInspectorProperty(world: *const runtime.World, input: FrameInput) E
             };
             if (row_rect.contains(input.pointer.position)) {
                 const value = world.getComponentFieldValue(selected, component_id, field_name) catch return null;
-                return try makeEditorFieldSelection(selected, component_id, field_name, pickEditorPropertyVec3Lane(value, input.pointer.position[0], clip.position[0] + value_x, card_width));
+                return try makeEditorFieldSelection(selected, component_id, field_name, pickEditorPropertyVec3Lane(value, field_name, input.pointer.position[0], clip.position[0] + value_x, card_width));
             }
         }
         content_y += editorInspectorComponentCardHeight(world, component_id);
@@ -7279,13 +7323,15 @@ fn pickEditorInspectorProperty(world: *const runtime.World, input: FrameInput) E
     return null;
 }
 
-fn pickEditorPropertyVec3Lane(value: runtime.ComponentValue, pointer_x: f32, value_screen_x: f32, card_width: f32) u2 {
+fn pickEditorPropertyVec3Lane(value: runtime.ComponentValue, field_name: []const u8, pointer_x: f32, value_screen_x: f32, card_width: f32) u2 {
     return switch (value) {
         .vec3 => blk: {
-            const value_width = @max(card_width - editorInspectorFieldValueX(card_width) - editor_inspector_card_padding_x, 1.0);
-            const lane_width = @max(value_width / 3.0, 1.0);
-            const local_x = std.math.clamp(pointer_x - value_screen_x, 0.0, value_width - 0.001);
-            break :blk @intCast(@min(@as(i32, @intFromFloat(@floor(local_x / lane_width))), 2));
+            const swatch_total_width = if (editorFieldLooksLikeColor(field_name)) editor_inspector_swatch_size + editor_inspector_input_gap else 0.0;
+            const total_width = @max(card_width - editorInspectorFieldValueX(card_width) - editor_inspector_card_padding_x, 1.0);
+            const lane_total_width = @max(total_width - swatch_total_width, 1.0);
+            const lane_slot_width = @max((lane_total_width - editor_inspector_input_gap * 2.0) / 3.0, 1.0);
+            const local_x = std.math.clamp(pointer_x - value_screen_x - swatch_total_width, 0.0, lane_total_width - 0.001);
+            break :blk @intCast(@min(@as(i32, @intFromFloat(@floor(local_x / lane_slot_width))), 2));
         },
         else => 0,
     };
@@ -7375,7 +7421,7 @@ fn editorDefaultSideWidths(window_width: f32) EditorSideWidths {
         return .{ .left = editor_left_sidebar_target_width, .right = editor_right_sidebar_target_width };
     }
     var left = std.math.clamp(window_width * 0.24, editor_left_sidebar_min_width, editor_left_sidebar_target_width);
-    var right = std.math.clamp(window_width * 0.26, editor_right_sidebar_min_width, editor_right_sidebar_target_width);
+    var right = std.math.clamp(window_width * 0.32, editor_right_sidebar_min_width, editor_right_sidebar_target_width);
     const max_side_total = @max(window_width - editor_min_game_viewport_width, 1.0);
     if (left + right > max_side_total) {
         const scale = max_side_total / (left + right);
@@ -9690,12 +9736,16 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     const geometry_card = state.world.findEntityById("machina.editor.inspector.component.1") orelse return error.TestExpectedEqual;
     const geometry_title = state.world.findEntityById("machina.editor.inspector.component.1.title") orelse return error.TestExpectedEqual;
     const transform_position_label = state.world.findEntityById("machina.editor.inspector.component.0.field.0.label") orelse return error.TestExpectedEqual;
+    const transform_x_label = state.world.findEntityById("machina.editor.inspector.component.0.field.0.lane_label.0") orelse return error.TestExpectedEqual;
     const transform_position_input_0 = state.world.findEntityById("machina.editor.inspector.component.0.field.0.input.0") orelse return error.TestExpectedEqual;
     const transform_position_value_0 = state.world.findEntityById("machina.editor.inspector.component.0.field.0.value.0") orelse return error.TestExpectedEqual;
     const geometry_field_label = state.world.findEntityById("machina.editor.inspector.component.1.field.0.label") orelse return error.TestExpectedEqual;
     const geometry_field_input = state.world.findEntityById("machina.editor.inspector.component.1.field.0.select") orelse return error.TestExpectedEqual;
     const geometry_field_value = state.world.findEntityById("machina.editor.inspector.component.1.field.0.select.value") orelse return error.TestExpectedEqual;
     const material_swatch = state.world.findEntityById("machina.editor.inspector.component.2.field.0.swatch") orelse return error.TestExpectedEqual;
+    const material_red = state.world.findEntityById("machina.editor.inspector.component.2.field.0.lane_label.0") orelse return error.TestExpectedEqual;
+    const material_green = state.world.findEntityById("machina.editor.inspector.component.2.field.0.lane_label.1") orelse return error.TestExpectedEqual;
+    const material_blue = state.world.findEntityById("machina.editor.inspector.component.2.field.0.lane_label.2") orelse return error.TestExpectedEqual;
     const toggle_input = state.world.findEntityById("machina.editor.inspector.component.3.field.0.toggle") orelse return error.TestExpectedEqual;
     const toggle_value = state.world.findEntityById("machina.editor.inspector.component.3.field.0.toggle.label") orelse return error.TestExpectedEqual;
     const separator = state.world.findEntityById("machina.editor.inspector.component.separator.1") orelse return error.TestExpectedEqual;
@@ -9710,9 +9760,16 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     const label_value = try state.world.getString(geometry_field_label, runtime.ui_text_component_id, "value");
     const field_value = try state.world.getString(geometry_field_value, runtime.ui_text_component_id, "value");
     try std.testing.expectEqualStrings("position", try state.world.getString(transform_position_label, runtime.ui_text_component_id, "value"));
+    try std.testing.expectEqualStrings("X", try state.world.getString(transform_x_label, runtime.ui_text_component_id, "value"));
     try std.testing.expect(try state.world.hasComponent(transform_position_input_0, runtime.ui_rect_component_id));
     try std.testing.expectEqualStrings("0.25", try state.world.getString(transform_position_value_0, runtime.ui_text_component_id, "value"));
     try std.testing.expect(try state.world.hasComponent(material_swatch, runtime.ui_rect_component_id));
+    const red_color = try state.world.getVec3(material_red, runtime.ui_text_component_id, "color");
+    const green_color = try state.world.getVec3(material_green, runtime.ui_text_component_id, "color");
+    const blue_color = try state.world.getVec3(material_blue, runtime.ui_text_component_id, "color");
+    try std.testing.expect(red_color[0] > red_color[1]);
+    try std.testing.expect(green_color[1] > green_color[0]);
+    try std.testing.expect(blue_color[2] > blue_color[0]);
     try std.testing.expect(try state.world.hasComponent(toggle_input, runtime.ui_rect_component_id));
     try std.testing.expectEqualStrings("ON", try state.world.getString(toggle_value, runtime.ui_text_component_id, "value"));
     const separator_size = try state.world.getVec3(separator, runtime.ui_separator_component_id, "size");

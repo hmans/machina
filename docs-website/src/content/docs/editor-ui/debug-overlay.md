@@ -52,8 +52,8 @@ Numeric inputs select their full value on focus, so typing immediately replaces 
 
 Typed inspector controls build on the same base row:
 
-- `vec3` values render one input box per lane.
-- Color-like `vec3` values add a live color swatch next to the numeric lanes.
+- `vec3` values render one input box per lane, each preceded by a colored lane label: red `X`, green `Y`, and blue `Z`.
+- Color-like `vec3` values also add a live color swatch.
 - Boolean values render as click-to-toggle controls.
 - Known enum-like strings can render as selectors. `machina.geometry.primitive.primitive` currently cycles through built-in primitive names.
 

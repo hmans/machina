@@ -26,7 +26,8 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 - Component fields render as table-like rows with property labels on the left and values on the right.
 - Component field rows are reusable inspector editing controls: the base row handles label layout, value input placement, focus state, and clipping, while type-specific behavior decides how a selected value is parsed and committed.
 - Each editable value renders as a darker rounded text input box. `vec3` fields render one input box per lane.
-- Color-like `vec3` fields render a color swatch next to the lane input boxes.
+- `vec3` fields render one input box per lane, each preceded by a colored lane label: red `X`, green `Y`, and blue `Z`.
+- Color-like `vec3` fields additionally render a color swatch next to the lane input boxes.
 - Boolean fields render as click-to-toggle controls.
 - Known enum-like string fields render as selectors. The first selector is `machina.geometry.primitive.primitive`, which cycles through built-in primitive names.
 - Clicking a value input focuses it for editing and gives it a focus-ring border plus a visible caret.
@@ -95,7 +96,7 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 
 ### 5d. Build typed controls as variations on a reusable row
 
-**Decision:** The inspector has one reusable field-row layout and adds typed control variants for value kinds. Numeric and general string values use text inputs, `vec3` values use lane inputs, color-like `vec3` values add a swatch, booleans use toggles, and known enum-like strings can use selectors.
+**Decision:** The inspector has one reusable field-row layout and adds typed control variants for value kinds. Numeric and general string values use text inputs, `vec3` values use lane inputs preceded by colored `X`/`Y`/`Z` labels, color-like `vec3` values add a swatch, booleans use toggles, and known enum-like strings can use selectors.
 **Why:** This follows the editor-library direction: one base editing component shape with type-specific gadgets, instead of one-off layout code per component field. It also keeps live ECS mutation and undo/redo on the same field-command path.
 **Tradeoff:** The first selector is hard-coded to built-in primitive geometry values. Rich enum metadata, dropdowns, sliders, drag editing, validation messages, and persisted scene edits still need later design.
 
