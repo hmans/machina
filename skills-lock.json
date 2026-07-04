@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "adr": {
+      "source": "hmans/skills",
+      "sourceType": "github",
+      "skillPath": "skills/adr/SKILL.md",
+      "computedHash": "de67327f82ef4536a700ecc0086c63ac9c63c7574d68030e2096415b077ed49c"
+    },
+    "bazinga": {
+      "source": "hmans/skills",
+      "sourceType": "github",
+      "skillPath": "skills/bazinga/SKILL.md",
+      "computedHash": "1ce6308fc5324cec34f9e98b7b545acf69094d1750e12d831ccdd51ce7522894"
+    },
+    "code-review": {
+      "source": "hmans/skills",
+      "sourceType": "github",
+      "skillPath": "skills/code-review/SKILL.md",
+      "computedHash": "12d8b6336fdd512e4f3acc9441b59e4e483d04c5ba066ea736dc2f1db3ec6b7e"
+    },
+    "fdr": {
+      "source": "hmans/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fdr/SKILL.md",
+      "computedHash": "e8c9786e1982ea40e0d43e22dcd6e5197a8be7e48526227690ed78201a568c6f"
+    },
+    "fix-branch-name": {
+      "source": "hmans/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fix-branch-name/SKILL.md",
+      "computedHash": "bbae48e70c430847c93794af61f23c7112ddeddabc08760c75733137c0a352a5"
+    },
+    "technical-writing": {
+      "source": "hmans/skills",
+      "sourceType": "github",
+      "skillPath": "skills/technical-writing/SKILL.md",
+      "computedHash": "3b57771744b92c0135a20ad5fe628bd483b8fb7bc11dbead7f83c4578ab044af"
+    },
+    "todo-list": {
+      "source": "hmans/skills",
+      "sourceType": "github",
+      "skillPath": "skills/todo-list/SKILL.md",
+      "computedHash": "e7a01e2d88d44ec0467ebd602e9a4d62814209d41114a4066e4da2fb0487869d"
+    }
+  }
+}
