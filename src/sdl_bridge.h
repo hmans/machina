@@ -26,6 +26,10 @@ typedef enum MachinaSdlKey {
     MACHINA_SDL_KEY_LCTRL = 7,
     MACHINA_SDL_KEY_RCTRL = 8,
     MACHINA_SDL_KEY_F1 = 9,
+    MACHINA_SDL_KEY_Z = 10,
+    MACHINA_SDL_KEY_Y = 11,
+    MACHINA_SDL_KEY_EQUALS = 12,
+    MACHINA_SDL_KEY_MINUS = 13,
 } MachinaSdlKey;
 
 typedef struct MachinaSdlEvent {
