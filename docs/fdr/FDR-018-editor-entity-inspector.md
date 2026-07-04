@@ -1,7 +1,7 @@
 # FDR-018: Editor Entity Inspector
 
 **Status:** Active
-**Last reviewed:** 2026-07-04
+**Last reviewed:** 2026-07-05
 
 ## Overview
 
@@ -23,6 +23,9 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 - Component fields render as table-like rows with property labels on the left and values on the right.
 - Component field rows are reusable inspector editing controls: the base row handles label layout, value input placement, focus state, and clipping, while type-specific behavior decides how a selected value is parsed and committed.
 - Each editable value renders as a darker rounded text input box. `vec3` fields render one input box per lane.
+- Color-like `vec3` fields render a color swatch next to the lane input boxes.
+- Boolean fields render as click-to-toggle controls.
+- Known enum-like string fields render as selectors. The first selector is `machina.geometry.primitive.primitive`, which cycles through built-in primitive names.
 - Clicking a value input focuses it for editing and gives it a focus-ring border plus a visible caret.
 - Numeric value inputs select their full value when focused so typing can immediately replace the existing number. Select-all-on-focus is treated as an input-control option rather than a global editor rule.
 - Focused inputs accept typed text through the platform text-input path.
@@ -87,6 +90,12 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 **Decision:** Inspector field edits are stored as bounded in-memory commands containing the selected entity handle, component id, field name, old value, and new value.
 **Why:** This gives the editor immediate undo/redo behavior without inventing scene-file persistence or a global editor transaction model too early.
 **Tradeoff:** The history is runtime-only, per editor session, and field-granular. It does not yet group drags, survive reload, serialize to project files, or coordinate with future multi-entity edits.
+
+### 5d. Build typed controls as variations on a reusable row
+
+**Decision:** The inspector has one reusable field-row layout and adds typed control variants for value kinds. Numeric and general string values use text inputs, `vec3` values use lane inputs, color-like `vec3` values add a swatch, booleans use toggles, and known enum-like strings can use selectors.
+**Why:** This follows the editor-library direction: one base editing component shape with type-specific gadgets, instead of one-off layout code per component field. It also keeps live ECS mutation and undo/redo on the same field-command path.
+**Tradeoff:** The first selector is hard-coded to built-in primitive geometry values. Rich enum metadata, dropdowns, sliders, drag editing, validation messages, and persisted scene edits still need later design.
 
 ### 6. Route editor controls through retained UI commands
 

@@ -95,10 +95,13 @@ const editor_inspector_input_corner_radius: f32 = 5.0;
 const editor_inspector_input_border_thickness: f32 = 1.0;
 const editor_inspector_caret_width: f32 = 2.0;
 const editor_inspector_selection_padding_y: f32 = 4.0;
+const editor_inspector_toggle_width: f32 = 60.0;
+const editor_inspector_swatch_size: f32 = 28.0;
 const editor_component_id_buffer_len = 128;
 const editor_field_name_buffer_len = 64;
 const editor_input_text_buffer_len = 128;
 const editor_undo_capacity = 64;
+const editor_geometry_primitives = [_][]const u8{ "box", "plane", "uv_sphere", "ico_sphere" };
 const editor_gizmo_axis_length: f32 = 1.25;
 const editor_gizmo_axis_thickness: f32 = 0.035;
 const editor_gizmo_pick_radius_px: f32 = 18.0;
@@ -109,6 +112,7 @@ const editor_palette = struct {
     const panel_muted = [3]f32{ 0.094, 0.116, 0.151 };
     const input = [3]f32{ 0.016, 0.023, 0.039 };
     const input_selection = [3]f32{ 0.063, 0.255, 0.337 };
+    const input_active = [3]f32{ 0.047, 0.349, 0.263 };
     const accent = [3]f32{ 0.031, 0.431, 0.533 };
     const accent_soft = [3]f32{ 0.22, 0.714, 0.82 };
     const text = [3]f32{ 0.886, 0.91, 0.941 };
@@ -417,7 +421,7 @@ const EditorStoredValue = union(runtime.FieldType) {
             .int => |payload| .{ .int = payload },
             .float => |payload| .{ .float = payload },
             .vec3 => |payload| .{ .vec3 = payload },
-            .string => |payload| .{ .string = payload.buffer[0..payload.len] },
+            .string => .{ .string = self.string.buffer[0..self.string.len] },
         };
     }
 };
@@ -924,6 +928,48 @@ fn editorComponentValueSelectsAllOnFocus(value: runtime.ComponentValue) bool {
     };
 }
 
+fn applyEditorTypedControlClick(world: *runtime.World, state: *EditorState, selection: EditorFieldSelection) EditorError!bool {
+    const old_value = world.getComponentFieldValue(selection.entity, selection.componentId(), selection.fieldName()) catch return false;
+    const new_value = nextEditorTypedControlValue(selection, old_value) orelse return false;
+    state.text_input = .{};
+    try applyEditorFieldValue(world, state, selection, old_value, new_value);
+    state.selected_property = selection;
+    return true;
+}
+
+fn nextEditorTypedControlValue(selection: EditorFieldSelection, value: runtime.ComponentValue) ?runtime.ComponentValue {
+    return switch (value) {
+        .boolean => |payload| .{ .boolean = !payload },
+        .string => |payload| if (editorPrimitiveSelectorNextValue(selection, payload)) |next|
+            .{ .string = next }
+        else
+            null,
+        else => null,
+    };
+}
+
+fn editorPrimitiveSelectorNextValue(selection: EditorFieldSelection, value: []const u8) ?[]const u8 {
+    if (!editorFieldIsPrimitiveSelector(selection.componentId(), selection.fieldName())) {
+        return null;
+    }
+    for (editor_geometry_primitives, 0..) |primitive, index| {
+        if (std.mem.eql(u8, primitive, value)) {
+            return editor_geometry_primitives[(index + 1) % editor_geometry_primitives.len];
+        }
+    }
+    return null;
+}
+
+fn editorFieldIsPrimitiveSelector(component_id: []const u8, field_name: []const u8) bool {
+    return std.mem.eql(u8, component_id, runtime.geometry_primitive_component_id) and
+        std.mem.eql(u8, field_name, "primitive");
+}
+
+fn editorFieldLooksLikeColor(field_name: []const u8) bool {
+    return std.mem.indexOf(u8, field_name, "color") != null or
+        std.mem.indexOf(u8, field_name, "colour") != null;
+}
+
 fn commitEditorTextInput(world: *runtime.World, state: *EditorState) EditorError!void {
     state.text_input = validatedEditorTextInput(world, state.selected_entity, state.text_input);
     if (!state.text_input.active) {
@@ -1336,6 +1382,10 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
             }
         }
         if (picked_property) |property| {
+            if (try applyEditorTypedControlClick(world, state, property)) {
+                state.captured_pointer = true;
+                return .{ .consumed_pointer = true };
+            }
             try focusEditorTextInput(world, state, property, editorTextInputFocusOptionsForProperty(world, property));
             state.captured_pointer = true;
             return .{ .consumed_pointer = true };
@@ -3454,8 +3504,18 @@ fn extractEditorPropertyRow(
 
     switch (spec.value) {
         .vec3 => |payload| {
+            const is_color = editorFieldLooksLikeColor(spec.field_name);
+            const swatch_total_width = if (is_color) editor_inspector_swatch_size + editor_inspector_input_gap else 0.0;
             const total_width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0);
-            const lane_width = @max((total_width - editor_inspector_input_gap * 2.0) / 3.0, 1.0);
+            if (is_color) {
+                try extractEditorColorSwatch(allocator, world, spec, .{
+                    .x = value_x,
+                    .color = payload,
+                });
+            }
+            const lane_start_x = value_x + swatch_total_width;
+            const lane_total_width = @max(total_width - swatch_total_width, 1.0);
+            const lane_width = @max((lane_total_width - editor_inspector_input_gap * 2.0) / 3.0, 1.0);
             for (0..3) |lane_index| {
                 var lane_buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len;
                 const lane: u2 = @intCast(lane_index);
@@ -3466,8 +3526,40 @@ fn extractEditorPropertyRow(
                     std.fmt.bufPrint(&lane_buffer, "{d:.2}", .{payload[lane]}) catch "";
                 try extractEditorPropertyInputBox(allocator, world, spec, .{
                     .lane = lane,
-                    .x = value_x + @as(f32, @floatFromInt(lane_index)) * (lane_width + editor_inspector_input_gap),
+                    .x = lane_start_x + @as(f32, @floatFromInt(lane_index)) * (lane_width + editor_inspector_input_gap),
                     .width = lane_width,
+                    .text = value_text,
+                    .focused = is_focused,
+                    .cursor = if (is_focused) spec.text_input.cursor else value_text.len,
+                    .selection_anchor = if (is_focused) spec.text_input.selection_anchor else value_text.len,
+                });
+            }
+        },
+        .boolean => |payload| {
+            try extractEditorBooleanToggle(allocator, world, spec, .{
+                .x = value_x,
+                .width = @min(editor_inspector_toggle_width, @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0)),
+                .value = payload,
+            });
+        },
+        .string => |payload| {
+            if (editorFieldIsPrimitiveSelector(spec.component_id, spec.field_name)) {
+                try extractEditorPrimitiveSelector(allocator, world, spec, .{
+                    .x = value_x,
+                    .width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0),
+                    .value = payload,
+                });
+            } else {
+                var value_buffer: [editor_input_text_buffer_len]u8 = [_]u8{0} ** editor_input_text_buffer_len;
+                const is_focused = editorTextInputFocuses(spec.text_input, spec.component_id, spec.field_name, 0);
+                const value_text = if (is_focused)
+                    spec.text_input.text()
+                else
+                    formatEditorInputValue(&value_buffer, spec.value, 0) orelse "";
+                try extractEditorPropertyInputBox(allocator, world, spec, .{
+                    .lane = null,
+                    .x = value_x,
+                    .width = @max(spec.card_width - value_x - editor_inspector_card_padding_x, 1.0),
                     .text = value_text,
                     .focused = is_focused,
                     .cursor = if (is_focused) spec.text_input.cursor else value_text.len,
@@ -3504,6 +3596,134 @@ const EditorPropertyInputBoxSpec = struct {
     cursor: usize,
     selection_anchor: usize,
 };
+
+const EditorBooleanToggleSpec = struct {
+    x: f32,
+    width: f32,
+    value: bool,
+};
+
+fn extractEditorBooleanToggle(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    row: EditorPropertyRowSpec,
+    toggle: EditorBooleanToggleSpec,
+) RenderError!void {
+    const toggle_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.toggle", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(toggle_id);
+    const label_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.toggle.label", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(label_id);
+
+    const color = if (toggle.value) editor_palette.input_active else editor_palette.input;
+    const toggle_entity = try extractEditorPanel(world, toggle_id, "Editor Property Boolean Toggle", .{
+        .x = toggle.x,
+        .y = row.field_y - 4.0,
+        .width = toggle.width,
+        .height = editor_inspector_input_height,
+    }, color, editor_inspector_input_corner_radius);
+    world.setUiLayoutItem(toggle_entity, .{
+        .parent = row.parent_id,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+    world.setUiBorder(toggle_entity, .{
+        .color = if (toggle.value) editor_palette.accent_soft else editor_palette.text_dim,
+        .thickness = editor_inspector_input_border_thickness,
+    }) catch |err| return mapWorldError(err);
+
+    const label = if (toggle.value) "ON" else "OFF";
+    const label_width = editorTextWidth(label, editor_inspector_text_size);
+    const label_x = @max((toggle.width - label_width) * 0.5, editor_inspector_input_padding_x);
+    const text = try extractEditorChildText(world, label_id, "Editor Property Boolean Toggle Label", toggle_id, .{
+        label_x,
+        2.0,
+        0.0,
+    }, label, editor_inspector_text_size, editor_palette.text);
+    world.setUiLayoutItem(text, .{
+        .parent = toggle_id,
+        .order = 1,
+    }) catch |err| return mapWorldError(err);
+}
+
+const EditorPrimitiveSelectorSpec = struct {
+    x: f32,
+    width: f32,
+    value: []const u8,
+};
+
+fn extractEditorPrimitiveSelector(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    row: EditorPropertyRowSpec,
+    selector: EditorPrimitiveSelectorSpec,
+) RenderError!void {
+    const selector_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.select", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(selector_id);
+    const value_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.select.value", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(value_id);
+
+    const box = try extractEditorPanel(world, selector_id, "Editor Property Primitive Selector", .{
+        .x = selector.x,
+        .y = row.field_y - 4.0,
+        .width = selector.width,
+        .height = editor_inspector_input_height,
+    }, editor_palette.input, editor_inspector_input_corner_radius);
+    world.setUiLayoutItem(box, .{
+        .parent = row.parent_id,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+    world.setUiBorder(box, .{
+        .color = editor_palette.text_dim,
+        .thickness = editor_inspector_input_border_thickness,
+    }) catch |err| return mapWorldError(err);
+
+    const label = std.fmt.allocPrint(allocator, "{s} >", .{selector.value}) catch return RenderError.OutOfMemory;
+    defer allocator.free(label);
+    const fitted = fitEditorTextToWidth(allocator, label, editor_inspector_text_size, @max(selector.width - editor_inspector_input_padding_x * 2.0, 1.0)) catch return RenderError.OutOfMemory;
+    defer allocator.free(fitted);
+    const text = try extractEditorChildText(world, value_id, "Editor Property Primitive Selector Value", selector_id, .{
+        editor_inspector_input_padding_x,
+        2.0,
+        0.0,
+    }, fitted, editor_inspector_text_size, editor_palette.text);
+    world.setUiLayoutItem(text, .{
+        .parent = selector_id,
+        .order = 1,
+    }) catch |err| return mapWorldError(err);
+}
+
+const EditorColorSwatchSpec = struct {
+    x: f32,
+    color: [3]f32,
+};
+
+fn extractEditorColorSwatch(
+    allocator: std.mem.Allocator,
+    world: *runtime.World,
+    row: EditorPropertyRowSpec,
+    swatch: EditorColorSwatchSpec,
+) RenderError!void {
+    const swatch_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}.field.{d}.swatch", .{ row.component_index, row.field_index }) catch return RenderError.OutOfMemory;
+    defer allocator.free(swatch_id);
+    const safe_color = [3]f32{
+        clamp01(swatch.color[0]),
+        clamp01(swatch.color[1]),
+        clamp01(swatch.color[2]),
+    };
+    const entity = try extractEditorPanel(world, swatch_id, "Editor Property Color Swatch", .{
+        .x = swatch.x,
+        .y = row.field_y - 4.0,
+        .width = editor_inspector_swatch_size,
+        .height = editor_inspector_input_height,
+    }, safe_color, editor_inspector_input_corner_radius);
+    world.setUiLayoutItem(entity, .{
+        .parent = row.parent_id,
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+    world.setUiBorder(entity, .{
+        .color = editor_palette.text_dim,
+        .thickness = editor_inspector_input_border_thickness,
+    }) catch |err| return mapWorldError(err);
+}
 
 fn extractEditorPropertyInputBox(
     allocator: std.mem.Allocator,
@@ -8892,6 +9112,7 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
         .rings = 8,
     });
     try scene_world.setSurfaceMaterial(entity, .{ .base_color = .{ 0.8, 0.4, 0.2 } });
+    try scene_world.setUiToggle(entity, .{ .checked = true });
 
     var state = try RenderEcsState.init(std.testing.allocator);
     defer state.deinit();
@@ -8935,8 +9156,11 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     const transform_position_input_0 = state.world.findEntityById("machina.editor.inspector.component.0.field.0.input.0") orelse return error.TestExpectedEqual;
     const transform_position_value_0 = state.world.findEntityById("machina.editor.inspector.component.0.field.0.value.0") orelse return error.TestExpectedEqual;
     const geometry_field_label = state.world.findEntityById("machina.editor.inspector.component.1.field.0.label") orelse return error.TestExpectedEqual;
-    const geometry_field_input = state.world.findEntityById("machina.editor.inspector.component.1.field.0.input") orelse return error.TestExpectedEqual;
-    const geometry_field_value = state.world.findEntityById("machina.editor.inspector.component.1.field.0.value") orelse return error.TestExpectedEqual;
+    const geometry_field_input = state.world.findEntityById("machina.editor.inspector.component.1.field.0.select") orelse return error.TestExpectedEqual;
+    const geometry_field_value = state.world.findEntityById("machina.editor.inspector.component.1.field.0.select.value") orelse return error.TestExpectedEqual;
+    const material_swatch = state.world.findEntityById("machina.editor.inspector.component.2.field.0.swatch") orelse return error.TestExpectedEqual;
+    const toggle_input = state.world.findEntityById("machina.editor.inspector.component.3.field.0.toggle") orelse return error.TestExpectedEqual;
+    const toggle_value = state.world.findEntityById("machina.editor.inspector.component.3.field.0.toggle.label") orelse return error.TestExpectedEqual;
     const separator = state.world.findEntityById("machina.editor.inspector.component.separator.1") orelse return error.TestExpectedEqual;
     const card_position = try state.world.getVec3(geometry_card, runtime.ui_rect_component_id, "position");
     const card_size = try state.world.getVec3(geometry_card, runtime.ui_rect_component_id, "size");
@@ -8951,6 +9175,9 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     try std.testing.expectEqualStrings("position", try state.world.getString(transform_position_label, runtime.ui_text_component_id, "value"));
     try std.testing.expect(try state.world.hasComponent(transform_position_input_0, runtime.ui_rect_component_id));
     try std.testing.expectEqualStrings("0.25", try state.world.getString(transform_position_value_0, runtime.ui_text_component_id, "value"));
+    try std.testing.expect(try state.world.hasComponent(material_swatch, runtime.ui_rect_component_id));
+    try std.testing.expect(try state.world.hasComponent(toggle_input, runtime.ui_rect_component_id));
+    try std.testing.expectEqualStrings("ON", try state.world.getString(toggle_value, runtime.ui_text_component_id, "value"));
     const separator_size = try state.world.getVec3(separator, runtime.ui_separator_component_id, "size");
     const sidebar = editorSidebarPanelRect(editorRightSidebarRect(frame_input));
     const resolved_card_layout = try resolveUiLayout(&state.world, geometry_card, card_position);
@@ -8973,7 +9200,7 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     try std.testing.expectApproxEqAbs(editorInspectorFieldValueX(card_size[0]), input_position[0], 0.001);
     try std.testing.expectApproxEqAbs(editor_inspector_input_padding_x, value_position[0], 0.001);
     try std.testing.expectEqualStrings("primitive", label_value);
-    try std.testing.expectEqualStrings("uv_sphere", field_value);
+    try std.testing.expectEqualStrings("uv_sphere >", field_value);
 }
 
 test "editor inspector component stack resolves inside scroll view clip" {
@@ -9073,6 +9300,7 @@ test "editor inspector property inputs edit text and commit with undo" {
         .segments = 16,
         .rings = 8,
     });
+    try world.setUiToggle(entity, .{ .checked = false });
 
     var editor_state = EditorState{ .selected_entity = entity };
     const frame_input = FrameInput{
@@ -9293,6 +9521,42 @@ test "editor inspector property inputs edit text and commit with undo" {
     try std.testing.expect(blur_update.consumed_pointer);
     try std.testing.expect(!editor_state.text_input.active);
     try std.testing.expectApproxEqAbs(@as(f32, 2.5), (try world.getVec3(entity, runtime.transform_component_id, "position"))[1], 0.001);
+
+    const primitive_selection = try makeEditorFieldSelection(entity, runtime.geometry_primitive_component_id, "primitive", 0);
+    try std.testing.expect(try applyEditorTypedControlClick(&world, &editor_state, primitive_selection));
+    try std.testing.expect(!editor_state.text_input.active);
+    try std.testing.expectEqualStrings("ico_sphere", try world.getString(entity, runtime.geometry_primitive_component_id, "primitive"));
+
+    const primitive_undo_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .keyboard = .{ .editor_undo_pressed = true },
+    });
+    try std.testing.expect(primitive_undo_update.consumed_pointer);
+    try std.testing.expectEqualStrings("uv_sphere", try world.getString(entity, runtime.geometry_primitive_component_id, "primitive"));
+
+    const primitive_redo_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .keyboard = .{ .editor_redo_pressed = true },
+    });
+    try std.testing.expect(primitive_redo_update.consumed_pointer);
+    try std.testing.expectEqualStrings("ico_sphere", try world.getString(entity, runtime.geometry_primitive_component_id, "primitive"));
+
+    const toggle_selection = try makeEditorFieldSelection(entity, runtime.ui_toggle_component_id, "checked", 0);
+    try std.testing.expect(try applyEditorTypedControlClick(&world, &editor_state, toggle_selection));
+    try std.testing.expect(try world.getBoolean(entity, runtime.ui_toggle_component_id, "checked"));
+
+    const toggle_undo_update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .keyboard = .{ .editor_undo_pressed = true },
+    });
+    try std.testing.expect(toggle_undo_update.consumed_pointer);
+    try std.testing.expect(!try world.getBoolean(entity, runtime.ui_toggle_component_id, "checked"));
 
     try focusEditorTextInput(&world, &editor_state, try makeEditorFieldSelection(entity, runtime.geometry_primitive_component_id, "primitive", 0), .{ .select_all_on_focus = false });
     try std.testing.expect(editor_state.text_input.active);

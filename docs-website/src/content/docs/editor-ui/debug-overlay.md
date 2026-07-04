@@ -50,6 +50,13 @@ Click a value input to focus it for editing. Focused inputs render a focus-ring 
 
 Numeric inputs select their full value on focus, so typing immediately replaces the existing number. Other inputs can choose different focus behavior.
 
+Typed inspector controls build on the same base row:
+
+- `vec3` values render one input box per lane.
+- Color-like `vec3` values add a live color swatch next to the numeric lanes.
+- Boolean values render as click-to-toggle controls.
+- Known enum-like strings can render as selectors. `machina.geometry.primitive.primitive` currently cycles through built-in primitive names.
+
 The current editing slice supports primitive runtime text edits:
 
 - Typed text inserts into the focused input.
@@ -57,7 +64,6 @@ The current editing slice supports primitive runtime text edits:
 - Home and End jump to the start or end of the input; Shift+Home and Shift+End extend the text selection.
 - Ctrl+A selects all input text.
 - Backspace and Delete remove text around the caret or remove the selected text.
-- `vec3` values render one input box per lane.
 - Enter commits the edited text into the live ECS field.
 - Moving focus away also commits the edited text.
 - Ctrl+Z undoes inspector field edits.
