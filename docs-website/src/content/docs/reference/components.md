@@ -42,6 +42,8 @@ Machina registers these engine component types before project scripts and native
 | `machina.input.keyboard` | modifier state, `editor_toggle_pressed: bool` | Runtime-only current keyboard frame state. Do not author in scenes. |
 | `machina.input.frame` | `ui_visible: bool`, `debug_overlay_visible: bool`, `viewport: vec3` | Runtime-only frame input state. Do not author in scenes. |
 
+Retained UI layout is resolved consistently for rendering and input. Scene UI hit testing, scroll handling, clipping, and canvas fit/fill scaling use the same `scroll_view`, `vbox`, `stack`, and `layout.item` semantics that render the controls.
+
 ## Built-In But Project-Local Today
 
 | Component | Fields | Notes |

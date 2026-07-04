@@ -41,6 +41,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - `machina.ui.toggle` stores checked state and influences button/rect visuals. It does not yet toggle itself automatically; scripts or editor systems own state mutation.
 - `machina.ui.progress_bar` stores value, max, and fill color. It renders as a fill inside the entity's rect.
 - `machina.ui.separator` renders a thin semantic divider through the same UI vertex path as rectangles.
+- Retained UI layout is resolved through a shared engine module used by both rendering and scene UI input. Render positions, hit testing, scrolling, clipping, and scene canvas viewport scaling should not maintain separate layout semantics.
 - UI can be used for runtime diagnostics before a full editor exists.
 - UI definitions that are part of projects or tools follow the text-first project model.
 - The UI overlay renders after 3D scene content.
@@ -93,7 +94,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 
 **Decision:** Project UI input routing resolves `scroll_view`, `vbox`, `stack`, and `layout.item` before hit-testing command buttons or scrolling viewports.
 **Why:** Scene-authored controls can be local to layout containers, so raw component positions are not authoritative screen positions. Rendering, command events, and scroll interaction must agree on the retained layout model.
-**Tradeoff:** Layout resolution currently exists in both render and live-project input paths. A shared UI layout module should replace that duplication when the layout model grows further.
+**Tradeoff:** `src/ui_layout.zig` is now the shared resolver for rendering and scene UI input, but the retained layout model is still intentionally compact and does not yet provide full constraint solving, focus, scroll bars, or style inheritance.
 
 ### 7. Route button presses through command events
 

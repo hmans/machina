@@ -6,7 +6,7 @@ const geometry = @import("geometry.zig");
 const native = @import("native.zig");
 const runtime = @import("runtime.zig");
 const script = @import("script.zig");
-const ui_font = @import("ui_font.zig");
+const ui_layout = @import("ui_layout.zig");
 
 pub const version = "0.1.0-dev";
 pub const project_file_name = "project.machina.toml";
@@ -652,53 +652,6 @@ const UiCommandHit = struct {
     source: []const u8,
 };
 
-const UiClipRect = struct {
-    position: [3]f32,
-    size: [3]f32,
-};
-
-const UiResolvedLayout = struct {
-    position: [3]f32,
-    clip: ?UiClipRect = null,
-};
-
-const UiLayoutItem = struct {
-    parent: []const u8,
-    order: i32,
-    min_size: [3]f32,
-    grow: f32,
-    @"align": []const u8,
-    margin: [3]f32,
-};
-
-const UiCanvas = struct {
-    design_size: [3]f32,
-    scale_mode: []const u8,
-};
-
-const UiCanvasTransform = struct {
-    offset: [2]f32 = .{ 0.0, 0.0 },
-    scale: f32 = 1.0,
-};
-
-const UiScrollView = struct {
-    position: [3]f32,
-    size: [3]f32,
-    content_offset: [3]f32,
-};
-
-const UiVBox = struct {
-    position: [3]f32,
-    spacing: f32,
-};
-
-const UiStack = struct {
-    position: [3]f32,
-    spacing: f32,
-    direction: []const u8,
-    padding: [3]f32,
-};
-
 fn updateSceneUiScrollViews(world: *World) !void {
     const input_entity = world.findEntityById(runtime.input_entity_id) orelse return;
     const ui_visible = try world.getBoolean(input_entity, runtime.input_frame_component_id, "ui_visible");
@@ -716,7 +669,7 @@ fn updateSceneUiScrollViews(world: *World) !void {
     const scroll_query = [_][]const u8{runtime.ui_scroll_view_component_id};
     while (world.queryNext(&scroll_query, &cursor)) |entity| {
         const scroll_view = try uiScrollView(world, entity) orelse continue;
-        const layout = try resolveSceneUiLayout(world, entity, scroll_view.position);
+        const layout = try resolveUiLayout(world, entity, scroll_view.position);
         const clip = try combineUiClip(layout.clip, .{ .position = layout.position, .size = scroll_view.size });
         if (!runtime.pointInsideUiRect(pointer_position, layout.position, scroll_view.size) or !pointInsideUiClip(pointer_position, clip)) {
             continue;
@@ -726,7 +679,7 @@ fn updateSceneUiScrollViews(world: *World) !void {
 
     const entity = selected orelse return;
     const scroll_view = try uiScrollView(world, entity) orelse return;
-    const max_scroll_y = try sceneUiScrollMaxY(world, entity, scroll_view);
+    const max_scroll_y = try uiScrollMaxY(world, entity, scroll_view);
     const delta_pixels = -wheel_delta[1] * 24.0;
     if (delta_pixels == 0.0) {
         return;
@@ -758,7 +711,7 @@ fn updateUiCommandEvents(world: *World) !void {
     while (world.queryNext(&command_button_query, &cursor)) |entity| {
         const position = try world.getVec3(entity, runtime.ui_rect_component_id, "position");
         const size = try world.getVec3(entity, runtime.ui_rect_component_id, "size");
-        const layout = try resolveSceneUiLayout(world, entity, position);
+        const layout = try resolveUiLayout(world, entity, position);
         if (!runtime.pointInsideUiRect(pointer_position, layout.position, size) or !pointInsideUiClip(pointer_position, layout.clip)) {
             continue;
         }
@@ -775,387 +728,49 @@ fn updateUiCommandEvents(world: *World) !void {
     }
 }
 
-fn uiScrollView(world: *World, entity: runtime.EntityHandle) !?UiScrollView {
-    if (!(try world.hasComponent(entity, runtime.ui_scroll_view_component_id))) {
-        return null;
-    }
-    return .{
-        .position = try world.getVec3(entity, runtime.ui_scroll_view_component_id, "position"),
-        .size = try world.getVec3(entity, runtime.ui_scroll_view_component_id, "size"),
-        .content_offset = try world.getVec3(entity, runtime.ui_scroll_view_component_id, "content_offset"),
-    };
+fn uiScrollView(world: *World, entity: runtime.EntityHandle) !?ui_layout.ScrollView {
+    return ui_layout.scrollView(world, entity) catch |err| return mapLayoutError(err);
 }
 
-fn uiVBox(world: *World, entity: runtime.EntityHandle) !?UiVBox {
-    if (!(try world.hasComponent(entity, runtime.ui_vbox_component_id))) {
-        return null;
-    }
-    return .{
-        .position = try world.getVec3(entity, runtime.ui_vbox_component_id, "position"),
-        .spacing = try world.getFloat(entity, runtime.ui_vbox_component_id, "spacing"),
-    };
+fn resolveUiLayout(world: *World, entity: runtime.EntityHandle, local_position: [3]f32) !ui_layout.ResolvedLayout {
+    return ui_layout.resolve(world, entity, local_position) catch |err| return mapLayoutError(err);
 }
 
-fn uiStack(world: *World, entity: runtime.EntityHandle) !?UiStack {
-    if (!(try world.hasComponent(entity, runtime.ui_stack_component_id))) {
-        return null;
-    }
-    return .{
-        .position = try world.getVec3(entity, runtime.ui_stack_component_id, "position"),
-        .spacing = try world.getFloat(entity, runtime.ui_stack_component_id, "spacing"),
-        .direction = try world.getString(entity, runtime.ui_stack_component_id, "direction"),
-        .padding = try world.getVec3(entity, runtime.ui_stack_component_id, "padding"),
-    };
+fn combineUiClip(a: ?ui_layout.ClipRect, b: ?ui_layout.ClipRect) !?ui_layout.ClipRect {
+    return ui_layout.combineClip(a, b) catch |err| return mapLayoutError(err);
 }
 
-fn uiLayoutItem(world: *World, entity: runtime.EntityHandle) !?UiLayoutItem {
-    if (!(try world.hasComponent(entity, runtime.ui_layout_item_component_id))) {
-        return null;
-    }
-    return .{
-        .parent = try world.getString(entity, runtime.ui_layout_item_component_id, "parent"),
-        .order = try world.getInt(entity, runtime.ui_layout_item_component_id, "order"),
-        .min_size = try world.getVec3(entity, runtime.ui_layout_item_component_id, "min_size"),
-        .grow = try world.getFloat(entity, runtime.ui_layout_item_component_id, "grow"),
-        .@"align" = try world.getString(entity, runtime.ui_layout_item_component_id, "align"),
-        .margin = try world.getVec3(entity, runtime.ui_layout_item_component_id, "margin"),
-    };
-}
-
-fn uiCanvas(world: *World, entity: runtime.EntityHandle) !?UiCanvas {
-    if (!(try world.hasComponent(entity, runtime.ui_canvas_component_id))) {
-        return null;
-    }
-    return .{
-        .design_size = try world.getVec3(entity, runtime.ui_canvas_component_id, "design_size"),
-        .scale_mode = try world.getString(entity, runtime.ui_canvas_component_id, "scale_mode"),
-    };
-}
-
-fn resolveSceneUiLayout(world: *World, entity: runtime.EntityHandle, local_position: [3]f32) !UiResolvedLayout {
-    var resolved: UiResolvedLayout = .{ .position = local_position };
-    var child = entity;
-
-    const max_depth = 32;
-    for (0..max_depth) |_| {
-        const item = (try uiLayoutItem(world, child)) orelse return resolved;
-        const parent = world.findEntityById(item.parent) orelse return ProjectError.InvalidSceneEntity;
-
-        if (!isFiniteVec3(item.margin) or item.margin[0] < 0.0 or item.margin[1] < 0.0 or item.margin[2] < 0.0) {
-            return ProjectError.InvalidSceneEntity;
-        }
-        resolved.position[0] += item.margin[0];
-        resolved.position[1] += item.margin[1];
-        resolved.position[2] += item.margin[2];
-
-        if (try uiVBox(world, parent)) |vbox| {
-            resolved.position[0] += vbox.position[0];
-            resolved.position[1] += vbox.position[1] + try uiVBoxChildOffsetY(world, parent, child, item);
-            resolved.position[2] += vbox.position[2];
-        }
-
-        if (try uiStack(world, parent)) |stack| {
-            const stack_offset = try uiStackChildOffset(world, parent, child, item, stack);
-            resolved.position[0] += stack.position[0] + stack.padding[0] + stack_offset[0];
-            resolved.position[1] += stack.position[1] + stack.padding[1] + stack_offset[1];
-            resolved.position[2] += stack.position[2] + stack_offset[2];
-        }
-
-        if (try uiScrollView(world, parent)) |scroll_view| {
-            if (!isFiniteVec3(scroll_view.position) or !isFiniteVec3(scroll_view.size) or !isFiniteVec3(scroll_view.content_offset)) {
-                return ProjectError.InvalidSceneEntity;
-            }
-            resolved.position[0] += scroll_view.position[0] - scroll_view.content_offset[0];
-            resolved.position[1] += scroll_view.position[1] - scroll_view.content_offset[1];
-            resolved.position[2] += scroll_view.position[2] - scroll_view.content_offset[2];
-            resolved.clip = try combineUiClip(resolved.clip, .{
-                .position = scroll_view.position,
-                .size = scroll_view.size,
-            });
-        }
-
-        child = parent;
-    }
-    return ProjectError.InvalidSceneEntity;
-}
-
-fn combineUiClip(a: ?UiClipRect, b: ?UiClipRect) !?UiClipRect {
-    if (a == null) return b;
-    if (b == null) return a;
-    const left = @max(a.?.position[0], b.?.position[0]);
-    const top = @max(a.?.position[1], b.?.position[1]);
-    const right = @min(a.?.position[0] + a.?.size[0], b.?.position[0] + b.?.size[0]);
-    const bottom = @min(a.?.position[1] + a.?.size[1], b.?.position[1] + b.?.size[1]);
-    if (right <= left or bottom <= top) {
-        return .{ .position = .{ 0.0, 0.0, 0.0 }, .size = .{ 0.0, 0.0, 0.0 } };
-    }
-    return .{
-        .position = .{ left, top, 0.0 },
-        .size = .{ right - left, bottom - top, 0.0 },
-    };
-}
-
-fn pointInsideUiClip(point: [2]f32, clip: ?UiClipRect) bool {
-    if (clip) |clip_rect| {
-        return runtime.pointInsideUiRect(point, clip_rect.position, clip_rect.size);
-    }
-    return true;
+fn pointInsideUiClip(point: [2]f32, clip: ?ui_layout.ClipRect) bool {
+    return ui_layout.pointInsideClip(point, clip);
 }
 
 fn sceneUiPointerPosition(world: *World, input_entity: runtime.EntityHandle, pointer_position: [2]f32) ![2]f32 {
     const debug_overlay_visible = try world.getBoolean(input_entity, runtime.input_frame_component_id, "debug_overlay_visible");
     const viewport = try world.getVec3(input_entity, runtime.input_frame_component_id, "viewport");
-    const transform = try sceneUiCanvasTransform(world, viewport, debug_overlay_visible);
-    return .{
-        (pointer_position[0] - transform.offset[0]) / transform.scale,
-        (pointer_position[1] - transform.offset[1]) / transform.scale,
-    };
+    return ui_layout.pointerToDesign(world, sceneUiTarget(viewport, debug_overlay_visible), pointer_position) catch |err| return mapLayoutError(err);
 }
 
-fn sceneUiCanvasTransform(world: *World, viewport: [3]f32, debug_overlay_visible: bool) !UiCanvasTransform {
-    if (viewport[0] <= 0.0 or viewport[1] <= 0.0) {
-        return .{};
-    }
-
-    const target = if (debug_overlay_visible) blk: {
+fn sceneUiTarget(viewport: [3]f32, debug_overlay_visible: bool) ui_layout.Target {
+    if (debug_overlay_visible) {
         const bounds = render.editorGameViewportBounds(.{
             .debug_overlay_visible = true,
             .viewport_width = viewport[0],
             .viewport_height = viewport[1],
         });
-        break :blk bounds;
-    } else render.EditorViewportBounds{
-        .x = 0.0,
-        .y = 0.0,
-        .width = viewport[0],
-        .height = viewport[1],
+        return .{ .x = bounds.x, .y = bounds.y, .width = bounds.width, .height = bounds.height };
+    }
+    return .{ .width = viewport[0], .height = viewport[1] };
+}
+
+fn uiScrollMaxY(world: *World, scroll_entity: runtime.EntityHandle, scroll_view: ui_layout.ScrollView) anyerror!f32 {
+    return ui_layout.scrollMaxY(world, scroll_entity, scroll_view) catch |err| return mapLayoutError(err);
+}
+
+fn mapLayoutError(err: anyerror) anyerror {
+    return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => ProjectError.InvalidSceneEntity,
     };
-
-    for (0..world.entityCount()) |index| {
-        const entity = runtime.EntityHandle{ .index = @intCast(index) };
-        const canvas = (try uiCanvas(world, entity)) orelse continue;
-        var transform = try resolveUiCanvasTransform(canvas, target.width, target.height);
-        transform.offset[0] += target.x;
-        transform.offset[1] += target.y;
-        return transform;
-    }
-    return .{ .offset = .{ target.x, target.y } };
-}
-
-fn resolveUiCanvasTransform(canvas: UiCanvas, width: f32, height: f32) !UiCanvasTransform {
-    if (std.mem.eql(u8, canvas.scale_mode, "none")) {
-        return .{};
-    }
-    if (!isFiniteVec3(canvas.design_size) or canvas.design_size[0] <= 0.0 or canvas.design_size[1] <= 0.0) {
-        return ProjectError.InvalidSceneEntity;
-    }
-
-    const scale = if (std.mem.eql(u8, canvas.scale_mode, "fit"))
-        @min(width / canvas.design_size[0], height / canvas.design_size[1])
-    else if (std.mem.eql(u8, canvas.scale_mode, "fill"))
-        @max(width / canvas.design_size[0], height / canvas.design_size[1])
-    else
-        return ProjectError.InvalidSceneEntity;
-
-    return .{
-        .offset = .{
-            (width - canvas.design_size[0] * scale) * 0.5,
-            (height - canvas.design_size[1] * scale) * 0.5,
-        },
-        .scale = scale,
-    };
-}
-
-fn uiVBoxChildOffsetY(world: *World, parent: runtime.EntityHandle, child: runtime.EntityHandle, child_item: UiLayoutItem) !f32 {
-    const parent_entity = try world.entity(parent);
-    const vbox = (try uiVBox(world, parent)) orelse return 0.0;
-    if (!std.math.isFinite(vbox.spacing)) {
-        return ProjectError.InvalidSceneEntity;
-    }
-
-    var offset: f32 = 0.0;
-    for (0..world.entityCount()) |index| {
-        const sibling = runtime.EntityHandle{ .index = @intCast(index) };
-        const sibling_item = (try uiLayoutItem(world, sibling)) orelse continue;
-        if (!std.mem.eql(u8, sibling_item.parent, parent_entity.id)) {
-            continue;
-        }
-        const before_child = sibling_item.order < child_item.order or
-            (sibling_item.order == child_item.order and sibling.index < child.index);
-        if (!before_child) {
-            continue;
-        }
-        offset += (try uiLayoutItemSize(world, sibling))[1];
-        offset += vbox.spacing;
-    }
-    return offset;
-}
-
-fn uiStackChildOffset(world: *World, parent: runtime.EntityHandle, child: runtime.EntityHandle, child_item: UiLayoutItem, stack: UiStack) ![3]f32 {
-    const parent_entity = try world.entity(parent);
-    if (!isFiniteVec3(stack.position) or !isFiniteVec3(stack.padding) or !std.math.isFinite(stack.spacing)) {
-        return ProjectError.InvalidSceneEntity;
-    }
-    const horizontal = try stackDirectionIsHorizontal(stack.direction);
-    const main_axis: usize = if (horizontal) 0 else 1;
-    const cross_axis: usize = if (horizontal) 1 else 0;
-    var offset = [3]f32{ 0.0, 0.0, 0.0 };
-
-    for (0..world.entityCount()) |index| {
-        const sibling = runtime.EntityHandle{ .index = @intCast(index) };
-        const sibling_item = (try uiLayoutItem(world, sibling)) orelse continue;
-        if (!std.mem.eql(u8, sibling_item.parent, parent_entity.id)) {
-            continue;
-        }
-        const before_child = sibling_item.order < child_item.order or
-            (sibling_item.order == child_item.order and sibling.index < child.index);
-        if (!before_child) {
-            continue;
-        }
-        offset[main_axis] += (try uiLayoutItemSize(world, sibling))[main_axis];
-        offset[main_axis] += stack.spacing;
-    }
-
-    const parent_size = try uiLayoutItemSize(world, parent);
-    const child_size = try uiLayoutItemSize(world, child);
-    const inner_cross_size = @max(parent_size[cross_axis] - stack.padding[cross_axis] * 2.0, 0.0);
-    if (std.mem.eql(u8, child_item.@"align", "center")) {
-        offset[cross_axis] += @max((inner_cross_size - child_size[cross_axis]) * 0.5, 0.0);
-    } else if (std.mem.eql(u8, child_item.@"align", "end")) {
-        offset[cross_axis] += @max(inner_cross_size - child_size[cross_axis], 0.0);
-    } else if (!std.mem.eql(u8, child_item.@"align", "start") and !std.mem.eql(u8, child_item.@"align", "fill")) {
-        return ProjectError.InvalidSceneEntity;
-    }
-    return offset;
-}
-
-fn stackDirectionIsHorizontal(direction: []const u8) !bool {
-    if (std.mem.eql(u8, direction, "horizontal") or std.mem.eql(u8, direction, "row")) {
-        return true;
-    }
-    if (std.mem.eql(u8, direction, "vertical") or std.mem.eql(u8, direction, "column")) {
-        return false;
-    }
-    return ProjectError.InvalidSceneEntity;
-}
-
-fn sceneUiScrollMaxY(world: *World, scroll_entity: runtime.EntityHandle, scroll_view: UiScrollView) anyerror!f32 {
-    const content_size = try uiContainerContentSize(world, scroll_entity, false);
-    return @max(content_size[1] - scroll_view.size[1], 0.0);
-}
-
-fn uiLayoutItemSize(world: *World, entity: runtime.EntityHandle) anyerror![3]f32 {
-    var size = try uiLayoutItemNaturalSize(world, entity);
-    if (try uiLayoutItem(world, entity)) |item| {
-        if (!isFiniteVec3(item.min_size) or !isFiniteVec3(item.margin) or
-            !std.math.isFinite(item.grow) or item.grow < 0.0 or
-            item.margin[0] < 0.0 or item.margin[1] < 0.0 or item.margin[2] < 0.0)
-        {
-            return ProjectError.InvalidSceneEntity;
-        }
-        size[0] = @max(size[0], item.min_size[0]);
-        size[1] = @max(size[1], item.min_size[1]);
-        size[2] = @max(size[2], item.min_size[2]);
-        size[0] += item.margin[0] * 2.0;
-        size[1] += item.margin[1] * 2.0;
-        size[2] += item.margin[2] * 2.0;
-    }
-    return size;
-}
-
-fn uiLayoutItemNaturalSize(world: *World, entity: runtime.EntityHandle) anyerror![3]f32 {
-    if (try world.hasComponent(entity, runtime.ui_rect_component_id)) {
-        return try world.getVec3(entity, runtime.ui_rect_component_id, "size");
-    }
-    if (try world.hasComponent(entity, runtime.ui_separator_component_id)) {
-        return try world.getVec3(entity, runtime.ui_separator_component_id, "size");
-    }
-    if (try world.hasComponent(entity, runtime.ui_spacer_component_id)) {
-        return try world.getVec3(entity, runtime.ui_spacer_component_id, "size");
-    }
-    if (try world.hasComponent(entity, runtime.ui_scroll_view_component_id)) {
-        return try world.getVec3(entity, runtime.ui_scroll_view_component_id, "size");
-    }
-    if (try world.hasComponent(entity, runtime.ui_vbox_component_id)) {
-        return try uiContainerContentSize(world, entity, false);
-    }
-    if (try world.hasComponent(entity, runtime.ui_stack_component_id)) {
-        const stack = (try uiStack(world, entity)) orelse return .{ 0.0, 0.0, 0.0 };
-        return try uiContainerContentSize(world, entity, try stackDirectionIsHorizontal(stack.direction));
-    }
-    if (try world.hasComponent(entity, runtime.ui_text_block_component_id)) {
-        return try world.getVec3(entity, runtime.ui_text_block_component_id, "size");
-    }
-    if (try world.hasComponent(entity, runtime.ui_text_component_id)) {
-        const size = try world.getFloat(entity, runtime.ui_text_component_id, "size");
-        const value = try world.getString(entity, runtime.ui_text_component_id, "value");
-        return textPixelSize(value, size);
-    }
-    return .{ 0.0, 0.0, 0.0 };
-}
-
-fn uiContainerContentSize(world: *World, parent: runtime.EntityHandle, horizontal: bool) anyerror![3]f32 {
-    const parent_entity = try world.entity(parent);
-    var main_size: f32 = 0.0;
-    var cross_size: f32 = 0.0;
-    var child_count: usize = 0;
-    var spacing: f32 = 0.0;
-    var padding = [3]f32{ 0.0, 0.0, 0.0 };
-
-    if (try uiVBox(world, parent)) |vbox| {
-        spacing = vbox.spacing;
-    }
-    if (try uiStack(world, parent)) |stack| {
-        spacing = stack.spacing;
-        padding = stack.padding;
-    }
-
-    const main_axis: usize = if (horizontal) 0 else 1;
-    const cross_axis: usize = if (horizontal) 1 else 0;
-    for (0..world.entityCount()) |index| {
-        const child = runtime.EntityHandle{ .index = @intCast(index) };
-        const item = (try uiLayoutItem(world, child)) orelse continue;
-        if (!std.mem.eql(u8, item.parent, parent_entity.id)) {
-            continue;
-        }
-        const child_size = try uiLayoutItemSize(world, child);
-        main_size += child_size[main_axis];
-        cross_size = @max(cross_size, child_size[cross_axis]);
-        child_count += 1;
-    }
-    if (child_count > 1) {
-        main_size += spacing * @as(f32, @floatFromInt(child_count - 1));
-    }
-
-    var out = [3]f32{ 0.0, 0.0, 0.0 };
-    out[main_axis] = main_size + padding[main_axis] * 2.0;
-    out[cross_axis] = cross_size + padding[cross_axis] * 2.0;
-    return out;
-}
-
-fn textPixelSize(value: []const u8, size: f32) [3]f32 {
-    var line_width: usize = 0;
-    var max_width: usize = 0;
-    var line_count: usize = 1;
-    for (value) |byte| {
-        if (byte == '\n') {
-            max_width = @max(max_width, line_width);
-            line_width = 0;
-            line_count += 1;
-        } else {
-            line_width += 1;
-        }
-    }
-    max_width = @max(max_width, line_width);
-    return .{
-        @as(f32, @floatFromInt(max_width * ui_font.advance)) * size,
-        @as(f32, @floatFromInt(line_count * ui_font.height)) * size,
-        0.0,
-    };
-}
-
-fn isFiniteVec3(value: [3]f32) bool {
-    return std.math.isFinite(value[0]) and std.math.isFinite(value[1]) and std.math.isFinite(value[2]);
 }
 
 fn clearUiCommandEvent(world: *World) !void {
