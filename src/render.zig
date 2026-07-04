@@ -208,6 +208,9 @@ pub const EditorState = struct {
     system_scroll_y: f32 = 0.0,
     system_scroll_target_y: f32 = 0.0,
     system_scroll_boundary: EditorScrollBoundary = .none,
+    inspector_scroll_y: f32 = 0.0,
+    inspector_scroll_target_y: f32 = 0.0,
+    inspector_scroll_boundary: EditorScrollBoundary = .none,
     left_sidebar_width: f32 = 0.0,
     right_sidebar_width: f32 = 0.0,
     last_pointer: [2]f32 = .{ 0.0, 0.0 },
@@ -237,6 +240,7 @@ pub const EditorFrameState = struct {
     dragging_axis: EditorAxis = .none,
     dragging_splitter: EditorSplitter = .none,
     system_scroll_y: f32 = 0.0,
+    inspector_scroll_y: f32 = 0.0,
     left_sidebar_width: f32 = 0.0,
     right_sidebar_width: f32 = 0.0,
     entity_count: usize = 0,
@@ -319,6 +323,7 @@ pub fn editorFrameState(world: *const runtime.World, state: EditorState) EditorF
         .dragging_axis = state.dragging_axis,
         .dragging_splitter = state.dragging_splitter,
         .system_scroll_y = state.system_scroll_y,
+        .inspector_scroll_y = state.inspector_scroll_y,
         .left_sidebar_width = state.left_sidebar_width,
         .right_sidebar_width = state.right_sidebar_width,
         .entity_count = world.entityCount(),
@@ -333,42 +338,54 @@ fn clampEditorSystemScroll(state: *EditorState, input: FrameInput, profile_count
     state.system_scroll_y = std.math.clamp(state.system_scroll_y, 0.0, max_scroll_y);
 }
 
-fn applyEditorSystemScrollRoute(state: *EditorState, route: ui_layout.ScrollWheelRoute, wheel_delta_y: f32) void {
+fn clampEditorInspectorScroll(state: *EditorState, world: *const runtime.World, input: FrameInput) void {
+    const max_scroll_y = editorInspectorMaxScrollY(world, input);
+    state.inspector_scroll_target_y = std.math.clamp(state.inspector_scroll_target_y, 0.0, max_scroll_y);
+    state.inspector_scroll_y = std.math.clamp(state.inspector_scroll_y, 0.0, max_scroll_y);
+}
+
+fn applyEditorScrollRoute(
+    scroll_y: *f32,
+    scroll_target_y: *f32,
+    scroll_boundary: *EditorScrollBoundary,
+    route: ui_layout.ScrollWheelRoute,
+    wheel_delta_y: f32,
+) void {
     if (route.max_offset_y == 0.0) {
-        state.system_scroll_y = 0.0;
-        state.system_scroll_target_y = 0.0;
+        scroll_y.* = 0.0;
+        scroll_target_y.* = 0.0;
         return;
     }
 
-    if (state.system_scroll_boundary == .top and wheel_delta_y > 0.0) {
+    if (scroll_boundary.* == .top and wheel_delta_y > 0.0) {
         return;
     }
-    if (state.system_scroll_boundary == .bottom and wheel_delta_y < 0.0) {
+    if (scroll_boundary.* == .bottom and wheel_delta_y < 0.0) {
         return;
     }
-    state.system_scroll_boundary = .none;
+    scroll_boundary.* = .none;
 
-    state.system_scroll_target_y = route.next_offset[1];
+    scroll_target_y.* = route.next_offset[1];
     if (route.next_offset[1] <= 0.0 and wheel_delta_y > 0.0) {
-        state.system_scroll_boundary = .top;
+        scroll_boundary.* = .top;
         return;
     }
     if (route.next_offset[1] >= route.max_offset_y and wheel_delta_y < 0.0) {
-        state.system_scroll_boundary = .bottom;
+        scroll_boundary.* = .bottom;
         return;
     }
 }
 
-fn animateEditorSystemScroll(state: *EditorState, delta_seconds: f32) void {
-    if (!std.math.isFinite(state.system_scroll_y) or !std.math.isFinite(state.system_scroll_target_y)) {
-        state.system_scroll_y = 0.0;
-        state.system_scroll_target_y = 0.0;
+fn animateEditorScroll(scroll_y: *f32, scroll_target_y: *f32, delta_seconds: f32) void {
+    if (!std.math.isFinite(scroll_y.*) or !std.math.isFinite(scroll_target_y.*)) {
+        scroll_y.* = 0.0;
+        scroll_target_y.* = 0.0;
         return;
     }
 
-    const remaining = state.system_scroll_target_y - state.system_scroll_y;
+    const remaining = scroll_target_y.* - scroll_y.*;
     if (@abs(remaining) < 0.01) {
-        state.system_scroll_y = state.system_scroll_target_y;
+        scroll_y.* = scroll_target_y.*;
         return;
     }
 
@@ -378,7 +395,7 @@ fn animateEditorSystemScroll(state: *EditorState, delta_seconds: f32) void {
 
     const clamped_delta = @min(delta_seconds, 0.1);
     const alpha = 1.0 - @exp(-editor_system_scroll_smoothing * clamped_delta);
-    state.system_scroll_y += remaining * alpha;
+    scroll_y.* += remaining * alpha;
 }
 
 fn ensureEditorSidebarWidths(state: *EditorState, input: FrameInput) void {
@@ -435,30 +452,51 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
         return .{};
     }
     ensureEditorSidebarWidths(state, input);
+    var effective_input = input;
+    effective_input.editor.selected_entity = state.selected_entity;
+    effective_input.editor.left_sidebar_width = state.left_sidebar_width;
+    effective_input.editor.right_sidebar_width = state.right_sidebar_width;
+    effective_input.editor.system_scroll_y = state.system_scroll_y;
+    effective_input.editor.inspector_scroll_y = state.inspector_scroll_y;
+
     const profile_count = editorSystemProfileScrollCount(input);
-    clampEditorSystemScroll(state, input, profile_count);
+    clampEditorSystemScroll(state, effective_input, profile_count);
+    clampEditorInspectorScroll(state, world, effective_input);
 
     const wheel_y = input.pointer.wheel_delta[1];
-    const system_scroll_route = if (wheel_y != 0.0 and
-        editorSystemNeedsScrollForInput(input, profile_count) and
+    const scroll_route = if (wheel_y != 0.0 and
         input.pointer.has_position and
         !std.math.isNan(input.pointer.position[0]) and
         !std.math.isNan(input.pointer.position[1]))
-        try routeEditorSystemScrollWheel(allocator, state, input, profile_count, wheel_y)
+        try routeEditorScrollWheel(allocator, world, state, effective_input, profile_count, wheel_y)
     else
         null;
 
-    if (wheel_y == 0.0 or system_scroll_route == null) {
+    if (wheel_y == 0.0 or scroll_route == null) {
         state.system_scroll_boundary = .none;
+        state.inspector_scroll_boundary = .none;
     }
 
-    if (system_scroll_route) |route| {
-        applyEditorSystemScrollRoute(state, route, wheel_y);
-        animateEditorSystemScroll(state, input.delta_seconds);
-        return .{ .consumed_pointer = true };
+    if (scroll_route) |route| {
+        switch (route) {
+            .system_scroll => |scroll| {
+                applyEditorScrollRoute(&state.system_scroll_y, &state.system_scroll_target_y, &state.system_scroll_boundary, scroll, wheel_y);
+                animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+                animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
+                return .{ .consumed_pointer = true };
+            },
+            .inspector_scroll => |scroll| {
+                applyEditorScrollRoute(&state.inspector_scroll_y, &state.inspector_scroll_target_y, &state.inspector_scroll_boundary, scroll, wheel_y);
+                animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+                animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
+                return .{ .consumed_pointer = true };
+            },
+            else => {},
+        }
     }
 
-    animateEditorSystemScroll(state, input.delta_seconds);
+    animateEditorScroll(&state.system_scroll_y, &state.system_scroll_target_y, input.delta_seconds);
+    animateEditorScroll(&state.inspector_scroll_y, &state.inspector_scroll_target_y, input.delta_seconds);
 
     if (!input.pointer.has_position) {
         state.dragging_axis = .none;
@@ -482,7 +520,7 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
     }
 
     if (input.pointer.primary_pressed) {
-        if (try routeEditorUi(allocator, state.system_scroll_target_y, input, profile_count)) |route| {
+        if (try routeEditorUi(allocator, world, state.system_scroll_target_y, state.inspector_scroll_target_y, effective_input, profile_count)) |route| {
             switch (route) {
                 .splitter => |splitter| {
                     state.dragging_splitter = splitter;
@@ -505,6 +543,7 @@ pub fn updateEditorState(allocator: std.mem.Allocator, world: *runtime.World, st
                     };
                 },
                 .system_scroll => {},
+                .inspector_scroll => {},
             }
         }
         if (hitEditorChrome(input)) {
@@ -2311,15 +2350,26 @@ fn extractEditorComponentInspectorInto(
         0.0,
     }, entity_header, editor_inspector_text_size, editor_palette.text_muted);
 
-    const stack_id = "machina.editor.inspector.components";
-    const stack_y = panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.5;
-    const stack = world.createEntity(stack_id, "Editor Component Stack") catch |err| return mapWorldError(err);
-    world.setUiVBox(stack, .{
-        .position = .{ panel_x, stack_y, 0.0 },
-        .spacing = editor_inspector_card_gap,
+    const scroll_clip = editorInspectorScrollClipRect(input);
+    const scroll = world.createEntity("machina.editor.inspector.scroll", "Editor Inspector Scroll View") catch |err| return mapWorldError(err);
+    world.setUiScrollView(scroll, .{
+        .position = scroll_clip.position,
+        .size = scroll_clip.size,
+        .content_offset = .{ 0.0, input.editor.inspector_scroll_y, 0.0 },
     }) catch |err| return mapWorldError(err);
 
-    const card_width = @max(panel_width, 1.0);
+    const stack_id = "machina.editor.inspector.components";
+    const stack = world.createEntity(stack_id, "Editor Component Stack") catch |err| return mapWorldError(err);
+    world.setUiVBox(stack, .{
+        .position = .{ 0.0, 0.0, 0.0 },
+        .spacing = editor_inspector_card_gap,
+    }) catch |err| return mapWorldError(err);
+    world.setUiLayoutItem(stack, .{
+        .parent = "machina.editor.inspector.scroll",
+        .order = 0,
+    }) catch |err| return mapWorldError(err);
+
+    const card_width = @max(scroll_clip.size[0], 1.0);
     const field_stride = editor_inspector_field_row_stride;
     var component_index: usize = 0;
     var stack_order: i32 = 0;
@@ -2344,10 +2394,7 @@ fn extractEditorComponentInspectorInto(
         }
 
         const field_count = scene_world.componentFieldCount(component_id);
-        const card_height = editor_inspector_card_padding_y * 2.0 +
-            editorTextHeight(editor_inspector_text_size) +
-            editor_panel_label_gap +
-            @as(f32, @floatFromInt(field_count)) * field_stride;
+        const card_height = editorInspectorComponentCardHeight(scene_world, component_id);
         const card_id = std.fmt.allocPrint(allocator, "machina.editor.inspector.component.{d}", .{component_index}) catch return RenderError.OutOfMemory;
         defer allocator.free(card_id);
         const card = try extractEditorPanel(world, card_id, "Editor Component Card", .{
@@ -2614,6 +2661,52 @@ fn editorSystemVisibleRows(input: FrameInput) usize {
 
 fn editorSystemTableContentHeight(row_count: usize) f32 {
     return editor_system_card_padding_y * 2.0 + @as(f32, @floatFromInt(row_count)) * editor_system_row_stride;
+}
+
+fn editorInspectorScrollClipRect(input: FrameInput) UiClipRect {
+    const sidebar = editorSidebarPanelRect(editorRightSidebarRect(input));
+    const y = sidebar.y + editor_panel_padding_y + editor_inspector_line_stride * 2.5;
+    const bottom = sidebar.y + sidebar.height;
+    return .{
+        .position = .{ sidebar.x, y, 0.0 },
+        .size = .{
+            @max(sidebar.width, 1.0),
+            @max(bottom - y, 1.0),
+            0.0,
+        },
+    };
+}
+
+fn editorInspectorComponentContentHeight(scene_world: *const runtime.World, selected: ?runtime.EntityHandle) f32 {
+    const selected_entity = selected orelse return 0.0;
+    var components = scene_world.entityComponents(selected_entity) catch return 0.0;
+    var height: f32 = 0.0;
+    var component_index: usize = 0;
+    while (components.next()) |component_id| {
+        if (component_index > 0) {
+            height += editor_inspector_separator_height;
+        }
+        height += editorInspectorComponentCardHeight(scene_world, component_id);
+        component_index += 1;
+    }
+    return height;
+}
+
+fn editorInspectorComponentCardHeight(scene_world: *const runtime.World, component_id: []const u8) f32 {
+    const field_count = scene_world.componentFieldCount(component_id);
+    return editor_inspector_card_padding_y * 2.0 +
+        editorTextHeight(editor_inspector_text_size) +
+        editor_panel_label_gap +
+        @as(f32, @floatFromInt(field_count)) * editor_inspector_field_row_stride;
+}
+
+fn editorInspectorNeedsScroll(scene_world: *const runtime.World, input: FrameInput) bool {
+    return editorInspectorMaxScrollY(scene_world, input) > 0.0;
+}
+
+fn editorInspectorMaxScrollY(scene_world: *const runtime.World, input: FrameInput) f32 {
+    const clip = editorInspectorScrollClipRect(input);
+    return @max(editorInspectorComponentContentHeight(scene_world, input.editor.selected_entity) - clip.size[1], 0.0);
 }
 
 fn editorSystemNeedsScrollForInput(input: FrameInput, profile_count: usize) bool {
@@ -4536,6 +4629,7 @@ const EditorUiRoute = union(enum) {
     command: EditorCommand,
     splitter: EditorSplitter,
     system_scroll: ui_layout.ScrollWheelRoute,
+    inspector_scroll: ui_layout.ScrollWheelRoute,
 };
 
 const EditorButtonSpec = struct {
@@ -4582,7 +4676,14 @@ fn decodeEditorSplitter(command: []const u8) ?EditorSplitter {
     return null;
 }
 
-fn routeEditorUi(allocator: std.mem.Allocator, system_scroll_target_y: f32, input: FrameInput, profile_count: usize) EditorError!?EditorUiRoute {
+fn routeEditorUi(
+    allocator: std.mem.Allocator,
+    scene_world: ?*const runtime.World,
+    system_scroll_target_y: f32,
+    inspector_scroll_target_y: f32,
+    input: FrameInput,
+    profile_count: usize,
+) EditorError!?EditorUiRoute {
     if (!input.debug_overlay_visible or
         !input.pointer.has_position or
         std.math.isNan(input.pointer.position[0]) or
@@ -4594,7 +4695,7 @@ fn routeEditorUi(allocator: std.mem.Allocator, system_scroll_target_y: f32, inpu
     var input_world = runtime.World.init(allocator);
     defer input_world.deinit();
 
-    try addEditorChromeControlsForRouting(&input_world, system_scroll_target_y, input, profile_count);
+    try addEditorChromeControlsForRouting(&input_world, scene_world, system_scroll_target_y, inspector_scroll_target_y, input, profile_count);
 
     const route = ui_layout.routePointer(&input_world, .{
         .position = input.pointer.position,
@@ -4606,7 +4707,14 @@ fn routeEditorUi(allocator: std.mem.Allocator, system_scroll_target_y: f32, inpu
     }) catch |err| return mapEditorLayoutError(err);
 
     if (route.scroll) |scroll_route| {
-        return .{ .system_scroll = scroll_route };
+        const scroll_entity = input_world.entity(scroll_route.entity) catch return error.InvalidScene;
+        if (std.mem.eql(u8, scroll_entity.id, "machina.editor.debug.systems.scroll")) {
+            return .{ .system_scroll = scroll_route };
+        }
+        if (std.mem.eql(u8, scroll_entity.id, "machina.editor.inspector.scroll")) {
+            return .{ .inspector_scroll = scroll_route };
+        }
+        return null;
     }
     if (route.command) |command_hit| {
         if (decodeEditorSplitter(command_hit.command)) |splitter| {
@@ -4620,7 +4728,7 @@ fn routeEditorUi(allocator: std.mem.Allocator, system_scroll_target_y: f32, inpu
 }
 
 fn routeEditorSplitterAt(allocator: std.mem.Allocator, input: FrameInput) EditorError!?EditorSplitter {
-    const route = (try routeEditorUi(allocator, input.editor.system_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
+    const route = (try routeEditorUi(allocator, null, input.editor.system_scroll_y, input.editor.inspector_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
     return switch (route) {
         .splitter => |splitter| splitter,
         else => null,
@@ -4628,7 +4736,7 @@ fn routeEditorSplitterAt(allocator: std.mem.Allocator, input: FrameInput) Editor
 }
 
 fn routeEditorCommandAt(allocator: std.mem.Allocator, input: FrameInput) EditorError!?EditorCommand {
-    const route = (try routeEditorUi(allocator, input.editor.system_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
+    const route = (try routeEditorUi(allocator, null, input.editor.system_scroll_y, input.editor.inspector_scroll_y, input, editorSystemProfileScrollCount(input))) orelse return null;
     return switch (route) {
         .command => |command| command,
         else => null,
@@ -4637,7 +4745,9 @@ fn routeEditorCommandAt(allocator: std.mem.Allocator, input: FrameInput) EditorE
 
 fn addEditorChromeControlsForRouting(
     world: *runtime.World,
+    scene_world: ?*const runtime.World,
     system_scroll_target_y: f32,
+    inspector_scroll_target_y: f32,
     input: FrameInput,
     profile_count: usize,
 ) EditorError!void {
@@ -4648,6 +4758,9 @@ fn addEditorChromeControlsForRouting(
     try addEditorSplitterHitTargetForRouting(world, input, .left);
     try addEditorSplitterHitTargetForRouting(world, input, .right);
     try addEditorSystemScrollForRouting(world, system_scroll_target_y, input, profile_count);
+    if (scene_world) |loaded_scene_world| {
+        try addEditorInspectorScrollForRouting(world, loaded_scene_world, inspector_scroll_target_y, input);
+    }
 }
 
 fn addEditorCommandButtonForRouting(
@@ -4728,6 +4841,38 @@ fn addEditorSystemScrollForRouting(
     });
 }
 
+fn addEditorInspectorScrollForRouting(
+    world: *runtime.World,
+    scene_world: *const runtime.World,
+    inspector_scroll_target_y: f32,
+    input: FrameInput,
+) EditorError!void {
+    if (!editorInspectorNeedsScroll(scene_world, input)) {
+        return;
+    }
+
+    const clip = editorInspectorScrollClipRect(input);
+    const scroll = try world.createEntity("machina.editor.inspector.scroll", "Editor Inspector Scroll View");
+    try world.setUiScrollView(scroll, .{
+        .position = clip.position,
+        .size = clip.size,
+        .content_offset = .{ 0.0, inspector_scroll_target_y, 0.0 },
+    });
+
+    const content = try world.createEntity("machina.editor.inspector.scroll.content", "Editor Inspector Scroll Content");
+    try world.setUiSpacer(content, .{
+        .size = .{
+            clip.size[0],
+            editorInspectorComponentContentHeight(scene_world, input.editor.selected_entity),
+            0.0,
+        },
+    });
+    try world.setUiLayoutItem(content, .{
+        .parent = "machina.editor.inspector.scroll",
+        .order = 0,
+    });
+}
+
 fn hitEditorChrome(input: FrameInput) bool {
     if (!input.debug_overlay_visible) {
         return false;
@@ -4735,18 +4880,19 @@ fn hitEditorChrome(input: FrameInput) bool {
     return !editorGameViewport(input).contains(input.pointer.position);
 }
 
-fn routeEditorSystemScrollWheel(
+fn routeEditorScrollWheel(
     allocator: std.mem.Allocator,
+    world: *const runtime.World,
     state: *const EditorState,
     input: FrameInput,
     profile_count: usize,
     wheel_delta_y: f32,
-) EditorError!?ui_layout.ScrollWheelRoute {
+) EditorError!?EditorUiRoute {
     var route_input = input;
     route_input.pointer.wheel_delta[1] = wheel_delta_y;
-    const route = (try routeEditorUi(allocator, state.system_scroll_target_y, route_input, profile_count)) orelse return null;
+    const route = (try routeEditorUi(allocator, world, state.system_scroll_target_y, state.inspector_scroll_target_y, route_input, profile_count)) orelse return null;
     return switch (route) {
-        .system_scroll => |scroll| scroll,
+        .system_scroll, .inspector_scroll => route,
         else => null,
     };
 }
@@ -5327,7 +5473,7 @@ test "editor chrome routes pointer through one retained ui route" {
         .system_profile_count_hint = 20,
     };
     const play_rect = editorPlayButtonRect(frame_input);
-    const command_route = (try routeEditorUi(std.testing.allocator, 0.0, .{
+    const command_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -5341,7 +5487,7 @@ test "editor chrome routes pointer through one retained ui route" {
     try std.testing.expectEqual(EditorCommand.play_toggle, command_route.command);
 
     const left_splitter = editorSplitterRect(frame_input, .left) orelse return error.TestExpectedEqual;
-    const splitter_route = (try routeEditorUi(std.testing.allocator, 0.0, .{
+    const splitter_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -5355,7 +5501,7 @@ test "editor chrome routes pointer through one retained ui route" {
     try std.testing.expectEqual(EditorSplitter.left, splitter_route.splitter);
 
     const scroll_point = editorSystemListHitTestPoint(&profiles, 20);
-    const scroll_route = (try routeEditorUi(std.testing.allocator, 0.0, .{
+    const scroll_route = (try routeEditorUi(std.testing.allocator, null, 0.0, 0.0, .{
         .debug_overlay_visible = true,
         .viewport_width = 1280.0,
         .viewport_height = 720.0,
@@ -6928,6 +7074,92 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     try std.testing.expectApproxEqAbs(editorInspectorFieldValueX(card_size[0]), value_position[0], 0.001);
     try std.testing.expectEqualStrings("primitive", label_value);
     try std.testing.expectEqualStrings("uv_sphere", field_value);
+}
+
+test "editor inspector component stack resolves inside scroll view clip" {
+    var scene_world = runtime.World.init(std.testing.allocator);
+    defer scene_world.deinit();
+
+    const entity = try scene_world.createEntity("selected", "Selected Box");
+    try scene_world.setTransform(entity, .{ .position = .{ 0.25, 0.5, 0.0 } });
+    try scene_world.setGeometryPrimitive(entity, .{
+        .primitive = "uv_sphere",
+        .segments = 16,
+        .rings = 8,
+    });
+    try scene_world.setSurfaceMaterial(entity, .{ .base_color = .{ 0.8, 0.4, 0.2 } });
+    try scene_world.setShadowCaster(entity);
+    try scene_world.setShadowReceiver(entity);
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+    const frame_input = FrameInput{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = .{
+            .selected_entity = entity,
+            .inspector_scroll_y = 80.0,
+        },
+    };
+    try state.extractSceneWithInput(.{ .world = &scene_world }, frame_input);
+
+    const scroll = state.world.findEntityById("machina.editor.inspector.scroll") orelse return error.TestExpectedEqual;
+    const stack = state.world.findEntityById("machina.editor.inspector.components") orelse return error.TestExpectedEqual;
+    const first_card = state.world.findEntityById("machina.editor.inspector.component.0") orelse return error.TestExpectedEqual;
+    try std.testing.expect(try state.world.hasComponent(scroll, runtime.ui_scroll_view_component_id));
+    try std.testing.expectEqualStrings("machina.editor.inspector.scroll", try state.world.getString(stack, runtime.ui_layout_item_component_id, "parent"));
+
+    const clip = editorInspectorScrollClipRect(frame_input);
+    const card_position = try state.world.getVec3(first_card, runtime.ui_rect_component_id, "position");
+    const resolved = try resolveUiLayout(&state.world, first_card, card_position);
+    const resolved_clip = resolved.clip orelse return error.TestExpectedEqual;
+    try std.testing.expectApproxEqAbs(clip.position[0], resolved_clip.position[0], 0.001);
+    try std.testing.expectApproxEqAbs(clip.position[1], resolved_clip.position[1], 0.001);
+    try std.testing.expectApproxEqAbs(clip.size[0], resolved_clip.size[0], 0.001);
+    try std.testing.expectApproxEqAbs(clip.size[1], resolved_clip.size[1], 0.001);
+    try std.testing.expectApproxEqAbs(clip.position[1] - 80.0, resolved.position[1], 0.001);
+}
+
+test "editor inspector scroll state responds to wheel input" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const entity = try world.createEntity("selected", "Selected Box");
+    try world.setTransform(entity, .{ .position = .{ 0.25, 0.5, 0.0 } });
+    try world.setGeometryPrimitive(entity, .{
+        .primitive = "uv_sphere",
+        .segments = 16,
+        .rings = 8,
+    });
+    try world.setSurfaceMaterial(entity, .{ .base_color = .{ 0.8, 0.4, 0.2 } });
+    try world.setShadowCaster(entity);
+    try world.setShadowReceiver(entity);
+
+    var editor_state = EditorState{ .selected_entity = entity };
+    const clip = editorInspectorScrollClipRect(.{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .editor = .{ .selected_entity = entity },
+    });
+    const update = try updateEditorState(std.testing.allocator, &world, &editor_state, .{
+        .debug_overlay_visible = true,
+        .delta_seconds = 1.0,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .pointer = .{
+            .position = .{ clip.position[0] + 8.0, clip.position[1] + 8.0 },
+            .has_position = true,
+            .wheel_delta = .{ 0.0, -1.0 },
+        },
+    });
+
+    try std.testing.expect(update.consumed_pointer);
+    try std.testing.expectApproxEqAbs(@as(f32, editor_system_scroll_pixels_per_wheel), editor_state.inspector_scroll_target_y, 0.001);
+    try std.testing.expect(editor_state.inspector_scroll_y > 0.0);
+    try std.testing.expect(editor_state.inspector_scroll_y < editor_state.inspector_scroll_target_y);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), editor_state.system_scroll_target_y, 0.001);
 }
 
 test "render ECS profiles internal systems for editor overlay" {
