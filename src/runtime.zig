@@ -769,10 +769,14 @@ pub fn registerEngineComponents(registry: *ComponentRegistry) !void {
 
     const input_pointer_fields = [_]ComponentFieldDefinition{
         .{ .name = "position", .value_type = .vec3 },
+        .{ .name = "delta", .value_type = .vec3 },
         .{ .name = "has_position", .value_type = .boolean },
         .{ .name = "primary_down", .value_type = .boolean },
         .{ .name = "primary_pressed", .value_type = .boolean },
         .{ .name = "primary_released", .value_type = .boolean },
+        .{ .name = "secondary_down", .value_type = .boolean },
+        .{ .name = "secondary_pressed", .value_type = .boolean },
+        .{ .name = "secondary_released", .value_type = .boolean },
         .{ .name = "wheel_delta", .value_type = .vec3 },
     };
     try registry.registerEngineComponent(.{
@@ -786,6 +790,12 @@ pub fn registerEngineComponents(registry: *ComponentRegistry) !void {
         .{ .name = "shift_down", .value_type = .boolean },
         .{ .name = "alt_down", .value_type = .boolean },
         .{ .name = "super_down", .value_type = .boolean },
+        .{ .name = "move_forward", .value_type = .boolean },
+        .{ .name = "move_back", .value_type = .boolean },
+        .{ .name = "move_left", .value_type = .boolean },
+        .{ .name = "move_right", .value_type = .boolean },
+        .{ .name = "move_up", .value_type = .boolean },
+        .{ .name = "move_down", .value_type = .boolean },
         .{ .name = "editor_toggle_pressed", .value_type = .boolean },
     };
     try registry.registerEngineComponent(.{
@@ -1053,10 +1063,14 @@ pub const UiSeparator = struct {
 
 pub const InputPointerComponent = struct {
     position: [3]f32 = .{ 0.0, 0.0, 0.0 },
+    delta: [3]f32 = .{ 0.0, 0.0, 0.0 },
     has_position: bool = false,
     primary_down: bool = false,
     primary_pressed: bool = false,
     primary_released: bool = false,
+    secondary_down: bool = false,
+    secondary_pressed: bool = false,
+    secondary_released: bool = false,
     wheel_delta: [3]f32 = .{ 0.0, 0.0, 0.0 },
 };
 
@@ -1065,6 +1079,12 @@ pub const InputKeyboardComponent = struct {
     shift_down: bool = false,
     alt_down: bool = false,
     super_down: bool = false,
+    move_forward: bool = false,
+    move_back: bool = false,
+    move_left: bool = false,
+    move_right: bool = false,
+    move_up: bool = false,
+    move_down: bool = false,
     editor_toggle_pressed: bool = false,
 };
 
@@ -1592,10 +1612,14 @@ pub const World = struct {
     pub fn setInputPointer(self: *World, handle: EntityHandle, pointer: InputPointerComponent) WorldError!void {
         const fields = [_]ComponentFieldValue{
             .{ .name = "position", .value = .{ .vec3 = pointer.position } },
+            .{ .name = "delta", .value = .{ .vec3 = pointer.delta } },
             .{ .name = "has_position", .value = .{ .boolean = pointer.has_position } },
             .{ .name = "primary_down", .value = .{ .boolean = pointer.primary_down } },
             .{ .name = "primary_pressed", .value = .{ .boolean = pointer.primary_pressed } },
             .{ .name = "primary_released", .value = .{ .boolean = pointer.primary_released } },
+            .{ .name = "secondary_down", .value = .{ .boolean = pointer.secondary_down } },
+            .{ .name = "secondary_pressed", .value = .{ .boolean = pointer.secondary_pressed } },
+            .{ .name = "secondary_released", .value = .{ .boolean = pointer.secondary_released } },
             .{ .name = "wheel_delta", .value = .{ .vec3 = pointer.wheel_delta } },
         };
         try self.setComponent(handle, input_pointer_component_id, &fields);
@@ -1607,6 +1631,12 @@ pub const World = struct {
             .{ .name = "shift_down", .value = .{ .boolean = keyboard.shift_down } },
             .{ .name = "alt_down", .value = .{ .boolean = keyboard.alt_down } },
             .{ .name = "super_down", .value = .{ .boolean = keyboard.super_down } },
+            .{ .name = "move_forward", .value = .{ .boolean = keyboard.move_forward } },
+            .{ .name = "move_back", .value = .{ .boolean = keyboard.move_back } },
+            .{ .name = "move_left", .value = .{ .boolean = keyboard.move_left } },
+            .{ .name = "move_right", .value = .{ .boolean = keyboard.move_right } },
+            .{ .name = "move_up", .value = .{ .boolean = keyboard.move_up } },
+            .{ .name = "move_down", .value = .{ .boolean = keyboard.move_down } },
             .{ .name = "editor_toggle_pressed", .value = .{ .boolean = keyboard.editor_toggle_pressed } },
         };
         try self.setComponent(handle, input_keyboard_component_id, &fields);
@@ -2717,12 +2747,16 @@ test "world stores frame input components on a shared input entity" {
     const input = try world.createEntity(input_entity_id, "Input Frame");
     try world.setInputPointer(input, .{
         .position = .{ 12.0, 34.0, 0.0 },
+        .delta = .{ 3.0, -4.0, 0.0 },
         .has_position = true,
         .primary_down = true,
+        .secondary_down = true,
         .wheel_delta = .{ 0.0, -2.0, 0.0 },
     });
     try world.setInputKeyboard(input, .{
         .ctrl_down = true,
+        .move_forward = true,
+        .move_down = true,
         .editor_toggle_pressed = true,
     });
     try world.setInputFrame(input, .{
@@ -2734,7 +2768,11 @@ test "world stores frame input components on a shared input entity" {
     try std.testing.expectEqual(@as(usize, 1), world.componentInstanceCountFor(input_pointer_component_id));
     try std.testing.expectEqual(@as(usize, 1), world.componentInstanceCountFor(input_keyboard_component_id));
     try std.testing.expectEqual(@as(usize, 1), world.componentInstanceCountFor(input_frame_component_id));
+    try std.testing.expectEqual(@as(f32, 3.0), (try world.getVec3(input, input_pointer_component_id, "delta"))[0]);
+    try std.testing.expect(try world.getBoolean(input, input_pointer_component_id, "secondary_down"));
     try std.testing.expectEqual(@as(f32, -2.0), (try world.getVec3(input, input_pointer_component_id, "wheel_delta"))[1]);
+    try std.testing.expect(try world.getBoolean(input, input_keyboard_component_id, "move_forward"));
+    try std.testing.expect(try world.getBoolean(input, input_keyboard_component_id, "move_down"));
     try std.testing.expect(try world.getBoolean(input, input_keyboard_component_id, "editor_toggle_pressed"));
     try std.testing.expectEqual(@as(f32, 1280.0), (try world.getVec3(input, input_frame_component_id, "viewport"))[0]);
 }
@@ -3285,8 +3323,15 @@ test "engine component schemas are registered from runtime" {
     try std.testing.expectEqual(FieldType.string, ui_command_event.fields[0].value_type);
 
     const input_pointer = registry.findComponent(input_pointer_component_id) orelse return error.TestExpectedEqual;
-    try std.testing.expectEqual(@as(usize, 6), input_pointer.fields.len);
-    try std.testing.expectEqual(FieldType.vec3, input_pointer.fields[5].value_type);
+    try std.testing.expectEqual(@as(usize, 10), input_pointer.fields.len);
+    try std.testing.expectEqual(FieldType.vec3, input_pointer.fields[1].value_type);
+    try std.testing.expectEqual(FieldType.boolean, input_pointer.fields[6].value_type);
+    try std.testing.expectEqual(FieldType.vec3, input_pointer.fields[9].value_type);
+
+    const input_keyboard = registry.findComponent(input_keyboard_component_id) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 11), input_keyboard.fields.len);
+    try std.testing.expectEqual(FieldType.boolean, input_keyboard.fields[4].value_type);
+    try std.testing.expectEqual(FieldType.boolean, input_keyboard.fields[9].value_type);
 }
 
 test "system registry validates component access and reload-compatible definitions" {

@@ -1206,6 +1206,10 @@ fn readInputFrameProperty(
         draft.input.pointer.has_position = true;
         return;
     }
+    if (std.mem.eql(u8, key, "pointer_delta") or std.mem.eql(u8, key, "delta")) {
+        draft.input.pointer.delta = try parseTestVec2(value);
+        return;
+    }
     if (std.mem.eql(u8, key, "pointer_has_position")) {
         draft.input.pointer.has_position = try parseTestBool(value);
         return;
@@ -1226,8 +1230,45 @@ fn readInputFrameProperty(
         draft.input.pointer.primary_released = try parseTestBool(value);
         return;
     }
+    if (std.mem.eql(u8, key, "secondary_down")) {
+        draft.input.pointer.secondary_down = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "secondary_pressed")) {
+        draft.input.pointer.secondary_pressed = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "secondary_released")) {
+        draft.input.pointer.secondary_released = try parseTestBool(value);
+        return;
+    }
     if (std.mem.eql(u8, key, "ctrl_down")) {
         draft.input.keyboard.ctrl_down = try parseTestBool(value);
+        draft.input.keyboard.move_down = draft.input.keyboard.ctrl_down;
+        return;
+    }
+    if (std.mem.eql(u8, key, "move_forward")) {
+        draft.input.keyboard.move_forward = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "move_back")) {
+        draft.input.keyboard.move_back = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "move_left")) {
+        draft.input.keyboard.move_left = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "move_right")) {
+        draft.input.keyboard.move_right = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "move_up")) {
+        draft.input.keyboard.move_up = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "move_down")) {
+        draft.input.keyboard.move_down = try parseTestBool(value);
         return;
     }
     if (std.mem.eql(u8, key, "editor_toggle_pressed")) {
@@ -2156,7 +2197,11 @@ test "parseTestManifest reads field assertions" {
         \\debug_overlay_visible = true
         \\viewport = [1280.0, 720.0]
         \\pointer = [36.0, 190.0]
+        \\pointer_delta = [3.0, -2.0]
+        \\secondary_down = true
         \\wheel_delta = [0.0, -1.0]
+        \\move_forward = true
+        \\move_up = true
         \\system_profile_count_hint = 9
         \\
         \\[[expect.field]]
@@ -2181,7 +2226,11 @@ test "parseTestManifest reads field assertions" {
     try std.testing.expect(manifest.input_frames[0].input.debug_overlay_visible);
     try std.testing.expectApproxEqAbs(@as(f32, 1280.0), manifest.input_frames[0].input.viewport_width, 0.000001);
     try std.testing.expectApproxEqAbs(@as(f32, 36.0), manifest.input_frames[0].input.pointer.position[0], 0.000001);
+    try std.testing.expectApproxEqAbs(@as(f32, 3.0), manifest.input_frames[0].input.pointer.delta[0], 0.000001);
+    try std.testing.expect(manifest.input_frames[0].input.pointer.secondary_down);
     try std.testing.expectApproxEqAbs(@as(f32, -1.0), manifest.input_frames[0].input.pointer.wheel_delta[1], 0.000001);
+    try std.testing.expect(manifest.input_frames[0].input.keyboard.move_forward);
+    try std.testing.expect(manifest.input_frames[0].input.keyboard.move_up);
     try std.testing.expectEqual(@as(usize, 9), manifest.input_frames[0].input.system_profile_count_hint);
     try std.testing.expectEqual(@as(usize, 2), manifest.expectations.len);
     try std.testing.expectEqualStrings("door-1", manifest.expectations[0].entity);

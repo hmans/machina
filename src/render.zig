@@ -64,6 +64,9 @@ const editor_panel_corner_radius: f32 = 8.0;
 const editor_button_corner_radius: f32 = 6.0;
 const editor_command_play_toggle = "machina.editor.play_toggle";
 const editor_command_step = "machina.editor.step";
+const fly_camera_move_speed: f32 = 6.0;
+const fly_camera_look_sensitivity: f32 = 0.0035;
+const fly_camera_max_pitch: f32 = std.math.degreesToRadians(89.0);
 const editor_inspector_panel_height: f32 = 548.0;
 const editor_inspector_empty_panel_height: f32 = 178.0;
 const editor_inspector_text_size: f32 = 1.0;
@@ -135,15 +138,22 @@ pub const FrameUpdateHook = struct {
 
 pub const PointerInput = struct {
     position: [2]f32 = .{ 0.0, 0.0 },
+    delta: [2]f32 = .{ 0.0, 0.0 },
     has_position: bool = false,
     primary_down: bool = false,
     primary_pressed: bool = false,
     primary_released: bool = false,
+    secondary_down: bool = false,
+    secondary_pressed: bool = false,
+    secondary_released: bool = false,
     wheel_delta: [2]f32 = .{ 0.0, 0.0 },
 
     fn beginFrame(self: *PointerInput) void {
         self.primary_pressed = false;
         self.primary_released = false;
+        self.secondary_pressed = false;
+        self.secondary_released = false;
+        self.delta = .{ 0.0, 0.0 };
         self.wheel_delta = .{ 0.0, 0.0 };
     }
 };
@@ -153,6 +163,12 @@ pub const KeyboardInput = struct {
     shift_down: bool = false,
     alt_down: bool = false,
     super_down: bool = false,
+    move_forward: bool = false,
+    move_back: bool = false,
+    move_left: bool = false,
+    move_right: bool = false,
+    move_up: bool = false,
+    move_down: bool = false,
     editor_toggle_pressed: bool = false,
 
     fn beginFrame(self: *KeyboardInput) void {
@@ -218,6 +234,7 @@ pub const FrameInput = struct {
     delta_seconds: f32 = 0.0,
     viewport_width: f32 = 0.0,
     viewport_height: f32 = 0.0,
+    camera_override: ?runtime.Transform = null,
     editor: EditorFrameState = .{},
     system_profiles: []const runtime.SystemProfileSnapshot = &.{},
     system_profile_count_hint: usize = 0,
@@ -243,6 +260,23 @@ fn updateKeyboardModifiers(keyboard: *KeyboardInput, modifiers: sdl.SDL_Keymod) 
     keyboard.shift_down = (modifiers & sdl.SDL_KMOD_SHIFT) != 0;
     keyboard.alt_down = (modifiers & sdl.SDL_KMOD_ALT) != 0;
     keyboard.super_down = (modifiers & sdl.SDL_KMOD_GUI) != 0;
+    keyboard.move_down = keyboard.ctrl_down;
+}
+
+fn updateKeyboardKeyState(keyboard: *KeyboardInput, key: sdl.SDL_Keycode, down: bool) void {
+    if (key == sdl.SDLK_W) {
+        keyboard.move_forward = down;
+    } else if (key == sdl.SDLK_S) {
+        keyboard.move_back = down;
+    } else if (key == sdl.SDLK_A) {
+        keyboard.move_left = down;
+    } else if (key == sdl.SDLK_D) {
+        keyboard.move_right = down;
+    } else if (key == sdl.SDLK_SPACE) {
+        keyboard.move_up = down;
+    } else if (key == sdl.SDLK_LCTRL or key == sdl.SDLK_RCTRL) {
+        keyboard.move_down = down;
+    }
 }
 
 fn normalizedMouseWheelDelta(wheel: anytype) [2]f32 {
@@ -614,6 +648,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
     var scene = initial_scene;
     var demo = try MeshDemo.create(allocator, gpu.device, gpu.queue, surface_format, scene);
     defer demo.deinit();
+    var fly_camera = FlyCameraState{};
 
     var depth = DepthTarget{};
     defer depth.deinit();
@@ -626,6 +661,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
     var running = true;
     var frame_count: u32 = 0;
     var input: FrameInput = .{ .debug_overlay_visible = options.editor };
+    var relative_mouse_enabled = false;
     var last_frame_ticks = sdl.SDL_GetTicksNS();
     var last_performance_display_ticks: u64 = 0;
     var smoothed_fps: f32 = 0.0;
@@ -638,22 +674,29 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
             switch (event.type) {
                 sdl.SDL_EVENT_QUIT => running = false,
                 sdl.SDL_EVENT_KEY_DOWN => {
+                    updateKeyboardKeyState(&input.keyboard, event.key.key, true);
                     updateKeyboardModifiers(&input.keyboard, event.key.mod);
                     if (!event.key.repeat and isEditorToggleShortcut(event.key.key, event.key.mod)) {
                         toggleDebugOverlay(&input);
                     }
                 },
                 sdl.SDL_EVENT_KEY_UP => {
+                    updateKeyboardKeyState(&input.keyboard, event.key.key, false);
                     updateKeyboardModifiers(&input.keyboard, event.key.mod);
                 },
                 sdl.SDL_EVENT_MOUSE_MOTION => {
                     updatePointerFromWindow(&input.pointer, window, event.motion.x, event.motion.y);
+                    input.pointer.delta[0] += event.motion.xrel;
+                    input.pointer.delta[1] += event.motion.yrel;
                 },
                 sdl.SDL_EVENT_MOUSE_BUTTON_DOWN => {
                     updatePointerFromWindow(&input.pointer, window, event.button.x, event.button.y);
                     if (event.button.button == sdl.SDL_BUTTON_LEFT) {
                         input.pointer.primary_down = true;
                         input.pointer.primary_pressed = true;
+                    } else if (event.button.button == sdl.SDL_BUTTON_RIGHT) {
+                        input.pointer.secondary_down = true;
+                        input.pointer.secondary_pressed = true;
                     }
                 },
                 sdl.SDL_EVENT_MOUSE_BUTTON_UP => {
@@ -661,6 +704,9 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
                     if (event.button.button == sdl.SDL_BUTTON_LEFT) {
                         input.pointer.primary_down = false;
                         input.pointer.primary_released = true;
+                    } else if (event.button.button == sdl.SDL_BUTTON_RIGHT) {
+                        input.pointer.secondary_down = false;
+                        input.pointer.secondary_released = true;
                     }
                 },
                 sdl.SDL_EVENT_MOUSE_WHEEL => {
@@ -702,6 +748,7 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
                 demo.deinit();
                 demo = reloaded_demo;
                 scene = reloaded_scene;
+                fly_camera.reset();
             }
         }
 
@@ -710,6 +757,12 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
         input.viewport_width = @floatFromInt(width);
         input.viewport_height = @floatFromInt(height);
         input.system_profile_count_hint = demo.renderSystemProfileCount();
+        const should_enable_relative_mouse = flyCameraInputActive(input);
+        if (should_enable_relative_mouse != relative_mouse_enabled) {
+            _ = sdl.SDL_SetWindowRelativeMouseMode(window, should_enable_relative_mouse);
+            relative_mouse_enabled = should_enable_relative_mouse;
+        }
+        input.camera_override = updateFlyCamera(&fly_camera, scene.world, input, delta_seconds) catch null;
         if (options.frame_update) |frame_update| {
             frame_update.step(frame_update.context, delta_seconds, &input);
         }
@@ -732,6 +785,9 @@ pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: W
         }
 
         sdl.SDL_Delay(1);
+    }
+    if (relative_mouse_enabled) {
+        _ = sdl.SDL_SetWindowRelativeMouseMode(window, false);
     }
 }
 
@@ -762,6 +818,15 @@ const CameraState = struct {
     fov_y_degrees: f32 = 48.0,
     near: f32 = 0.1,
     far: f32 = 100.0,
+};
+
+const FlyCameraState = struct {
+    initialized: bool = false,
+    transform: runtime.Transform = .{},
+
+    fn reset(self: *FlyCameraState) void {
+        self.* = .{};
+    }
 };
 
 const DirectionalLightState = struct {
@@ -1003,7 +1068,11 @@ const RenderEcsState = struct {
             try extractDebugOverlayInto(self.allocator, &next_world, input, scene.world);
         }
 
-        try extractCameraInto(&next_world, try cameraState(scene.world));
+        var render_camera = try cameraState(scene.world);
+        if (input.camera_override) |camera_transform| {
+            render_camera.transform = camera_transform;
+        }
+        try extractCameraInto(&next_world, render_camera);
         try extractDirectionalLightInto(&next_world, try directionalLightState(scene.world));
 
         self.world.deinit();
@@ -2193,10 +2262,14 @@ pub fn writeFrameInput(world: *runtime.World, input: FrameInput) runtime.WorldEr
     const entity = world.findEntityById(runtime.input_entity_id) orelse try world.createEntity(runtime.input_entity_id, "Input Frame");
     try world.setInputPointer(entity, .{
         .position = .{ input.pointer.position[0], input.pointer.position[1], 0.0 },
+        .delta = .{ input.pointer.delta[0], input.pointer.delta[1], 0.0 },
         .has_position = input.pointer.has_position,
         .primary_down = input.pointer.primary_down,
         .primary_pressed = input.pointer.primary_pressed,
         .primary_released = input.pointer.primary_released,
+        .secondary_down = input.pointer.secondary_down,
+        .secondary_pressed = input.pointer.secondary_pressed,
+        .secondary_released = input.pointer.secondary_released,
         .wheel_delta = .{ input.pointer.wheel_delta[0], input.pointer.wheel_delta[1], 0.0 },
     });
     try world.setInputKeyboard(entity, .{
@@ -2204,6 +2277,12 @@ pub fn writeFrameInput(world: *runtime.World, input: FrameInput) runtime.WorldEr
         .shift_down = input.keyboard.shift_down,
         .alt_down = input.keyboard.alt_down,
         .super_down = input.keyboard.super_down,
+        .move_forward = input.keyboard.move_forward,
+        .move_back = input.keyboard.move_back,
+        .move_left = input.keyboard.move_left,
+        .move_right = input.keyboard.move_right,
+        .move_up = input.keyboard.move_up,
+        .move_down = input.keyboard.move_down,
         .editor_toggle_pressed = input.keyboard.editor_toggle_pressed,
     });
     try world.setInputFrame(entity, .{
@@ -2220,15 +2299,20 @@ fn setRenderFrameInput(world: *runtime.World, input: FrameInput) RenderError!voi
 fn renderFrameInput(world: *const runtime.World) RenderError!FrameInput {
     const entity = world.findEntityById(runtime.input_entity_id) orelse return RenderError.InvalidScene;
     const position = world.getVec3(entity, runtime.input_pointer_component_id, "position") catch |err| return mapWorldError(err);
+    const delta = world.getVec3(entity, runtime.input_pointer_component_id, "delta") catch |err| return mapWorldError(err);
     const wheel_delta = world.getVec3(entity, runtime.input_pointer_component_id, "wheel_delta") catch |err| return mapWorldError(err);
     const viewport = world.getVec3(entity, runtime.input_frame_component_id, "viewport") catch |err| return mapWorldError(err);
     return .{
         .pointer = .{
             .position = .{ position[0], position[1] },
+            .delta = .{ delta[0], delta[1] },
             .has_position = world.getBoolean(entity, runtime.input_pointer_component_id, "has_position") catch |err| return mapWorldError(err),
             .primary_down = world.getBoolean(entity, runtime.input_pointer_component_id, "primary_down") catch |err| return mapWorldError(err),
             .primary_pressed = world.getBoolean(entity, runtime.input_pointer_component_id, "primary_pressed") catch |err| return mapWorldError(err),
             .primary_released = world.getBoolean(entity, runtime.input_pointer_component_id, "primary_released") catch |err| return mapWorldError(err),
+            .secondary_down = world.getBoolean(entity, runtime.input_pointer_component_id, "secondary_down") catch |err| return mapWorldError(err),
+            .secondary_pressed = world.getBoolean(entity, runtime.input_pointer_component_id, "secondary_pressed") catch |err| return mapWorldError(err),
+            .secondary_released = world.getBoolean(entity, runtime.input_pointer_component_id, "secondary_released") catch |err| return mapWorldError(err),
             .wheel_delta = .{ wheel_delta[0], wheel_delta[1] },
         },
         .keyboard = .{
@@ -2236,6 +2320,12 @@ fn renderFrameInput(world: *const runtime.World) RenderError!FrameInput {
             .shift_down = world.getBoolean(entity, runtime.input_keyboard_component_id, "shift_down") catch |err| return mapWorldError(err),
             .alt_down = world.getBoolean(entity, runtime.input_keyboard_component_id, "alt_down") catch |err| return mapWorldError(err),
             .super_down = world.getBoolean(entity, runtime.input_keyboard_component_id, "super_down") catch |err| return mapWorldError(err),
+            .move_forward = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_forward") catch |err| return mapWorldError(err),
+            .move_back = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_back") catch |err| return mapWorldError(err),
+            .move_left = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_left") catch |err| return mapWorldError(err),
+            .move_right = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_right") catch |err| return mapWorldError(err),
+            .move_up = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_up") catch |err| return mapWorldError(err),
+            .move_down = world.getBoolean(entity, runtime.input_keyboard_component_id, "move_down") catch |err| return mapWorldError(err),
             .editor_toggle_pressed = world.getBoolean(entity, runtime.input_keyboard_component_id, "editor_toggle_pressed") catch |err| return mapWorldError(err),
         },
         .ui_visible = world.getBoolean(entity, runtime.input_frame_component_id, "ui_visible") catch |err| return mapWorldError(err),
@@ -3676,6 +3766,84 @@ fn cameraState(world: *const runtime.World) RenderError!CameraState {
     return .{};
 }
 
+fn cameraStateForInput(world: *const runtime.World, input: FrameInput) RenderError!CameraState {
+    var camera = try cameraState(world);
+    if (input.camera_override) |camera_transform| {
+        camera.transform = camera_transform;
+    }
+    return validateCamera(camera);
+}
+
+fn updateFlyCamera(state: *FlyCameraState, world: *const runtime.World, input: FrameInput, delta_seconds: f32) RenderError!?runtime.Transform {
+    const active = flyCameraInputActive(input);
+    if (!state.initialized and !active) {
+        return null;
+    }
+    if (!state.initialized) {
+        state.transform = (try cameraState(world)).transform;
+        state.initialized = true;
+    }
+    if (!active) {
+        return state.transform;
+    }
+
+    const dt = if (std.math.isFinite(delta_seconds) and delta_seconds > 0.0)
+        @min(delta_seconds, 0.1)
+    else
+        0.0;
+
+    if (std.math.isFinite(input.pointer.delta[0]) and std.math.isFinite(input.pointer.delta[1])) {
+        state.transform.rotation[1] -= input.pointer.delta[0] * fly_camera_look_sensitivity;
+        state.transform.rotation[0] = std.math.clamp(
+            state.transform.rotation[0] - input.pointer.delta[1] * fly_camera_look_sensitivity,
+            -fly_camera_max_pitch,
+            fly_camera_max_pitch,
+        );
+        state.transform.rotation[2] = 0.0;
+    }
+
+    var movement = [3]f32{ 0.0, 0.0, 0.0 };
+    const forward = rotateDirection(state.transform.rotation, .{ 0.0, 0.0, -1.0 });
+    const right = rotateDirection(state.transform.rotation, .{ 1.0, 0.0, 0.0 });
+    if (input.keyboard.move_forward) {
+        movement = addVec3(movement, forward);
+    }
+    if (input.keyboard.move_back) {
+        movement = subtractVec3(movement, forward);
+    }
+    if (input.keyboard.move_right) {
+        movement = addVec3(movement, right);
+    }
+    if (input.keyboard.move_left) {
+        movement = subtractVec3(movement, right);
+    }
+    if (input.keyboard.move_up) {
+        movement[1] += 1.0;
+    }
+    if (input.keyboard.move_down) {
+        movement[1] -= 1.0;
+    }
+
+    if (vec3Length(movement) > 0.0001 and dt > 0.0) {
+        state.transform.position = addVec3(
+            state.transform.position,
+            scaleVec3(normalizeVec3(movement), fly_camera_move_speed * dt),
+        );
+    }
+
+    return state.transform;
+}
+
+fn flyCameraInputActive(input: FrameInput) bool {
+    if (!input.pointer.secondary_down) {
+        return false;
+    }
+    if (!input.debug_overlay_visible) {
+        return true;
+    }
+    return input.pointer.has_position and editorGameViewport(input).contains(input.pointer.position);
+}
+
 fn directionalLightState(world: *const runtime.World) RenderError!DirectionalLightState {
     if (world.renderDirectionalLight()) |light| {
         return validateDirectionalLight(.{
@@ -3761,7 +3929,7 @@ fn pickRenderableEntity(world: *const runtime.World, input: FrameInput) EditorEr
 
 fn pickEditorGizmoAxis(world: *const runtime.World, selected: runtime.EntityHandle, input: FrameInput) EditorError!EditorAxis {
     const transform_value = (try world.getTransform(selected)) orelse return .none;
-    const camera = cameraState(world) catch return error.InvalidScene;
+    const camera = cameraStateForInput(world, input) catch return error.InvalidScene;
     const origin_screen = projectWorldToScreen(transform_value.position, camera, input) orelse return .none;
     const axes = [_]struct {
         axis: EditorAxis,
@@ -3795,7 +3963,7 @@ fn dragSelectedEntity(world: *runtime.World, state: *EditorState, input: FrameIn
     }
 
     const axis = editorAxisVector(state.dragging_axis) orelse return;
-    const camera = cameraState(world) catch return error.InvalidScene;
+    const camera = cameraStateForInput(world, input) catch return error.InvalidScene;
     const origin_screen = projectWorldToScreen(transform_value.position, camera, input) orelse return;
     const axis_screen_end = projectWorldToScreen(addVec3(transform_value.position, scaleVec3(axis, editor_gizmo_axis_length)), camera, input) orelse return;
     const axis_screen_delta = subtractVec2(axis_screen_end, origin_screen);
@@ -3827,7 +3995,7 @@ fn editorRayFromInput(world: *const runtime.World, input: FrameInput) EditorErro
     if (!viewport.contains(input.pointer.position)) {
         return error.InvalidScene;
     }
-    const camera = cameraState(world) catch return error.InvalidScene;
+    const camera = cameraStateForInput(world, input) catch return error.InvalidScene;
     const aspect = width / height;
     const tan_half_fov = @tan(std.math.degreesToRadians(camera.fov_y_degrees) * 0.5);
     const local_pointer = subtractVec2(input.pointer.position, .{ viewport.x, viewport.y });
@@ -4231,6 +4399,60 @@ test "camera state falls back only when no camera component exists" {
     try world.setTransform(camera_entity, .{ .position = .{ 0.0, 0.0, 6.0 } });
     const resolved = try cameraState(&world);
     try std.testing.expectEqual(@as(f32, 6.0), resolved.transform.position[2]);
+}
+
+test "fly camera initializes from scene camera and moves while secondary mouse is held" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    const camera_entity = try world.createEntity("camera", "Camera");
+    try world.setTransform(camera_entity, .{ .position = .{ 0.0, 1.0, 6.0 } });
+    try world.setCamera(camera_entity, .{});
+
+    var state = FlyCameraState{};
+    try std.testing.expect(try updateFlyCamera(&state, &world, .{}, 0.016) == null);
+
+    const moved = (try updateFlyCamera(&state, &world, .{
+        .pointer = .{
+            .secondary_down = true,
+            .delta = .{ 10.0, -5.0 },
+        },
+        .keyboard = .{
+            .move_forward = true,
+            .move_up = true,
+        },
+    }, 0.05)) orelse return error.TestExpectedEqual;
+
+    try std.testing.expect(state.initialized);
+    try std.testing.expect(moved.position[2] < 6.0);
+    try std.testing.expect(moved.position[1] > 1.0);
+    try std.testing.expect(moved.rotation[1] < 0.0);
+    try std.testing.expect(moved.rotation[0] > 0.0);
+
+    const persisted = (try updateFlyCamera(&state, &world, .{}, 0.016)) orelse return error.TestExpectedEqual;
+    try std.testing.expectApproxEqAbs(moved.position[2], persisted.position[2], 0.0001);
+}
+
+test "fly camera ignores right mouse held over editor sidebar" {
+    var world = runtime.World.init(std.testing.allocator);
+    defer world.deinit();
+
+    var state = FlyCameraState{};
+    const ignored = try updateFlyCamera(&state, &world, .{
+        .debug_overlay_visible = true,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+        .pointer = .{
+            .position = .{ 1240.0, 80.0 },
+            .has_position = true,
+            .secondary_down = true,
+            .delta = .{ 100.0, 0.0 },
+        },
+        .keyboard = .{ .move_forward = true },
+    }, 0.05);
+
+    try std.testing.expect(ignored == null);
+    try std.testing.expect(!state.initialized);
 }
 
 test "editor raycast selects nearest renderable mesh" {
@@ -5362,12 +5584,17 @@ test "frame input round trips through ECS input components" {
     try writeFrameInput(&world, .{
         .pointer = .{
             .position = .{ 44.0, 55.0 },
+            .delta = .{ 2.0, -1.0 },
             .has_position = true,
             .primary_down = true,
+            .secondary_down = true,
+            .secondary_pressed = true,
             .wheel_delta = .{ 0.0, -3.0 },
         },
         .keyboard = .{
             .ctrl_down = true,
+            .move_forward = true,
+            .move_down = true,
             .editor_toggle_pressed = true,
         },
         .ui_visible = false,
@@ -5379,8 +5606,13 @@ test "frame input round trips through ECS input components" {
     const input = try renderFrameInput(&world);
     try std.testing.expect(input.pointer.has_position);
     try std.testing.expectEqual(@as(f32, 44.0), input.pointer.position[0]);
+    try std.testing.expectEqual(@as(f32, 2.0), input.pointer.delta[0]);
+    try std.testing.expect(input.pointer.secondary_down);
+    try std.testing.expect(input.pointer.secondary_pressed);
     try std.testing.expectEqual(@as(f32, -3.0), input.pointer.wheel_delta[1]);
     try std.testing.expect(input.keyboard.ctrl_down);
+    try std.testing.expect(input.keyboard.move_forward);
+    try std.testing.expect(input.keyboard.move_down);
     try std.testing.expect(input.keyboard.editor_toggle_pressed);
     try std.testing.expect(!input.ui_visible);
     try std.testing.expect(input.debug_overlay_visible);

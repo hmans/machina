@@ -1,7 +1,7 @@
 # FDR-008: Headful Demo Window
 
 **Status:** Active
-**Last reviewed:** 2026-07-03
+**Last reviewed:** 2026-07-04
 
 ## Overview
 
@@ -20,6 +20,9 @@ Headful demo rendering proves that Machina can create a platform window, hand it
 - Renderable meshes render with depth testing, scene-driven directional diffuse shading, and receiver-side shadowing.
 - UI rectangles and text labels render after 3D scene content as an overlay.
 - Users can run `machina run [path] --frames N` to exit after a fixed number of frames for smoke tests and automation.
+- In headful runs, holding the right mouse button enables a fly camera. Mouse movement changes view direction; W/A/S/D moves relative to the camera; Space moves up; Ctrl moves down. While active, the SDL window uses relative mouse mode so view rotation can continue at window edges.
+- The fly camera initializes from the scene-authored camera and applies as a render-only camera override. It does not mutate scene files or live scene camera components.
+- When the editor/debug overlay is visible, fly-camera input only applies while the pointer is over the game viewport.
 - The engine-owned editor/debug overlay is hidden by default; users can press Ctrl+Tab to toggle it.
 - Users can run `machina run [path] --editor` to start with the editor/debug overlay visible.
 - `machina render [path] [output.bmp]` remains the headless/offscreen snapshot command.
@@ -62,9 +65,15 @@ Headful demo rendering proves that Machina can create a platform window, hand it
 **Why:** Visible windows and headless snapshots should exercise the same rendering architecture wherever possible. This follows ADR-013.
 **Tradeoff:** Backend resource lifetime is still managed by the renderer facade until native/internal component storage exists.
 
+### 7. Add a render-only fly camera for headful exploration
+
+**Decision:** The headful runner owns a fly-camera transform initialized from the current scene camera. While right mouse is held, pointer delta and semantic movement input update that transform; rendering receives it as a frame camera override.
+**Why:** Dense scenes such as `spawn_swarm` need interactive navigation before a full editor camera/tool mode exists. Keeping this as a render-only override gives immediate inspection value without changing project scene data or requiring a gameplay camera component model.
+**Tradeoff:** This is not yet an authored camera controller, action-mapping system, editor camera asset, or persisted editor session state. Scene reload resets the fly camera to the new scene camera.
+
 ## Related
 
-- **ADRs:** ADR-004, ADR-005, ADR-013
+- **ADRs:** ADR-004, ADR-005, ADR-013, ADR-020
 - **FDRs:** FDR-003, FDR-005, FDR-007, FDR-014, FDR-015, FDR-016, FDR-017
 
 ## Open Questions

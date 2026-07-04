@@ -333,9 +333,13 @@ pub const LiveProject = struct {
         };
         routed_input.editor = self.editorFrameState();
         if (editor_update.consumed_pointer) {
+            routed_input.pointer.delta = .{ 0.0, 0.0 };
             routed_input.pointer.primary_down = false;
             routed_input.pointer.primary_pressed = false;
             routed_input.pointer.primary_released = false;
+            routed_input.pointer.secondary_down = false;
+            routed_input.pointer.secondary_pressed = false;
+            routed_input.pointer.secondary_released = false;
             routed_input.pointer.wheel_delta = .{ 0.0, 0.0 };
         }
         render.writeFrameInput(&self.scene.world, routed_input) catch |err| {
@@ -936,9 +940,13 @@ pub fn stepProjectDetailed(
             const editor_update = try render.updateEditorState(allocator, &scene.world, &editor_state, editor_input);
             routed_input.editor = render.editorFrameState(&scene.world, editor_state);
             if (editor_update.consumed_pointer) {
+                routed_input.pointer.delta = .{ 0.0, 0.0 };
                 routed_input.pointer.primary_down = false;
                 routed_input.pointer.primary_pressed = false;
                 routed_input.pointer.primary_released = false;
+                routed_input.pointer.secondary_down = false;
+                routed_input.pointer.secondary_pressed = false;
+                routed_input.pointer.secondary_released = false;
                 routed_input.pointer.wheel_delta = .{ 0.0, 0.0 };
             }
 

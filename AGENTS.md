@@ -79,13 +79,14 @@ Rendering and UI:
 - Rendering, scene UI input, scroll handling, button command dispatch, button hover/press visuals, and canvas viewport scaling should call through `src/ui_layout.zig` rather than carrying duplicate layout or hit-test math.
 - Retained command buttons should route through `ui_layout.commandAt` after any needed viewport/design-space conversion. Do not add one-off editor or example button rectangle checks when generated `machina.ui.rect` + `machina.ui.button` + `machina.ui.command` data can represent the control.
 - Headful input is translated into ECS frame input.
-- Runtime input is represented as transient engine-owned ECS components on `machina.input.frame`: `machina.input.pointer`, `machina.input.keyboard`, and `machina.input.frame`.
+- Runtime input is represented as transient engine-owned ECS components on `machina.input.frame`: `machina.input.pointer`, `machina.input.keyboard`, and `machina.input.frame`. Pointer input includes position, delta, primary/secondary button state, and wheel delta; keyboard input includes modifiers plus semantic movement keys.
 - Input components are runtime resources, not scene-authored project data.
 - Button markers derive ECS interaction state for hovered, held, and pressed visuals.
 - Command buttons emit transient `machina.ui.command_event` components before update systems run.
 - Headful runs can generate an engine-owned editor/debug shell in the render ECS world.
 - The editor/debug shell is hidden by default, `machina run --editor` shows it on startup, Ctrl+Tab toggles it, and the current sidebar shows FPS plus project/native system timing rows and engine-internal render system timing rows.
 - When the editor shell is visible, render the game into the computed 16:9 game viewport and keep editor chrome outside that viewport. Picking, gizmo projection, and scene-authored UI should use game viewport coordinates, while editor chrome uses full-window coordinates.
+- Headful runs have a render-only fly camera: right mouse look, WASD movement, Space up, Ctrl down. It initializes from the scene camera, resets on scene reload, and must not mutate scene-authored camera components or project files.
 - The debug overlay displays performance snapshots at a throttled human-readable cadence; keep measuring every frame, but do not make the visible table flicker every frame.
 - The debug overlay performance table uses `machina.ui.scroll_view`, `machina.ui.vbox`, and `machina.ui.layout.item` for its clipped animated pixel-scroll viewport. It should not truncate the list to unreachable rows or regress to row-only, row-snapped, instant-jump scroll state, or private renderer-only list layout.
 - The debug overlay performance table should show a visible scrollbar when the system list overflows. Keep it generated as normal ECS UI rect data rather than a renderer-side overlay.

@@ -38,8 +38,8 @@ Machina registers these engine component types before project scripts and native
 | `machina.ui.toggle` | `checked: bool` | State marker that influences rect/button visuals. Scripts own mutation for now. |
 | `machina.ui.progress_bar` | `value: f32`, `max: f32`, `fill_color: vec3` | Renders a fill inside the entity's rect. |
 | `machina.ui.separator` | `position: vec3`, `size: vec3`, `color: vec3` | Thin semantic divider. |
-| `machina.input.pointer` | `position: vec3`, `has_position: bool`, primary button state, `wheel_delta: vec3` | Runtime-only current pointer frame state. Do not author in scenes. |
-| `machina.input.keyboard` | modifier state, `editor_toggle_pressed: bool` | Runtime-only current keyboard frame state. Do not author in scenes. |
+| `machina.input.pointer` | `position: vec3`, `delta: vec3`, `has_position: bool`, primary/secondary button state, `wheel_delta: vec3` | Runtime-only current pointer frame state. Do not author in scenes. |
+| `machina.input.keyboard` | modifier state, movement key state, `editor_toggle_pressed: bool` | Runtime-only current keyboard frame state. Do not author in scenes. |
 | `machina.input.frame` | `ui_visible: bool`, `debug_overlay_visible: bool`, `viewport: vec3` | Runtime-only frame input state. Do not author in scenes. |
 
 Retained UI layout is resolved consistently for rendering and input. Scene UI hit testing, button hover/press visuals, command dispatch, scroll handling, clipping, and canvas fit/fill scaling use the same `scroll_view`, `vbox`, `stack`, and `layout.item` semantics that render the controls. Command buttons are ordinary retained UI entities: `machina.ui.rect` + `machina.ui.button` + `machina.ui.command`.

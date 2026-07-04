@@ -284,10 +284,14 @@ export type MachinaUiCommandEvent = {
 
 export type MachinaInputPointer = {
     position: MachinaVec3,
+    delta: MachinaVec3,
     has_position: boolean,
     primary_down: boolean,
     primary_pressed: boolean,
     primary_released: boolean,
+    secondary_down: boolean,
+    secondary_pressed: boolean,
+    secondary_released: boolean,
     wheel_delta: MachinaVec3,
 }
 
@@ -296,6 +300,12 @@ export type MachinaInputKeyboard = {
     shift_down: boolean,
     alt_down: boolean,
     super_down: boolean,
+    move_forward: boolean,
+    move_back: boolean,
+    move_left: boolean,
+    move_right: boolean,
+    move_up: boolean,
+    move_down: boolean,
     editor_toggle_pressed: boolean,
 }
 
