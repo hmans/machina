@@ -54,7 +54,9 @@ Rendering and UI:
 - New scene-authored renderables should use `machina.geometry.primitive` plus `machina.material.surface`.
 - `machina.render.cube` is a legacy shortcut that renders as box geometry with inline color.
 - Shadow behavior is authored with `machina.shadow.caster` and `machina.shadow.receiver` marker components.
-- First-slice UI uses retained scene components: `machina.ui.canvas`, `machina.ui.rect`, `machina.ui.text`, `machina.ui.button`, `machina.ui.command`, `machina.ui.scroll_view`, `machina.ui.vbox`, `machina.ui.stack`, `machina.ui.layout.item`, `machina.ui.spacer`, `machina.ui.text_block`, `machina.ui.toggle`, `machina.ui.progress_bar`, and `machina.ui.separator`.
+- First-slice UI uses retained scene components: `machina.ui.canvas`, `machina.ui.rect`, `machina.ui.border`, `machina.ui.text`, `machina.ui.button`, `machina.ui.command`, `machina.ui.scroll_view`, `machina.ui.vbox`, `machina.ui.stack`, `machina.ui.layout.item`, `machina.ui.spacer`, `machina.ui.text_block`, `machina.ui.toggle`, `machina.ui.progress_bar`, and `machina.ui.separator`.
+- `machina.ui.canvas` can opt into viewport adaptation with `design_size` and `scale_mode`; prefer this over hand-tuning scenes for one window size.
+- Layout containers support padding, and `machina.ui.layout.item` supports symmetric margins. Prefer layout primitives for breathing room instead of scattering absolute offsets.
 - `machina.ui.rect` has `position`, `size`, `color`, and `corner_radius` fields. Missing scene-authored `corner_radius` values default to `0.0` for compatibility.
 - Rounded UI corners render through the shared UI shader with SDF coverage and alpha blending. Do not add renderer-only corner geometry or per-example hacks for rounded panels/buttons.
 - UI renders as a screen-space overlay after 3D content, with fixed-pixel Spleen 16x32-derived built-in text.
@@ -153,7 +155,7 @@ Live reload:
 - Do not introduce UI-private or renderer-private input side channels. If a system needs keyboard or pointer state, route it through the shared `machina.input.*` components or explicitly document why that slice cannot yet do so.
 - Treat `machina.ui.command_event` as runtime-only transient data. Do not author it in scene files; author `machina.ui.command` on button entities instead.
 - Prefer reusable retained UI layout primitives over one-off renderer/editor layout shortcuts. Use `machina.ui.scroll_view` for clipped scrollable regions, `machina.ui.vbox` for vertical stacks, and `machina.ui.layout.item` with stable entity-id parents for child ordering.
-- Keep editor/debug UI text legible at normal viewing sizes. Do not use built-in bitmap UI text below `1.0` scale for editor surfaces; prefer larger sizes for primary readouts and verify compact panels in a headful screenshot or smoke run.
+- Keep editor/debug and example UI text legible at normal viewing sizes. Do not use built-in bitmap UI text below `1.0` scale for editor surfaces; prefer larger sizes for primary readouts and verify compact panels in a headful screenshot, offscreen render artifact, or smoke run.
 - Keep editor/debug list rows bounded and readable. Use compact formatting, scrolling, windowing, or pagination for unbounded lists instead of drawing unreachable overflow or hidden `... more` rows.
 - Keep smooth UI scrolling modeled as target pixel/float offsets, animated visible offsets, row-height-independent wheel distances, and clipping. Do not fake smooth scrolling with hidden whole-row windows, row-snapped targets, instant jumps, or by drawing unclipped overflow outside the viewport.
 - For editor input bugs, add deterministic frame-replay coverage in Zig tests. Prefer replaying wheel/key/pointer frame sequences against editor state before relying on manual headful checks.

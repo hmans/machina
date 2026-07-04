@@ -14,6 +14,7 @@ description: A map of the example projects and test fixtures included with Machi
 | `examples/spawning/` | Script-driven entity spawning from an otherwise empty rendered scene. |
 | `examples/comet_garden/` | Startup spawning, deferred lifecycle commands, culling, and buffer-backed query views. |
 | `examples/ui_overlay/` | Retained ECS UI primitives and built-in bitmap text. |
+| `examples/ui_gallery/` | Retained UI primitive gallery with canvas scaling, rounded panels, borders, layout containers, scrolling, buttons, toggles, progress bars, and command events. |
 | `examples/native_motion/` | Project-local Zig native module declared in the project manifest. |
 
 ## Useful Commands

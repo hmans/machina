@@ -668,6 +668,17 @@ const UiLayoutItem = struct {
     min_size: [3]f32,
     grow: f32,
     @"align": []const u8,
+    margin: [3]f32,
+};
+
+const UiCanvas = struct {
+    design_size: [3]f32,
+    scale_mode: []const u8,
+};
+
+const UiCanvasTransform = struct {
+    offset: [2]f32 = .{ 0.0, 0.0 },
+    scale: f32 = 1.0,
 };
 
 const UiScrollView = struct {
@@ -698,7 +709,7 @@ fn updateSceneUiScrollViews(world: *World) !void {
     }
 
     const pointer_position_vec3 = try world.getVec3(input_entity, runtime.input_pointer_component_id, "position");
-    const pointer_position = [2]f32{ pointer_position_vec3[0], pointer_position_vec3[1] };
+    const pointer_position = try sceneUiPointerPosition(world, input_entity, .{ pointer_position_vec3[0], pointer_position_vec3[1] });
     var selected: ?runtime.EntityHandle = null;
 
     var cursor: usize = 0;
@@ -735,7 +746,7 @@ fn updateUiCommandEvents(world: *World) !void {
         return;
     }
     const pointer_position_vec3 = try world.getVec3(input_entity, runtime.input_pointer_component_id, "position");
-    const pointer_position = [2]f32{ pointer_position_vec3[0], pointer_position_vec3[1] };
+    const pointer_position = try sceneUiPointerPosition(world, input_entity, .{ pointer_position_vec3[0], pointer_position_vec3[1] });
 
     var selected: ?UiCommandHit = null;
     var cursor: usize = 0;
@@ -807,6 +818,17 @@ fn uiLayoutItem(world: *World, entity: runtime.EntityHandle) !?UiLayoutItem {
         .min_size = try world.getVec3(entity, runtime.ui_layout_item_component_id, "min_size"),
         .grow = try world.getFloat(entity, runtime.ui_layout_item_component_id, "grow"),
         .@"align" = try world.getString(entity, runtime.ui_layout_item_component_id, "align"),
+        .margin = try world.getVec3(entity, runtime.ui_layout_item_component_id, "margin"),
+    };
+}
+
+fn uiCanvas(world: *World, entity: runtime.EntityHandle) !?UiCanvas {
+    if (!(try world.hasComponent(entity, runtime.ui_canvas_component_id))) {
+        return null;
+    }
+    return .{
+        .design_size = try world.getVec3(entity, runtime.ui_canvas_component_id, "design_size"),
+        .scale_mode = try world.getString(entity, runtime.ui_canvas_component_id, "scale_mode"),
     };
 }
 
@@ -818,6 +840,13 @@ fn resolveSceneUiLayout(world: *World, entity: runtime.EntityHandle, local_posit
     for (0..max_depth) |_| {
         const item = (try uiLayoutItem(world, child)) orelse return resolved;
         const parent = world.findEntityById(item.parent) orelse return ProjectError.InvalidSceneEntity;
+
+        if (!isFiniteVec3(item.margin) or item.margin[0] < 0.0 or item.margin[1] < 0.0 or item.margin[2] < 0.0) {
+            return ProjectError.InvalidSceneEntity;
+        }
+        resolved.position[0] += item.margin[0];
+        resolved.position[1] += item.margin[1];
+        resolved.position[2] += item.margin[2];
 
         if (try uiVBox(world, parent)) |vbox| {
             resolved.position[0] += vbox.position[0];
@@ -871,6 +900,57 @@ fn pointInsideUiClip(point: [2]f32, clip: ?UiClipRect) bool {
         return runtime.pointInsideUiRect(point, clip_rect.position, clip_rect.size);
     }
     return true;
+}
+
+fn sceneUiPointerPosition(world: *World, input_entity: runtime.EntityHandle, pointer_position: [2]f32) ![2]f32 {
+    const debug_overlay_visible = try world.getBoolean(input_entity, runtime.input_frame_component_id, "debug_overlay_visible");
+    if (debug_overlay_visible) {
+        return pointer_position;
+    }
+
+    const viewport = try world.getVec3(input_entity, runtime.input_frame_component_id, "viewport");
+    const transform = try sceneUiCanvasTransform(world, viewport);
+    return .{
+        (pointer_position[0] - transform.offset[0]) / transform.scale,
+        (pointer_position[1] - transform.offset[1]) / transform.scale,
+    };
+}
+
+fn sceneUiCanvasTransform(world: *World, viewport: [3]f32) !UiCanvasTransform {
+    if (viewport[0] <= 0.0 or viewport[1] <= 0.0) {
+        return .{};
+    }
+
+    for (0..world.entityCount()) |index| {
+        const entity = runtime.EntityHandle{ .index = @intCast(index) };
+        const canvas = (try uiCanvas(world, entity)) orelse continue;
+        return try resolveUiCanvasTransform(canvas, viewport[0], viewport[1]);
+    }
+    return .{};
+}
+
+fn resolveUiCanvasTransform(canvas: UiCanvas, width: f32, height: f32) !UiCanvasTransform {
+    if (std.mem.eql(u8, canvas.scale_mode, "none")) {
+        return .{};
+    }
+    if (!isFiniteVec3(canvas.design_size) or canvas.design_size[0] <= 0.0 or canvas.design_size[1] <= 0.0) {
+        return ProjectError.InvalidSceneEntity;
+    }
+
+    const scale = if (std.mem.eql(u8, canvas.scale_mode, "fit"))
+        @min(width / canvas.design_size[0], height / canvas.design_size[1])
+    else if (std.mem.eql(u8, canvas.scale_mode, "fill"))
+        @max(width / canvas.design_size[0], height / canvas.design_size[1])
+    else
+        return ProjectError.InvalidSceneEntity;
+
+    return .{
+        .offset = .{
+            (width - canvas.design_size[0] * scale) * 0.5,
+            (height - canvas.design_size[1] * scale) * 0.5,
+        },
+        .scale = scale,
+    };
 }
 
 fn uiVBoxChildOffsetY(world: *World, parent: runtime.EntityHandle, child: runtime.EntityHandle, child_item: UiLayoutItem) !f32 {
@@ -954,12 +1034,18 @@ fn sceneUiScrollMaxY(world: *World, scroll_entity: runtime.EntityHandle, scroll_
 fn uiLayoutItemSize(world: *World, entity: runtime.EntityHandle) anyerror![3]f32 {
     var size = try uiLayoutItemNaturalSize(world, entity);
     if (try uiLayoutItem(world, entity)) |item| {
-        if (!isFiniteVec3(item.min_size) or !std.math.isFinite(item.grow) or item.grow < 0.0) {
+        if (!isFiniteVec3(item.min_size) or !isFiniteVec3(item.margin) or
+            !std.math.isFinite(item.grow) or item.grow < 0.0 or
+            item.margin[0] < 0.0 or item.margin[1] < 0.0 or item.margin[2] < 0.0)
+        {
             return ProjectError.InvalidSceneEntity;
         }
         size[0] = @max(size[0], item.min_size[0]);
         size[1] = @max(size[1], item.min_size[1]);
         size[2] = @max(size[2], item.min_size[2]);
+        size[0] += item.margin[0] * 2.0;
+        size[1] += item.margin[1] * 2.0;
+        size[2] += item.margin[2] * 2.0;
     }
     return size;
 }
@@ -1787,12 +1873,16 @@ const SceneParser = struct {
 };
 
 fn addSceneComponentDefaults(allocator: std.mem.Allocator, component: *ComponentDraft) !void {
-    if (std.mem.eql(u8, component.id, runtime.ui_rect_component_id)) {
+    if (std.mem.eql(u8, component.id, runtime.ui_canvas_component_id)) {
+        try addSceneComponentDefaultField(allocator, component, "design_size", .{ .vec3 = .{ 0.0, 0.0, 0.0 } });
+        try addSceneComponentDefaultField(allocator, component, "scale_mode", .{ .string = "none" });
+    } else if (std.mem.eql(u8, component.id, runtime.ui_rect_component_id)) {
         try addSceneComponentDefaultField(allocator, component, "corner_radius", .{ .float = 0.0 });
     } else if (std.mem.eql(u8, component.id, runtime.ui_layout_item_component_id)) {
         try addSceneComponentDefaultField(allocator, component, "min_size", .{ .vec3 = .{ 0.0, 0.0, 0.0 } });
         try addSceneComponentDefaultField(allocator, component, "grow", .{ .float = 0.0 });
         try addSceneComponentDefaultField(allocator, component, "align", .{ .string = "start" });
+        try addSceneComponentDefaultField(allocator, component, "margin", .{ .vec3 = .{ 0.0, 0.0, 0.0 } });
     }
 }
 
@@ -3006,6 +3096,14 @@ test "LiveProject emits UI command events before scheduled scripts run" {
         \\version = 1
         \\
         \\[[entities]]
+        \\id = "canvas"
+        \\name = "Canvas"
+        \\
+        \\[entities.components."machina.ui.canvas"]
+        \\design_size = [640.0, 480.0, 0.0]
+        \\scale_mode = "fit"
+        \\
+        \\[[entities]]
         \\id = "button"
         \\name = "Button"
         \\
@@ -3069,8 +3167,10 @@ test "LiveProject emits UI command events before scheduled scripts run" {
     try std.testing.expect(!try live_project.scene.world.getBoolean(flag, "flag", "active"));
 
     live_project.updateWithInput(0.016, .{
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
         .pointer = .{
-            .position = .{ 48.0, 36.0 },
+            .position = .{ 232.0, 54.0 },
             .has_position = true,
             .primary_released = true,
         },

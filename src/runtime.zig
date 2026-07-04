@@ -37,6 +37,7 @@ pub const shadow_caster_component_id = "machina.shadow.caster";
 pub const shadow_receiver_component_id = "machina.shadow.receiver";
 pub const ui_canvas_component_id = "machina.ui.canvas";
 pub const ui_rect_component_id = "machina.ui.rect";
+pub const ui_border_component_id = "machina.ui.border";
 pub const ui_text_component_id = "machina.ui.text";
 pub const ui_button_component_id = "machina.ui.button";
 pub const ui_command_component_id = "machina.ui.command";
@@ -600,9 +601,14 @@ pub fn registerEngineComponents(registry: *ComponentRegistry) !void {
         .version = 1,
     });
 
+    const ui_canvas_fields = [_]ComponentFieldDefinition{
+        .{ .name = "design_size", .value_type = .vec3 },
+        .{ .name = "scale_mode", .value_type = .string },
+    };
     try registry.registerEngineComponent(.{
         .id = ui_canvas_component_id,
         .version = 1,
+        .fields = &ui_canvas_fields,
     });
 
     const ui_rect_fields = [_]ComponentFieldDefinition{
@@ -615,6 +621,16 @@ pub fn registerEngineComponents(registry: *ComponentRegistry) !void {
         .id = ui_rect_component_id,
         .version = 1,
         .fields = &ui_rect_fields,
+    });
+
+    const ui_border_fields = [_]ComponentFieldDefinition{
+        .{ .name = "color", .value_type = .vec3 },
+        .{ .name = "thickness", .value_type = .float },
+    };
+    try registry.registerEngineComponent(.{
+        .id = ui_border_component_id,
+        .version = 1,
+        .fields = &ui_border_fields,
     });
 
     const ui_text_fields = [_]ComponentFieldDefinition{
@@ -692,6 +708,7 @@ pub fn registerEngineComponents(registry: *ComponentRegistry) !void {
         .{ .name = "min_size", .value_type = .vec3 },
         .{ .name = "grow", .value_type = .float },
         .{ .name = "align", .value_type = .string },
+        .{ .name = "margin", .value_type = .vec3 },
     };
     try registry.registerEngineComponent(.{
         .id = ui_layout_item_component_id,
@@ -917,6 +934,16 @@ pub const UiRectComponent = struct {
     corner_radius: f32 = 0.0,
 };
 
+pub const UiCanvasComponent = struct {
+    design_size: [3]f32 = .{ 0.0, 0.0, 0.0 },
+    scale_mode: []const u8 = "none",
+};
+
+pub const UiBorderComponent = struct {
+    color: [3]f32 = .{ 0.0, 0.0, 0.0 },
+    thickness: f32 = 1.0,
+};
+
 pub const UiTextComponent = struct {
     position: [3]f32 = .{ 0.0, 0.0, 0.0 },
     size: f32 = 2.0,
@@ -952,6 +979,7 @@ pub const UiLayoutItemComponent = struct {
     min_size: [3]f32 = .{ 0.0, 0.0, 0.0 },
     grow: f32 = 0.0,
     @"align": []const u8 = "start",
+    margin: [3]f32 = .{ 0.0, 0.0, 0.0 },
 };
 
 pub const UiSpacerComponent = struct {
@@ -1426,8 +1454,12 @@ pub const World = struct {
         try self.setComponent(handle, shadow_receiver_component_id, &.{});
     }
 
-    pub fn setUiCanvas(self: *World, handle: EntityHandle) WorldError!void {
-        try self.setComponent(handle, ui_canvas_component_id, &.{});
+    pub fn setUiCanvas(self: *World, handle: EntityHandle, canvas: UiCanvasComponent) WorldError!void {
+        const fields = [_]ComponentFieldValue{
+            .{ .name = "design_size", .value = .{ .vec3 = canvas.design_size } },
+            .{ .name = "scale_mode", .value = .{ .string = canvas.scale_mode } },
+        };
+        try self.setComponent(handle, ui_canvas_component_id, &fields);
     }
 
     pub fn setUiRect(self: *World, handle: EntityHandle, rect: UiRectComponent) WorldError!void {
@@ -1438,6 +1470,14 @@ pub const World = struct {
             .{ .name = "corner_radius", .value = .{ .float = rect.corner_radius } },
         };
         try self.setComponent(handle, ui_rect_component_id, &fields);
+    }
+
+    pub fn setUiBorder(self: *World, handle: EntityHandle, border: UiBorderComponent) WorldError!void {
+        const fields = [_]ComponentFieldValue{
+            .{ .name = "color", .value = .{ .vec3 = border.color } },
+            .{ .name = "thickness", .value = .{ .float = border.thickness } },
+        };
+        try self.setComponent(handle, ui_border_component_id, &fields);
     }
 
     pub fn setUiText(self: *World, handle: EntityHandle, text: UiTextComponent) WorldError!void {
@@ -1495,6 +1535,7 @@ pub const World = struct {
             .{ .name = "min_size", .value = .{ .vec3 = item.min_size } },
             .{ .name = "grow", .value = .{ .float = item.grow } },
             .{ .name = "align", .value = .{ .string = item.@"align" } },
+            .{ .name = "margin", .value = .{ .vec3 = item.margin } },
         };
         try self.setComponent(handle, ui_layout_item_component_id, &fields);
     }
@@ -2820,7 +2861,7 @@ test "world resolves UI rect and text components" {
     defer world.deinit();
 
     const canvas = try world.createEntity("hud-canvas", "HUD Canvas");
-    try world.setUiCanvas(canvas);
+    try world.setUiCanvas(canvas, .{});
 
     const panel = try world.createEntity("hud-panel", "HUD Panel");
     try world.setUiRect(panel, .{
@@ -3179,6 +3220,7 @@ test "engine component schemas are registered from runtime" {
     try std.testing.expect(registry.findComponent(shadow_receiver_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_canvas_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_rect_component_id) != null);
+    try std.testing.expect(registry.findComponent(ui_border_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_text_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_button_component_id) != null);
     try std.testing.expect(registry.findComponent(ui_command_component_id) != null);
@@ -3195,11 +3237,16 @@ test "engine component schemas are registered from runtime" {
     try std.testing.expect(registry.findComponent(input_pointer_component_id) != null);
     try std.testing.expect(registry.findComponent(input_keyboard_component_id) != null);
     try std.testing.expect(registry.findComponent(input_frame_component_id) != null);
-    try std.testing.expectEqual(@as(usize, 26), registry.componentCount());
+    try std.testing.expectEqual(@as(usize, 27), registry.componentCount());
 
     const transform = registry.findComponent(transform_component_id) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 3), transform.fields.len);
     try std.testing.expectEqual(FieldType.vec3, transform.fields[0].value_type);
+
+    const ui_canvas = registry.findComponent(ui_canvas_component_id) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 2), ui_canvas.fields.len);
+    try std.testing.expectEqual(FieldType.vec3, ui_canvas.fields[0].value_type);
+    try std.testing.expectEqual(FieldType.string, ui_canvas.fields[1].value_type);
 
     const ui_text = registry.findComponent(ui_text_component_id) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 4), ui_text.fields.len);
@@ -3209,15 +3256,21 @@ test "engine component schemas are registered from runtime" {
     try std.testing.expectEqual(@as(usize, 4), ui_rect.fields.len);
     try std.testing.expectEqual(FieldType.float, ui_rect.fields[3].value_type);
 
+    const ui_border = registry.findComponent(ui_border_component_id) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 2), ui_border.fields.len);
+    try std.testing.expectEqual(FieldType.vec3, ui_border.fields[0].value_type);
+    try std.testing.expectEqual(FieldType.float, ui_border.fields[1].value_type);
+
     const ui_stack = registry.findComponent(ui_stack_component_id) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 4), ui_stack.fields.len);
     try std.testing.expectEqual(FieldType.string, ui_stack.fields[2].value_type);
 
     const ui_layout_item = registry.findComponent(ui_layout_item_component_id) orelse return error.TestExpectedEqual;
-    try std.testing.expectEqual(@as(usize, 5), ui_layout_item.fields.len);
+    try std.testing.expectEqual(@as(usize, 6), ui_layout_item.fields.len);
     try std.testing.expectEqual(FieldType.vec3, ui_layout_item.fields[2].value_type);
     try std.testing.expectEqual(FieldType.float, ui_layout_item.fields[3].value_type);
     try std.testing.expectEqual(FieldType.string, ui_layout_item.fields[4].value_type);
+    try std.testing.expectEqual(FieldType.vec3, ui_layout_item.fields[5].value_type);
 
     const ui_progress_bar = registry.findComponent(ui_progress_bar_component_id) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 3), ui_progress_bar.fields.len);

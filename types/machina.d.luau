@@ -194,13 +194,21 @@ export type MachinaDirectionalLight = {
 export type MachinaShadowCaster = {}
 export type MachinaShadowReceiver = {}
 
-export type MachinaUiCanvas = {}
+export type MachinaUiCanvas = {
+    design_size: MachinaVec3,
+    scale_mode: string,
+}
 
 export type MachinaUiRect = {
     position: MachinaVec3,
     size: MachinaVec3,
     color: MachinaVec3,
     corner_radius: number,
+}
+
+export type MachinaUiBorder = {
+    color: MachinaVec3,
+    thickness: number,
 }
 
 export type MachinaUiText = {
@@ -240,6 +248,7 @@ export type MachinaUiLayoutItem = {
     min_size: MachinaVec3,
     grow: number,
     align: string,
+    margin: MachinaVec3,
 }
 
 export type MachinaUiSpacer = {

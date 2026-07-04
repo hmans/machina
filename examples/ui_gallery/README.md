@@ -1,7 +1,8 @@
 # Machina UI Gallery
 
-This project demonstrates the current retained UI primitives: canvas markers,
-screen-space panels, text labels, button markers, command ids, command events,
+This project demonstrates the current retained UI primitives: canvas scaling,
+screen-space panels, rounded borders, text labels, layout containers, scroll
+views, buttons, command ids, command events, toggles, progress bars, separators,
 and script-mutated UI state.
 
 ```sh

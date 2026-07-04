@@ -6,6 +6,8 @@ id = "ui-canvas"
 name = "UI Canvas"
 
 [entities.components."machina.ui.canvas"]
+design_size = [640.0, 480.0, 0.0]
+scale_mode = "fit"
 
 [[entities]]
 id = "gallery-shell"
@@ -14,8 +16,12 @@ name = "Gallery Shell"
 [entities.components."machina.ui.rect"]
 position = [24.0, 32.0, 0.0]
 size = [592.0, 420.0, 0.0]
-color = [0.031, 0.041, 0.063]
+color = [0.024, 0.031, 0.047]
 corner_radius = 8.0
+
+[entities.components."machina.ui.border"]
+color = [0.148, 0.2, 0.282]
+thickness = 1.0
 
 [[entities]]
 id = "gallery-accent"
@@ -97,6 +103,10 @@ size = [118.0, 124.0, 0.0]
 color = [0.008, 0.012, 0.024]
 corner_radius = 4.0
 
+[entities.components."machina.ui.border"]
+color = [0.148, 0.2, 0.282]
+thickness = 1.0
+
 [entities.components."machina.ui.scroll_view"]
 position = [44.0, 292.0, 0.0]
 size = [118.0, 124.0, 0.0]
@@ -127,6 +137,7 @@ value = "SCROLL"
 [entities.components."machina.ui.layout.item"]
 parent = "nav-scroll-stack"
 order = 0
+margin = [4.0, 2.0, 0.0]
 
 [[entities]]
 id = "nav-scroll-row-2"
@@ -141,6 +152,7 @@ value = "VBOX"
 [entities.components."machina.ui.layout.item"]
 parent = "nav-scroll-stack"
 order = 1
+margin = [4.0, 2.0, 0.0]
 
 [[entities]]
 id = "nav-scroll-row-3"
@@ -155,6 +167,7 @@ value = "ROW 3"
 [entities.components."machina.ui.layout.item"]
 parent = "nav-scroll-stack"
 order = 3
+margin = [4.0, 2.0, 0.0]
 
 [[entities]]
 id = "nav-scroll-spacer"
@@ -180,6 +193,7 @@ value = "ROW 4"
 [entities.components."machina.ui.layout.item"]
 parent = "nav-scroll-stack"
 order = 4
+margin = [4.0, 2.0, 0.0]
 
 [[entities]]
 id = "nav-scroll-row-5"
@@ -194,6 +208,7 @@ value = "ROW 5"
 [entities.components."machina.ui.layout.item"]
 parent = "nav-scroll-stack"
 order = 5
+margin = [4.0, 2.0, 0.0]
 
 [[entities]]
 id = "content-panel"
@@ -204,6 +219,10 @@ position = [208.0, 72.0, 0.0]
 size = [360.0, 152.0, 0.0]
 color = [0.008, 0.012, 0.024]
 corner_radius = 6.0
+
+[entities.components."machina.ui.border"]
+color = [0.148, 0.2, 0.282]
+thickness = 1.0
 
 [[entities]]
 id = "content-title"
@@ -264,6 +283,10 @@ size = [112.0, 50.0, 0.0]
 color = [0.028, 0.324, 0.49]
 corner_radius = 6.0
 
+[entities.components."machina.ui.border"]
+color = [0.22, 0.714, 0.82]
+thickness = 1.0
+
 [entities.components."machina.ui.button"]
 
 [entities.components."machina.ui.layout.item"]
@@ -297,6 +320,10 @@ position = [0.0, 0.0, 0.0]
 size = [112.0, 50.0, 0.0]
 color = [0.023, 0.471, 0.314]
 corner_radius = 6.0
+
+[entities.components."machina.ui.border"]
+color = [0.431, 0.878, 0.659]
+thickness = 1.0
 
 [entities.components."machina.ui.button"]
 
@@ -335,6 +362,10 @@ size = [112.0, 50.0, 0.0]
 color = [0.714, 0.333, 0.031]
 corner_radius = 6.0
 
+[entities.components."machina.ui.border"]
+color = [0.96, 0.62, 0.043]
+thickness = 1.0
+
 [entities.components."machina.ui.button"]
 
 [entities.components."machina.ui.layout.item"]
@@ -368,6 +399,10 @@ position = [208.0, 340.0, 0.0]
 size = [368.0, 72.0, 0.0]
 color = [0.051, 0.065, 0.094]
 corner_radius = 6.0
+
+[entities.components."machina.ui.border"]
+color = [0.148, 0.2, 0.282]
+thickness = 1.0
 
 [[entities]]
 id = "status-label"

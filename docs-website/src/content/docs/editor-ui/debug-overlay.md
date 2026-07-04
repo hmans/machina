@@ -38,9 +38,19 @@ The editor overlay is generated into the render ECS world, but the same retained
 
 - `machina.ui.canvas`
 - `machina.ui.rect`
+- `machina.ui.border`
 - `machina.ui.text`
 - `machina.ui.button`
 - `machina.ui.command`
+- `machina.ui.scroll_view`
+- `machina.ui.vbox`
+- `machina.ui.stack`
+- `machina.ui.layout.item`
+- `machina.ui.spacer`
+- `machina.ui.text_block`
+- `machina.ui.toggle`
+- `machina.ui.progress_bar`
+- `machina.ui.separator`
 
 Text uses an embedded Spleen-derived bitmap font.
 
@@ -51,10 +61,19 @@ Text uses an embedded Spleen-derived bitmap font.
 id = "debug-panel"
 name = "Debug Panel"
 
+[entities.components."machina.ui.canvas"]
+design_size = [640.0, 480.0, 0.0]
+scale_mode = "fit"
+
 [entities.components."machina.ui.rect"]
 position = [12.0, 12.0, 0.0]
 size = [320.0, 120.0, 0.0]
 color = [0.059, 0.09, 0.165]
+corner_radius = 6.0
+
+[entities.components."machina.ui.border"]
+color = [0.148, 0.2, 0.282]
+thickness = 1.0
 
 [[entities]]
 id = "debug-label"

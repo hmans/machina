@@ -1,7 +1,7 @@
 # FDR-005: Engine UI Primitives
 
 **Status:** Active
-**Last reviewed:** 2026-07-03
+**Last reviewed:** 2026-07-04
 
 ## Overview
 
@@ -10,9 +10,11 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 ## Behavior
 
 - The engine can render text-authored UI overlays in offscreen renders and interactive windows.
-- Scene entities can define a UI canvas marker, screen-space colored rectangles, fixed-pixel text labels, button markers, button command ids, scroll views, vertical stacks, direction-aware stacks, layout child metadata, spacers, text blocks, toggles, progress bars, and separators.
+- Scene entities can define a UI canvas, screen-space colored rectangles, rounded borders, fixed-pixel text labels, button markers, button command ids, scroll views, vertical stacks, direction-aware stacks, layout child metadata, spacers, text blocks, toggles, progress bars, and separators.
+- `machina.ui.canvas` stores `design_size` and `scale_mode`. `scale_mode = "none"` preserves raw screen pixels. `scale_mode = "fit"` scales and centers scene-authored UI into the current viewport while preserving aspect ratio. `scale_mode = "fill"` scales enough to cover the viewport.
 - UI rectangles use screen-space positions and sizes with a top-left origin, plus an optional `corner_radius` field in pixels. Missing `corner_radius` values default to `0.0` for compatibility with older scene data.
 - UI rectangle corners render through the UI shader using rounded-rectangle SDF coverage with alpha blending. Text glyph quads use the same UI pipeline with `corner_radius = 0.0`.
+- `machina.ui.border` adds a data-authored border to a rect with `color` and `thickness`. Borders render through the same rounded-rectangle SDF path by drawing an outer rounded rect and an inset fill rect.
 - UI text labels use screen-space positions with a top-left origin.
 - The first UI demo uses a subdued dark Tailwind-derived palette: near-black workspaces, slate panels, muted cyan structure accents, restrained semantic control colors, and high-contrast but not pure-white text.
 - Button markers derive hover, held, and pressed interaction state in headful runs and use that state for button visuals.
@@ -33,7 +35,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - In live headful runs, scene-authored scroll views under the pointer update their `content_offset` from mouse wheel input before project update systems run.
 - `machina.ui.vbox` defines a vertical stack origin and spacing. Direct children are ordered by `machina.ui.layout.item.order` and stacked by their current primitive height.
 - `machina.ui.stack` defines a direction-aware stack origin, spacing, direction, and padding. Supported directions are `vertical`, `column`, `horizontal`, and `row`.
-- `machina.ui.layout.item` attaches an entity to a parent entity id and gives it integer order, minimum size, grow ratio, and cross-axis alignment metadata. Parent ids are stable scene entity ids, not dense runtime handles. Grow ratios are stored and validated but do not redistribute extra space yet.
+- `machina.ui.layout.item` attaches an entity to a parent entity id and gives it integer order, minimum size, grow ratio, cross-axis alignment metadata, and symmetric x/y/z margin. Parent ids are stable scene entity ids, not dense runtime handles. Grow ratios are stored and validated but do not redistribute extra space yet.
 - `machina.ui.spacer` participates in layout without rendering.
 - `machina.ui.text_block` gives a text entity a content box and horizontal/vertical `start`, `center`, or `end` alignment.
 - `machina.ui.toggle` stores checked state and influences button/rect visuals. It does not yet toggle itself automatically; scripts or editor systems own state mutation.
@@ -117,6 +119,12 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 **Why:** Godot's UI model is useful inspiration: content controls, layout containers, child sizing metadata, and themeable semantic controls. Machina still needs component names and behavior that fit ECS authoring, text scenes, and future agent workflows.
 **Tradeoff:** This is not a full widget toolkit yet. `grow` ratios are stored but not space-distributing; toggles do not self-mutate; text input, focus, keyboard navigation, scroll bars, style inheritance, and reusable composite widgets remain future work.
 
+### 9b. Make canvas scale, margin, and border first-class retained data
+
+**Decision:** Machina adds opt-in canvas fit/fill scaling, layout item margins, and rounded rect borders as ECS component fields instead of treating the UI gallery as a window-size-specific hand layout.
+**Why:** The default game window is larger than the original UI examples. Retained UI needs explicit primitives for viewport adaptation and spacing so examples, editor chrome, and future tools can remain legible without per-window coordinate hacks.
+**Tradeoff:** This is still a compact layout system. Margins are symmetric vec3 values, borders are uniform, and canvas scaling is per scene UI surface rather than a full responsive constraint layout.
+
 ### 10. Treat examples as the primitive gallery
 
 **Decision:** The UI gallery example is the proving ground for retained UI primitives until Machina has a richer widget/layout library.
@@ -134,7 +142,7 @@ Engine UI primitives provide the controls and layout capabilities needed for run
 - How should command ids be namespaced and routed into editor tools or engine services?
 - When should focus and text input become active behavior?
 - What should full keyboard state and text input look like beyond the current modifier/action edge fields?
-- What exact ECS shape should grid/flex sizing, scroll bars, and grow-ratio space distribution use?
+- What exact ECS shape should grid/flex sizing, scroll bars, asymmetric margins/padding, and grow-ratio space distribution use?
 - How should UI containers express focus, keyboard navigation, virtualization, and style inheritance?
 - What text editing capability is needed before the editor becomes practical?
 - How should the editor expose system-list sorting and drill-down timing history?
