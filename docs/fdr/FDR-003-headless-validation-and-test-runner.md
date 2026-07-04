@@ -16,8 +16,9 @@ The headless validation and test runner lets users, CI systems, and agents check
 - `machina bench [path] [--frames N] [--dt seconds]` loads a project once, measures startup and repeated update frames without opening a window, and reports elapsed timing data plus headless render-planning statistics.
 - `machina bench [path] --format=json` reports benchmark timing, renderable count, render batch count, and UI primitive counts for scripts, agents, and CI logs.
 - Automated scenario fixtures live under `tests/projects/` and use complete text-authored Machina projects rather than sharing example projects.
-- `machina test [tests-path|project-path]` discovers text-authored test projects, reads each project's `test.machina.toml`, steps the project headlessly, and checks declared ECS field expectations.
+- `machina test [tests-path|project-path]` discovers text-authored test projects, reads each project's `test.machina.toml`, steps the project headlessly, replays optional deterministic input frames, and checks declared ECS field expectations.
 - `machina test --format=json` reports each project case, simulation summary, per-field expected/actual assertion data, diagnostics, and a suite summary.
+- `test.machina.toml` may include `[[input.frame]]` records with one-based frame numbers, pointer position, wheel delta, viewport size, editor visibility, button state, keyboard state, and system profile count hints. These frames run through the same frame input, editor, scene UI scroll, command-event, and script-update routing used by live projects.
 - `machina render-test [path] [output.bmp]` renders the default scene offscreen, including UI overlays, reads the output image back, and verifies BMP shape, foreground coverage, visible components, and expected warm/cool color groups for automation.
 - Future headless test commands can exercise scene and script live reload deterministically.
 - Users can run project validation without initializing graphical presentation.
@@ -47,9 +48,9 @@ The headless validation and test runner lets users, CI systems, and agents check
 
 ### 4. Add deterministic stepping and manifest assertions before full test scripting
 
-**Decision:** Script behavior tests use a small `test.machina.toml` manifest with frame count, timestep, and ECS field equality assertions instead of introducing a full test scripting DSL.
-**Why:** Agents and CI need a small, reliable way to prove script systems mutate ECS state and surface runtime diagnostics. Keeping the assertions text-first makes them easy to inspect and patch. This follows ADR-003 and ADR-006.
-**Tradeoff:** The manifest currently supports direct component field equality, not arbitrary predicates, setup/teardown hooks, or multi-scene flows.
+**Decision:** Script and interaction behavior tests use a small `test.machina.toml` manifest with frame count, timestep, optional deterministic input frames, and ECS field equality assertions instead of introducing a full test scripting DSL.
+**Why:** Agents and CI need a small, reliable way to prove script systems, retained UI routing, and editor/game input ownership mutate ECS state and surface runtime diagnostics. Keeping the replay frames and assertions text-first makes them easy to inspect and patch. This follows ADR-003 and ADR-006.
+**Tradeoff:** The manifest currently supports direct component field equality and frame-level input replay, not arbitrary predicates, setup/teardown hooks, platform event fuzzing, or multi-scene flows.
 
 ### 5. Keep gameplay test fixtures separate from examples
 

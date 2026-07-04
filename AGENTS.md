@@ -34,7 +34,7 @@ Please see `docs/fdr/INDEX.md` for a complete list of features and `docs/adr/IND
 - `examples/ui_overlay/` demonstrates the first engine-native UI primitives rendered from text-authored ECS component data.
 - `examples/ui_gallery/` demonstrates the current retained UI primitive set: panels, text, button markers, command events, scroll views, vertical stacks, and script-mutated UI state.
 - `examples/native_motion/` demonstrates a project-local Zig native module declared by the project manifest.
-- `tests/projects/` contains game-shaped project fixtures used only by automated tests. Each runnable fixture has a `test.machina.toml` manifest with frames, timestep, and ECS field assertions.
+- `tests/projects/` contains game-shaped project fixtures used only by automated tests. Each runnable fixture has a `test.machina.toml` manifest with frames, timestep, optional deterministic input replay frames, and ECS field assertions.
 - `docs/adr/` records architectural decisions.
 - `docs/fdr/` records feature behavior and product/implementation decisions.
 - `NOTICE` tracks third-party license notices for vendored code, data, generated source, and direct external binary dependencies.
@@ -187,7 +187,7 @@ Live reload:
 - Structural script mutations must happen inside scheduled systems through `world`/`entity` APIs. Adding or removing a component requires declared write access to that component; despawning an entity requires write access to every component currently attached to it.
 - Keep `machina check --format=json` useful for editor and agent workflows. Successful JSON output should preserve project metadata and the validated schedule summary; add fields compatibly rather than removing or renaming existing ones.
 - Runtime script host API failures should report the active system plus relevant component/field context. Avoid generic bridge errors when Zig can identify the denied access or failed mutation.
-- Use `machina test` for automated gameplay fixture coverage. Use `machina step` for narrower deterministic script/ECS debugging and runtime diagnostic checks.
+- Use `machina test` for automated gameplay and UI input replay fixture coverage. Use `machina step` for narrower deterministic script/ECS debugging and runtime diagnostic checks.
 - Use `machina bench` for headless performance smoke coverage; keep renderable and render-batch counts useful enough to catch batching regressions.
 - Keep `mise build` optimized for interactive CLI use. Use `mise build-debug` or `zig build test` when Debug safety checks are the point.
 - When investigating performance, compare optimized and Debug builds, and separate headless update cost from headful render/presentation cost before changing engine architecture.

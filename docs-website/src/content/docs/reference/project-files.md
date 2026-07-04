@@ -75,6 +75,11 @@ Project test fixtures use `test.machina.toml`:
 frames = 4
 dt = 0.25
 
+[[input.frame]]
+frame = 1
+pointer = [20.0, 20.0]
+wheel_delta = [0.0, -1.0]
+
 [[expect.field]]
 entity = "mover"
 component = "machina.transform"
@@ -89,3 +94,17 @@ Supported expected values:
 - `equals_float`
 - `equals_vec3`
 - `equals_string`
+
+Supported `[[input.frame]]` fields:
+
+- `frame`: one-based frame number.
+- `pointer` or `pointer_position`: `[x, y]`, also sets `pointer_has_position = true`.
+- `pointer_has_position`
+- `wheel` or `wheel_delta`: `[x, y]`
+- `primary_down`, `primary_pressed`, `primary_released`
+- `debug_overlay_visible` or `editor_visible`
+- `ui_visible`
+- `viewport`: `[width, height]`
+- `ctrl_down`
+- `editor_toggle_pressed`
+- `system_profile_count_hint`

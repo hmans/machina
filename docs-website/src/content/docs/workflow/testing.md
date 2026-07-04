@@ -41,7 +41,7 @@ Each test project has:
 - A scene.
 - Optional scripts.
 - Optional native module.
-- `test.machina.toml` with frame count, timestep, and ECS field assertions.
+- `test.machina.toml` with frame count, timestep, optional input replay frames, and ECS field assertions.
 
 Example manifest:
 
@@ -54,6 +54,32 @@ entity = "stats"
 component = "lifecycle_stats"
 field = "spawned_count"
 equals_int = 2
+```
+
+Input replay frames are one-based and run through the same input, editor, scene UI, command-event, and script update path used by live projects:
+
+```toml
+frames = 2
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+pointer = [20.0, 20.0]
+wheel_delta = [0.0, -1.0]
+
+[[input.frame]]
+frame = 2
+debug_overlay_visible = true
+viewport = [1280.0, 720.0]
+pointer = [36.0, 190.0]
+wheel_delta = [0.0, -1.0]
+system_profile_count_hint = 9
+
+[[expect.field]]
+entity = "scroll"
+component = "machina.ui.scroll_view"
+field = "content_offset"
+equals_vec3 = [0.0, 48.0, 0.0]
 ```
 
 Run all project tests:

@@ -841,9 +841,11 @@ const TestExpectation = struct {
 const TestManifest = struct {
     frames: u32 = 1,
     delta_seconds: f32 = 1.0 / 60.0,
+    input_frames: []machina.StepInputFrame = &.{},
     expectations: []TestExpectation = &.{},
 
     fn deinit(self: *TestManifest, allocator: std.mem.Allocator) void {
+        allocator.free(self.input_frames);
         for (self.expectations) |*expectation| {
             expectation.deinit(allocator);
         }
@@ -880,6 +882,20 @@ const TestExpectationDraft = struct {
             .component = component,
             .field = field,
             .expected = expected,
+        };
+    }
+};
+
+const TestInputFrameDraft = struct {
+    frame: ?u32 = null,
+    input: machina.FrameInput = .{},
+
+    fn take(self: *TestInputFrameDraft) TestManifestError!machina.StepInputFrame {
+        const frame = self.frame orelse return TestManifestError.InvalidTestManifest;
+        self.frame = null;
+        return .{
+            .frame = frame,
+            .input = self.input,
         };
     }
 };
@@ -1004,16 +1020,19 @@ fn loadTestManifest(
 
 fn parseTestManifest(allocator: std.mem.Allocator, contents: []const u8) !TestManifest {
     var manifest = TestManifest{};
+    var input_frames: std.ArrayList(machina.StepInputFrame) = .empty;
     var expectations: std.ArrayList(TestExpectation) = .empty;
     errdefer {
+        input_frames.deinit(allocator);
         for (expectations.items) |*expectation| {
             expectation.deinit(allocator);
         }
         expectations.deinit(allocator);
     }
 
-    var draft: ?TestExpectationDraft = null;
-    errdefer if (draft) |*active| active.deinit(allocator);
+    var expectation_draft: ?TestExpectationDraft = null;
+    errdefer if (expectation_draft) |*active| active.deinit(allocator);
+    var input_draft: ?TestInputFrameDraft = null;
 
     var lines = std.mem.splitScalar(u8, contents, '\n');
     while (lines.next()) |line| {
@@ -1023,8 +1042,16 @@ fn parseTestManifest(allocator: std.mem.Allocator, contents: []const u8) !TestMa
         }
 
         if (std.mem.eql(u8, trimmed, "[[expect.field]]") or std.mem.eql(u8, trimmed, "[[expect]]")) {
-            try appendExpectationDraft(allocator, &expectations, &draft);
-            draft = .{};
+            try appendInputFrameDraft(allocator, &input_frames, &input_draft);
+            try appendExpectationDraft(allocator, &expectations, &expectation_draft);
+            expectation_draft = .{};
+            continue;
+        }
+
+        if (std.mem.eql(u8, trimmed, "[[input.frame]]")) {
+            try appendExpectationDraft(allocator, &expectations, &expectation_draft);
+            try appendInputFrameDraft(allocator, &input_frames, &input_draft);
+            input_draft = .{};
             continue;
         }
 
@@ -1036,18 +1063,23 @@ fn parseTestManifest(allocator: std.mem.Allocator, contents: []const u8) !TestMa
         const key = std.mem.trim(u8, trimmed[0..eq_index], " \t");
         const value = std.mem.trim(u8, trimmed[eq_index + 1 ..], " \t");
 
-        if (draft) |*active| {
+        if (expectation_draft) |*active| {
             try readExpectationProperty(allocator, active, key, value);
+        } else if (input_draft) |*active| {
+            try readInputFrameProperty(active, key, value);
         } else {
             try readTestManifestRootProperty(&manifest, key, value);
         }
     }
 
-    try appendExpectationDraft(allocator, &expectations, &draft);
+    try appendExpectationDraft(allocator, &expectations, &expectation_draft);
+    try appendInputFrameDraft(allocator, &input_frames, &input_draft);
     if (expectations.items.len == 0) {
         return TestManifestError.InvalidTestManifest;
     }
 
+    manifest.input_frames = try input_frames.toOwnedSlice(allocator);
+    errdefer allocator.free(manifest.input_frames);
     manifest.expectations = try expectations.toOwnedSlice(allocator);
     return manifest;
 }
@@ -1065,6 +1097,23 @@ fn appendExpectationDraft(
         }
         try expectations.append(allocator, expectation);
         active.deinit(allocator);
+        draft.* = null;
+    }
+}
+
+fn appendInputFrameDraft(
+    allocator: std.mem.Allocator,
+    input_frames: *std.ArrayList(machina.StepInputFrame),
+    draft: *?TestInputFrameDraft,
+) !void {
+    if (draft.*) |*active| {
+        const input_frame = try active.take();
+        for (input_frames.items) |existing| {
+            if (existing.frame == input_frame.frame) {
+                return TestManifestError.InvalidTestManifest;
+            }
+        }
+        try input_frames.append(allocator, input_frame);
         draft.* = null;
     }
 }
@@ -1122,6 +1171,71 @@ fn readExpectationProperty(
     }
     if (std.mem.eql(u8, key, "equals_string")) {
         try setExpectedValue(allocator, draft, .{ .string = try parseTestString(allocator, value) });
+        return;
+    }
+    return TestManifestError.InvalidTestManifest;
+}
+
+fn readInputFrameProperty(
+    draft: *TestInputFrameDraft,
+    key: []const u8,
+    value: []const u8,
+) !void {
+    if (std.mem.eql(u8, key, "frame")) {
+        if (draft.frame != null) return TestManifestError.InvalidTestManifest;
+        draft.frame = parsePositiveFrameValue(value) catch return TestManifestError.InvalidTestManifest;
+        return;
+    }
+    if (std.mem.eql(u8, key, "ui_visible")) {
+        draft.input.ui_visible = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "debug_overlay_visible") or std.mem.eql(u8, key, "editor_visible")) {
+        draft.input.debug_overlay_visible = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "viewport")) {
+        const parsed = try parseTestVec2(value);
+        draft.input.viewport_width = parsed[0];
+        draft.input.viewport_height = parsed[1];
+        return;
+    }
+    if (std.mem.eql(u8, key, "pointer") or std.mem.eql(u8, key, "pointer_position")) {
+        const parsed = try parseTestVec2(value);
+        draft.input.pointer.position = parsed;
+        draft.input.pointer.has_position = true;
+        return;
+    }
+    if (std.mem.eql(u8, key, "pointer_has_position")) {
+        draft.input.pointer.has_position = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "wheel") or std.mem.eql(u8, key, "wheel_delta")) {
+        draft.input.pointer.wheel_delta = try parseTestVec2(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "primary_down")) {
+        draft.input.pointer.primary_down = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "primary_pressed")) {
+        draft.input.pointer.primary_pressed = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "primary_released")) {
+        draft.input.pointer.primary_released = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "ctrl_down")) {
+        draft.input.keyboard.ctrl_down = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "editor_toggle_pressed")) {
+        draft.input.keyboard.editor_toggle_pressed = try parseTestBool(value);
+        return;
+    }
+    if (std.mem.eql(u8, key, "system_profile_count_hint")) {
+        draft.input.system_profile_count_hint = std.fmt.parseInt(usize, value, 10) catch return TestManifestError.InvalidTestManifest;
         return;
     }
     return TestManifestError.InvalidTestManifest;
@@ -1195,6 +1309,36 @@ fn parseTestBool(value: []const u8) !bool {
     return TestManifestError.InvalidTestManifest;
 }
 
+fn parseTestVec2(value: []const u8) ![2]f32 {
+    if (value.len < 5 or value[0] != '[' or value[value.len - 1] != ']') {
+        return TestManifestError.InvalidTestManifest;
+    }
+
+    var result: [2]f32 = undefined;
+    var count: usize = 0;
+    var parts = std.mem.splitScalar(u8, value[1 .. value.len - 1], ',');
+    while (parts.next()) |part| {
+        if (count >= result.len) {
+            return TestManifestError.InvalidTestManifest;
+        }
+        const trimmed = std.mem.trim(u8, part, " \t\r");
+        if (trimmed.len == 0) {
+            return TestManifestError.InvalidTestManifest;
+        }
+        const parsed = std.fmt.parseFloat(f32, trimmed) catch return TestManifestError.InvalidTestManifest;
+        if (!std.math.isFinite(parsed)) {
+            return TestManifestError.InvalidTestManifest;
+        }
+        result[count] = parsed;
+        count += 1;
+    }
+
+    if (count != result.len) {
+        return TestManifestError.InvalidTestManifest;
+    }
+    return result;
+}
+
 fn parseTestVec3(value: []const u8) ![3]f32 {
     if (value.len < 5 or value[0] != '[' or value[value.len - 1] != ']') {
         return TestManifestError.InvalidTestManifest;
@@ -1249,6 +1393,7 @@ fn runTestCase(
     const result = machina.stepProjectDetailed(io, allocator, project_path, .{
         .frames = manifest.frames,
         .delta_seconds = manifest.delta_seconds,
+        .input_frames = manifest.input_frames,
     }) catch |err| {
         stats.failed = true;
         switch (format) {
@@ -2006,6 +2151,14 @@ test "parseTestManifest reads field assertions" {
         \\frames = 4
         \\dt = 1.0
         \\
+        \\[[input.frame]]
+        \\frame = 2
+        \\debug_overlay_visible = true
+        \\viewport = [1280.0, 720.0]
+        \\pointer = [36.0, 190.0]
+        \\wheel_delta = [0.0, -1.0]
+        \\system_profile_count_hint = 9
+        \\
         \\[[expect.field]]
         \\entity = "door-1"
         \\component = "door"
@@ -2023,12 +2176,40 @@ test "parseTestManifest reads field assertions" {
 
     try std.testing.expectEqual(@as(u32, 4), manifest.frames);
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), manifest.delta_seconds, 0.000001);
+    try std.testing.expectEqual(@as(usize, 1), manifest.input_frames.len);
+    try std.testing.expectEqual(@as(u32, 2), manifest.input_frames[0].frame);
+    try std.testing.expect(manifest.input_frames[0].input.debug_overlay_visible);
+    try std.testing.expectApproxEqAbs(@as(f32, 1280.0), manifest.input_frames[0].input.viewport_width, 0.000001);
+    try std.testing.expectApproxEqAbs(@as(f32, 36.0), manifest.input_frames[0].input.pointer.position[0], 0.000001);
+    try std.testing.expectApproxEqAbs(@as(f32, -1.0), manifest.input_frames[0].input.pointer.wheel_delta[1], 0.000001);
+    try std.testing.expectEqual(@as(usize, 9), manifest.input_frames[0].input.system_profile_count_hint);
     try std.testing.expectEqual(@as(usize, 2), manifest.expectations.len);
     try std.testing.expectEqualStrings("door-1", manifest.expectations[0].entity);
     try std.testing.expectEqualStrings("door", manifest.expectations[0].component);
     try std.testing.expectEqualStrings("openness", manifest.expectations[0].field);
     try std.testing.expect(manifest.expectations[0].expected.matches(.{ .float = 1.0 }));
     try std.testing.expect(manifest.expectations[1].expected.matches(.{ .boolean = true }));
+}
+
+test "parseTestManifest rejects duplicate input frames" {
+    try std.testing.expectError(TestManifestError.InvalidTestManifest, parseTestManifest(std.testing.allocator,
+        \\frames = 2
+        \\
+        \\[[input.frame]]
+        \\frame = 1
+        \\pointer = [1.0, 2.0]
+        \\
+        \\[[input.frame]]
+        \\frame = 1
+        \\pointer = [3.0, 4.0]
+        \\
+        \\[[expect.field]]
+        \\entity = "scroll"
+        \\component = "machina.ui.scroll_view"
+        \\field = "content_offset"
+        \\equals_vec3 = [0.0, 0.0, 0.0]
+        \\
+    ));
 }
 
 test "testCommand runs a gameplay project fixture" {

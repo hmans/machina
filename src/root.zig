@@ -159,6 +159,12 @@ pub const CheckSchedule = struct {
 pub const StepOptions = struct {
     frames: u32 = 1,
     delta_seconds: f32 = 1.0 / 60.0,
+    input_frames: []const StepInputFrame = &.{},
+};
+
+pub const StepInputFrame = struct {
+    frame: u32,
+    input: FrameInput,
 };
 
 pub const StepSummary = struct {
@@ -949,7 +955,32 @@ pub fn stepProjectDetailed(
         } };
     }
 
+    var editor_state = EditorState{};
     while (completed_frames < options.frames) {
+        const frame_number = completed_frames + 1;
+        if (options.input_frames.len > 0) {
+            var editor_input = stepInputForFrame(options.input_frames, frame_number);
+            const render_profile_count = editor_input.system_profile_count_hint;
+            editor_input.delta_seconds = options.delta_seconds;
+            editor_input.editor = render.editorFrameState(&scene.world, editor_state);
+            editor_input.system_profiles = scripts.systemProfileSnapshots();
+            editor_input.system_profile_count_hint = editor_input.system_profiles.len + render_profile_count;
+
+            var routed_input = editor_input;
+            const editor_update = try render.updateEditorState(allocator, &scene.world, &editor_state, editor_input);
+            routed_input.editor = render.editorFrameState(&scene.world, editor_state);
+            if (editor_update.consumed_pointer) {
+                routed_input.pointer.primary_down = false;
+                routed_input.pointer.primary_pressed = false;
+                routed_input.pointer.primary_released = false;
+                routed_input.pointer.wheel_delta = .{ 0.0, 0.0 };
+            }
+
+            try render.writeFrameInput(&scene.world, routed_input);
+            try updateSceneUiScrollViews(&scene.world);
+            try updateUiCommandEvents(&scene.world);
+        }
+
         if (!scripts.update(&scene.world, options.delta_seconds)) {
             const diagnostic = if (scripts.last_diagnostic) |found|
                 try cloneScriptDiagnostic(allocator, found)
@@ -980,6 +1011,15 @@ pub fn stepProjectDetailed(
             .delta_seconds = options.delta_seconds,
         },
     } };
+}
+
+fn stepInputForFrame(input_frames: []const StepInputFrame, frame: u32) FrameInput {
+    for (input_frames) |input_frame| {
+        if (input_frame.frame == frame) {
+            return input_frame.input;
+        }
+    }
+    return .{};
 }
 
 pub fn freeCheckResult(allocator: std.mem.Allocator, result: CheckResult) void {
