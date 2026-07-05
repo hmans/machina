@@ -57,6 +57,7 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
+          cache-size-limit: 4096
       - name: Install SDL3
         shell: pwsh
         run: |
