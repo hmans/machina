@@ -13,7 +13,6 @@
 
 ## Next Slice
 
-- [ ] Add typed inspector controls for floats, ints, strings, and enums.
 - [ ] Add editor controls to add and remove components on the selected entity.
 - [ ] Add editor controls to spawn and despawn entities.
 - [ ] Persist inspector edits back to text scene files.
