@@ -4116,9 +4116,11 @@ test "LiveProject scrolls scene-authored scroll views under pointer" {
         \\id = "stack"
         \\name = "Stack"
         \\
-        \\[entities.components."machina.ui.vbox"]
+        \\[entities.components."machina.ui.vgroup"]
         \\position = [0.0, 0.0, 0.0]
+        \\size = [100.0, 96.0, 0.0]
         \\spacing = 0.0
+        \\padding = [0.0, 0.0, 0.0]
         \\
         \\[entities.components."machina.ui.layout.item"]
         \\parent = "scroll"
