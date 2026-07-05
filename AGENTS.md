@@ -13,6 +13,11 @@ Machina is an experimental, text-first game engine written in Zig with embedded 
 
 Please refer to the `README.md` for a high-level overview of the engine's features and roadmap. Detailed features, design decisions, and implementation details are documented in ADRs and FDRs in `docs/adr/` and `docs/fdr/`.
 
+## Project Status
+
+- This project is in super-early development.
+- Breaking changes are 100% acceptable and we don't need to make changes backward-compatible unless specifically requested by the user.
+
 ## Non-Negotiable Design Rules
 
 - The engine is implemented in Zig. Luau is for project-local game scripting only; do not implement engine features in Luau.
