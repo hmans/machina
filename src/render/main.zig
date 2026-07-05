@@ -1,21 +1,23 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const Io = std.Io;
 const geometry = @import("../geometry.zig");
-const png = @import("../png.zig");
 const runtime = @import("../runtime.zig");
 const ui_layout = @import("../ui_layout.zig");
 const ui_font = @import("../ui_font.zig");
 const editor_state_types = @import("../editor/state.zig");
 const editor_layout = @import("../editor/layout.zig");
+const editor_render_chrome = @import("../editor/render_chrome.zig");
 const render_math = @import("math.zig");
 const render_input = @import("input.zig");
+const render_platform = @import("platform.zig");
+const render_resources = @import("resources.zig");
+const render_window = @import("window.zig");
+const render_offscreen = @import("offscreen.zig");
+const render_extract = @import("extract.zig");
 const wgpu = @import("wgpu");
 
-const is_supported_window_platform = builtin.os.tag == .macos or builtin.os.tag == .linux or builtin.os.tag == .windows;
-const sdl = if (is_supported_window_platform) @cImport({
-    @cInclude("sdl_bridge.h");
-}) else struct {};
+const is_supported_window_platform = render_platform.is_supported_window_platform;
+const sdl = render_platform.sdl;
 
 const cameraViewMatrix = render_math.cameraViewMatrix;
 const lookAt = render_math.lookAt;
@@ -50,6 +52,26 @@ const logicalPixelsFromPhysical = render_input.logicalPixelsFromPhysical;
 const frameInputWithOutputMetrics = render_input.frameInputWithOutputMetrics;
 const frameInputWithDefaultOutputMetrics = render_input.frameInputWithDefaultOutputMetrics;
 const toggleDebugOverlay = render_input.toggleDebugOverlay;
+const DepthTarget = render_resources.DepthTarget;
+const PostProcessTarget = render_resources.PostProcessTarget;
+const ShadowTarget = render_resources.ShadowTarget;
+const openGpu = render_resources.openGpu;
+const chooseSurfaceFormat = render_resources.chooseSurfaceFormat;
+const createStaticBuffer = render_resources.createStaticBuffer;
+const writeUniforms = render_resources.writeUniforms;
+const writePostProcessUniforms = render_resources.writeUniforms;
+const WindowSurface = render_window.Surface;
+const updatePointerFromWindow = render_window.updatePointerFromWindow;
+const configureSurfaceFromWindow = render_window.configureSurfaceFromWindow;
+const RenderOutputFormat = render_offscreen.OutputFormat;
+const imageFormatFromPath = render_offscreen.imageFormatFromPath;
+const alignedOutputBytesPerRow = render_offscreen.alignedOutputBytesPerRow;
+const handleBufferMap = render_offscreen.handleBufferMap;
+const write24BitBmp = render_offscreen.write24BitBmp;
+const write24BitPng = render_offscreen.write24BitPng;
+const extractMeshInto = render_extract.extractMeshInto;
+const extractSceneUiInto = render_extract.extractSceneUiInto;
+const extractRendererInto = render_extract.extractRendererInto;
 const editor_component_id_buffer_len = editor_state_types.component_id_buffer_len;
 const editor_field_name_buffer_len = editor_state_types.field_name_buffer_len;
 const editor_input_text_buffer_len = editor_state_types.input_text_buffer_len;
@@ -100,7 +122,6 @@ pub const default_output_width = 640;
 pub const default_output_height = 480;
 const depth_format = wgpu.TextureFormat.depth24_plus;
 const shadow_depth_format = wgpu.TextureFormat.depth32_float;
-const shadow_map_size = 1024;
 const bloom_level_count = 5;
 const render_ui_button_state_component_id = "scrapbot.render.internal.ui.button_state";
 const render_ui_clip_component_id = "scrapbot.render.internal.ui.clip";
@@ -167,34 +188,41 @@ const editor_command_splitter_right = "scrapbot.editor.splitter.right";
 const fly_camera_move_speed: f32 = 6.0;
 const fly_camera_look_sensitivity: f32 = 0.0035;
 const fly_camera_max_pitch: f32 = std.math.degreesToRadians(89.0);
-const editor_inspector_text_size: f32 = 1.0;
-const editor_inspector_line_stride: f32 = 32.0;
-const editor_inspector_field_row_margin_y: f32 = 2.0;
-const editor_inspector_card_gap: f32 = 4.0;
-const editor_inspector_separator_height: f32 = 1.0;
-const editor_inspector_card_padding_x: f32 = 20.0;
-const editor_inspector_card_padding_y: f32 = 20.0;
-const editor_inspector_field_column_gap: f32 = 12.0;
-const editor_inspector_column_min_width: f32 = 140.0;
-const editor_inspector_input_padding_x: f32 = 2.0;
-const editor_inspector_input_padding_y: f32 = 2.0;
-const editor_inspector_input_gap: f32 = 8.0;
-const editor_inspector_input_border_thickness: f32 = 1.0;
-const editor_inspector_input_text_offset_x: f32 = editor_inspector_input_border_thickness + editor_inspector_input_padding_x;
-const editor_inspector_input_text_offset_y: f32 = editor_inspector_input_border_thickness + editor_inspector_input_padding_y;
-const editor_inspector_input_height: f32 = @as(f32, @floatFromInt(ui_font.height)) * editor_inspector_text_size + editor_inspector_input_text_offset_y * 2.0;
-const editor_inspector_input_cell_padding: f32 = 2.0;
-const editor_inspector_field_row_height: f32 = editor_inspector_input_height + editor_inspector_input_cell_padding * 2.0;
-const editor_inspector_field_row_stride: f32 = editor_inspector_field_row_height + editor_inspector_field_row_margin_y;
-const editor_inspector_input_corner_radius: f32 = 8.0;
-const editor_inspector_caret_width: f32 = 2.0;
-const editor_inspector_field_control_offset_y: f32 = -4.0;
-const editor_inspector_field_text_offset_y: f32 = -editor_inspector_field_control_offset_y + editor_inspector_input_cell_padding;
-const editor_inspector_selection_padding_y: f32 = 4.0;
-const editor_inspector_toggle_width: f32 = 64.0;
-const editor_inspector_swatch_size: f32 = 32.0;
-const editor_inspector_lane_label_width: f32 = 16.0;
-const editor_inspector_lane_label_gap: f32 = 4.0;
+const editor_inspector_text_size = editor_render_chrome.inspector_text_size;
+const editor_inspector_line_stride = editor_render_chrome.inspector_line_stride;
+const editor_inspector_field_row_margin_y = editor_render_chrome.inspector_field_row_margin_y;
+const editor_inspector_card_gap = editor_render_chrome.inspector_card_gap;
+const editor_inspector_separator_height = editor_render_chrome.inspector_separator_height;
+const editor_inspector_card_padding_x = editor_render_chrome.inspector_card_padding_x;
+const editor_inspector_card_padding_y = editor_render_chrome.inspector_card_padding_y;
+const editor_inspector_field_column_gap = editor_render_chrome.inspector_field_column_gap;
+const editor_inspector_column_min_width = editor_render_chrome.inspector_column_min_width;
+const editor_inspector_input_padding_x = editor_render_chrome.inspector_input_padding_x;
+const editor_inspector_input_padding_y = editor_render_chrome.inspector_input_padding_y;
+const editor_inspector_input_gap = editor_render_chrome.inspector_input_gap;
+const editor_inspector_input_border_thickness = editor_render_chrome.inspector_input_border_thickness;
+const editor_inspector_input_text_offset_x = editor_render_chrome.inspector_input_text_offset_x;
+const editor_inspector_input_text_offset_y = editor_render_chrome.inspector_input_text_offset_y;
+const editor_inspector_input_height = editor_render_chrome.inspector_input_height;
+const editor_inspector_input_cell_padding = editor_render_chrome.inspector_input_cell_padding;
+const editor_inspector_field_row_height = editor_render_chrome.inspector_field_row_height;
+const editor_inspector_field_row_stride = editor_render_chrome.inspector_field_row_stride;
+const editor_inspector_input_corner_radius = editor_render_chrome.inspector_input_corner_radius;
+const editor_inspector_caret_width = editor_render_chrome.inspector_caret_width;
+const editor_inspector_field_control_offset_y = editor_render_chrome.inspector_field_control_offset_y;
+const editor_inspector_field_text_offset_y = editor_render_chrome.inspector_field_text_offset_y;
+const editor_inspector_selection_padding_y = editor_render_chrome.inspector_selection_padding_y;
+const editor_inspector_toggle_width = editor_render_chrome.inspector_toggle_width;
+const editor_inspector_swatch_size = editor_render_chrome.inspector_swatch_size;
+const editor_inspector_lane_label_width = editor_render_chrome.inspector_lane_label_width;
+const editor_inspector_lane_label_gap = editor_render_chrome.inspector_lane_label_gap;
+const editorTextHeight = editor_render_chrome.textHeight;
+const editorTextWidth = editor_render_chrome.textWidth;
+const EditorInspectorFieldLayout = editor_render_chrome.InspectorFieldLayout;
+const editorInspectorFieldLayout = editor_render_chrome.inspectorFieldLayout;
+const fitEditorTextToWidth = editor_render_chrome.fitTextToWidth;
+const editorPanelTextPosition = editor_render_chrome.panelTextPosition;
+const insetScreenRect = editor_render_chrome.insetScreenRect;
 const editor_geometry_primitives = [_][]const u8{ "box", "plane", "uv_sphere", "ico_sphere" };
 const editor_color_channels = [_][3]f32{
     .{ 0.941, 0.267, 0.267 },
@@ -1289,18 +1317,6 @@ pub fn renderDemoImageFrames(io: Io, allocator: std.mem.Allocator, output_path: 
     try renderDemoOutputFrames(io, allocator, output_path, scene, options, try imageFormatFromPath(output_path));
 }
 
-const RenderOutputFormat = enum {
-    bmp,
-    png,
-};
-
-fn imageFormatFromPath(path: []const u8) RenderError!RenderOutputFormat {
-    const extension = std.fs.path.extension(path);
-    if (std.ascii.eqlIgnoreCase(extension, ".bmp")) return .bmp;
-    if (std.ascii.eqlIgnoreCase(extension, ".png")) return .png;
-    return RenderError.UnsupportedImageFormat;
-}
-
 fn renderDemoOutputFrames(
     io: Io,
     allocator: std.mem.Allocator,
@@ -1431,114 +1447,6 @@ fn renderDemoOutputFrames(
         .png => try write24BitPng(io, allocator, output_path, mapped[0..output_size], options.width, options.height, output_bytes_per_row),
     }
 }
-
-const WindowSurface = switch (builtin.os.tag) {
-    .macos => MacWindowSurface,
-    .linux => LinuxWindowSurface,
-    .windows => WindowsWindowSurface,
-    else => UnsupportedWindowSurface,
-};
-
-const UnsupportedWindowSurface = struct {
-    surface: *wgpu.Surface,
-
-    fn create(_: *wgpu.Instance, _: *anyopaque) RenderError!UnsupportedWindowSurface {
-        return RenderError.WindowingUnsupported;
-    }
-
-    fn deinit(_: *UnsupportedWindowSurface) void {}
-};
-
-const MacWindowSurface = struct {
-    surface: *wgpu.Surface,
-    metal_view: *anyopaque,
-
-    fn create(instance: *wgpu.Instance, window: *anyopaque) RenderError!MacWindowSurface {
-        const metal_view = sdl.scrapbot_sdl_create_metal_view(window) orelse return RenderError.MetalViewCreateFailed;
-        errdefer sdl.scrapbot_sdl_destroy_metal_view(metal_view);
-
-        const metal_layer = sdl.scrapbot_sdl_get_metal_layer(metal_view) orelse return RenderError.MetalLayerMissing;
-        var surface_descriptor = wgpu.surfaceDescriptorFromMetalLayer(.{
-            .label = "Scrapbot window surface",
-            .layer = metal_layer,
-        });
-        const surface = instance.createSurface(&surface_descriptor) orelse return RenderError.NoSurface;
-        return .{
-            .surface = surface,
-            .metal_view = metal_view,
-        };
-    }
-
-    fn deinit(self: *MacWindowSurface) void {
-        self.surface.unconfigure();
-        self.surface.release();
-        sdl.scrapbot_sdl_destroy_metal_view(self.metal_view);
-        self.* = undefined;
-    }
-};
-
-const LinuxWindowSurface = struct {
-    surface: *wgpu.Surface,
-
-    fn create(instance: *wgpu.Instance, window: *anyopaque) RenderError!LinuxWindowSurface {
-        var wayland_display: ?*anyopaque = null;
-        var wayland_surface: ?*anyopaque = null;
-        if (sdl.scrapbot_sdl_get_wayland_handles(window, &wayland_display, &wayland_surface) != 0) {
-            var surface_descriptor = wgpu.surfaceDescriptorFromWaylandSurface(.{
-                .label = "Scrapbot window surface",
-                .display = wayland_display orelse return RenderError.NativeWindowHandleMissing,
-                .surface = wayland_surface orelse return RenderError.NativeWindowHandleMissing,
-            });
-            const surface = instance.createSurface(&surface_descriptor) orelse return RenderError.NoSurface;
-            return .{ .surface = surface };
-        }
-
-        var x11_display: ?*anyopaque = null;
-        var x11_window: u64 = 0;
-        if (sdl.scrapbot_sdl_get_x11_handles(window, &x11_display, &x11_window) != 0) {
-            var surface_descriptor = wgpu.surfaceDescriptorFromXlibWindow(.{
-                .label = "Scrapbot window surface",
-                .display = x11_display orelse return RenderError.NativeWindowHandleMissing,
-                .window = x11_window,
-            });
-            const surface = instance.createSurface(&surface_descriptor) orelse return RenderError.NoSurface;
-            return .{ .surface = surface };
-        }
-
-        return RenderError.NativeWindowHandleMissing;
-    }
-
-    fn deinit(self: *LinuxWindowSurface) void {
-        self.surface.unconfigure();
-        self.surface.release();
-        self.* = undefined;
-    }
-};
-
-const WindowsWindowSurface = struct {
-    surface: *wgpu.Surface,
-
-    fn create(instance: *wgpu.Instance, window: *anyopaque) RenderError!WindowsWindowSurface {
-        var hinstance: ?*anyopaque = null;
-        var hwnd: ?*anyopaque = null;
-        if (sdl.scrapbot_sdl_get_win32_handles(window, &hinstance, &hwnd) == 0) {
-            return RenderError.NativeWindowHandleMissing;
-        }
-        var surface_descriptor = wgpu.surfaceDescriptorFromWindowsHWND(.{
-            .label = "Scrapbot window surface",
-            .hinstance = hinstance orelse return RenderError.NativeWindowHandleMissing,
-            .hwnd = hwnd orelse return RenderError.NativeWindowHandleMissing,
-        });
-        const surface = instance.createSurface(&surface_descriptor) orelse return RenderError.NoSurface;
-        return .{ .surface = surface };
-    }
-
-    fn deinit(self: *WindowsWindowSurface) void {
-        self.surface.unconfigure();
-        self.surface.release();
-        self.* = undefined;
-    }
-};
 
 pub fn runDemoWindow(allocator: std.mem.Allocator, title: []const u8, options: WindowOptions, initial_scene: Scene) !void {
     if (!is_supported_window_platform) {
@@ -2014,7 +1922,7 @@ const RenderEcsState = struct {
         }
 
         if (input.ui_visible) {
-            extractSceneUiInto(self.allocator, &next_world, scene.world) catch |err| {
+            extractSceneUiInto(&next_world, scene.world) catch |err| {
                 std.log.err("render extract failed while extracting scene UI: {s}", .{@errorName(err)});
                 return err;
             };
@@ -2127,169 +2035,6 @@ const RenderEcsState = struct {
 
     fn drawCommandBatchIndex(self: RenderEcsState, entity: runtime.EntityHandle) RenderError!usize {
         return batchIndexFromDrawEntity(&self.world, entity);
-    }
-};
-
-const GpuContext = struct {
-    adapter: *wgpu.Adapter,
-    device: *wgpu.Device,
-    queue: *wgpu.Queue,
-
-    fn deinit(self: *GpuContext) void {
-        self.queue.release();
-        self.device.release();
-        self.adapter.release();
-    }
-};
-
-const DepthTarget = struct {
-    texture: ?*wgpu.Texture = null,
-    view: ?*wgpu.TextureView = null,
-    width: u32 = 0,
-    height: u32 = 0,
-
-    fn create(device: *wgpu.Device, width: u32, height: u32) RenderError!DepthTarget {
-        var target = DepthTarget{};
-        try target.ensure(device, width, height);
-        return target;
-    }
-
-    fn ensure(self: *DepthTarget, device: *wgpu.Device, width: u32, height: u32) RenderError!void {
-        if (self.view != null and self.width == width and self.height == height) {
-            return;
-        }
-
-        self.deinit();
-
-        const texture = device.createTexture(&wgpu.TextureDescriptor{
-            .label = wgpu.StringView.fromSlice("Scrapbot mesh depth texture"),
-            .size = .{
-                .width = width,
-                .height = height,
-                .depth_or_array_layers = 1,
-            },
-            .format = depth_format,
-            .usage = wgpu.TextureUsages.render_attachment,
-        }) orelse return RenderError.NoDevice;
-        errdefer texture.release();
-
-        const view = texture.createView(&wgpu.TextureViewDescriptor{
-            .label = wgpu.StringView.fromSlice("Scrapbot mesh depth view"),
-            .mip_level_count = 1,
-            .array_layer_count = 1,
-        }) orelse return RenderError.NoDevice;
-
-        self.texture = texture;
-        self.view = view;
-        self.width = width;
-        self.height = height;
-    }
-
-    fn deinit(self: *DepthTarget) void {
-        if (self.view) |view| {
-            view.release();
-        }
-        if (self.texture) |texture| {
-            texture.release();
-        }
-        self.* = .{};
-    }
-};
-
-const PostProcessTarget = struct {
-    texture: ?*wgpu.Texture = null,
-    view: ?*wgpu.TextureView = null,
-    width: u32 = 0,
-    height: u32 = 0,
-
-    fn ensure(
-        self: *PostProcessTarget,
-        device: *wgpu.Device,
-        width: u32,
-        height: u32,
-        format: wgpu.TextureFormat,
-    ) RenderError!void {
-        if (self.texture != null and self.width == width and self.height == height) {
-            return;
-        }
-
-        self.deinit();
-        const texture = device.createTexture(&wgpu.TextureDescriptor{
-            .label = wgpu.StringView.fromSlice("Scrapbot postprocess scene texture"),
-            .size = .{
-                .width = width,
-                .height = height,
-                .depth_or_array_layers = 1,
-            },
-            .format = format,
-            .usage = wgpu.TextureUsages.render_attachment | wgpu.TextureUsages.texture_binding,
-        }) orelse return RenderError.NoDevice;
-        errdefer texture.release();
-
-        const view = texture.createView(&wgpu.TextureViewDescriptor{
-            .label = wgpu.StringView.fromSlice("Scrapbot postprocess scene view"),
-            .mip_level_count = 1,
-            .array_layer_count = 1,
-        }) orelse return RenderError.NoDevice;
-        errdefer view.release();
-
-        self.* = .{
-            .texture = texture,
-            .view = view,
-            .width = width,
-            .height = height,
-        };
-    }
-
-    fn deinit(self: *PostProcessTarget) void {
-        if (self.view) |view| {
-            view.release();
-        }
-        if (self.texture) |texture| {
-            texture.release();
-        }
-        self.* = .{};
-    }
-};
-
-const ShadowTarget = struct {
-    texture: ?*wgpu.Texture = null,
-    view: ?*wgpu.TextureView = null,
-
-    fn create(device: *wgpu.Device) RenderError!ShadowTarget {
-        const texture = device.createTexture(&wgpu.TextureDescriptor{
-            .label = wgpu.StringView.fromSlice("Scrapbot shadow map texture"),
-            .size = .{
-                .width = shadow_map_size,
-                .height = shadow_map_size,
-                .depth_or_array_layers = 1,
-            },
-            .format = shadow_depth_format,
-            .usage = wgpu.TextureUsages.render_attachment | wgpu.TextureUsages.texture_binding,
-        }) orelse return RenderError.NoDevice;
-        errdefer texture.release();
-
-        const view = texture.createView(&wgpu.TextureViewDescriptor{
-            .label = wgpu.StringView.fromSlice("Scrapbot shadow map view"),
-            .mip_level_count = 1,
-            .array_layer_count = 1,
-            .aspect = .depth_only,
-        }) orelse return RenderError.NoDevice;
-
-        return .{
-            .texture = texture,
-            .view = view,
-        };
-    }
-
-    fn deinit(self: *ShadowTarget) void {
-        if (self.view) |view| {
-            view.release();
-        }
-        if (self.texture) |texture| {
-            texture.release();
-        }
-        self.* = .{};
     }
 };
 
@@ -2499,37 +2244,6 @@ fn registerRenderEcsTypes(registry: *runtime.ComponentRegistry) !void {
     });
 }
 
-fn extractMeshInto(
-    allocator: std.mem.Allocator,
-    world: *runtime.World,
-    render_index: usize,
-    mesh: runtime.RenderableMesh,
-) RenderError!void {
-    const entity_id = std.fmt.allocPrint(allocator, "scrapbot.render.extract.mesh.{d}", .{render_index}) catch return RenderError.OutOfMemory;
-    defer allocator.free(entity_id);
-
-    const entity = world.createEntity(entity_id, mesh.name) catch |err| return mapWorldError(err);
-    world.setTransform(entity, .{
-        .position = mesh.position,
-        .rotation = mesh.rotation,
-        .scale = mesh.scale,
-    }) catch |err| return mapWorldError(err);
-    world.setGeometryPrimitive(entity, .{
-        .primitive = mesh.primitive,
-        .segments = mesh.segments,
-        .rings = mesh.rings,
-    }) catch |err| return mapWorldError(err);
-    world.setSurfaceMaterial(entity, .{
-        .base_color = mesh.base_color,
-    }) catch |err| return mapWorldError(err);
-    if (mesh.casts_shadow) {
-        world.setShadowCaster(entity) catch |err| return mapWorldError(err);
-    }
-    if (mesh.receives_shadow) {
-        world.setShadowReceiver(entity) catch |err| return mapWorldError(err);
-    }
-}
-
 fn extractEditorGizmoInto(
     allocator: std.mem.Allocator,
     world: *runtime.World,
@@ -2590,101 +2304,6 @@ fn extractEditorGizmoInto(
             .base_color = if (input.editor.dragging_axis == entry.axis) entry.active_color else entry.color,
         }) catch |err| return mapWorldError(err);
     }
-}
-
-fn extractSceneUiInto(allocator: std.mem.Allocator, render_world: *runtime.World, scene_world: *const runtime.World) RenderError!void {
-    _ = allocator;
-    for (0..scene_world.entityCount()) |index| {
-        const source = runtime.EntityHandle{ .index = @intCast(index) };
-        const stored = scene_world.entity(source) catch return RenderError.InvalidScene;
-        if (!hasExtractableUiComponent(scene_world, source)) {
-            continue;
-        }
-
-        const target = render_world.findEntityById(stored.id) orelse
-            (render_world.createEntity(stored.id, stored.name) catch |err| return mapWorldError(err));
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_canvas_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_rect_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_border_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_text_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_button_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_hit_area_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_command_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_scroll_view_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_vgroup_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_hgroup_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_table_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_stack_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_layout_item_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_spacer_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_text_block_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_toggle_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_progress_bar_component_id);
-        try copyComponent(scene_world, render_world, source, target, runtime.ui_separator_component_id);
-    }
-}
-
-fn extractRendererInto(render_world: *runtime.World, scene_world: *const runtime.World) RenderError!void {
-    var cursor: usize = 0;
-    const query = [_][]const u8{runtime.renderer_component_id};
-    const source = scene_world.queryNext(&query, &cursor) orelse return;
-    if (scene_world.queryNext(&query, &cursor) != null) {
-        return RenderError.InvalidScene;
-    }
-    const stored = scene_world.entity(source) catch return RenderError.InvalidScene;
-    const target = render_world.findEntityById(stored.id) orelse
-        (render_world.createEntity(stored.id, stored.name) catch |err| return mapWorldError(err));
-    try copyComponent(scene_world, render_world, source, target, runtime.renderer_component_id);
-}
-
-fn hasExtractableUiComponent(world: *const runtime.World, entity: runtime.EntityHandle) bool {
-    return (world.hasComponent(entity, runtime.ui_canvas_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_rect_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_border_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_text_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_button_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_hit_area_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_command_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_scroll_view_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_vgroup_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_hgroup_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_table_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_stack_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_layout_item_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_spacer_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_text_block_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_toggle_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_progress_bar_component_id) catch false) or
-        (world.hasComponent(entity, runtime.ui_separator_component_id) catch false);
-}
-
-fn copyComponent(
-    source_world: *const runtime.World,
-    target_world: *runtime.World,
-    source: runtime.EntityHandle,
-    target: runtime.EntityHandle,
-    component_id: []const u8,
-) RenderError!void {
-    if (!(source_world.hasComponent(source, component_id) catch |err| return mapWorldError(err))) {
-        return;
-    }
-
-    var fields: std.ArrayList(runtime.ComponentFieldValue) = .empty;
-    const allocator = target_world.allocator;
-    defer fields.deinit(allocator);
-
-    const field_count = source_world.componentFieldCount(component_id);
-    fields.ensureTotalCapacity(allocator, field_count) catch return RenderError.OutOfMemory;
-    for (0..field_count) |field_index| {
-        const field_name = source_world.componentFieldNameAt(component_id, field_index) orelse return RenderError.InvalidScene;
-        const value = source_world.getComponentFieldValue(source, component_id, field_name) catch |err| return mapWorldError(err);
-        fields.appendAssumeCapacity(.{
-            .name = field_name,
-            .value = value,
-        });
-    }
-
-    target_world.setComponent(target, component_id, fields.items) catch |err| return mapWorldError(err);
 }
 
 const EditorVGroup = struct {
@@ -3935,62 +3554,6 @@ fn editorTextInputFocuses(input: EditorTextInputFrame, component_id: []const u8,
         std.mem.eql(u8, input.selection.fieldName(), field_name);
 }
 
-fn editorTextHeight(size: f32) f32 {
-    return @as(f32, @floatFromInt(ui_font.height)) * size;
-}
-
-fn editorTextWidth(value: []const u8, size: f32) f32 {
-    return @as(f32, @floatFromInt(value.len * ui_font.advance)) * size;
-}
-
-const EditorInspectorFieldLayout = struct {
-    label_x: f32,
-    label_width: f32,
-    value_x: f32,
-    value_width: f32,
-};
-
-fn editorInspectorFieldLayout(card_width: f32) EditorInspectorFieldLayout {
-    const row_width = @max(card_width - editor_inspector_card_padding_x * 2.0, 1.0);
-    const available = @max(row_width - editor_inspector_field_column_gap, 0.0);
-    const column_width = @max(available * 0.5, editor_inspector_column_min_width);
-
-    return .{
-        .label_x = editor_inspector_card_padding_x,
-        .label_width = column_width,
-        .value_x = editor_inspector_card_padding_x + column_width + editor_inspector_field_column_gap,
-        .value_width = column_width,
-    };
-}
-
-fn fitEditorTextToWidth(allocator: std.mem.Allocator, value: []const u8, size: f32, max_width: f32) error{OutOfMemory}![]u8 {
-    if (editorTextWidth(value, size) <= max_width) {
-        return allocator.dupe(u8, value);
-    }
-
-    const suffix = "...";
-    const glyph_width = @as(f32, @floatFromInt(ui_font.advance)) * size;
-    const suffix_width = editorTextWidth(suffix, size);
-    if (max_width <= 0.0 or glyph_width <= 0.0) {
-        return allocator.dupe(u8, "");
-    }
-    if (max_width < suffix_width) {
-        const glyph_count = @min(suffix.len, @as(usize, @intFromFloat(@floor(max_width / glyph_width))));
-        return allocator.dupe(u8, suffix[0..glyph_count]);
-    }
-    if (max_width == suffix_width) {
-        return allocator.dupe(u8, suffix);
-    }
-
-    const available_prefix_width = max_width - suffix_width;
-    const prefix_len = @min(value.len, @as(usize, @intFromFloat(@floor(available_prefix_width / glyph_width))));
-    return std.fmt.allocPrint(allocator, "{s}{s}", .{ value[0..prefix_len], suffix });
-}
-
-fn editorPanelTextPosition(panel: ScreenRect, local_y: f32) [3]f32 {
-    return .{ panel.x + editor_panel_padding_x, panel.y + local_y, 0.0 };
-}
-
 fn editorSystemHeaderYOffset() f32 {
     return editor_panel_padding_y;
 }
@@ -4046,16 +3609,6 @@ fn editorEntityPanelHeight(total_height: f32) f32 {
 
 fn editorSidebarPanelRect(sidebar: ScreenRect) ScreenRect {
     return insetScreenRect(sidebar, editor_sidebar_panel_margin);
-}
-
-fn insetScreenRect(rect: ScreenRect, inset: f32) ScreenRect {
-    const clamped = @max(inset, 0.0);
-    return .{
-        .x = rect.x + clamped,
-        .y = rect.y + clamped,
-        .width = @max(rect.width - clamped * 2.0, 1.0),
-        .height = @max(rect.height - clamped * 2.0, 1.0),
-    };
 }
 
 fn editorSystemHeaderY(input: FrameInput) f32 {
@@ -5776,99 +5329,6 @@ const ShadowKey = struct {
     }
 };
 
-fn openGpu(instance: *wgpu.Instance, compatible_surface: ?*wgpu.Surface) RenderError!GpuContext {
-    const adapter_response = instance.requestAdapterSync(&wgpu.RequestAdapterOptions{
-        .compatible_surface = compatible_surface,
-    }, 200_000_000);
-    const adapter = switch (adapter_response.status) {
-        .success => adapter_response.adapter orelse return RenderError.NoAdapter,
-        else => return RenderError.NoAdapter,
-    };
-    errdefer adapter.release();
-
-    const device_response = adapter.requestDeviceSync(instance, &wgpu.DeviceDescriptor{
-        .required_limits = null,
-    }, 200_000_000);
-    const device = switch (device_response.status) {
-        .success => device_response.device orelse return RenderError.NoDevice,
-        else => return RenderError.NoDevice,
-    };
-    errdefer device.release();
-
-    const queue = device.getQueue() orelse return RenderError.NoDevice;
-    errdefer queue.release();
-
-    return .{
-        .adapter = adapter,
-        .device = device,
-        .queue = queue,
-    };
-}
-
-fn chooseSurfaceFormat(capabilities: wgpu.SurfaceCapabilities) ?wgpu.TextureFormat {
-    for (capabilities.formats[0..capabilities.format_count]) |format| {
-        if (format == .bgra8_unorm_srgb) {
-            return format;
-        }
-    }
-
-    if (capabilities.format_count == 0) {
-        return null;
-    }
-    return capabilities.formats[0];
-}
-
-fn updatePointerFromWindow(pointer: *PointerInput, window: *anyopaque, x: f32, y: f32) void {
-    var window_width: c_int = 0;
-    var window_height: c_int = 0;
-    var pixel_width: c_int = 0;
-    var pixel_height: c_int = 0;
-
-    const has_window_size = sdl.scrapbot_sdl_get_window_size(window, &window_width, &window_height);
-    const has_pixel_size = sdl.scrapbot_sdl_get_window_size_in_pixels(window, &pixel_width, &pixel_height);
-    if (has_window_size == 0 or has_pixel_size == 0 or window_width <= 0 or window_height <= 0) {
-        pointer.position = .{ x, y };
-        pointer.has_position = true;
-        return;
-    }
-
-    const scale_x = @as(f32, @floatFromInt(@max(pixel_width, 1))) / @as(f32, @floatFromInt(window_width));
-    const scale_y = @as(f32, @floatFromInt(@max(pixel_height, 1))) / @as(f32, @floatFromInt(window_height));
-    pointer.position = .{ x * scale_x, y * scale_y };
-    pointer.has_position = true;
-}
-
-fn configureSurfaceFromWindow(
-    surface: *wgpu.Surface,
-    device: *wgpu.Device,
-    window: *anyopaque,
-    format: wgpu.TextureFormat,
-    current_width: *u32,
-    current_height: *u32,
-) !void {
-    var pixel_width: c_int = 0;
-    var pixel_height: c_int = 0;
-    if (sdl.scrapbot_sdl_get_window_size_in_pixels(window, &pixel_width, &pixel_height) == 0) {
-        return RenderError.SurfaceFailed;
-    }
-
-    const width: u32 = @intCast(@max(pixel_width, 1));
-    const height: u32 = @intCast(@max(pixel_height, 1));
-    if (width == current_width.* and height == current_height.*) {
-        return;
-    }
-
-    surface.configure(&wgpu.SurfaceConfiguration{
-        .device = device,
-        .format = format,
-        .width = width,
-        .height = height,
-        .present_mode = .fifo,
-    });
-    current_width.* = width;
-    current_height.* = height;
-}
-
 fn drawMeshToSurface(
     surface: *wgpu.Surface,
     device: *wgpu.Device,
@@ -6351,31 +5811,6 @@ fn createCompositeBindGroup(
 
 fn emptyBloomViews(view: *wgpu.TextureView) BloomViews {
     return [_]*wgpu.TextureView{view} ** bloom_level_count;
-}
-
-fn createStaticBuffer(device: *wgpu.Device, label: []const u8, usage: wgpu.BufferUsage, data: []const u8) RenderError!*wgpu.Buffer {
-    const buffer = device.createBuffer(&wgpu.BufferDescriptor{
-        .label = wgpu.StringView.fromSlice(label),
-        .usage = usage,
-        .size = data.len,
-        .mapped_at_creation = @as(u32, @intFromBool(true)),
-    }) orelse return RenderError.NoDevice;
-    errdefer buffer.release();
-
-    const mapped: [*]u8 = @ptrCast(@alignCast(buffer.getMappedRange(0, data.len) orelse return RenderError.NoDevice));
-    @memcpy(mapped[0..data.len], data);
-    buffer.unmap();
-    return buffer;
-}
-
-fn writeUniforms(queue: *wgpu.Queue, buffer: *wgpu.Buffer, uniforms: *const FrameUniforms) void {
-    const bytes = std.mem.asBytes(uniforms);
-    queue.writeBuffer(buffer, 0, bytes.ptr, bytes.len);
-}
-
-fn writePostProcessUniforms(queue: *wgpu.Queue, buffer: *wgpu.Buffer, uniforms: *const PostProcessUniforms) void {
-    const bytes = std.mem.asBytes(uniforms);
-    queue.writeBuffer(buffer, 0, bytes.ptr, bytes.len);
 }
 
 fn frameUniforms(light_value: DirectionalLightState) RenderError!FrameUniforms {
@@ -10512,103 +9947,3 @@ const UiVertex = extern struct {
     local_position: [2]f32,
     rect_size_radius: [4]f32,
 };
-
-fn handleBufferMap(status: wgpu.MapAsyncStatus, _: wgpu.StringView, userdata1: ?*anyopaque, userdata2: ?*anyopaque) callconv(.c) void {
-    const complete: *bool = @ptrCast(@alignCast(userdata1));
-    complete.* = true;
-
-    const map_status: *wgpu.MapAsyncStatus = @ptrCast(@alignCast(userdata2));
-    map_status.* = status;
-}
-
-fn write24BitBmp(io: Io, allocator: std.mem.Allocator, output_path: []const u8, bgra_data: []const u8, width: u32, height: u32, source_bytes_per_row: usize) !void {
-    const width_usize = @as(usize, width);
-    const height_usize = @as(usize, height);
-    const file_size = bmpFileSize(width, height);
-    const bytes = try allocator.alloc(u8, file_size);
-    defer allocator.free(bytes);
-    @memset(bytes, 0);
-
-    var cursor: usize = 0;
-    putBytes(bytes, &cursor, "BM");
-    putInt(u32, bytes, &cursor, file_size);
-    putInt(u32, bytes, &cursor, 0);
-    putInt(u32, bytes, &cursor, 54);
-    putInt(u32, bytes, &cursor, 40);
-    putInt(u32, bytes, &cursor, width);
-    putInt(u32, bytes, &cursor, height);
-    putInt(u16, bytes, &cursor, 1);
-    putInt(u16, bytes, &cursor, 24);
-    cursor += 4 * 6;
-
-    const bytes_per_line = bmpBytesPerLine(width);
-    const line_buffer = try allocator.alloc(u8, bytes_per_line);
-    defer allocator.free(line_buffer);
-    for (0..height_usize) |i_y| {
-        @memset(line_buffer, 0);
-        const y = height_usize - i_y - 1;
-        const line_offset = y * source_bytes_per_row;
-        for (0..width_usize) |x| {
-            const bgr_pixel_offset = x * 3;
-            const bgra_pixel_offset = line_offset + (x * 4);
-            line_buffer[bgr_pixel_offset] = bgra_data[bgra_pixel_offset];
-            line_buffer[bgr_pixel_offset + 1] = bgra_data[bgra_pixel_offset + 1];
-            line_buffer[bgr_pixel_offset + 2] = bgra_data[bgra_pixel_offset + 2];
-        }
-        putBytes(bytes, &cursor, line_buffer);
-    }
-
-    try Io.Dir.cwd().writeFile(io, .{
-        .sub_path = output_path,
-        .data = bytes,
-    });
-}
-
-fn write24BitPng(io: Io, allocator: std.mem.Allocator, output_path: []const u8, bgra_data: []const u8, width: u32, height: u32, source_bytes_per_row: usize) !void {
-    const width_usize = @as(usize, width);
-    const height_usize = @as(usize, height);
-    const rgb_data = try allocator.alloc(u8, width_usize * height_usize * 3);
-    defer allocator.free(rgb_data);
-
-    const rgb_pixels_per_line = width_usize * 3;
-    for (0..height_usize) |y| {
-        const bgra_line_offset = y * source_bytes_per_row;
-        const rgb_line_offset = y * rgb_pixels_per_line;
-        for (0..width_usize) |x| {
-            const bgra_pixel_offset = bgra_line_offset + x * 4;
-            const rgb_pixel_offset = rgb_line_offset + x * 3;
-            rgb_data[rgb_pixel_offset] = bgra_data[bgra_pixel_offset + 2];
-            rgb_data[rgb_pixel_offset + 1] = bgra_data[bgra_pixel_offset + 1];
-            rgb_data[rgb_pixel_offset + 2] = bgra_data[bgra_pixel_offset];
-        }
-    }
-
-    try png.writeRgb24(io, allocator, output_path, width, height, rgb_data);
-}
-
-fn putBytes(output: []u8, cursor: *usize, bytes: []const u8) void {
-    @memcpy(output[cursor.*..][0..bytes.len], bytes);
-    cursor.* += bytes.len;
-}
-
-fn putInt(comptime T: type, output: []u8, cursor: *usize, value: anytype) void {
-    const size = @sizeOf(T);
-    std.mem.writeInt(T, output[cursor.*..][0..size], @intCast(value), .little);
-    cursor.* += size;
-}
-
-fn alignedOutputBytesPerRow(width: u32) usize {
-    return std.mem.alignForward(usize, @as(usize, width) * 4, 256);
-}
-
-fn bmpBytesPerLine(width: u32) usize {
-    const colors_per_line = @as(usize, width) * 3;
-    return if (colors_per_line & 0x00000003 == 0)
-        colors_per_line
-    else
-        (colors_per_line | 0x00000003) + 1;
-}
-
-fn bmpFileSize(width: u32, height: u32) usize {
-    return 54 + (bmpBytesPerLine(width) * @as(usize, height));
-}
