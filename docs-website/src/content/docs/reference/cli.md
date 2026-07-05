@@ -17,7 +17,7 @@ Usage:
   machina bench [path] [--frames N] [--dt seconds] [--format text|json]
   machina test [tests-path|project-path] [--format text|json]
   machina build [path] [--output DIR] [--name NAME] [--force] [--format text|json]
-  machina run [path] [--frames N] [--editor]
+  machina run [path] [--frames N] [--editor] [--hidden]
   machina render [--editor] [--select entity-id] [--frames N] [path] [output.png]
   machina render-test [--editor] [--select entity-id] [--frames N] [path] [output.png]
   machina visual-test [--editor] [--select entity-id] [--frames N] [--update] <path> <expected.png> [actual.png]
@@ -126,10 +126,12 @@ machina visual-test --update tests/golden/postprocess_effects tests/golden/postp
 ```sh
 machina run examples/showcase --frames 240
 machina run examples/showcase --editor
+machina run examples/showcase --hidden --frames 2
 ```
 
 - `--frames N` exits after a bounded number of frames.
 - `--editor` starts with the editor/debug overlay visible.
+- `--hidden` creates the window and presentation surface without showing a normal visible window. It requires `--frames N`.
 
 ## Timestep Options
 
