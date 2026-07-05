@@ -49,7 +49,7 @@ jobs:
           ./zig-out/bin/machina render-test examples/native_motion zig-out/native-motion-render-test.png
           ./zig-out/bin/machina visual-test tests/golden/postprocess_effects tests/golden/postprocess_effects/expected.png zig-out/postprocess-effects-actual.png
       - name: Headful smoke
-        run: ./zig-out/bin/machina run examples/minimal --frames 2
+        run: ./zig-out/bin/machina run examples/minimal --hidden --frames 2
 
   linux:
     runs-on: ubuntu-latest
@@ -92,7 +92,7 @@ jobs:
           ./zig-out/bin/machina render-test examples/native_motion zig-out/native-motion-render-test.png
           ./zig-out/bin/machina visual-test tests/golden/postprocess_effects tests/golden/postprocess_effects/expected.png zig-out/postprocess-effects-actual.png
       - name: Headful smoke
-        run: xvfb-run -a ./zig-out/bin/machina run examples/minimal --frames 2
+        run: xvfb-run -a ./zig-out/bin/machina run examples/minimal --hidden --frames 2
 
   windows:
     runs-on: windows-latest
@@ -168,4 +168,4 @@ jobs:
           Invoke-Machina visual-test tests/golden/postprocess_effects tests/golden/postprocess_effects/expected.png zig-out/postprocess-effects-actual.png
       - name: Headful smoke
         shell: pwsh
-        run: .\zig-out\bin\machina.exe run examples/minimal --frames 2
+        run: .\zig-out\bin\machina.exe run examples/minimal --hidden --frames 2

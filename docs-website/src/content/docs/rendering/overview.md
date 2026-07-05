@@ -84,6 +84,12 @@ Headful runs create a platform window and present to a surface:
 machina run examples/showcase --editor
 ```
 
+For bounded surface smoke tests that should not show a normal visible window, pair `--hidden` with a frame limit:
+
+```sh
+machina run examples/showcase --hidden --frames 2
+```
+
 Offscreen rendering writes PNG artifacts:
 
 ```sh

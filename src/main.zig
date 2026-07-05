@@ -831,7 +831,7 @@ fn printHelp(writer: *Io.Writer) !void {
         \\  machina bench [path] [--frames N] [--dt seconds] [--format text|json]
         \\  machina test [tests-path|project-path] [--format text|json]
         \\  machina build [path] [--output DIR] [--name NAME] [--force] [--format text|json]
-        \\  machina run [path] [--frames N] [--editor]
+        \\  machina run [path] [--frames N] [--editor] [--hidden]
         \\  machina render [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [path] [output.png]
         \\  machina render-test [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [path] [output.png]
         \\  machina visual-test [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--update] <path> <expected.png> [actual.png]
@@ -844,6 +844,7 @@ const ArgumentError = error{
     InvalidFrames,
     InvalidRenderSize,
     InvalidFormat,
+    HiddenRequiresFrames,
     MissingExpected,
     UnknownArgument,
 };
@@ -997,6 +998,7 @@ fn parseRunOptions(allocator: std.mem.Allocator, args: []const []const u8) Argum
     const params = comptime clap.parseParamsComptime(
         \\--frames <FRAMES>
         \\--editor
+        \\--hidden
         \\<PATH>
         \\<EXTRA>...
         \\
@@ -1018,6 +1020,10 @@ fn parseRunOptions(allocator: std.mem.Allocator, args: []const []const u8) Argum
         options.window_options.max_frames = frames;
     }
     options.window_options.editor = result.args.editor != 0;
+    options.window_options.hidden = result.args.hidden != 0;
+    if (options.window_options.hidden and options.window_options.max_frames == null) {
+        return ArgumentError.HiddenRequiresFrames;
+    }
     return options;
 }
 
@@ -2105,6 +2111,7 @@ fn printArgumentError(writer: *Io.Writer, err: ArgumentError) !void {
         ArgumentError.InvalidFrames => "--frames expects a positive integer",
         ArgumentError.InvalidRenderSize => "--width and --height expect positive integer pixels",
         ArgumentError.InvalidFormat => "--format expects text or json",
+        ArgumentError.HiddenRequiresFrames => "--hidden requires --frames",
         ArgumentError.MissingExpected => "visual-test expects an expected image path",
         ArgumentError.UnknownArgument => "unknown argument",
     };
@@ -2777,11 +2784,17 @@ test "run init command rejects extra arguments" {
     try std.testing.expectError(machina.ProjectError.InvalidProject, machina.checkProject(io, std.testing.allocator, root_path));
 }
 
-test "parseWindowOptions accepts frames and editor flag" {
-    const args = [_][]const u8{ "--frames", "12", "--editor" };
+test "parseWindowOptions accepts frames, editor, and hidden flags" {
+    const args = [_][]const u8{ "--frames", "12", "--editor", "--hidden" };
     const options = try parseWindowOptions(std.testing.allocator, &args);
     try std.testing.expectEqual(@as(u32, 12), options.max_frames.?);
     try std.testing.expect(options.editor);
+    try std.testing.expect(options.hidden);
+}
+
+test "parseWindowOptions rejects hidden run without frame limit" {
+    const args = [_][]const u8{"--hidden"};
+    try std.testing.expectError(ArgumentError.HiddenRequiresFrames, parseWindowOptions(std.testing.allocator, &args));
 }
 
 test "parseRenderOptions accepts editor flag before path" {
