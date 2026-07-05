@@ -114,11 +114,15 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 ## Project Map
 
 - Project task index: `docs/TODO.md`
-- CLI entry point and command routing: `src/main.zig`
-- Project and scene loading/validation: `src/root.zig`
+- CLI process entry point: `src/main.zig`
+- CLI command routing and shared command helpers: `src/cli.zig`, `src/cli/`
+- Public engine facade and live project orchestration: `src/root.zig`
+- Project build/bundle helpers: `src/project_build.zig`
+- Scene loading/validation: `src/scene_loader.zig`
 - ECS runtime, registry, and scheduling: `src/runtime.zig`
 - Luau declaration boundary and script ECS registration: `src/script.zig`
 - WebGPU renderer and SDL-backed headful window path: `src/render.zig`
+- Editor state/layout helpers: `src/editor/`
 - Shared retained UI layout and input resolution: `src/ui_layout.zig`
 - Offscreen image verification: `src/render_verify.zig`
 - WGSL shaders embedded into the binary: `src/shaders/`
@@ -143,6 +147,8 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 - PR bodies should contain a descriptive list of changes.
 - Write PR bodies to a Markdown file and pass it with `gh pr create --body-file` or `gh pr edit --body-file`. Do not inline multiline PR bodies with escaped `\n`; verify the saved body with `gh pr view --json body`.
 - Prefer small vertical slices that leave `main` working.
+- Keep source files small and cohesive. Prefer adding or extending focused modules over growing large facade files such as `src/root.zig`, `src/render/main.zig`, or `src/cli.zig`; treat files over roughly 1,500 lines as a design smell and files over roughly 2,500 lines as refactor targets unless they are generated or deliberately table-like.
+- Public facade files may re-export subsystem APIs, but should not accumulate subsystem implementation when a focused module can own it.
 - Use `examples/minimal/` as the smoke-test fixture and update it when the supported scene schema changes.
 - Keep `examples/ui_gallery/` current when adding or materially changing UI primitives.
 - New text-authored runtime resources must be registered with live reload or explicitly documented as not reloadable yet.

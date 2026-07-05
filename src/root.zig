@@ -7,6 +7,7 @@ const geometry = @import("geometry.zig");
 const native = @import("native.zig");
 const project_build = @import("project_build.zig");
 const runtime = @import("runtime.zig");
+const scene_loader = @import("scene_loader.zig");
 const script = @import("script.zig");
 const ui_layout = @import("ui_layout.zig");
 
@@ -94,30 +95,7 @@ pub const Project = struct {
     native_artifact: ?[]const u8 = null,
 };
 
-pub const Scene = struct {
-    name: []const u8,
-    world: World,
-
-    pub fn renderScene(self: *const Scene) RenderScene {
-        return .{ .world = &self.world };
-    }
-
-    pub fn entityCount(self: Scene) usize {
-        return self.world.entityCount();
-    }
-
-    pub fn componentInstanceCount(self: Scene) usize {
-        return self.world.componentInstanceCount();
-    }
-
-    pub fn renderableCubeCount(self: Scene) usize {
-        return self.world.renderableCubeCount();
-    }
-
-    pub fn renderableMeshCount(self: Scene) usize {
-        return self.world.renderableMeshCount();
-    }
-};
+pub const Scene = scene_loader.Scene;
 
 pub const Diagnostic = struct {
     path: []const u8,
@@ -956,7 +934,7 @@ pub fn checkProjectDetailed(io: Io, allocator: std.mem.Allocator, root_path: []c
     switch (scripts_result) {
         .program => |*scripts| {
             defer scripts.deinit();
-            const scene = try loadSceneFile(io, allocator, root_dir, project.default_scene, scripts.registry);
+            const scene = try scene_loader.loadSceneFile(io, allocator, root_dir, project.default_scene, scripts.registry);
             defer freeScene(allocator, scene);
             const schedule = try cloneCheckSchedule(allocator, scripts.registry, scripts.schedule);
             errdefer freeCheckSchedule(allocator, schedule);
@@ -995,7 +973,7 @@ pub fn stepProjectDetailed(
     };
     defer scripts.deinit();
 
-    var scene = try loadSceneFile(io, allocator, root_dir, project.default_scene, scripts.registry);
+    var scene = try scene_loader.loadSceneFile(io, allocator, root_dir, project.default_scene, scripts.registry);
     errdefer freeScene(allocator, scene);
 
     const schedule = try cloneCheckSchedule(allocator, scripts.registry, scripts.schedule);
@@ -1482,7 +1460,7 @@ pub fn loadDefaultSceneWithRegistry(io: Io, allocator: std.mem.Allocator, projec
     const root_dir = try cwd.openDir(io, project.root_path, .{});
     defer root_dir.close(io);
 
-    return loadSceneFile(io, allocator, root_dir, project.default_scene, registry);
+    return scene_loader.loadSceneFile(io, allocator, root_dir, project.default_scene, registry);
 }
 
 fn statProjectFile(io: Io, root_path: []const u8) !SourceFileStamp {
@@ -1563,9 +1541,7 @@ fn statFile(io: Io, dir: Io.Dir, path: []const u8, missing_error: ProjectError) 
 }
 
 pub fn freeScene(allocator: std.mem.Allocator, scene: Scene) void {
-    allocator.free(scene.name);
-    var world = scene.world;
-    world.deinit();
+    scene_loader.freeScene(allocator, scene);
 }
 
 fn loadProjectFile(io: Io, allocator: std.mem.Allocator, root_path: []const u8, root_dir: Io.Dir) !Project {
@@ -1703,397 +1679,6 @@ fn makeSyntheticRuntimeDiagnostic(allocator: std.mem.Allocator, message: []const
     };
 }
 
-fn loadSceneFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, scene_path: []const u8, registry: runtime.ComponentRegistry) !Scene {
-    const contents = root_dir.readFileAlloc(io, scene_path, allocator, .limited(256 * 1024)) catch |err| switch (err) {
-        error.FileNotFound => return ProjectError.MissingDefaultScene,
-        else => return err,
-    };
-    defer allocator.free(contents);
-
-    const name = try readRequiredRootString(allocator, contents, "name") orelse return ProjectError.InvalidProject;
-    errdefer allocator.free(name);
-
-    const version_value = readRequiredRootInt(contents, "version") orelse return ProjectError.UnsupportedProjectVersion;
-    if (version_value != 1) {
-        return ProjectError.UnsupportedProjectVersion;
-    }
-
-    var parser = SceneParser{
-        .allocator = allocator,
-        .world = World.init(allocator),
-        .registry = registry,
-    };
-    return .{
-        .name = name,
-        .world = try parser.parse(contents),
-    };
-}
-
-const SceneParser = struct {
-    allocator: std.mem.Allocator,
-    world: World,
-    registry: runtime.ComponentRegistry,
-    active_entity: ?EntityDraft = null,
-
-    fn parse(self: *SceneParser, contents: []const u8) !World {
-        errdefer {
-            if (self.active_entity) |*entity| {
-                entity.deinit();
-                self.active_entity = null;
-            }
-            self.world.deinit();
-        }
-
-        var lines = std.mem.splitScalar(u8, contents, '\n');
-        while (lines.next()) |line| {
-            const trimmed = std.mem.trim(u8, line, " \t\r");
-            if (trimmed.len == 0 or trimmed[0] == '#') {
-                continue;
-            }
-
-            if (std.mem.eql(u8, trimmed, "[[entities]]")) {
-                try self.flushEntity();
-                self.active_entity = EntityDraft.init(self.allocator);
-                continue;
-            }
-
-            if (trimmed[0] == '[') {
-                if (self.active_entity) |*entity| {
-                    const component_id = parseComponentTableHeader(trimmed) orelse return ProjectError.InvalidSceneEntity;
-                    if (self.registry.findComponent(component_id) == null) {
-                        return ProjectError.InvalidSceneEntity;
-                    }
-                    entity.active_component = component_id;
-                    _ = try entity.ensureComponent(component_id);
-                    continue;
-                }
-                return ProjectError.InvalidSceneEntity;
-            }
-
-            if (self.active_entity) |*entity| {
-                try entity.readProperty(trimmed, self.registry);
-            }
-        }
-
-        try self.flushEntity();
-        if (self.world.entityCount() == 0) {
-            return ProjectError.MissingSceneContent;
-        }
-        if (self.world.componentInstanceCountFor(runtime.renderer_component_id) > 1) {
-            return ProjectError.InvalidSceneEntity;
-        }
-
-        const world = self.world;
-        self.world = World.init(self.allocator);
-        return world;
-    }
-
-    fn flushEntity(self: *SceneParser) !void {
-        var entity = self.active_entity orelse return;
-        defer entity.deinit();
-        self.active_entity = null;
-        if (!entity.id_seen or !entity.name_seen or entity.components.items.len == 0) {
-            return ProjectError.InvalidSceneEntity;
-        }
-        const handle = self.world.createAuthoredEntity(entity.id, entity.name) catch |err| switch (err) {
-            runtime.WorldError.DuplicateEntityId => return ProjectError.DuplicateSceneEntityId,
-            else => return err,
-        };
-        for (entity.components.items) |*component| {
-            const definition = self.registry.findComponent(component.id) orelse return ProjectError.InvalidSceneEntity;
-            try addSceneComponentDefaults(self.allocator, component);
-            if (!componentHasEveryDefinedField(component.*, definition.*)) {
-                return ProjectError.InvalidSceneEntity;
-            }
-            try validateSceneComponentValues(component.*);
-            try self.world.setComponent(handle, component.id, component.fields.items);
-        }
-    }
-};
-
-fn addSceneComponentDefaults(allocator: std.mem.Allocator, component: *ComponentDraft) !void {
-    if (std.mem.eql(u8, component.id, runtime.ui_canvas_component_id)) {
-        try addSceneComponentDefaultField(allocator, component, "design_size", .{ .vec3 = .{ 0.0, 0.0, 0.0 } });
-        try addSceneComponentDefaultField(allocator, component, "scale_mode", .{ .string = "none" });
-    } else if (std.mem.eql(u8, component.id, runtime.ui_rect_component_id)) {
-        try addSceneComponentDefaultField(allocator, component, "corner_radius", .{ .float = 0.0 });
-    } else if (std.mem.eql(u8, component.id, runtime.ui_table_component_id)) {
-        try addSceneComponentDefaultField(allocator, component, "columns", .{ .int = 2 });
-        try addSceneComponentDefaultField(allocator, component, "row_height", .{ .float = 1.0 });
-        try addSceneComponentDefaultField(allocator, component, "column_gap", .{ .float = 0.0 });
-        try addSceneComponentDefaultField(allocator, component, "row_gap", .{ .float = 0.0 });
-        try addSceneComponentDefaultField(allocator, component, "padding", .{ .vec3 = .{ 0.0, 0.0, 0.0 } });
-        try addSceneComponentDefaultField(allocator, component, "first_column_ratio", .{ .float = 0.5 });
-    } else if (std.mem.eql(u8, component.id, runtime.ui_layout_item_component_id)) {
-        try addSceneComponentDefaultField(allocator, component, "min_size", .{ .vec3 = .{ 0.0, 0.0, 0.0 } });
-        try addSceneComponentDefaultField(allocator, component, "preferred_size", .{ .vec3 = .{ 0.0, 0.0, 0.0 } });
-        try addSceneComponentDefaultField(allocator, component, "max_size", .{ .vec3 = .{ 0.0, 0.0, 0.0 } });
-        try addSceneComponentDefaultField(allocator, component, "grow", .{ .float = 0.0 });
-        try addSceneComponentDefaultField(allocator, component, "shrink", .{ .float = 0.0 });
-        try addSceneComponentDefaultField(allocator, component, "align", .{ .string = "start" });
-        try addSceneComponentDefaultField(allocator, component, "margin", .{ .vec3 = .{ 0.0, 0.0, 0.0 } });
-    } else if (std.mem.eql(u8, component.id, runtime.renderer_component_id)) {
-        try addSceneComponentDefaultField(allocator, component, "hdr", .{ .boolean = true });
-        try addSceneComponentDefaultField(allocator, component, "tone_mapping", .{ .string = "aces" });
-        try addSceneComponentDefaultField(allocator, component, "exposure", .{ .float = 0.0 });
-        try addSceneComponentDefaultField(allocator, component, "postprocess_enabled", .{ .boolean = true });
-        try addSceneComponentDefaultField(allocator, component, "antialiasing", .{ .string = "fxaa" });
-        try addSceneComponentDefaultField(allocator, component, "bloom_enabled", .{ .boolean = true });
-        try addSceneComponentDefaultField(allocator, component, "bloom_threshold", .{ .float = 0.85 });
-        try addSceneComponentDefaultField(allocator, component, "bloom_intensity", .{ .float = 0.12 });
-        try addSceneComponentDefaultField(allocator, component, "bloom_radius", .{ .float = 1.0 });
-        try addSceneComponentDefaultField(allocator, component, "vignette_enabled", .{ .boolean = true });
-        try addSceneComponentDefaultField(allocator, component, "vignette_strength", .{ .float = 0.24 });
-        try addSceneComponentDefaultField(allocator, component, "vignette_radius", .{ .float = 0.82 });
-        try addSceneComponentDefaultField(allocator, component, "chromatic_aberration_enabled", .{ .boolean = true });
-        try addSceneComponentDefaultField(allocator, component, "chromatic_aberration_strength", .{ .float = 0.0025 });
-    }
-}
-
-fn validateSceneComponentValues(component: ComponentDraft) !void {
-    if (!std.mem.eql(u8, component.id, runtime.renderer_component_id)) {
-        return;
-    }
-
-    const tone_mapping = componentString(component, "tone_mapping") orelse return ProjectError.InvalidSceneEntity;
-    if (!isOneOf(tone_mapping, &.{ "none", "reinhard", "aces" })) {
-        return ProjectError.InvalidSceneEntity;
-    }
-    const antialiasing = componentString(component, "antialiasing") orelse return ProjectError.InvalidSceneEntity;
-    if (!isOneOf(antialiasing, &.{ "none", "fxaa" })) {
-        return ProjectError.InvalidSceneEntity;
-    }
-
-    try validateFiniteFloat(component, "exposure", null);
-    try validateFiniteFloat(component, "bloom_threshold", 0.0);
-    try validateFiniteFloat(component, "bloom_intensity", 0.0);
-    try validateFiniteFloat(component, "bloom_radius", 0.0);
-    try validateFiniteFloat(component, "vignette_strength", 0.0);
-    try validateFiniteFloat(component, "vignette_radius", 0.0001);
-    try validateFiniteFloat(component, "chromatic_aberration_strength", 0.0);
-}
-
-fn validateFiniteFloat(component: ComponentDraft, field_name: []const u8, min_value: ?f32) !void {
-    const value = componentFloat(component, field_name) orelse return ProjectError.InvalidSceneEntity;
-    if (!std.math.isFinite(value)) {
-        return ProjectError.InvalidSceneEntity;
-    }
-    if (min_value) |minimum| {
-        if (value < minimum) {
-            return ProjectError.InvalidSceneEntity;
-        }
-    }
-}
-
-fn componentString(component: ComponentDraft, field_name: []const u8) ?[]const u8 {
-    for (component.fields.items) |field| {
-        if (std.mem.eql(u8, field.name, field_name)) {
-            return switch (field.value) {
-                .string => |value| value,
-                else => null,
-            };
-        }
-    }
-    return null;
-}
-
-fn componentFloat(component: ComponentDraft, field_name: []const u8) ?f32 {
-    for (component.fields.items) |field| {
-        if (std.mem.eql(u8, field.name, field_name)) {
-            return switch (field.value) {
-                .float => |value| value,
-                else => null,
-            };
-        }
-    }
-    return null;
-}
-
-fn isOneOf(value: []const u8, candidates: []const []const u8) bool {
-    for (candidates) |candidate| {
-        if (std.mem.eql(u8, value, candidate)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-fn addSceneComponentDefaultField(allocator: std.mem.Allocator, component: *ComponentDraft, name: []const u8, value: runtime.ComponentValue) !void {
-    if (componentHasField(component.*, name)) {
-        return;
-    }
-    try component.fields.append(allocator, .{
-        .name = name,
-        .value = value,
-    });
-}
-
-const EntityDraft = struct {
-    allocator: std.mem.Allocator,
-    id_seen: bool = false,
-    name_seen: bool = false,
-    id: []const u8 = "",
-    name: []const u8 = "",
-    components: std.ArrayList(ComponentDraft) = .empty,
-    active_component: ?[]const u8 = null,
-
-    fn init(allocator: std.mem.Allocator) EntityDraft {
-        return .{ .allocator = allocator };
-    }
-
-    fn deinit(self: *EntityDraft) void {
-        for (self.components.items) |*component| {
-            component.deinit(self.allocator);
-        }
-        self.components.deinit(self.allocator);
-    }
-
-    fn readProperty(self: *EntityDraft, line: []const u8, registry: runtime.ComponentRegistry) !void {
-        const eq_index = std.mem.indexOfScalar(u8, line, '=') orelse return ProjectError.InvalidSceneEntity;
-        const key = std.mem.trim(u8, line[0..eq_index], " \t");
-        const value = std.mem.trim(u8, line[eq_index + 1 ..], " \t");
-
-        if (self.active_component) |component_id| {
-            try self.readComponentProperty(component_id, key, value, registry);
-        } else if (std.mem.eql(u8, key, "id")) {
-            self.id = stringValue(value) orelse return ProjectError.InvalidSceneEntity;
-            self.id_seen = true;
-        } else if (std.mem.eql(u8, key, "name")) {
-            self.name = stringValue(value) orelse return ProjectError.InvalidSceneEntity;
-            self.name_seen = true;
-        } else {
-            return ProjectError.InvalidSceneEntity;
-        }
-    }
-
-    fn readComponentProperty(self: *EntityDraft, component_id: []const u8, key: []const u8, value: []const u8, registry: runtime.ComponentRegistry) !void {
-        const definition = registry.findComponent(component_id) orelse return ProjectError.InvalidSceneEntity;
-        const field_definition = findComponentField(definition.*, key) orelse return ProjectError.InvalidSceneEntity;
-        const component = try self.ensureComponent(component_id);
-        for (component.fields.items) |field| {
-            if (std.mem.eql(u8, field.name, key)) {
-                return ProjectError.InvalidSceneEntity;
-            }
-        }
-        const field_value = try readComponentValue(field_definition.value_type, value);
-        try component.fields.append(self.allocator, .{
-            .name = key,
-            .value = field_value,
-        });
-    }
-
-    fn ensureComponent(self: *EntityDraft, component_id: []const u8) !*ComponentDraft {
-        for (self.components.items) |*component| {
-            if (std.mem.eql(u8, component.id, component_id)) {
-                return component;
-            }
-        }
-        try self.components.append(self.allocator, .{ .id = component_id });
-        return &self.components.items[self.components.items.len - 1];
-    }
-};
-
-const ComponentDraft = struct {
-    id: []const u8,
-    fields: std.ArrayList(runtime.ComponentFieldValue) = .empty,
-
-    fn deinit(self: *ComponentDraft, allocator: std.mem.Allocator) void {
-        self.fields.deinit(allocator);
-    }
-};
-
-fn parseComponentTableHeader(header: []const u8) ?[]const u8 {
-    const prefix = "[entities.components.";
-    if (!std.mem.startsWith(u8, header, prefix) or header[header.len - 1] != ']') {
-        return null;
-    }
-    const raw_id = std.mem.trim(u8, header[prefix.len .. header.len - 1], " \t");
-    if (raw_id.len >= 2 and raw_id[0] == '"' and raw_id[raw_id.len - 1] == '"') {
-        return raw_id[1 .. raw_id.len - 1];
-    }
-    return raw_id;
-}
-
-fn findComponentField(definition: runtime.ComponentDefinition, field_name: []const u8) ?runtime.ComponentFieldDefinition {
-    for (definition.fields) |field| {
-        if (std.mem.eql(u8, field.name, field_name)) {
-            return field;
-        }
-    }
-    return null;
-}
-
-fn componentHasEveryDefinedField(component: ComponentDraft, definition: runtime.ComponentDefinition) bool {
-    for (definition.fields) |field| {
-        if (!componentHasField(component, field.name)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-fn componentHasField(component: ComponentDraft, field_name: []const u8) bool {
-    for (component.fields.items) |value| {
-        if (std.mem.eql(u8, value.name, field_name)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-fn readComponentValue(field_type: runtime.FieldType, value: []const u8) !runtime.ComponentValue {
-    return switch (field_type) {
-        .boolean => .{ .boolean = try readBool(value) },
-        .int => .{ .int = std.fmt.parseInt(i32, value, 10) catch return ProjectError.InvalidSceneNumber },
-        .float => .{ .float = std.fmt.parseFloat(f32, value) catch return ProjectError.InvalidSceneNumber },
-        .vec3 => .{ .vec3 = try readVec3(value) },
-        .string => .{ .string = stringValue(value) orelse return ProjectError.InvalidSceneEntity },
-    };
-}
-
-fn readBool(value: []const u8) !bool {
-    if (std.mem.eql(u8, value, "true")) {
-        return true;
-    }
-    if (std.mem.eql(u8, value, "false")) {
-        return false;
-    }
-    return ProjectError.InvalidSceneEntity;
-}
-
-fn stringValue(value: []const u8) ?[]const u8 {
-    if (value.len < 2 or value[0] != '"' or value[value.len - 1] != '"') {
-        return null;
-    }
-    return value[1 .. value.len - 1];
-}
-
-fn readVec3(value: []const u8) ![3]f32 {
-    if (value.len < 5 or value[0] != '[' or value[value.len - 1] != ']') {
-        return ProjectError.InvalidSceneNumber;
-    }
-
-    var result: [3]f32 = undefined;
-    var count: usize = 0;
-    var parts = std.mem.splitScalar(u8, value[1 .. value.len - 1], ',');
-    while (parts.next()) |part| {
-        if (count >= result.len) {
-            return ProjectError.InvalidSceneNumber;
-        }
-        const trimmed = std.mem.trim(u8, part, " \t\r");
-        if (trimmed.len == 0) {
-            return ProjectError.InvalidSceneNumber;
-        }
-        result[count] = std.fmt.parseFloat(f32, trimmed) catch return ProjectError.InvalidSceneNumber;
-        count += 1;
-    }
-
-    if (count != result.len) {
-        return ProjectError.InvalidSceneNumber;
-    }
-    return result;
-}
-
 fn readRequiredString(allocator: std.mem.Allocator, contents: []const u8, key: []const u8) !?[]const u8 {
     var lines = std.mem.splitScalar(u8, contents, '\n');
     while (lines.next()) |line| {
@@ -2197,33 +1782,6 @@ fn readOptionalStringArray(allocator: std.mem.Allocator, contents: []const u8, k
     return try allocator.alloc([]const u8, 0);
 }
 
-fn readRequiredRootString(allocator: std.mem.Allocator, contents: []const u8, key: []const u8) !?[]const u8 {
-    var lines = std.mem.splitScalar(u8, contents, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0 or trimmed[0] == '#') {
-            continue;
-        }
-        if (trimmed[0] == '[') {
-            break;
-        }
-
-        const eq_index = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
-        const found_key = std.mem.trim(u8, trimmed[0..eq_index], " \t");
-        if (!std.mem.eql(u8, found_key, key)) {
-            continue;
-        }
-
-        const value = std.mem.trim(u8, trimmed[eq_index + 1 ..], " \t");
-        if (value.len < 2 or value[0] != '"' or value[value.len - 1] != '"') {
-            return null;
-        }
-        return try decodeTomlBasicString(allocator, value[1 .. value.len - 1]);
-    }
-
-    return null;
-}
-
 fn encodeTomlBasicString(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
@@ -2299,30 +1857,6 @@ fn readRequiredInt(contents: []const u8, key: []const u8) ?u32 {
         const trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len == 0 or trimmed[0] == '#') {
             continue;
-        }
-
-        const eq_index = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
-        const found_key = std.mem.trim(u8, trimmed[0..eq_index], " \t");
-        if (!std.mem.eql(u8, found_key, key)) {
-            continue;
-        }
-
-        const value = std.mem.trim(u8, trimmed[eq_index + 1 ..], " \t");
-        return std.fmt.parseInt(u32, value, 10) catch null;
-    }
-
-    return null;
-}
-
-fn readRequiredRootInt(contents: []const u8, key: []const u8) ?u32 {
-    var lines = std.mem.splitScalar(u8, contents, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0 or trimmed[0] == '#') {
-            continue;
-        }
-        if (trimmed[0] == '[') {
-            break;
         }
 
         const eq_index = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
