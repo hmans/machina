@@ -82,9 +82,9 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 		if !os.exists(full_path) {
 			return Project_Check_Result{project = project, err = .Missing_Script}
 		}
-		script_err, diagnostic := register_script_components_from_file_detailed(&registry, full_path, script_path)
-		if script_err != .None {
-			return Project_Check_Result{project = project, diagnostic = diagnostic, err = script_err}
+		script_result := register_script_components_with_luau_bridge(&registry, full_path, script_path)
+		if script_result.err != .None {
+			return Project_Check_Result{project = project, diagnostic = script_result.diagnostic, err = script_result.err}
 		}
 	}
 

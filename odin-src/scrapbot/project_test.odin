@@ -2,6 +2,7 @@ package main
 
 import "core:os"
 import "core:path/filepath"
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -111,6 +112,8 @@ ecs.system("prepare_flags", {
 ecs.system("observe_flags", {
   query = Flags,
   after = { "prepare_flags" },
+  run = function(world, dt)
+  end,
 })
 `)
 
@@ -121,6 +124,9 @@ ecs.system("observe_flags", {
 	testing.expect_value(t, runtime_system_schedule_system_count(result.update_schedule), 1)
 	testing.expect_value(t, result.startup_schedule.batches[0].systems[0].id, "prepare_flags")
 	testing.expect_value(t, result.update_schedule.batches[0].systems[0].id, "observe_flags")
+	testing.expect_value(t, result.startup_schedule.batches[0].systems[0].runner.kind, Runtime_System_Runner_Kind.None)
+	testing.expect_value(t, result.update_schedule.batches[0].systems[0].runner.kind, Runtime_System_Runner_Kind.Luau)
+	testing.expect(t, result.update_schedule.batches[0].systems[0].runner.ref != 0)
 }
 
 @(test)
@@ -154,8 +160,8 @@ ecs.system("second", {
 }
 
 @(test)
-test_check_project_returns_script_registration_diagnostic :: proc(t: ^testing.T) {
-	root := make_test_project(t, "script-registration-diagnostic")
+test_check_project_returns_script_load_diagnostic :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-load-diagnostic")
 	defer os.remove_all(root)
 	defer delete(root)
 
@@ -173,12 +179,12 @@ ecs.system("broken", {
 	result := check_project(root)
 	defer free_check_result(result)
 	testing.expect_value(t, result.err, Project_Error.Invalid_Script)
-	testing.expect_value(t, result.diagnostic.stage, Script_Diagnostic_Stage.Registration)
+	testing.expect_value(t, result.diagnostic.stage, Script_Diagnostic_Stage.Load)
 	testing.expect_value(t, result.diagnostic.path, "scripts/gameplay.luau")
-	testing.expect_value(t, result.diagnostic.system_id, "broken")
+	testing.expect_value(t, result.diagnostic.system_id, "")
 	testing.expect_value(t, result.diagnostic.has_start, true)
-	testing.expect_value(t, result.diagnostic.start.line, 5)
-	testing.expect_value(t, result.diagnostic.message, "system writes must use ecs.refs with known components")
+	testing.expect_value(t, result.diagnostic.start.line, 6)
+	testing.expect(t, strings.contains(result.diagnostic.message, "invalid argument #1 to 'ecs.refs'"))
 }
 
 make_test_project :: proc(t: ^testing.T, name: string) -> string {

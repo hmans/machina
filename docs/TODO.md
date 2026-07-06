@@ -17,6 +17,7 @@
 - [x] Odin runtime has first-pass system scheduling and deferred structural mutation.
 - [x] Odin `check` can statically register Luau system declarations and validate phase schedules.
 - [x] Odin `check` can report structured script registration and schedule diagnostics.
+- [x] Odin `check` can load Luau scripts through the C ABI bridge and import component/system declarations.
 - [x] Odin `step` can validate projects and report deterministic frame/schedule summaries.
 - [x] Odin `bench` can report validation/update timing with explicit pending execution/render stats.
 - [x] Odin `test` can discover test projects, validate test manifests, and report pending assertion execution.
@@ -44,6 +45,7 @@
 - [x] Port first-pass ECS schedules and deferred mutation from Zig to Odin.
 - [x] Port first-pass script ECS registration and schedule validation from Zig to Odin.
 - [x] Port first-pass structured script registration and schedule diagnostics from Zig to Odin.
+- [x] Port Luau bridge-backed declaration loading from Zig to Odin.
 - [x] Port first-pass deterministic step command from Zig to Odin.
 - [x] Port first-pass benchmark command from Zig to Odin.
 - [x] Port first-pass test command discovery and manifest validation from Zig to Odin.

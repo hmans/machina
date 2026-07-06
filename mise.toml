@@ -19,7 +19,11 @@ run = "zig build -Doptimize=Debug"
 
 [tasks.build-odin]
 description = "Build the Odin migration scaffold"
-run = "mkdir -p odin-out && odin build odin-src/scrapbot -out:odin-out/scrapbot"
+run = "mise build-odin-luau-bridge && mkdir -p odin-out && odin build odin-src/scrapbot -out:odin-out/scrapbot"
+
+[tasks.build-odin-luau-bridge]
+description = "Build the C ABI Luau bridge used by the Odin migration scaffold"
+run = "sh tools/build-odin-luau-bridge.sh"
 
 [tasks.odin-smoke]
 description = "Build and run the Odin migration scaffold"
@@ -27,7 +31,7 @@ run = "mise build-odin && ./odin-out/scrapbot --version"
 
 [tasks.test-odin]
 description = "Run Odin migration tests"
-run = "odin test odin-src/scrapbot -define:ODIN_TEST_THREADS=1 -out:odin-out/scrapbot-tests"
+run = "mise build-odin-luau-bridge && odin test odin-src/scrapbot -define:ODIN_TEST_THREADS=1 -out:odin-out/scrapbot-tests"
 
 [tasks.test]
 description = "Run the full Scrapbot test suite"

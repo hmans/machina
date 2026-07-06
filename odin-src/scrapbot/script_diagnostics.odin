@@ -28,6 +28,7 @@ Script_Diagnostic :: struct {
 	start:     Script_Diagnostic_Position,
 	has_start: bool,
 	message:   string,
+	message_owned: bool,
 }
 
 script_diagnostic_present :: proc(diagnostic: Script_Diagnostic) -> bool {
@@ -40,6 +41,9 @@ script_diagnostic_free :: proc(diagnostic: ^Script_Diagnostic) {
 	}
 	if diagnostic.system_id_owned && diagnostic.system_id != "" {
 		delete(diagnostic.system_id)
+	}
+	if diagnostic.message_owned && diagnostic.message != "" {
+		delete(diagnostic.message)
 	}
 	diagnostic^ = Script_Diagnostic{}
 }
@@ -106,21 +110,47 @@ script_diagnostic_line_from_offset :: proc(contents: string, absolute_offset: in
 }
 
 script_registration_diagnostic :: proc(path, contents: string, absolute_offset: int, message: string) -> Script_Diagnostic {
+	return script_registration_diagnostic_line(path, script_diagnostic_line_from_offset(contents, absolute_offset), message)
+}
+
+script_registration_diagnostic_line :: proc(path: string, line: int, message: string) -> Script_Diagnostic {
 	owned_path, path_owned := script_diagnostic_clone(path)
 	return Script_Diagnostic{
 		stage = .Registration,
 		path = owned_path,
 		path_owned = path_owned,
-		start = Script_Diagnostic_Position{line = script_diagnostic_line_from_offset(contents, absolute_offset)},
-		has_start = true,
+		start = Script_Diagnostic_Position{line = line},
+		has_start = line > 0,
 		message = message,
 	}
 }
 
 script_system_registration_diagnostic :: proc(path, contents: string, absolute_offset: int, system_id: string, message: string) -> Script_Diagnostic {
-	diagnostic := script_registration_diagnostic(path, contents, absolute_offset, message)
+	return script_system_registration_diagnostic_line(path, script_diagnostic_line_from_offset(contents, absolute_offset), system_id, message)
+}
+
+script_system_registration_diagnostic_line :: proc(path: string, line: int, system_id: string, message: string) -> Script_Diagnostic {
+	diagnostic := script_registration_diagnostic_line(path, line, message)
 	diagnostic.system_id, diagnostic.system_id_owned = script_diagnostic_clone(system_id)
 	return diagnostic
+}
+
+script_load_diagnostic :: proc(path: string, message: string) -> Script_Diagnostic {
+	owned_path, path_owned := script_diagnostic_clone(path)
+	owned_message, message_owned := script_diagnostic_clone(message)
+	if owned_message == "" {
+		owned_message = message
+	}
+	line, has_line := script_luau_diagnostic_line(message)
+	return Script_Diagnostic{
+		stage = .Load,
+		path = owned_path,
+		path_owned = path_owned,
+		start = Script_Diagnostic_Position{line = line},
+		has_start = has_line,
+		message = owned_message,
+		message_owned = message_owned,
+	}
 }
 
 script_schedule_diagnostic :: proc(phase: Runtime_System_Phase, message: string) -> Script_Diagnostic {
@@ -156,4 +186,40 @@ script_diagnostic_clone :: proc(value: string) -> (string, bool) {
 		return "", false
 	}
 	return owned, true
+}
+
+script_luau_diagnostic_line :: proc(message: string) -> (int, bool) {
+	index := strings.index_byte(message, ':')
+	for index >= 0 && index + 1 < len(message) {
+		number_start := index + 1
+		if !script_ascii_digit(message[number_start]) {
+			next := strings.index_byte(message[index + 1:], ':')
+			if next < 0 {
+				return 0, false
+			}
+			index = index + 1 + next
+			continue
+		}
+
+		number_end := number_start
+		line := 0
+		for number_end < len(message) && script_ascii_digit(message[number_end]) {
+			line = line * 10 + int(message[number_end] - '0')
+			number_end += 1
+		}
+		if number_end < len(message) && message[number_end] == ':' && line > 0 {
+			return line, true
+		}
+
+		next := strings.index_byte(message[number_end:], ':')
+		if next < 0 {
+			return 0, false
+		}
+		index = number_end + next
+	}
+	return 0, false
+}
+
+script_ascii_digit :: proc(value: byte) -> bool {
+	return value >= '0' && value <= '9'
 }

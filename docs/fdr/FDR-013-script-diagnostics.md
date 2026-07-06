@@ -1,7 +1,7 @@
 # FDR-013: Script and Native Diagnostics
 
 **Status:** Active
-**Last reviewed:** 2026-07-03
+**Last reviewed:** 2026-07-06
 
 ## Overview
 
@@ -21,7 +21,7 @@ Diagnostics report Luau, script-ECS, and project-native failures in a form that 
 - Command-line commands render diagnostics as text.
 - `scrapbot check` can render validation diagnostics as JSON for editor panels, automation, and agent workflows.
 - `scrapbot step` can render runtime system diagnostics as JSON alongside the final scene and simulation summaries.
-- During the Odin migration, the Odin `check` command can render structured script registration and schedule diagnostics while Luau callback execution and runtime diagnostics still remain in the Zig implementation.
+- During the Odin migration, the Odin `check` command loads scripts through the shared Luau C ABI bridge, imports component/system declarations, and can render structured load, registration, and schedule diagnostics. Luau callback execution and runtime diagnostics still remain in the Zig implementation.
 
 ## Design Decisions
 
