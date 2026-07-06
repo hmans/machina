@@ -829,6 +829,98 @@ test_live_project_run_frames_polls_development_odin_native_source_between_frames
 }
 
 @(test)
+test_live_project_reloads_luau_script_source_callback :: proc(t: ^testing.T) {
+	root := make_test_project(t, "live-project-luau-script-source-reload")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_script_counter_project(t, root, "1")
+	live, init_err := live_project_init(root)
+	defer live_project_free(&live)
+	testing.expect_value(t, init_err, Project_Error.None)
+
+	first := live_project_run_frames(&live, 1, 0.5)
+	defer script_diagnostic_free(&first.diagnostic)
+	testing.expect_value(t, first.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 2)
+
+	write_script_counter_source(t, root, "10")
+	reload, reload_err := live_project_poll_script_sources(&live)
+	testing.expect_value(t, reload_err, Project_Error.None)
+	testing.expect_value(t, reload.changed, true)
+	testing.expect_value(t, reload.info.scripts_reloaded, true)
+	testing.expect_value(t, reload.info.native_reloaded, false)
+
+	second := live_project_run_frames(&live, 1, 0.5)
+	defer script_diagnostic_free(&second.diagnostic)
+	testing.expect_value(t, second.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 12)
+}
+
+@(test)
+test_live_project_keeps_last_good_after_bad_luau_script_reload :: proc(t: ^testing.T) {
+	root := make_test_project(t, "live-project-luau-script-source-reload-failure")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_script_counter_project(t, root, "1")
+	live, init_err := live_project_init(root)
+	defer live_project_free(&live)
+	testing.expect_value(t, init_err, Project_Error.None)
+
+	first := live_project_run_frames(&live, 1, 0.5)
+	defer script_diagnostic_free(&first.diagnostic)
+	testing.expect_value(t, first.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 2)
+
+	write_broken_script_counter_source(t, root)
+	bad_reload, bad_reload_err := live_project_poll_script_sources(&live)
+	testing.expect_value(t, bad_reload_err, Project_Error.Invalid_Script)
+	testing.expect_value(t, bad_reload.changed, false)
+	diagnostic, diagnostic_found := live_project_last_diagnostic(&live)
+	testing.expect_value(t, diagnostic_found, true)
+	testing.expect_value(t, diagnostic.stage, Script_Diagnostic_Stage.Load)
+	testing.expect_value(t, diagnostic.path, "scripts/gameplay.luau")
+
+	still_old := live_project_run_frames(&live, 1, 0.5)
+	defer script_diagnostic_free(&still_old.diagnostic)
+	testing.expect_value(t, still_old.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 3)
+
+	write_script_counter_source(t, root, "10")
+	fixed_reload, fixed_reload_err := live_project_poll_script_sources(&live)
+	testing.expect_value(t, fixed_reload_err, Project_Error.None)
+	testing.expect_value(t, fixed_reload.changed, true)
+	_, after_fixed_diagnostic_found := live_project_last_diagnostic(&live)
+	testing.expect_value(t, after_fixed_diagnostic_found, false)
+
+	after_fixed := live_project_run_frames(&live, 1, 0.5)
+	defer script_diagnostic_free(&after_fixed.diagnostic)
+	testing.expect_value(t, after_fixed.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 13)
+}
+
+@(test)
+test_live_project_run_frames_polls_luau_script_source_between_frames :: proc(t: ^testing.T) {
+	root := make_test_project(t, "live-project-run-polls-luau-script-source")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_script_counter_project(t, root, "1")
+	live, init_err := live_project_init(root)
+	defer live_project_free(&live)
+	testing.expect_value(t, init_err, Project_Error.None)
+
+	hook_data := Live_Project_Script_Reload_Test_Hook_Data{t = t, root = root}
+	simulation := live_project_run_frames_with_hook(&live, 2, 0.5, live_project_script_reload_test_hook, rawptr(&hook_data))
+	defer script_diagnostic_free(&simulation.diagnostic)
+	testing.expect_value(t, simulation.ok, true)
+	testing.expect_value(t, simulation.completed_frames, 2)
+	testing.expect_value(t, hook_data.rewrote_source, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 12)
+}
+
+@(test)
 test_run_script_simulation_reports_native_odin_set_field_write_access_diagnostic :: proc(t: ^testing.T) {
 	root := make_test_project(t, "script-simulation-native-odin-set-field-write-access")
 	defer os.remove_all(root)
@@ -1689,6 +1781,79 @@ live_project_native_reload_test_hook :: proc(project: ^Live_Project, completed_f
 	}
 	if completed_frames == 1 && !data.rewrote_source {
 		write_development_native_counter_source(data.t, data.root, "10")
+		data.rewrote_source = true
+	}
+	return true
+}
+
+write_script_counter_project :: proc(t: ^testing.T, root, increment: string) {
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n")
+	write_file(t, root, "scenes/main.scene.toml", `name = "Main"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.stats]
+count = 1
+`)
+	write_script_counter_source(t, root, increment)
+}
+
+write_script_counter_source :: proc(t: ^testing.T, root, increment: string) {
+	source := strings.builder_make()
+	defer strings.builder_destroy(&source)
+	strings.write_string(&source, `local Stats = ecs.component("stats", {
+  fields = ecs.fields({
+    count = "int",
+  }),
+})
+
+local StatsQuery = ecs.query(Stats)
+
+ecs.system("script_tick", {
+  phase = "update",
+  query = StatsQuery,
+  writes = ecs.refs(Stats),
+  run = function(world, _dt)
+    for _entity, stats in StatsQuery:iter(world) do
+      stats.count = stats.count + `)
+	strings.write_string(&source, increment)
+	strings.write_string(&source, `
+    end
+  end,
+})
+`)
+	write_file(t, root, "scripts/gameplay.luau", strings.to_string(source))
+}
+
+write_broken_script_counter_source :: proc(t: ^testing.T, root: string) {
+	write_file(t, root, "scripts/gameplay.luau", `local Stats = ecs.component("stats", {
+  fields = ecs.fields({
+    count = "int",
+  }),
+})
+
+ecs.system("script_tick", {
+  phase = "update",
+`)
+}
+
+Live_Project_Script_Reload_Test_Hook_Data :: struct {
+	t:              ^testing.T,
+	root:           string,
+	rewrote_source: bool,
+}
+
+live_project_script_reload_test_hook :: proc(project: ^Live_Project, completed_frames: int, user_data: rawptr) -> bool {
+	_ = project
+	data := cast(^Live_Project_Script_Reload_Test_Hook_Data)user_data
+	if data == nil {
+		return false
+	}
+	if completed_frames == 1 && !data.rewrote_source {
+		write_script_counter_source(data.t, data.root, "10")
 		data.rewrote_source = true
 	}
 	return true

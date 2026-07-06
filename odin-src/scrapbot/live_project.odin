@@ -1,11 +1,17 @@
 package main
 
 import "core:os"
+import "core:strings"
 import "core:time"
 
 Source_File_Stamp :: struct {
 	size:                i64,
 	modification_time_ns: i64,
+}
+
+Live_Source_File :: struct {
+	path:  string,
+	stamp: Source_File_Stamp,
 }
 
 Live_Reload_Info :: struct {
@@ -24,8 +30,12 @@ Live_Project_Frame_Hook :: proc(project: ^Live_Project, completed_frames: int, u
 
 Live_Project :: struct {
 	check:                 Project_Check_Result,
+	script_sources:        []Live_Source_File,
 	native_stamp:          Source_File_Stamp,
 	has_native_stamp:      bool,
+	last_failed_script_index: int,
+	last_failed_script_stamp: Source_File_Stamp,
+	has_last_failed_script:   bool,
 	last_failed_native:    Source_File_Stamp,
 	has_last_failed_native: bool,
 	last_diagnostic:       Script_Diagnostic,
@@ -37,13 +47,20 @@ live_project_init :: proc(root_path: string) -> (Live_Project, Project_Error) {
 	if check.err != .None {
 		return Live_Project{check = check}, check.err
 	}
+	script_sources, scripts_ok := live_project_stat_scripts(check.project)
+	if !scripts_ok {
+		free_check_result(check)
+		return Live_Project{}, .Missing_Script
+	}
 	stamp, has_stamp, stamp_ok := live_project_stat_native(check.project)
 	if !stamp_ok {
+		live_source_files_free(script_sources)
 		free_check_result(check)
 		return Live_Project{}, .Missing_Native
 	}
 	return Live_Project{
 		check = check,
+		script_sources = script_sources,
 		native_stamp = stamp,
 		has_native_stamp = has_stamp,
 	}, .None
@@ -51,8 +68,68 @@ live_project_init :: proc(root_path: string) -> (Live_Project, Project_Error) {
 
 live_project_free :: proc(project: ^Live_Project) {
 	free_check_result(project.check)
+	live_source_files_free(project.script_sources)
 	script_diagnostic_free(&project.last_diagnostic)
 	project^ = Live_Project{}
+}
+
+live_project_poll_script_sources :: proc(project: ^Live_Project) -> (Live_Reload_Result, Project_Error) {
+	for source, index in project.script_sources {
+		next_stamp, stamp_ok := live_project_stat_project_source(project.check.project, source.path)
+		if !stamp_ok {
+			return Live_Reload_Result{}, .Missing_Script
+		}
+		if source_file_stamp_equal(next_stamp, source.stamp) {
+			continue
+		}
+		if project.has_last_failed_script &&
+			project.last_failed_script_index == index &&
+			source_file_stamp_equal(next_stamp, project.last_failed_script_stamp) {
+			return Live_Reload_Result{}, .None
+		}
+
+		next_check := check_project(project.check.project.root_path)
+		if next_check.err != .None {
+			live_project_store_failed_diagnostic(project, &next_check)
+			project.last_failed_script_index = index
+			project.last_failed_script_stamp = next_stamp
+			project.has_last_failed_script = true
+			free_check_result(next_check)
+			return Live_Reload_Result{}, next_check.err
+		}
+
+		next_script_sources, scripts_ok := live_project_stat_scripts(next_check.project)
+		if !scripts_ok {
+			free_check_result(next_check)
+			return Live_Reload_Result{}, .Missing_Script
+		}
+		next_native_stamp, has_native_stamp, native_stamp_ok := live_project_stat_native(next_check.project)
+		if !native_stamp_ok {
+			live_source_files_free(next_script_sources)
+			free_check_result(next_check)
+			return Live_Reload_Result{}, .Missing_Native
+		}
+
+		live_project_clear_diagnostic(project)
+		live_source_files_free(project.script_sources)
+		live_project_swap_check_preserving_scene(project, next_check)
+		project.script_sources = next_script_sources
+		project.native_stamp = next_native_stamp
+		project.has_native_stamp = has_native_stamp
+		project.has_last_failed_script = false
+		project.has_last_failed_native = false
+		return Live_Reload_Result{
+			changed = true,
+			info = Live_Reload_Info{
+				scripts_reloaded = true,
+				native_reloaded = false,
+				entity_count = runtime_world_entity_count(project.check.scene.world),
+				system_count = runtime_system_schedule_system_count(project.check.update_schedule),
+			},
+		}, .None
+	}
+
+	return Live_Reload_Result{}, .None
 }
 
 live_project_poll_native_source :: proc(project: ^Live_Project) -> (Live_Reload_Result, Project_Error) {
@@ -129,7 +206,24 @@ live_project_run_frames_with_hook :: proc(
 			}
 		}
 
-		_, reload_err := live_project_poll_native_source(project)
+		_, reload_err := live_project_poll_script_sources(project)
+		if reload_err != .None {
+			diagnostic, diagnostic_found := live_project_last_diagnostic(project)
+			if diagnostic_found {
+				return Simulation_Run_Result{
+					ok = false,
+					completed_frames = completed_frames,
+					diagnostic = script_diagnostic_clone_value(diagnostic),
+				}
+			}
+			return Simulation_Run_Result{
+				ok = false,
+				completed_frames = completed_frames,
+				diagnostic = script_runtime_diagnostic("", "", 0, project_error_message(reload_err)),
+			}
+		}
+
+		_, reload_err = live_project_poll_native_source(project)
 		if reload_err != .None {
 			diagnostic, diagnostic_found := live_project_last_diagnostic(project)
 			if diagnostic_found {
@@ -160,13 +254,43 @@ live_project_last_diagnostic :: proc(project: ^Live_Project) -> (Script_Diagnost
 	return project.last_diagnostic, script_diagnostic_present(project.last_diagnostic)
 }
 
+live_project_stat_scripts :: proc(project: Project) -> ([]Live_Source_File, bool) {
+	if len(project.scripts) == 0 {
+		return nil, true
+	}
+	sources := make([]Live_Source_File, len(project.scripts))
+	if sources == nil {
+		return nil, false
+	}
+	for script_path, index in project.scripts {
+		stamp, stamp_ok := live_project_stat_project_source(project, script_path)
+		if !stamp_ok {
+			live_source_files_free(sources)
+			return nil, false
+		}
+		owned_path, path_err := strings.clone(script_path)
+		if path_err != nil {
+			live_source_files_free(sources)
+			return nil, false
+		}
+		sources[index] = Live_Source_File{path = owned_path, stamp = stamp}
+	}
+	return sources, true
+}
+
 live_project_stat_native :: proc(project: Project) -> (Source_File_Stamp, bool, bool) {
 	if project.native == "" {
 		return Source_File_Stamp{}, false, true
 	}
-	path := project_relative_path(project.root_path, project.native)
+	stamp, ok := live_project_stat_project_source(project, project.native)
+	return stamp, true, ok
+}
+
+live_project_stat_project_source :: proc(project: Project, resource_path: string) -> (Source_File_Stamp, bool) {
+	path := project_relative_path(project.root_path, resource_path)
 	defer delete(path)
-	return source_file_stamp(path)
+	stamp, found, ok := source_file_stamp(path)
+	return stamp, found && ok
 }
 
 source_file_stamp :: proc(path: string) -> (Source_File_Stamp, bool, bool) {
@@ -193,6 +317,17 @@ live_project_store_failed_diagnostic :: proc(project: ^Live_Project, failed: ^Pr
 
 live_project_clear_diagnostic :: proc(project: ^Live_Project) {
 	script_diagnostic_free(&project.last_diagnostic)
+}
+
+live_source_files_free :: proc(sources: []Live_Source_File) {
+	for source in sources {
+		if source.path != "" {
+			delete(source.path)
+		}
+	}
+	if sources != nil {
+		delete(sources)
+	}
 }
 
 live_project_swap_check_preserving_scene :: proc(project: ^Live_Project, next_check: Project_Check_Result) {
