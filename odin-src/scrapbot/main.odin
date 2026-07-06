@@ -4,12 +4,14 @@ import "core:fmt"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import "core:time"
 
 VERSION :: "0.0.0-odin-migration"
 DEFAULT_STEP_FRAMES :: 1
+DEFAULT_BENCH_FRAMES :: 240
 DEFAULT_STEP_DELTA_SECONDS :: f32(1.0 / 60.0)
 
-Step_Options :: struct {
+Simulation_Options :: struct {
 	target_path:   string,
 	frames:        int,
 	delta_seconds: f32,
@@ -52,6 +54,9 @@ run_with_output :: proc(args: []string, emit_output: bool) -> int {
 	if command == "step" {
 		return run_step(args[2:], emit_output)
 	}
+	if command == "bench" {
+		return run_bench(args[2:], emit_output)
+	}
 	if command == "init" {
 		return run_init(args[2:], emit_output)
 	}
@@ -75,11 +80,12 @@ Usage:
   scrapbot init [path]
   scrapbot check [path] [--format text|json]
   scrapbot step [path] [--frames N] [--dt seconds] [--format text|json]
+  scrapbot bench [path] [--frames N] [--dt seconds] [--format text|json]
   scrapbot build [path] [--output DIR] [--name NAME] [--force] [--format text|json]
 
 Odin migration status:
-  init, check, build, and deterministic step currently cover text project creation,
-  validation, packaging, and schedule-aware frame accounting slices.
+  init, check, build, deterministic step, and benchmark currently cover text project
+  creation, validation, packaging, and schedule-aware frame accounting slices.
   Luau/native callback execution, rendering, editor, and test execution are still being ported.`)
 }
 
@@ -216,120 +222,9 @@ run_build :: proc(args: []string, emit_output: bool) -> int {
 }
 
 run_step :: proc(args: []string, emit_output: bool) -> int {
-	options := Step_Options{
-		target_path = ".",
-		frames = DEFAULT_STEP_FRAMES,
-		delta_seconds = DEFAULT_STEP_DELTA_SECONDS,
-		format = .Text,
-	}
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		if strings.has_prefix(arg, "--frames=") {
-			frames, ok := parse_positive_int(arg[len("--frames="):])
-			if !ok {
-				if emit_output {
-					fmt.eprintf("invalid --frames: %s\n", arg[len("--frames="):])
-				}
-				return 1
-			}
-			options.frames = frames
-			i += 1
-			continue
-		}
-		if arg == "--frames" {
-			if i + 1 >= len(args) {
-				if emit_output {
-					fmt.eprintln("missing value for --frames")
-				}
-				return 1
-			}
-			frames, ok := parse_positive_int(args[i + 1])
-			if !ok {
-				if emit_output {
-					fmt.eprintf("invalid --frames: %s\n", args[i + 1])
-				}
-				return 1
-			}
-			options.frames = frames
-			i += 2
-			continue
-		}
-		if strings.has_prefix(arg, "--dt=") {
-			delta_seconds, ok := parse_positive_f32(arg[len("--dt="):])
-			if !ok {
-				if emit_output {
-					fmt.eprintf("invalid --dt: %s\n", arg[len("--dt="):])
-				}
-				return 1
-			}
-			options.delta_seconds = delta_seconds
-			i += 1
-			continue
-		}
-		if arg == "--dt" {
-			if i + 1 >= len(args) {
-				if emit_output {
-					fmt.eprintln("missing value for --dt")
-				}
-				return 1
-			}
-			delta_seconds, ok := parse_positive_f32(args[i + 1])
-			if !ok {
-				if emit_output {
-					fmt.eprintf("invalid --dt: %s\n", args[i + 1])
-				}
-				return 1
-			}
-			options.delta_seconds = delta_seconds
-			i += 2
-			continue
-		}
-		if strings.has_prefix(arg, "--format=") {
-			parsed, ok := parse_output_format(arg[len("--format="):])
-			if !ok {
-				if emit_output {
-					fmt.eprintf("invalid --format: %s\n", arg[len("--format="):])
-				}
-				return 1
-			}
-			options.format = parsed
-			i += 1
-			continue
-		}
-		if arg == "--format" {
-			if i + 1 >= len(args) {
-				if emit_output {
-					fmt.eprintln("missing value for --format")
-				}
-				return 1
-			}
-			parsed, ok := parse_output_format(args[i + 1])
-			if !ok {
-				if emit_output {
-					fmt.eprintf("invalid --format: %s\n", args[i + 1])
-				}
-				return 1
-			}
-			options.format = parsed
-			i += 2
-			continue
-		}
-		if len(arg) > 0 && arg[0] == '-' {
-			if emit_output {
-				fmt.eprintf("unknown argument: %s\n", arg)
-			}
-			return 1
-		}
-		if options.target_path != "." {
-			if emit_output {
-				fmt.eprintf("unexpected argument: %s\n", arg)
-			}
-			return 1
-		}
-		options.target_path = arg
-		i += 1
+	options, options_ok := parse_simulation_options(args, DEFAULT_STEP_FRAMES, emit_output)
+	if !options_ok {
+		return 1
 	}
 
 	result := check_project(options.target_path)
@@ -343,6 +238,36 @@ run_step :: proc(args: []string, emit_output: bool) -> int {
 
 	if emit_output {
 		print_step_result(result, options)
+	}
+	return 0
+}
+
+run_bench :: proc(args: []string, emit_output: bool) -> int {
+	options, options_ok := parse_simulation_options(args, DEFAULT_BENCH_FRAMES, emit_output)
+	if !options_ok {
+		return 1
+	}
+
+	startup_start := time.tick_now()
+	result := check_project(options.target_path)
+	startup_ns := time.duration_nanoseconds(time.tick_since(startup_start))
+	defer free_check_result(result)
+	if result.err != .None {
+		if emit_output {
+			print_check_error(result.err, options.target_path, options.format)
+		}
+		return 1
+	}
+
+	update_start := time.tick_now()
+	completed_frames := 0
+	for completed_frames < options.frames {
+		completed_frames += 1
+	}
+	update_ns := time.duration_nanoseconds(time.tick_since(update_start))
+
+	if emit_output {
+		print_bench_result(result, options, startup_ns, update_ns, completed_frames)
 	}
 	return 0
 }
@@ -456,7 +381,7 @@ run_check :: proc(args: []string, emit_output: bool) -> int {
 	return 0
 }
 
-print_step_result :: proc(result: Project_Check_Result, options: Step_Options) {
+print_step_result :: proc(result: Project_Check_Result, options: Simulation_Options) {
 	switch options.format {
 	case .Text:
 		fmt.printf("Step OK: %s\n", result.project.name)
@@ -481,6 +406,44 @@ print_step_result :: proc(result: Project_Check_Result, options: Step_Options) {
 		fmt.print(`,"schedule":`)
 		print_schedule_summary_json(result)
 		fmt.println(`,"execution":"pending_odin_luau_native_bridge"}`)
+	}
+}
+
+print_bench_result :: proc(result: Project_Check_Result, options: Simulation_Options, startup_ns, update_ns: i64, completed_frames: int) {
+	ns_per_frame := f64(0)
+	if completed_frames > 0 {
+		ns_per_frame = f64(update_ns) / f64(completed_frames)
+	}
+	startup_ms := f64(startup_ns) / 1_000_000.0
+	update_ms := f64(update_ns) / 1_000_000.0
+	ms_per_frame := ns_per_frame / 1_000_000.0
+	switch options.format {
+	case .Text:
+		fmt.printf("Benchmark OK: %s\n", result.project.name)
+		fmt.printf("Scene: %s\n", result.scene.name)
+		fmt.printf("Frames: %d, dt: %g\n", options.frames, options.delta_seconds)
+		fmt.printf("Startup: %g ms\n", startup_ms)
+		fmt.printf("Update: %g ms total, %g ms/frame\n", update_ms, ms_per_frame)
+		fmt.printf("Entities: %d, components: %d, renderable cubes: %d\n", result.scene.entity_count, result.scene.component_instance_count, result.scene.renderable_cube_count)
+		fmt.printf("Update batches: %d, systems: %d\n", runtime_system_schedule_batch_count(result.update_schedule), runtime_system_schedule_system_count(result.update_schedule))
+		fmt.println("Execution: pending Luau/native Odin bridge")
+		fmt.println("Render stats: pending Odin renderer")
+	case .JSON:
+		fmt.print(`{"ok":true,"project":`)
+		fmt.print(`{"name":"`)
+		json_print(result.project.name, false)
+		fmt.print(`","default_scene":"`)
+		json_print(result.project.default_scene, false)
+		fmt.printf(`","scripts":%d`, len(result.project.scripts))
+		fmt.print(`},"scene":{"name":"`)
+		json_print(result.scene.name, false)
+		fmt.printf(`","entities":%d,"components":%d,"renderable_cubes":%d`, result.scene.entity_count, result.scene.component_instance_count, result.scene.renderable_cube_count)
+		fmt.print(`},"benchmark":{`)
+		fmt.printf(`"frames":%d,"completed_frames":%d,"dt":%g,"startup_ns":%d,"update_ns":%d,"ns_per_frame":%g`, options.frames, completed_frames, options.delta_seconds, startup_ns, update_ns, ns_per_frame)
+		fmt.print(`}`)
+		fmt.print(`,"schedule":`)
+		print_schedule_summary_json(result)
+		fmt.println(`,"execution":"pending_odin_luau_native_bridge","render_stats":"pending_odin_renderer"}`)
 	}
 }
 
@@ -512,6 +475,124 @@ parse_output_format :: proc(value: string) -> (Check_Output_Format, bool) {
 		return .JSON, true
 	}
 	return .Text, false
+}
+
+parse_simulation_options :: proc(args: []string, default_frames: int, emit_output: bool) -> (Simulation_Options, bool) {
+	options := Simulation_Options{
+		target_path = ".",
+		frames = default_frames,
+		delta_seconds = DEFAULT_STEP_DELTA_SECONDS,
+		format = .Text,
+	}
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		if strings.has_prefix(arg, "--frames=") {
+			frames, ok := parse_positive_int(arg[len("--frames="):])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --frames: %s\n", arg[len("--frames="):])
+				}
+				return options, false
+			}
+			options.frames = frames
+			i += 1
+			continue
+		}
+		if arg == "--frames" {
+			if i + 1 >= len(args) {
+				if emit_output {
+					fmt.eprintln("missing value for --frames")
+				}
+				return options, false
+			}
+			frames, ok := parse_positive_int(args[i + 1])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --frames: %s\n", args[i + 1])
+				}
+				return options, false
+			}
+			options.frames = frames
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--dt=") {
+			delta_seconds, ok := parse_positive_f32(arg[len("--dt="):])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --dt: %s\n", arg[len("--dt="):])
+				}
+				return options, false
+			}
+			options.delta_seconds = delta_seconds
+			i += 1
+			continue
+		}
+		if arg == "--dt" {
+			if i + 1 >= len(args) {
+				if emit_output {
+					fmt.eprintln("missing value for --dt")
+				}
+				return options, false
+			}
+			delta_seconds, ok := parse_positive_f32(args[i + 1])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --dt: %s\n", args[i + 1])
+				}
+				return options, false
+			}
+			options.delta_seconds = delta_seconds
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--format=") {
+			parsed, ok := parse_output_format(arg[len("--format="):])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --format: %s\n", arg[len("--format="):])
+				}
+				return options, false
+			}
+			options.format = parsed
+			i += 1
+			continue
+		}
+		if arg == "--format" {
+			if i + 1 >= len(args) {
+				if emit_output {
+					fmt.eprintln("missing value for --format")
+				}
+				return options, false
+			}
+			parsed, ok := parse_output_format(args[i + 1])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --format: %s\n", args[i + 1])
+				}
+				return options, false
+			}
+			options.format = parsed
+			i += 2
+			continue
+		}
+		if len(arg) > 0 && arg[0] == '-' {
+			if emit_output {
+				fmt.eprintf("unknown argument: %s\n", arg)
+			}
+			return options, false
+		}
+		if options.target_path != "." {
+			if emit_output {
+				fmt.eprintf("unexpected argument: %s\n", arg)
+			}
+			return options, false
+		}
+		options.target_path = arg
+		i += 1
+	}
+	return options, true
 }
 
 parse_positive_int :: proc(value: string) -> (int, bool) {

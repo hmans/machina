@@ -17,6 +17,7 @@
 - [x] Odin runtime has first-pass system scheduling and deferred structural mutation.
 - [x] Odin `check` can statically register Luau system declarations and validate phase schedules.
 - [x] Odin `step` can validate projects and report deterministic frame/schedule summaries.
+- [x] Odin `bench` can report validation/update timing with explicit pending execution/render stats.
 - [x] Shared ECS runtime with generation-aware entities, component tables, system schedules, and script/native access.
 - [x] Live reload for project metadata, scenes, scripts, and project-local native Zig modules.
 - [x] WebGPU renderer with headful SDL windows, offscreen render verification, batching, shadows, and postprocess settings.
@@ -39,6 +40,7 @@
 - [x] Port first-pass ECS schedules and deferred mutation from Zig to Odin.
 - [x] Port first-pass script ECS registration and schedule validation from Zig to Odin.
 - [x] Port first-pass deterministic step command from Zig to Odin.
+- [x] Port first-pass benchmark command from Zig to Odin.
 - [ ] Port Luau bridge execution and runtime diagnostics from Zig to Odin.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
 - [ ] Port renderer extraction, offscreen render verification, and hidden headful smoke paths from Zig to Odin.
