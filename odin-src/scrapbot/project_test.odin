@@ -130,6 +130,133 @@ ecs.system("observe_flags", {
 }
 
 @(test)
+test_run_script_simulation_updates_vec3_fields :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-simulation-updates-vec3")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n")
+	write_file(t, root, "scenes/main.scene.toml", `name = "Main"
+version = 1
+
+[[entities]]
+id = "cube"
+name = "Cube"
+
+[entities.components."scrapbot.transform"]
+position = [0.0, 0.0, 0.0]
+rotation = [0.0, 0.0, 0.0]
+scale = [1.0, 1.0, 1.0]
+
+[entities.components.spin]
+angular_velocity = [1.0, 2.0, 3.0]
+
+[entities.components.label]
+value = "idle"
+`)
+	write_file(t, root, "scripts/gameplay.luau", `local Transform = ecs.component("scrapbot.transform")
+local Spin = ecs.component("spin", {
+  fields = ecs.fields({
+    angular_velocity = "vec3",
+  }),
+})
+local Label = ecs.component("label", {
+  fields = ecs.fields({
+    value = "string",
+  }),
+})
+
+local Spinning = ecs.query(Transform, Spin)
+local Labels = ecs.query(Label)
+
+ecs.system("spin_cubes", {
+  query = Spinning,
+  writes = ecs.refs(Transform),
+  run = function(world, dt)
+    for _entity, transform, spin in Spinning:iter(world) do
+      transform.rotation = {
+        transform.rotation[1] + spin.angular_velocity[1] * dt,
+        transform.rotation[2] + spin.angular_velocity[2] * dt,
+        transform.rotation[3] + spin.angular_velocity[3] * dt,
+      }
+    end
+  end,
+})
+
+ecs.system("mark_labels", {
+  query = Labels,
+  writes = ecs.refs(Label),
+  run = function(world, dt)
+    for _entity, label in Labels:iter(world) do
+      label.value = "updated"
+    end
+  end,
+})
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	simulation := run_script_simulation(&result, 2, 0.5)
+	defer script_diagnostic_free(&simulation.diagnostic)
+	testing.expect_value(t, simulation.ok, true)
+	testing.expect_value(t, simulation.completed_frames, 2)
+	entity, found := runtime_world_find_entity_by_id(result.scene.world, "cube")
+	testing.expect_value(t, found, true)
+	rotation, rotation_err := runtime_world_get_component_field_value(result.scene.world, entity, TRANSFORM_COMPONENT_ID, "rotation")
+	testing.expect_value(t, rotation_err, Runtime_Error.None)
+	testing.expect_value(t, rotation.vec3, [3]f32{1.0, 2.0, 3.0})
+	label, label_err := runtime_world_get_component_field_value(result.scene.world, entity, "label", "value")
+	testing.expect_value(t, label_err, Runtime_Error.None)
+	testing.expect_value(t, label.string_value, "updated")
+}
+
+@(test)
+test_run_script_simulation_reports_runtime_access_diagnostic :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-simulation-runtime-diagnostic")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n")
+	write_file(t, root, "scenes/main.scene.toml", `name = "Main"
+version = 1
+
+[[entities]]
+id = "cube"
+name = "Cube"
+
+[entities.components."scrapbot.transform"]
+position = [0.0, 0.0, 0.0]
+rotation = [0.0, 0.0, 0.0]
+scale = [1.0, 1.0, 1.0]
+`)
+	write_file(t, root, "scripts/gameplay.luau", `local Transform = ecs.component("scrapbot.transform")
+local Transforms = ecs.query(Transform)
+
+ecs.system("bad_writer", {
+  query = Transforms,
+  run = function(world, dt)
+    for _entity, transform in Transforms:iter(world) do
+      transform.rotation = { dt, 0.0, 0.0 }
+    end
+  end,
+})
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	simulation := run_script_simulation(&result, 1, 0.5)
+	defer script_diagnostic_free(&simulation.diagnostic)
+	testing.expect_value(t, simulation.ok, false)
+	testing.expect_value(t, simulation.completed_frames, 0)
+	testing.expect_value(t, simulation.diagnostic.stage, Script_Diagnostic_Stage.Runtime)
+	testing.expect_value(t, simulation.diagnostic.path, "scripts/gameplay.luau")
+	testing.expect_value(t, simulation.diagnostic.system_id, "bad_writer")
+	testing.expect(t, strings.contains(simulation.diagnostic.message, "without declaring write access"))
+}
+
+@(test)
 test_check_project_rejects_cyclic_script_system_order :: proc(t: ^testing.T) {
 	root := make_test_project(t, "script-system-cycle")
 	defer os.remove_all(root)

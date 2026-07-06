@@ -244,8 +244,18 @@ run_step :: proc(args: []string, emit_output: bool) -> int {
 		return 1
 	}
 
+	simulation := run_script_simulation(&result, options.frames, options.delta_seconds)
+	if !simulation.ok {
+		result.diagnostic = simulation.diagnostic
+		result.err = .Invalid_Script
+		if emit_output {
+			print_project_check_error(result, options.target_path, options.format)
+		}
+		return 1
+	}
+
 	if emit_output {
-		print_step_result(result, options)
+		print_step_result(result, options, simulation.completed_frames)
 	}
 	return 0
 }
@@ -268,14 +278,19 @@ run_bench :: proc(args: []string, emit_output: bool) -> int {
 	}
 
 	update_start := time.tick_now()
-	completed_frames := 0
-	for completed_frames < options.frames {
-		completed_frames += 1
-	}
+	simulation := run_script_simulation(&result, options.frames, options.delta_seconds)
 	update_ns := time.duration_nanoseconds(time.tick_since(update_start))
+	if !simulation.ok {
+		result.diagnostic = simulation.diagnostic
+		result.err = .Invalid_Script
+		if emit_output {
+			print_project_check_error(result, options.target_path, options.format)
+		}
+		return 1
+	}
 
 	if emit_output {
-		print_bench_result(result, options, startup_ns, update_ns, completed_frames)
+		print_bench_result(result, options, startup_ns, update_ns, simulation.completed_frames)
 	}
 	return 0
 }
@@ -319,8 +334,22 @@ run_project :: proc(args: []string, emit_output: bool) -> int {
 		return 1
 	}
 
+	completed_frames := 0
+	if options.max_frames > 0 {
+		simulation := run_script_simulation(&result, options.max_frames, 1.0 / 60.0)
+		if !simulation.ok {
+			result.diagnostic = simulation.diagnostic
+			result.err = .Invalid_Script
+			if emit_output {
+				print_project_check_error(result, options.target_path, .Text)
+			}
+			return 1
+		}
+		completed_frames = simulation.completed_frames
+	}
+
 	if emit_output {
-		print_run_result(result, options)
+		print_run_result(result, options, completed_frames)
 	}
 	return 0
 }
@@ -443,15 +472,37 @@ run_check :: proc(args: []string, emit_output: bool) -> int {
 	return 0
 }
 
-print_step_result :: proc(result: Project_Check_Result, options: Simulation_Options) {
+Simulation_Run_Result :: struct {
+	ok:               bool,
+	completed_frames: int,
+	diagnostic:       Script_Diagnostic,
+}
+
+run_script_simulation :: proc(result: ^Project_Check_Result, frames: int, delta_seconds: f32) -> Simulation_Run_Result {
+	startup := script_program_run_schedule(&result.script_program, &result.registry, &result.scene.world, result.startup_schedule, 0)
+	if !startup.ok {
+		return Simulation_Run_Result{ok = false, diagnostic = startup.diagnostic}
+	}
+	completed_frames := 0
+	for completed_frames < frames {
+		update := script_program_run_schedule(&result.script_program, &result.registry, &result.scene.world, result.update_schedule, delta_seconds)
+		if !update.ok {
+			return Simulation_Run_Result{ok = false, completed_frames = completed_frames, diagnostic = update.diagnostic}
+		}
+		completed_frames += 1
+	}
+	return Simulation_Run_Result{ok = true, completed_frames = completed_frames}
+}
+
+print_step_result :: proc(result: Project_Check_Result, options: Simulation_Options, completed_frames: int) {
 	switch options.format {
 	case .Text:
 		fmt.printf("Step OK: %s\n", result.project.name)
 		fmt.printf("Scene: %s\n", result.scene.name)
-		fmt.printf("Frames: %d/%d, dt: %g\n", options.frames, options.frames, options.delta_seconds)
+		fmt.printf("Frames: %d/%d, dt: %g\n", completed_frames, options.frames, options.delta_seconds)
 		fmt.printf("Entities: %d, components: %d, renderable cubes: %d\n", result.scene.entity_count, result.scene.component_instance_count, result.scene.renderable_cube_count)
 		fmt.printf("Update batches: %d, systems: %d\n", runtime_system_schedule_batch_count(result.update_schedule), runtime_system_schedule_system_count(result.update_schedule))
-		fmt.println("Execution: pending Luau/native Odin bridge")
+		fmt.println("Execution: Odin Luau systems")
 	case .JSON:
 		fmt.print(`{"ok":true,"project":`)
 		fmt.print(`{"name":"`)
@@ -463,11 +514,11 @@ print_step_result :: proc(result: Project_Check_Result, options: Simulation_Opti
 		json_print(result.scene.name, false)
 		fmt.printf(`","entities":%d,"components":%d,"renderable_cubes":%d`, result.scene.entity_count, result.scene.component_instance_count, result.scene.renderable_cube_count)
 		fmt.print(`},"simulation":{`)
-		fmt.printf(`"frames":%d,"completed_frames":%d,"dt":%g`, options.frames, options.frames, options.delta_seconds)
+		fmt.printf(`"frames":%d,"completed_frames":%d,"dt":%g`, options.frames, completed_frames, options.delta_seconds)
 		fmt.print(`}`)
 		fmt.print(`,"schedule":`)
 		print_schedule_summary_json(result)
-		fmt.println(`,"execution":"pending_odin_luau_native_bridge"}`)
+		fmt.println(`,"execution":"odin_luau_systems"}`)
 	}
 }
 
@@ -488,7 +539,7 @@ print_bench_result :: proc(result: Project_Check_Result, options: Simulation_Opt
 		fmt.printf("Update: %g ms total, %g ms/frame\n", update_ms, ms_per_frame)
 		fmt.printf("Entities: %d, components: %d, renderable cubes: %d\n", result.scene.entity_count, result.scene.component_instance_count, result.scene.renderable_cube_count)
 		fmt.printf("Update batches: %d, systems: %d\n", runtime_system_schedule_batch_count(result.update_schedule), runtime_system_schedule_system_count(result.update_schedule))
-		fmt.println("Execution: pending Luau/native Odin bridge")
+		fmt.println("Execution: Odin Luau systems")
 		print_render_extract_text(result)
 		fmt.println("Renderer backend: pending Odin wgpu-native binding")
 	case .JSON:
@@ -508,7 +559,7 @@ print_bench_result :: proc(result: Project_Check_Result, options: Simulation_Opt
 		print_schedule_summary_json(result)
 		fmt.print(`,"render_stats":`)
 		print_render_extract_json(result)
-		fmt.println(`,"execution":"pending_odin_luau_native_bridge","renderer_backend":"pending_odin_wgpu_native_binding"}`)
+		fmt.println(`,"execution":"odin_luau_systems","renderer_backend":"pending_odin_wgpu_native_binding"}`)
 	}
 }
 

@@ -25,6 +25,7 @@ A compact, experimental, and probably mostly useless game engine that tries to a
   - [x] Odin script system registration/schedule check slice
   - [x] Odin structured script validation diagnostics slice
   - [x] Odin Luau bridge declaration loading slice
+  - [x] Odin Luau query/component-field execution slice
   - [x] Odin deterministic step command slice
   - [x] Odin benchmark command slice
   - [x] Odin test discovery/manifest command slice

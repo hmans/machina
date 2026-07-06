@@ -85,7 +85,7 @@ parse_run_options :: proc(args: []string, emit_output: bool) -> (Run_Options, bo
 	return options, true
 }
 
-print_run_result :: proc(result: Project_Check_Result, options: Run_Options) {
+print_run_result :: proc(result: Project_Check_Result, options: Run_Options, completed_frames: int) {
 	fmt.printf("Loaded project %s\n", result.project.name)
 	fmt.printf("Selected scene: %s\n", result.project.default_scene)
 	fmt.printf("Scene entities: %d\n", result.scene.entity_count)
@@ -96,7 +96,7 @@ print_run_result :: proc(result: Project_Check_Result, options: Run_Options) {
 		runtime_system_schedule_system_count(result.update_schedule),
 	)
 	if options.max_frames > 0 {
-		fmt.printf("Frames: %d/%d\n", options.max_frames, options.max_frames)
+		fmt.printf("Frames: %d/%d\n", completed_frames, options.max_frames)
 	} else {
 		fmt.println("Frames: unbounded window loop pending Odin renderer")
 	}
@@ -109,6 +109,10 @@ print_run_result :: proc(result: Project_Check_Result, options: Run_Options) {
 		fmt.println("Editor: requested, pending Odin editor shell")
 	}
 	print_render_extract_text(result)
-	fmt.println("Execution: pending Luau/native Odin bridge")
+	if options.max_frames > 0 {
+		fmt.println("Execution: Odin Luau systems")
+	} else {
+		fmt.println("Execution: pending unbounded Odin window loop")
+	}
 	fmt.println("Renderer backend: pending Odin wgpu-native binding")
 }

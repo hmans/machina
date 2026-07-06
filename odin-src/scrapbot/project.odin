@@ -48,6 +48,8 @@ Project :: struct {
 
 Project_Check_Result :: struct {
 	project:               Project,
+	registry:              Runtime_Component_Registry,
+	script_program:        Script_Program,
 	scene:                 Scene,
 	startup_schedule:      Runtime_System_Schedule,
 	update_schedule:       Runtime_System_Schedule,
@@ -70,10 +72,30 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 	}
 
 	registry := Runtime_Component_Registry{}
-	defer runtime_registry_free(&registry)
+	keep_registry := false
+	defer {
+		if !keep_registry {
+			runtime_registry_free(&registry)
+		}
+	}
 	engine_err := runtime_register_engine_components(&registry)
 	if engine_err != .None {
 		return Project_Check_Result{project = project, err = .Invalid_Scene}
+	}
+
+	script_program := Script_Program{}
+	keep_script_program := false
+	defer {
+		if !keep_script_program {
+			script_program_free(&script_program)
+		}
+	}
+	if len(project.scripts) > 0 {
+		program, diagnostic, program_ok := script_program_init()
+		if !program_ok {
+			return Project_Check_Result{project = project, diagnostic = diagnostic, err = .Invalid_Script}
+		}
+		script_program = program
 	}
 
 	for script_path in project.scripts {
@@ -82,7 +104,7 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 		if !os.exists(full_path) {
 			return Project_Check_Result{project = project, err = .Missing_Script}
 		}
-		script_result := register_script_components_with_luau_bridge(&registry, full_path, script_path)
+		script_result := script_program_load_file(&script_program, &registry, full_path, script_path)
 		if script_result.err != .None {
 			return Project_Check_Result{project = project, diagnostic = script_result.diagnostic, err = script_result.err}
 		}
@@ -156,8 +178,12 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 		}
 	}
 
+	keep_registry = true
+	keep_script_program = true
 	return Project_Check_Result{
 		project = project,
+		registry = registry,
+		script_program = script_program,
 		scene = scene,
 		startup_schedule = startup_schedule,
 		update_schedule = update_schedule,
@@ -260,6 +286,10 @@ free_project :: proc(project: Project) {
 free_check_result :: proc(result: Project_Check_Result) {
 	diagnostic := result.diagnostic
 	script_diagnostic_free(&diagnostic)
+	script_program := result.script_program
+	script_program_free(&script_program)
+	registry := result.registry
+	runtime_registry_free(&registry)
 	free_project(result.project)
 	free_scene(result.scene)
 	runtime_system_schedule_free(result.startup_schedule)

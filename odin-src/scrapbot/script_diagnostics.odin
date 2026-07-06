@@ -160,6 +160,31 @@ script_schedule_diagnostic :: proc(phase: Runtime_System_Phase, message: string)
 	}
 }
 
+script_runtime_diagnostic :: proc(path: string, system_id: string, line: int, message: string) -> Script_Diagnostic {
+	owned_path, path_owned := script_diagnostic_clone(path)
+	owned_system_id, system_id_owned := script_diagnostic_clone(system_id)
+	owned_message, message_owned := script_diagnostic_clone(message)
+	if owned_message == "" {
+		owned_message = message
+	}
+	effective_line := line
+	parsed_line, has_parsed_line := script_luau_diagnostic_line(message)
+	if has_parsed_line {
+		effective_line = parsed_line
+	}
+	return Script_Diagnostic{
+		stage = .Runtime,
+		path = owned_path,
+		path_owned = path_owned,
+		system_id = owned_system_id,
+		system_id_owned = system_id_owned,
+		start = Script_Diagnostic_Position{line = effective_line},
+		has_start = effective_line > 0,
+		message = owned_message,
+		message_owned = message_owned,
+	}
+}
+
 script_schedule_message :: proc(phase: Runtime_System_Phase, message: string) -> string {
 	if message != "failed to build script schedule" {
 		return message
