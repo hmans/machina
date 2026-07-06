@@ -10,6 +10,7 @@
 - [x] Engine-owned ECS UI primitives, editor shell, playback controls, system profiler, entity picking, translate gizmo, and component inspector.
 - [x] Automated test coverage through `scrapbot test`, render tests, benchmarks, Luau checks, and game-shaped fixtures.
 - [x] Built-in component reference covering rendering, renderer settings, retained UI, runtime input resources, and example project-local components.
+- [x] Web export PoC with static browser bundle, packaged project data, wasm scene/script stepping, and Canvas2D preview rendering.
 - [x] ADRs, FDRs, glossary, docs website, NOTICE, and local agent skills.
 
 ## Next Slice
@@ -94,7 +95,11 @@
 - [ ] Add asset references to text scene and project files.
 - [ ] Add project templates for common game shapes.
 - [ ] Add `scrapbot build` packaging for runnable game bundles.
+- [ ] Implement the browser WebGPU renderer behind the internal renderer backend boundary.
+- [ ] Define browser virtual filesystem packaging and persistence rules for web builds.
+- [ ] Replace wasm C++ exception stubs with a diagnostic-safe Luau wasm error path.
 - [ ] Add static native-link builds for restricted targets.
+- [ ] Design project-local native module static linking for web and other restricted targets.
 - [ ] Add project settings for default window and render quality.
 - [ ] Add stable generated-file and cache cleanup commands.
 - [ ] Add migration/versioning rules for scene schema changes.

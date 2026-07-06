@@ -32,6 +32,7 @@ pub const EditorFrameState = render.EditorFrameState;
 pub const EditorState = render.EditorState;
 pub const RenderScene = render.Scene;
 pub const RenderStats = render.Stats;
+pub const RenderBackend = render.RenderBackend;
 pub const RenderVerification = render_verify.Verification;
 pub const RenderVerificationOptions = render_verify.VerificationOptions;
 pub const RenderComparison = render_verify.Comparison;
@@ -194,19 +195,37 @@ const build_bin_dir = project_build.bin_dir;
 const build_lib_dir = project_build.lib_dir;
 const build_manifest_path = project_build.manifest_path;
 const build_native_artifact_dir = project_build.native_artifact_dir;
+const build_web_entrypoint_path = project_build.web_entrypoint_path;
+const build_web_wasm_path = project_build.web_wasm_path;
+
+pub const BuildTarget = enum {
+    host,
+    web,
+
+    pub fn label(self: BuildTarget) []const u8 {
+        return switch (self) {
+            .host => "host",
+            .web => "web",
+        };
+    }
+};
 
 pub const BuildOptions = struct {
     output_root: ?[]const u8 = null,
     name: ?[]const u8 = null,
     force: bool = false,
+    target: BuildTarget = .host,
+    web_player_wasm_path: ?[]const u8 = null,
 };
 
 pub const BuildResult = struct {
+    target: BuildTarget = .host,
     project_name: []const u8,
     bundle_path: []const u8,
     project_path: []const u8,
-    runtime_path: []const u8,
-    launcher_path: []const u8,
+    runtime_path: ?[]const u8,
+    launcher_path: ?[]const u8,
+    web_entrypoint_path: ?[]const u8 = null,
     native_artifact: ?[]const u8 = null,
     sdl3_bundled: bool = false,
     sdl3_warning: ?[]const u8 = null,
@@ -215,8 +234,15 @@ pub const BuildResult = struct {
         allocator.free(self.project_name);
         allocator.free(self.bundle_path);
         allocator.free(self.project_path);
-        allocator.free(self.runtime_path);
-        allocator.free(self.launcher_path);
+        if (self.runtime_path) |path| {
+            allocator.free(path);
+        }
+        if (self.launcher_path) |path| {
+            allocator.free(path);
+        }
+        if (self.web_entrypoint_path) |path| {
+            allocator.free(path);
+        }
         if (self.native_artifact) |path| {
             allocator.free(path);
         }
@@ -789,6 +815,7 @@ pub const ProjectError = error{
     MissingSceneContent,
     MissingScript,
     InvalidScript,
+    UnsupportedWebNativeModule,
 };
 
 pub fn initProject(io: Io, allocator: std.mem.Allocator, root_path: []const u8, name: []const u8) !void {
@@ -1128,8 +1155,10 @@ pub fn buildProjectDetailed(
 
     const bundle_name = if (options.name) |name|
         try allocator.dupe(u8, name)
-    else
-        try project_build.defaultBuildBundleName(allocator, project.name);
+    else switch (options.target) {
+        .host => try project_build.defaultBuildBundleName(allocator, project.name),
+        .web => try project_build.defaultWebBuildBundleName(allocator, project.name),
+    };
     defer allocator.free(bundle_name);
     if (!project_build.isSafeBundleName(bundle_name)) {
         return ProjectError.InvalidProjectName;
@@ -1141,6 +1170,10 @@ pub fn buildProjectDetailed(
     else
         try std.fs.path.join(allocator, &.{ project.root_path, build_default_output_dir_name });
     defer allocator.free(output_root);
+
+    if (options.target == .web) {
+        return try buildWebProjectDetailed(io, allocator, project, bundle_name, output_root, options.force, options.web_player_wasm_path);
+    }
 
     const bundle_path = try std.fs.path.join(allocator, &.{ output_root, bundle_name });
     var keep_bundle_path = false;
@@ -1245,6 +1278,7 @@ pub fn buildProjectDetailed(
     errdefer allocator.free(result_project_name);
 
     const result = BuildResult{
+        .target = .host,
         .project_name = result_project_name,
         .bundle_path = bundle_path,
         .project_path = project_bundle_path,
@@ -1264,6 +1298,151 @@ pub fn buildProjectDetailed(
     keep_sdl3_warning = true;
 
     return .{ .ok = result };
+}
+
+fn buildWebProjectDetailed(
+    io: Io,
+    allocator: std.mem.Allocator,
+    project: Project,
+    bundle_name: []const u8,
+    output_root: []const u8,
+    force: bool,
+    web_player_wasm_path: ?[]const u8,
+) !BuildDetailedResult {
+    if (project.native != null or project.native_artifact != null) {
+        return ProjectError.UnsupportedWebNativeModule;
+    }
+
+    const cwd = Io.Dir.cwd();
+    const bundle_path = try std.fs.path.join(allocator, &.{ output_root, bundle_name });
+    var keep_bundle_path = false;
+    defer if (!keep_bundle_path) allocator.free(bundle_path);
+    if (fileExists(io, cwd, bundle_path)) {
+        if (!force or !project_build.isScrapbotBuildBundle(io, cwd, bundle_path)) {
+            return ProjectError.AlreadyExists;
+        }
+        try cwd.deleteTree(io, bundle_path);
+    }
+    var keep_bundle_tree = false;
+    defer if (!keep_bundle_tree) cwd.deleteTree(io, bundle_path) catch {};
+
+    try cwd.createDirPath(io, bundle_path);
+    const bundle_dir = try cwd.openDir(io, bundle_path, .{});
+    defer bundle_dir.close(io);
+    try bundle_dir.writeFile(io, .{
+        .sub_path = build_bundle_marker,
+        .data = "scrapbot web build bundle\n",
+    });
+    try bundle_dir.createDirPath(io, build_project_dir);
+
+    const project_bundle_path = try std.fs.path.join(allocator, &.{ bundle_path, build_project_dir });
+    var keep_project_bundle_path = false;
+    defer if (!keep_project_bundle_path) allocator.free(project_bundle_path);
+    const output_root_entry_to_skip = try project_build.outputRootEntryToSkip(allocator, io, project.root_path, output_root, bundle_path);
+    defer if (output_root_entry_to_skip) |entry| allocator.free(entry);
+    try project_build.copyProjectTree(io, allocator, project.root_path, project_bundle_path, output_root_entry_to_skip);
+
+    const packaged_check = try checkProjectDetailed(io, allocator, project_bundle_path);
+    switch (packaged_check) {
+        .ok => |ok| freeCheckResult(allocator, ok),
+        .invalid => |diagnostic| return .{ .invalid = diagnostic },
+    }
+
+    try project_build.writeWebManifest(io, allocator, bundle_dir, .{
+        .project_name = project.name,
+        .default_scene = project.default_scene,
+        .scripts = project.scripts,
+        .engine_version = version,
+    });
+    try writeWebProjectData(io, allocator, project, bundle_dir);
+    try copyWebPlayerWasm(io, allocator, cwd, bundle_dir, web_player_wasm_path);
+    try project_build.writeWebEntrypoint(io, bundle_dir);
+    try project_build.writeWebPlayerScript(io, bundle_dir);
+
+    const web_entrypoint_path = try std.fs.path.join(allocator, &.{ bundle_path, build_web_entrypoint_path });
+    var keep_web_entrypoint_path = false;
+    defer if (!keep_web_entrypoint_path) allocator.free(web_entrypoint_path);
+
+    const result_project_name = try allocator.dupe(u8, project.name);
+    errdefer allocator.free(result_project_name);
+
+    const result = BuildResult{
+        .target = .web,
+        .project_name = result_project_name,
+        .bundle_path = bundle_path,
+        .project_path = project_bundle_path,
+        .runtime_path = null,
+        .launcher_path = null,
+        .web_entrypoint_path = web_entrypoint_path,
+    };
+
+    keep_bundle_tree = true;
+    keep_bundle_path = true;
+    keep_project_bundle_path = true;
+    keep_web_entrypoint_path = true;
+
+    return .{ .ok = result };
+}
+
+fn copyWebPlayerWasm(
+    io: Io,
+    allocator: std.mem.Allocator,
+    cwd: Io.Dir,
+    bundle_dir: Io.Dir,
+    override_path: ?[]const u8,
+) !void {
+    const wasm_source_path = if (override_path) |path|
+        try allocator.dupe(u8, path)
+    else blk: {
+        const runtime_source_path = try std.process.executablePathAlloc(io, allocator);
+        defer allocator.free(runtime_source_path);
+        const runtime_dir = std.fs.path.dirname(runtime_source_path) orelse return ProjectError.InvalidBuildOutput;
+        break :blk try std.fs.path.join(allocator, &.{ runtime_dir, project_build.webPlayerWasmFileName() });
+    };
+    defer allocator.free(wasm_source_path);
+    try cwd.copyFile(wasm_source_path, bundle_dir, build_web_wasm_path, io, .{ .replace = true });
+}
+
+fn writeWebProjectData(io: Io, allocator: std.mem.Allocator, project: Project, bundle_dir: Io.Dir) !void {
+    const cwd = Io.Dir.cwd();
+    const root_dir = try cwd.openDir(io, project.root_path, .{});
+    defer root_dir.close(io);
+    const scene_contents = try root_dir.readFileAlloc(io, project.default_scene, allocator, .limited(256 * 1024));
+    defer allocator.free(scene_contents);
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+
+    try out.appendSlice(allocator, "{\n");
+    try out.appendSlice(allocator, "  \"schema\": \"scrapbot.web-project-data.v1\",\n");
+    try out.appendSlice(allocator, "  \"project\": ");
+    try project_build.appendJsonString(allocator, &out, project.name);
+    try out.appendSlice(allocator, ",\n  \"default_scene\": ");
+    try project_build.appendJsonString(allocator, &out, project.default_scene);
+    try out.appendSlice(allocator, ",\n  \"scene_source\": ");
+    try project_build.appendJsonString(allocator, &out, scene_contents);
+    try out.appendSlice(allocator, ",\n  \"scripts\": [");
+    for (project.scripts, 0..) |script_path, index| {
+        const script_contents = try root_dir.readFileAlloc(io, script_path, allocator, .limited(256 * 1024));
+        defer allocator.free(script_contents);
+        if (index != 0) {
+            try out.appendSlice(allocator, ",");
+        }
+        try out.appendSlice(allocator, "\n    { \"path\": ");
+        try project_build.appendJsonString(allocator, &out, script_path);
+        try out.appendSlice(allocator, ", \"source\": ");
+        try project_build.appendJsonString(allocator, &out, script_contents);
+        try out.appendSlice(allocator, " }");
+    }
+    if (project.scripts.len > 0) {
+        try out.appendSlice(allocator, "\n  ");
+    }
+    try out.appendSlice(allocator, "]\n}\n");
+
+    try bundle_dir.writeFile(io, .{
+        .sub_path = project_build.web_project_data_path,
+        .data = out.items,
+    });
 }
 
 fn stepInputForFrame(input_frames: []const StepInputFrame, frame: u32) FrameInput {

@@ -3,7 +3,22 @@ const builtin = @import("builtin");
 
 pub const PlatformDynLib = switch (builtin.os.tag) {
     .windows => WindowsDynLib,
+    .wasi, .freestanding => UnsupportedDynLib,
     else => std.DynLib,
+};
+
+const UnsupportedDynLib = struct {
+    pub const Error = error{UnsupportedDynamicLibrary};
+
+    pub fn open(_: std.mem.Allocator, _: []const u8) Error!UnsupportedDynLib {
+        return error.UnsupportedDynamicLibrary;
+    }
+
+    pub fn close(_: *UnsupportedDynLib) void {}
+
+    pub fn lookup(_: *UnsupportedDynLib, comptime T: type, _: [:0]const u8) ?T {
+        return null;
+    }
 };
 
 const WindowsDynLib = struct {

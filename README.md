@@ -33,8 +33,11 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Structured diagnostics
 - Distribution
   - [x] Host game builds
+  - [x] Web export PoC
+  - [x] Headless wasm web player
   - [ ] Package dependencies
   - [ ] Cross-platform exports
+  - [ ] Playable web exports
   - [ ] Console/mobile publishing
 
 ### ECS Runtime

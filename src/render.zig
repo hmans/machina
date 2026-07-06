@@ -1,10 +1,13 @@
 const main = @import("render/main.zig");
 const batching = @import("render/batching.zig");
+const backend = @import("render/backend.zig");
 const config = @import("render/config.zig");
+const native_wgpu = @import("render/native_wgpu.zig");
 const pipelines = @import("render/pipelines.zig");
 const render_types = @import("render/types.zig");
 const ui_draw = @import("render/ui_draw.zig");
 
+pub const RenderBackend = main.RenderBackend;
 pub const RenderError = main.RenderError;
 pub const Stats = main.Stats;
 pub const WindowOptions = main.WindowOptions;
@@ -46,7 +49,9 @@ pub const editorSystemListHitTestPoint = main.editorSystemListHitTestPoint;
 test {
     _ = main;
     _ = batching;
+    _ = backend;
     _ = config;
+    _ = native_wgpu;
     _ = pipelines;
     _ = render_types;
     _ = ui_draw;

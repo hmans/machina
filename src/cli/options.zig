@@ -66,6 +66,7 @@ pub const BuildCommandOptions = struct {
     name: ?[]const u8 = null,
     force: bool = false,
     format: CheckOutputFormat = .text,
+    build_target: scrapbot.BuildTarget = .host,
 };
 
 pub const RenderCommandOptions = struct {
@@ -95,6 +96,7 @@ pub const ArgumentError = error{
     InvalidRenderSize,
     InvalidPixelScale,
     InvalidFormat,
+    InvalidBuildTarget,
     HiddenRequiresFrames,
     MissingExpected,
     UnknownArgument,
@@ -107,6 +109,7 @@ const clap_parsers = .{
     .ENTITY = clap.parsers.string,
     .EXTRA = clap.parsers.string,
     .FORMAT = parseCheckOutputFormat,
+    .TARGET = parseBuildTarget,
     .FRAMES = parseFrameCount,
     .PIXELS = parseRenderDimension,
     .SCALE = parsePixelScale,
@@ -439,6 +442,7 @@ pub fn parseBuildOptions(allocator: std.mem.Allocator, args: []const []const u8)
         \\--name <NAME>
         \\--force
         \\--format <FORMAT>
+        \\--target <TARGET>
         \\<PATH>
         \\<EXTRA>...
         \\
@@ -466,6 +470,9 @@ pub fn parseBuildOptions(allocator: std.mem.Allocator, args: []const []const u8)
     if (result.args.format) |format| {
         options.format = format;
     }
+    if (result.args.target) |target| {
+        options.build_target = target;
+    }
     return options;
 }
 
@@ -476,6 +483,7 @@ fn mapClapArgumentError(err: anyerror) ArgumentError {
         ArgumentError.InvalidRenderSize => ArgumentError.InvalidRenderSize,
         ArgumentError.InvalidPixelScale => ArgumentError.InvalidPixelScale,
         ArgumentError.InvalidFormat => ArgumentError.InvalidFormat,
+        ArgumentError.InvalidBuildTarget => ArgumentError.InvalidBuildTarget,
         ArgumentError.MissingExpected => ArgumentError.MissingExpected,
         else => ArgumentError.UnknownArgument,
     };
@@ -521,6 +529,16 @@ fn parseCheckOutputFormat(value: []const u8) ArgumentError!CheckOutputFormat {
         return .json;
     }
     return ArgumentError.InvalidFormat;
+}
+
+fn parseBuildTarget(value: []const u8) ArgumentError!scrapbot.BuildTarget {
+    if (std.mem.eql(u8, value, "host")) {
+        return .host;
+    }
+    if (std.mem.eql(u8, value, "web")) {
+        return .web;
+    }
+    return ArgumentError.InvalidBuildTarget;
 }
 
 test {

@@ -38,6 +38,8 @@ static double clock_period()
     return 1e-9;
 #elif defined(__EMSCRIPTEN__)
     return 1e-3;
+#elif defined(__wasi__) || defined(__wasm__)
+    return 1e-9;
 #else
     return 1.0 / double(CLOCKS_PER_SEC);
 #endif
@@ -57,6 +59,10 @@ static double clock_timestamp()
     return now.tv_sec * 1e9 + now.tv_nsec;
 #elif defined(__EMSCRIPTEN__)
     return emscripten_get_now();
+#elif defined(__wasi__) || defined(__wasm__)
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return now.tv_sec * 1e9 + now.tv_nsec;
 #else
     return double(clock());
 #endif

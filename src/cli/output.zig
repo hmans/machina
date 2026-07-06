@@ -22,6 +22,7 @@ pub fn printArgumentError(writer: *Io.Writer, err: ArgumentError) !void {
         ArgumentError.InvalidRenderSize => "--width and --height expect positive integer pixels",
         ArgumentError.InvalidPixelScale => "--pixel-scale expects a positive finite number",
         ArgumentError.InvalidFormat => "--format expects text or json",
+        ArgumentError.InvalidBuildTarget => "--target expects host or web",
         ArgumentError.HiddenRequiresFrames => "--hidden requires --frames",
         ArgumentError.MissingExpected => "visual-test expects an expected image path",
         ArgumentError.UnknownArgument => "unknown argument",
@@ -49,6 +50,7 @@ pub fn projectErrorMessage(err: anyerror) []const u8 {
         scrapbot.ProjectError.MissingSceneContent => "missing scene content",
         scrapbot.ProjectError.MissingScript => "missing script",
         scrapbot.ProjectError.InvalidScript => "invalid script",
+        scrapbot.ProjectError.UnsupportedWebNativeModule => "web builds do not support project-local native modules yet; remove native/native_artifact or wait for the static-link web SDK path",
         else => "unexpected project error",
     };
 }
@@ -114,10 +116,18 @@ pub fn printBenchOkText(writer: *Io.Writer, result: BenchResult) !void {
 
 pub fn printBuildOkText(writer: *Io.Writer, result: scrapbot.BuildResult) !void {
     try writer.print("Build OK: {s}\n", .{result.project_name});
+    try writer.print("Target: {s}\n", .{result.target.label()});
     try writer.print("Bundle: {s}\n", .{result.bundle_path});
     try writer.print("Project: {s}\n", .{result.project_path});
-    try writer.print("Runtime: {s}\n", .{result.runtime_path});
-    try writer.print("Launcher: {s}\n", .{result.launcher_path});
+    if (result.runtime_path) |path| {
+        try writer.print("Runtime: {s}\n", .{path});
+    }
+    if (result.launcher_path) |path| {
+        try writer.print("Launcher: {s}\n", .{path});
+    }
+    if (result.web_entrypoint_path) |path| {
+        try writer.print("Web player: {s}\n", .{path});
+    }
     if (result.native_artifact) |path| {
         try writer.print("Native artifact: {s}\n", .{path});
     }

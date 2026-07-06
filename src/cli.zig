@@ -651,29 +651,11 @@ fn buildCommand(
         return 1;
     };
 
-    var check_result = scrapbot.checkProjectDetailed(io, allocator, options.target_path) catch |err| {
-        switch (options.format) {
-            .text => try printProjectError(stderr, options.target_path, err),
-            .json => try printProjectErrorJson(stdout, options.target_path, err),
-        }
-        return 1;
-    };
-    switch (check_result) {
-        .ok => |ok| scrapbot.freeCheckResult(allocator, ok),
-        .invalid => |*diagnostic| {
-            defer diagnostic.deinit(allocator);
-            switch (options.format) {
-                .text => try printScriptDiagnostic(stderr, options.target_path, diagnostic.*),
-                .json => try printScriptDiagnosticJson(stdout, options.target_path, diagnostic.*),
-            }
-            return 1;
-        },
-    }
-
     var build_result = scrapbot.buildProjectDetailed(io, allocator, options.target_path, .{
         .output_root = options.output_root,
         .name = options.name,
         .force = options.force,
+        .target = options.build_target,
     }) catch |err| {
         switch (options.format) {
             .text => try printProjectError(stderr, options.target_path, err),
