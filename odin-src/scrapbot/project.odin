@@ -31,6 +31,7 @@ Project_Error :: enum {
 	Missing_Native,
 	Invalid_Native_Artifact,
 	Missing_Native_Artifact,
+	Invalid_Build_Output,
 }
 
 Project :: struct {
@@ -523,6 +524,8 @@ project_error_message :: proc(err: Project_Error) -> string {
 		return "invalid native artifact path"
 	case .Missing_Native_Artifact:
 		return "missing native artifact"
+	case .Invalid_Build_Output:
+		return "invalid build output path"
 	}
 	return "unknown project error"
 }
