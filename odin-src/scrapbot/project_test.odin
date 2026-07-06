@@ -457,6 +457,172 @@ scrapbot_register :: proc(api: ^scrapbot.Register_Api) -> bool {
 }
 
 @(test)
+test_run_script_simulation_executes_native_odin_lifecycle_operation :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-simulation-native-odin-lifecycle")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative = \"native/game.odin\"\n")
+	write_file(t, root, "scenes/main.scene.toml", `name = "Main"
+version = 1
+
+[[entities]]
+id = "marked"
+name = "Marked"
+
+[entities.components.native_marker]
+value = 1
+
+[[entities]]
+id = "doomed"
+name = "Doomed"
+
+[entities.components.native_marker]
+value = 2
+`)
+	write_file(t, root, "native/game.odin", `package game
+
+payload_fields := []scrapbot.Component_Field{
+    {name = "count", field_type = .Int},
+    {name = "enabled", field_type = .Boolean},
+    {name = "speed", field_type = .Float},
+    {name = "direction", field_type = .Vec3},
+    {name = "label", field_type = .String},
+}
+
+marker_fields := []scrapbot.Component_Field{
+    {name = "value", field_type = .Int},
+}
+
+native_lifecycle_writes := []string{"native_payload", "native_marker"}
+
+scrapbot_register :: proc(api: ^scrapbot.Register_Api) -> bool {
+    scrapbot.register_component(api, {
+        id = "native_payload",
+        fields = payload_fields[:],
+    })
+    scrapbot.register_component(api, {
+        id = "native_marker",
+        fields = marker_fields[:],
+    })
+    scrapbot.register_system(api, {
+        id = "native_lifecycle",
+        phase = .Startup,
+        writes = native_lifecycle_writes[:],
+        execute = {
+            spawn = {
+                entity = "native-survivor",
+                name = "Native Survivor",
+                component = "native_payload",
+                fields = {
+                    count = 7,
+                    enabled = true,
+                    speed = 1.75,
+                    direction = [3.0, 2.0, 1.0],
+                    label = "spawned",
+                },
+            },
+            remove = {
+                entity = "marked",
+                component = "native_marker",
+            },
+            despawn = {
+                entity = "doomed",
+            },
+        },
+    })
+    return true
+}
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	testing.expect_value(t, runtime_system_schedule_system_count(result.startup_schedule), 1)
+	simulation := run_script_simulation(&result, 0, 0.5)
+	defer script_diagnostic_free(&simulation.diagnostic)
+	testing.expect_value(t, simulation.ok, true)
+
+	survivor, survivor_found := runtime_world_find_entity_by_id(result.scene.world, "native-survivor")
+	testing.expect_value(t, survivor_found, true)
+	count, count_err := runtime_world_get_component_field_value(result.scene.world, survivor, "native_payload", "count")
+	testing.expect_value(t, count_err, Runtime_Error.None)
+	testing.expect_value(t, count.int_value, 7)
+	enabled, enabled_err := runtime_world_get_component_field_value(result.scene.world, survivor, "native_payload", "enabled")
+	testing.expect_value(t, enabled_err, Runtime_Error.None)
+	testing.expect_value(t, enabled.boolean, true)
+	speed, speed_err := runtime_world_get_component_field_value(result.scene.world, survivor, "native_payload", "speed")
+	testing.expect_value(t, speed_err, Runtime_Error.None)
+	testing.expect_value(t, speed.float, f32(1.75))
+	direction, direction_err := runtime_world_get_component_field_value(result.scene.world, survivor, "native_payload", "direction")
+	testing.expect_value(t, direction_err, Runtime_Error.None)
+	testing.expect_value(t, direction.vec3, [3]f32{3.0, 2.0, 1.0})
+	label, label_err := runtime_world_get_component_field_value(result.scene.world, survivor, "native_payload", "label")
+	testing.expect_value(t, label_err, Runtime_Error.None)
+	testing.expect_value(t, label.string_value, "spawned")
+
+	marked, marked_found := runtime_world_find_entity_by_id(result.scene.world, "marked")
+	testing.expect_value(t, marked_found, true)
+	has_marker, has_marker_err := runtime_world_has_component(result.scene.world, marked, "native_marker")
+	testing.expect_value(t, has_marker_err, Runtime_Error.None)
+	testing.expect_value(t, has_marker, false)
+	_, doomed_found := runtime_world_find_entity_by_id(result.scene.world, "doomed")
+	testing.expect_value(t, doomed_found, false)
+}
+
+@(test)
+test_run_script_simulation_rolls_back_native_odin_lifecycle_spawn_after_access_failure :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-simulation-native-odin-lifecycle-rollback")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative = \"native/game.odin\"\n")
+	write_valid_scene_file(t, root, "scenes/main.scene.toml")
+	write_file(t, root, "native/game.odin", `package game
+
+payload_fields := []scrapbot.Component_Field{
+    {name = "count", field_type = .Int},
+}
+
+scrapbot_register :: proc(api: ^scrapbot.Register_Api) -> bool {
+    scrapbot.register_component(api, {
+        id = "native_payload",
+        fields = payload_fields[:],
+    })
+    scrapbot.register_system(api, {
+        id = "native_lifecycle",
+        phase = .Startup,
+        execute = {
+            spawn = {
+                entity = "native-survivor",
+                name = "Native Survivor",
+                component = "native_payload",
+                fields = {
+                    count = 7,
+                },
+            },
+        },
+    })
+    return true
+}
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	simulation := run_script_simulation(&result, 0, 0.5)
+	defer script_diagnostic_free(&simulation.diagnostic)
+	testing.expect_value(t, simulation.ok, false)
+	testing.expect_value(t, simulation.completed_frames, 0)
+	testing.expect_value(t, simulation.diagnostic.stage, Script_Diagnostic_Stage.Runtime)
+	testing.expect_value(t, simulation.diagnostic.path, "native/game.odin")
+	testing.expect_value(t, simulation.diagnostic.system_id, "native_lifecycle")
+	testing.expect(t, strings.contains(simulation.diagnostic.message, "Access_Denied"))
+	_, survivor_found := runtime_world_find_entity_by_id(result.scene.world, "native-survivor")
+	testing.expect_value(t, survivor_found, false)
+}
+
+@(test)
 test_run_script_simulation_supports_direct_vec3_methods :: proc(t: ^testing.T) {
 	root := make_test_project(t, "script-simulation-direct-vec3")
 	defer os.remove_all(root)

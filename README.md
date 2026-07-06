@@ -107,6 +107,7 @@ A compact, experimental, and probably mostly useless game engine that tries to a
   - [x] Native Odin component/system declaration scanning
   - [x] Native Odin pending-execution diagnostics
   - [x] Native Odin set-field execution slice
+  - [x] Native Odin lifecycle execution slice
   - [ ] Native Odin module execution
   - [x] Native hot reload
   - [ ] Native extension examples

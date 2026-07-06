@@ -181,6 +181,69 @@ scrapbot_register :: proc(api: ^scrapbot.Register_Api) -> bool {
 }
 
 @(test)
+test_component_scan_parses_odin_native_lifecycle_operation :: proc(t: ^testing.T) {
+	block := `{
+        id = "native_lifecycle",
+        phase = .Startup,
+        writes = native_lifecycle_writes[:],
+        execute = {
+            spawn = {
+                entity = "native-survivor",
+                name = "Native Survivor",
+                component = "native_payload",
+                fields = {
+                    count = 7,
+                    enabled = true,
+                    speed = 1.75,
+                    direction = [3.0, 2.0, 1.0],
+                    label = "spawned",
+                },
+            },
+            remove = {
+                entity = "marked",
+                component = "native_marker",
+            },
+            despawn = {
+                entity = "doomed",
+            },
+        },
+    }`
+	operation, found, ok := parse_native_execute_operation(block, "native_lifecycle", "native/game.odin", 3, 1)
+	defer native_system_operation_free(operation)
+	execute_block, execute_found, execute_ok := parse_native_block_field_value(block, "execute")
+	testing.expect_value(t, execute_ok, true)
+	testing.expect_value(t, execute_found, true)
+	spawn_block, spawn_found, spawn_ok := parse_native_block_field_value(execute_block, "spawn")
+	testing.expect_value(t, spawn_ok, true)
+	testing.expect_value(t, spawn_found, true)
+	fields_block, fields_found, fields_ok := parse_native_block_field_value(spawn_block, "fields")
+	testing.expect_value(t, fields_ok, true)
+	testing.expect_value(t, fields_found, true)
+	fields, fields_parse_ok := parse_native_field_assignments(fields_block)
+	defer {
+		native_field_assignments_free(fields[:])
+		if fields != nil do delete(fields)
+	}
+	testing.expect_value(t, fields_parse_ok, true)
+	testing.expect_value(t, len(fields), 5)
+	testing.expect_value(t, ok, true)
+	testing.expect_value(t, found, true)
+	testing.expect_value(t, operation.kind, Native_System_Operation_Kind.Lifecycle)
+	testing.expect_value(t, operation.has_spawn, true)
+	testing.expect_value(t, operation.spawn_entity_id, "native-survivor")
+	testing.expect_value(t, operation.spawn_component_id, "native_payload")
+	testing.expect_value(t, len(operation.spawn_fields), 5)
+	if len(operation.spawn_fields) == 5 {
+		testing.expect_value(t, operation.spawn_fields[4].name, "label")
+		testing.expect_value(t, operation.spawn_fields[4].value_text, `"spawned"`)
+	}
+	testing.expect_value(t, operation.has_remove, true)
+	testing.expect_value(t, operation.remove_entity_id, "marked")
+	testing.expect_value(t, operation.has_despawn, true)
+	testing.expect_value(t, operation.despawn_entity_id, "doomed")
+}
+
+@(test)
 test_component_scan_registers_script_marker_before_field_component :: proc(t: ^testing.T) {
 	root := make_test_project(t, "component-scan-script-marker")
 	defer os.remove_all(root)
