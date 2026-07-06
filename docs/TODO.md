@@ -91,10 +91,11 @@
 - [x] Port build-time Odin-native source compilation into packaged `native_artifact` output for `scrapbot build`.
 - [x] Load packaged Odin native artifacts and execute first-pass query plus scalar field callbacks through the shared ECS schedule.
 - [x] Port packaged Odin native vec3/string field callbacks and deferred structural callbacks through the native host API.
-- [ ] Port remaining script runtime diagnostics from Zig to Odin, including reload execution paths and native execution once native systems can run.
+- [x] Load development-time `native = "native/game.odin"` sources that import `scrapbot:scrapbot_native` by rebuilding a dynamic artifact, registering it, and running native callbacks through the shared ECS schedule.
+- [ ] Port remaining script runtime diagnostics from Zig to Odin, including reload execution paths.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
 - [ ] Port Odin render image output, offscreen image verification, and hidden headful smoke paths.
-- [ ] Complete project-local Odin native development-time source rebuild/load, reload diagnostics, and replacement of the Zig native reload path.
+- [ ] Complete project-local Odin native live reload diagnostics and replacement of the Zig native reload path.
 - [ ] Remove Zig build/test/dependency surfaces after Odin parity is verified.
 - [ ] Add scroll support to inspector component vgroups.
 - [ ] Add typed inspector controls for floats, ints, strings, and enums.

@@ -150,9 +150,19 @@ script_program_load_native_artifact :: proc(
 	registry: ^Runtime_Component_Registry,
 	file_system_path, diagnostic_path: string,
 ) -> Project_Error {
+	err, diagnostic := script_program_load_native_artifact_diagnostic(program, registry, file_system_path, diagnostic_path)
+	script_diagnostic_free(&diagnostic)
+	return err
+}
+
+script_program_load_native_artifact_diagnostic :: proc(
+	program: ^Script_Program,
+	registry: ^Runtime_Component_Registry,
+	file_system_path, diagnostic_path: string,
+) -> (Project_Error, Script_Diagnostic) {
 	library, library_ok := dynlib.load_library(file_system_path)
 	if !library_ok {
-		return .Invalid_Native_Artifact
+		return .Invalid_Native_Artifact, script_native_diagnostic(.Native_Load, diagnostic_path, "failed to load native artifact")
 	}
 	keep_library := false
 	defer {
@@ -163,7 +173,7 @@ script_program_load_native_artifact :: proc(
 
 	symbol, symbol_ok := dynlib.symbol_address(library, "scrapbot_register")
 	if !symbol_ok || symbol == nil {
-		return .Invalid_Native_Artifact
+		return .Invalid_Native_Artifact, script_native_diagnostic(.Native_Load, diagnostic_path, "native artifact is missing scrapbot_register")
 	}
 	register := cast(Native_ABI_Register_Proc)symbol
 
@@ -180,26 +190,32 @@ script_program_load_native_artifact :: proc(
 		register_system = native_register_system_callback,
 	}
 	if !register(&api) {
+		message := "native registration callback failed"
+		if load_context.error_message != "" {
+			message = load_context.error_message
+		}
+		diagnostic := script_native_diagnostic(.Native_Registration, diagnostic_path, message)
 		if load_context.error_message != "" {
 			delete(load_context.error_message)
 		}
-		return .Invalid_Native_Artifact
+		return .Invalid_Native_Artifact, diagnostic
 	}
 	if load_context.error_message != "" {
+		diagnostic := script_native_diagnostic(.Native_Registration, diagnostic_path, load_context.error_message)
 		delete(load_context.error_message)
-		return .Invalid_Native_Artifact
+		return .Invalid_Native_Artifact, diagnostic
 	}
 
 	owned_path, path_err := strings.clone(diagnostic_path)
 	if path_err != nil {
-		return .Invalid_Native_Artifact
+		return .Invalid_Native_Artifact, script_native_diagnostic(.Native_Load, diagnostic_path, "failed to store native artifact path")
 	}
 	append(&program.native_modules, Native_Loaded_Module{
 		path = owned_path,
 		handle = library,
 	})
 	keep_library = true
-	return .None
+	return .None, Script_Diagnostic{}
 }
 
 native_run_loaded_system :: proc(

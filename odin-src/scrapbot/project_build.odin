@@ -2,7 +2,9 @@ package main
 
 import "core:os"
 import "core:path/filepath"
+import "core:strconv"
 import "core:strings"
+import "core:time"
 
 BUILD_DEFAULT_OUTPUT_DIR :: "build"
 BUILD_BUNDLE_MARKER :: ".scrapbot-build-bundle"
@@ -593,12 +595,110 @@ build_odin_native_artifact :: proc(project_bundle_path, native_path: string) -> 
 	return native_artifact_project_path, true
 }
 
+build_development_odin_native_artifact :: proc(project_root_path, native_path: string) -> (string, Script_Diagnostic, bool) {
+	native_artifact_project_path, artifact_path_ok := build_development_native_artifact_project_path()
+	if !artifact_path_ok {
+		return "", script_native_diagnostic(.Native_Build, native_path, "failed to create native artifact path"), false
+	}
+	keep_artifact_project_path := false
+	defer {
+		if !keep_artifact_project_path {
+			delete(native_artifact_project_path)
+		}
+	}
+
+	artifact_full_path := project_relative_path(project_root_path, native_artifact_project_path)
+	defer delete(artifact_full_path)
+	artifact_parent := os.dir(artifact_full_path)
+	if !ensure_directory(artifact_parent) {
+		return "", script_native_diagnostic(.Native_Build, native_path, "failed to create native artifact directory"), false
+	}
+
+	if !write_odin_native_sdk(project_root_path) {
+		return "", script_native_diagnostic(.Native_Build, native_path, "failed to write Odin native SDK"), false
+	}
+
+	native_source_dir := os.dir(native_path)
+	if native_source_dir == "" {
+		native_source_dir = "."
+	}
+	collection_arg := build_odin_collection_arg()
+	if collection_arg == "" {
+		return "", script_native_diagnostic(.Native_Build, native_path, "failed to create Odin native SDK collection argument"), false
+	}
+	defer delete(collection_arg)
+	output_arg := build_prefixed_string("-out:", native_artifact_project_path)
+	if output_arg == "" {
+		return "", script_native_diagnostic(.Native_Build, native_path, "failed to create Odin native artifact output argument"), false
+	}
+	defer delete(output_arg)
+	command := []string{
+		"odin",
+		"build",
+		native_source_dir,
+		"-build-mode:dll",
+		output_arg,
+		collection_arg,
+	}
+	state, stdout, stderr, exec_err := os.process_exec(os.Process_Desc{
+		working_dir = project_root_path,
+		command = command,
+	}, context.allocator)
+	defer {
+		if stdout != nil {
+			delete(stdout)
+		}
+		if stderr != nil {
+			delete(stderr)
+		}
+	}
+	if exec_err != nil || !state.exited || state.exit_code != 0 || !os.exists(artifact_full_path) {
+		return "", native_build_diagnostic(native_path, stdout, stderr, exec_err != nil), false
+	}
+
+	keep_artifact_project_path = true
+	return native_artifact_project_path, Script_Diagnostic{}, true
+}
+
 build_native_artifact_project_path :: proc() -> (string, bool) {
 	path, err := filepath.join([]string{BUILD_NATIVE_ARTIFACT_DIR, dynamic_library_file_name()})
 	if err != nil {
 		return "", false
 	}
 	return path, true
+}
+
+build_development_native_artifact_project_path :: proc() -> (string, bool) {
+	stamp_buffer: [32]byte
+	stamp := strconv.write_int(stamp_buffer[:], time.to_unix_nanoseconds(time.now()), 10)
+	path, err := filepath.join([]string{BUILD_NATIVE_ARTIFACT_DIR, "dev", stamp, dynamic_library_file_name()})
+	if err != nil {
+		return "", false
+	}
+	return path, true
+}
+
+native_build_diagnostic :: proc(native_path: string, stdout, stderr: []byte, exec_failed: bool) -> Script_Diagnostic {
+	detail := strings.trim_space(string(stderr))
+	if detail == "" {
+		detail = strings.trim_space(string(stdout))
+	}
+	if detail == "" {
+		if exec_failed {
+			detail = "failed to execute Odin compiler"
+		} else {
+			detail = "Odin compiler did not produce a native artifact"
+		}
+	}
+
+	builder := strings.builder_make()
+	defer strings.builder_destroy(&builder)
+	strings.write_string(&builder, "failed to build Odin native module")
+	if detail != "" {
+		strings.write_string(&builder, ": ")
+		strings.write_string(&builder, detail)
+	}
+	return script_native_diagnostic(.Native_Build, native_path, strings.to_string(builder))
 }
 
 build_odin_collection_arg :: proc() -> string {

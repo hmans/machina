@@ -28,6 +28,7 @@ Project_Error :: enum {
 	Invalid_Script,
 	Missing_Script,
 	Invalid_Native,
+	Invalid_Native_Build,
 	Missing_Native,
 	Invalid_Native_Artifact,
 	Missing_Native_Artifact,
@@ -119,9 +120,9 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 		if !os.exists(full_path) {
 			return Project_Check_Result{project = project, err = .Missing_Native_Artifact}
 		}
-		native_err := script_program_load_native_artifact(&script_program, &registry, full_path, project.native_artifact)
+		native_err, native_diagnostic := script_program_load_native_artifact_diagnostic(&script_program, &registry, full_path, project.native_artifact)
 		if native_err != .None {
-			return Project_Check_Result{project = project, err = native_err}
+			return Project_Check_Result{project = project, diagnostic = native_diagnostic, err = native_err}
 		}
 	} else if project.native != "" {
 		full_path := project_relative_path(project.root_path, project.native)
@@ -129,13 +130,31 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 		if !os.exists(full_path) {
 			return Project_Check_Result{project = project, err = .Missing_Native}
 		}
-		native_err := register_native_components_from_file(&registry, full_path)
-		if native_err != .None {
-			return Project_Check_Result{project = project, err = native_err}
-		}
-		native_exec_err := script_program_load_native_file(&script_program, full_path, project.native)
-		if native_exec_err != .None {
-			return Project_Check_Result{project = project, err = native_exec_err}
+		if project_native_source_uses_generated_sdk(full_path) {
+			native_artifact, native_build_diagnostic, native_build_ok := build_development_odin_native_artifact(project.root_path, project.native)
+			defer {
+				if native_artifact != "" {
+					delete(native_artifact)
+				}
+			}
+			if !native_build_ok {
+				return Project_Check_Result{project = project, diagnostic = native_build_diagnostic, err = .Invalid_Native_Build}
+			}
+			artifact_full_path := project_relative_path(project.root_path, native_artifact)
+			defer delete(artifact_full_path)
+			native_err, native_diagnostic := script_program_load_native_artifact_diagnostic(&script_program, &registry, artifact_full_path, project.native)
+			if native_err != .None {
+				return Project_Check_Result{project = project, diagnostic = native_diagnostic, err = native_err}
+			}
+		} else {
+			native_err := register_native_components_from_file(&registry, full_path)
+			if native_err != .None {
+				return Project_Check_Result{project = project, err = native_err}
+			}
+			native_exec_err := script_program_load_native_file(&script_program, full_path, project.native)
+			if native_exec_err != .None {
+				return Project_Check_Result{project = project, err = native_exec_err}
+			}
 		}
 	}
 
@@ -305,6 +324,15 @@ free_check_result :: proc(result: Project_Check_Result) {
 	runtime_system_schedule_free(result.update_schedule)
 	runtime_system_schedule_free(result.fixed_update_schedule)
 	runtime_system_schedule_free(result.render_schedule)
+}
+
+project_native_source_uses_generated_sdk :: proc(file_system_path: string) -> bool {
+	contents, read_err := os.read_entire_file(file_system_path, context.allocator)
+	if read_err != nil {
+		return false
+	}
+	defer delete(contents)
+	return strings.contains(string(contents), `scrapbot:scrapbot_native`)
 }
 
 project_metadata_file_name :: proc(root_path: string) -> string {
@@ -618,6 +646,8 @@ project_error_message :: proc(err: Project_Error) -> string {
 		return "missing script"
 	case .Invalid_Native:
 		return "invalid native source path"
+	case .Invalid_Native_Build:
+		return "invalid native build"
 	case .Missing_Native:
 		return "missing native source"
 	case .Invalid_Native_Artifact:

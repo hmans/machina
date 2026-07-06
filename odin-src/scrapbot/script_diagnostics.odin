@@ -160,6 +160,21 @@ script_schedule_diagnostic :: proc(phase: Runtime_System_Phase, message: string)
 	}
 }
 
+script_native_diagnostic :: proc(stage: Script_Diagnostic_Stage, path: string, message: string) -> Script_Diagnostic {
+	owned_path, path_owned := script_diagnostic_clone(path)
+	owned_message, message_owned := script_diagnostic_clone(message)
+	if owned_message == "" {
+		owned_message = message
+	}
+	return Script_Diagnostic{
+		stage = stage,
+		path = owned_path,
+		path_owned = path_owned,
+		message = owned_message,
+		message_owned = message_owned,
+	}
+}
+
 script_runtime_diagnostic :: proc(path: string, system_id: string, line: int, message: string) -> Script_Diagnostic {
 	owned_path, path_owned := script_diagnostic_clone(path)
 	owned_system_id, system_id_owned := script_diagnostic_clone(system_id)
