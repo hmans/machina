@@ -737,6 +737,78 @@ scrapbot_register :: proc "c" (api: ^scrapbot.Register_Api) -> bool {
 }
 
 @(test)
+test_live_project_reloads_development_odin_native_source_callback :: proc(t: ^testing.T) {
+	root := make_test_project(t, "live-project-odin-native-source-reload")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_native_counter_project(t, root, "1")
+	live, init_err := live_project_init(root)
+	defer live_project_free(&live)
+	testing.expect_value(t, init_err, Project_Error.None)
+
+	first := live_project_update(&live, 1, 0.5)
+	defer script_diagnostic_free(&first.diagnostic)
+	testing.expect_value(t, first.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 2)
+
+	write_development_native_counter_source(t, root, "10")
+	reload, reload_err := live_project_poll_native_source(&live)
+	testing.expect_value(t, reload_err, Project_Error.None)
+	testing.expect_value(t, reload.changed, true)
+	testing.expect_value(t, reload.info.native_reloaded, true)
+	testing.expect_value(t, reload.info.scripts_reloaded, true)
+
+	second := live_project_update(&live, 1, 0.5)
+	defer script_diagnostic_free(&second.diagnostic)
+	testing.expect_value(t, second.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 12)
+}
+
+@(test)
+test_live_project_keeps_last_good_after_bad_development_odin_native_reload :: proc(t: ^testing.T) {
+	root := make_test_project(t, "live-project-odin-native-source-reload-failure")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_native_counter_project(t, root, "1")
+	live, init_err := live_project_init(root)
+	defer live_project_free(&live)
+	testing.expect_value(t, init_err, Project_Error.None)
+
+	first := live_project_update(&live, 1, 0.5)
+	defer script_diagnostic_free(&first.diagnostic)
+	testing.expect_value(t, first.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 2)
+
+	write_broken_development_native_counter_source(t, root)
+	bad_reload, bad_reload_err := live_project_poll_native_source(&live)
+	testing.expect_value(t, bad_reload_err, Project_Error.Invalid_Native_Build)
+	testing.expect_value(t, bad_reload.changed, false)
+	diagnostic, diagnostic_found := live_project_last_diagnostic(&live)
+	testing.expect_value(t, diagnostic_found, true)
+	testing.expect_value(t, diagnostic.stage, Script_Diagnostic_Stage.Native_Build)
+	testing.expect_value(t, diagnostic.path, "native/game.odin")
+
+	still_old := live_project_update(&live, 1, 0.5)
+	defer script_diagnostic_free(&still_old.diagnostic)
+	testing.expect_value(t, still_old.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 3)
+
+	write_development_native_counter_source(t, root, "10")
+	fixed_reload, fixed_reload_err := live_project_poll_native_source(&live)
+	testing.expect_value(t, fixed_reload_err, Project_Error.None)
+	testing.expect_value(t, fixed_reload.changed, true)
+	_, after_fixed_diagnostic_found := live_project_last_diagnostic(&live)
+	testing.expect_value(t, after_fixed_diagnostic_found, false)
+
+	after_fixed := live_project_update(&live, 1, 0.5)
+	defer script_diagnostic_free(&after_fixed.diagnostic)
+	testing.expect_value(t, after_fixed.ok, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 13)
+}
+
+@(test)
 test_run_script_simulation_reports_native_odin_set_field_write_access_diagnostic :: proc(t: ^testing.T) {
 	root := make_test_project(t, "script-simulation-native-odin-set-field-write-access")
 	defer os.remove_all(root)
@@ -1507,6 +1579,92 @@ write_file :: proc(t: ^testing.T, root, relative_path, contents: string) {
 	if err != nil {
 		testing.fail_now(t, "failed to write test file")
 	}
+}
+
+write_native_counter_project :: proc(t: ^testing.T, root, increment: string) {
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative = \"native/game.odin\"\n")
+	write_file(t, root, "scenes/main.scene.toml", `name = "Main"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.stats]
+count = 1
+`)
+	write_development_native_counter_source(t, root, increment)
+}
+
+write_development_native_counter_source :: proc(t: ^testing.T, root, increment: string) {
+	source := strings.builder_make()
+	defer strings.builder_destroy(&source)
+	strings.write_string(&source, `package game
+
+import scrapbot "scrapbot:scrapbot_native"
+
+stats_fields := []scrapbot.Component_Field{
+    {name = "count", field_type = .Int},
+}
+
+native_tick_writes := []string{"stats"}
+
+native_tick :: proc "c" (ctx: ^scrapbot.System_Context) -> bool {
+    query := []string{"stats"}
+    cursor := 0
+    entity, entity_ok := scrapbot.query_next(ctx, query[:], &cursor)
+    if !entity_ok {
+        return false
+    }
+    count, count_ok := scrapbot.get_int(ctx, entity, "stats", "count")
+    if !count_ok {
+        return false
+    }
+    return scrapbot.set_int(ctx, entity, "stats", "count", count + `)
+	strings.write_string(&source, increment)
+	strings.write_string(&source, `)
+}
+
+@(export)
+scrapbot_register :: proc "c" (api: ^scrapbot.Register_Api) -> bool {
+    if !scrapbot.register_component(api, {
+        id = "stats",
+        fields = stats_fields[:],
+    }) {
+        return false
+    }
+    return scrapbot.register_system(api, {
+        id = "native_tick",
+        phase = .Update,
+        writes = native_tick_writes[:],
+        run = native_tick,
+    })
+}
+`)
+	write_file(t, root, "native/game.odin", strings.to_string(source))
+}
+
+write_broken_development_native_counter_source :: proc(t: ^testing.T, root: string) {
+	write_file(t, root, "native/game.odin", `package game
+
+import scrapbot "scrapbot:scrapbot_native"
+
+@(export)
+scrapbot_register :: proc "c" (api: ^scrapbot.Register_Api) -> bool {
+    return true
+`)
+}
+
+live_project_counter_value :: proc(t: ^testing.T, live: Live_Project) -> int {
+	target, target_found := runtime_world_find_entity_by_id(live.check.scene.world, "target")
+	if !target_found {
+		testing.fail_now(t, "missing target entity")
+	}
+	value, value_err := runtime_world_get_component_field_value(live.check.scene.world, target, "stats", "count")
+	if value_err != .None {
+		testing.fail_now(t, "failed to read stats.count")
+	}
+	return value.int_value
 }
 
 write_valid_scene_file :: proc(t: ^testing.T, root, relative_path: string) {

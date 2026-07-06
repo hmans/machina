@@ -123,6 +123,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Native Odin host API callback parity slice
   - [x] Native Odin development source build/load slice
   - [x] Native Odin module execution
+  - [x] Native Odin live reload transaction slice
   - [x] Native hot reload
   - [ ] Native extension examples
   - [ ] Static native packaging
