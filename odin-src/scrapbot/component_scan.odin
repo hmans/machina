@@ -3,6 +3,16 @@ package main
 import "core:os"
 import "core:strings"
 
+Script_Component_Binding :: struct {
+	name: string,
+	id:   string,
+}
+
+Script_Query_Binding :: struct {
+	name:          string,
+	component_ids: []string,
+}
+
 register_script_components_from_file :: proc(registry: ^Runtime_Component_Registry, path: string) -> Project_Error {
 	contents, read_err := os.read_entire_file(path, context.allocator)
 	if read_err != nil {
@@ -10,7 +20,14 @@ register_script_components_from_file :: proc(registry: ^Runtime_Component_Regist
 	}
 	defer delete(contents)
 
+	component_bindings := make([dynamic]Script_Component_Binding)
+	defer delete(component_bindings)
+	query_bindings := make([dynamic]Script_Query_Binding)
+	defer delete(query_bindings)
+	defer free_script_query_bindings(query_bindings[:])
+
 	remaining := string(contents)
+	remaining_offset := 0
 	for {
 		component_index := strings.index(remaining, "ecs.component")
 		if component_index < 0 {
@@ -25,10 +42,15 @@ register_script_components_from_file :: proc(registry: ^Runtime_Component_Regist
 		component_id, id_len, id_ok := parse_quoted_prefix(after_open)
 		if !id_ok {
 			remaining = fragment[len("ecs.component"):]
+			remaining_offset += component_index + len("ecs.component")
 			continue
+		}
+		if name, name_ok := parse_luau_assignment_name_before(string(contents), remaining_offset + component_index); name_ok {
+			append(&component_bindings, Script_Component_Binding{name = name, id = component_id})
 		}
 		if runtime_is_engine_type_id(component_id) {
 			remaining = after_open[id_len:]
+			remaining_offset += component_index + open_index + 1 + len(fragment[open_index + 1:]) - len(after_open) + id_len
 			continue
 		}
 
@@ -66,7 +88,17 @@ register_script_components_from_file :: proc(registry: ^Runtime_Component_Regist
 		if err != .None {
 			return .Invalid_Script
 		}
+		remaining_offset += len(string(contents)[remaining_offset:]) - len(next_remaining)
 		remaining = next_remaining
+	}
+
+	query_err := register_script_query_bindings(string(contents), component_bindings[:], &query_bindings)
+	if query_err != .None {
+		return query_err
+	}
+	system_err := register_script_systems_from_contents(registry, string(contents), component_bindings[:], query_bindings[:])
+	if system_err != .None {
+		return system_err
 	}
 	return .None
 }
@@ -131,6 +163,168 @@ register_native_components_from_file :: proc(registry: ^Runtime_Component_Regist
 	return .None
 }
 
+register_script_query_bindings :: proc(
+	contents: string,
+	component_bindings: []Script_Component_Binding,
+	query_bindings: ^[dynamic]Script_Query_Binding,
+) -> Project_Error {
+	remaining := contents
+	remaining_offset := 0
+	for {
+		query_index := strings.index(remaining, "ecs.query")
+		if query_index < 0 {
+			break
+		}
+		absolute_index := remaining_offset + query_index
+		fragment := remaining[query_index:]
+		open_index := strings.index_byte(fragment, '(')
+		if open_index < 0 {
+			return .Invalid_Script
+		}
+		after_open := fragment[open_index + 1:]
+		close_index := strings.index_byte(after_open, ')')
+		if close_index < 0 {
+			return .Invalid_Script
+		}
+		query_name, query_name_ok := parse_luau_assignment_name_before(contents, absolute_index)
+		if query_name_ok {
+			ids, ids_ok := parse_script_component_ref_list(after_open[:close_index], component_bindings)
+			if !ids_ok {
+				return .Invalid_Script
+			}
+			append(query_bindings, Script_Query_Binding{name = query_name, component_ids = ids})
+		}
+		remaining_offset = absolute_index + open_index + close_index + 2
+		remaining = contents[remaining_offset:]
+	}
+	return .None
+}
+
+register_script_systems_from_contents :: proc(
+	registry: ^Runtime_Component_Registry,
+	contents: string,
+	component_bindings: []Script_Component_Binding,
+	query_bindings: []Script_Query_Binding,
+) -> Project_Error {
+	remaining := contents
+	remaining_offset := 0
+	for {
+		system_index := strings.index(remaining, "ecs.system")
+		if system_index < 0 {
+			break
+		}
+		absolute_index := remaining_offset + system_index
+		fragment := remaining[system_index:]
+		open_index := strings.index_byte(fragment, '(')
+		if open_index < 0 {
+			return .Invalid_Script
+		}
+		after_open := strings.trim_space(fragment[open_index + 1:])
+		system_id, id_len, id_ok := parse_quoted_prefix(after_open)
+		if !id_ok {
+			return .Invalid_Script
+		}
+		body_start_offset := absolute_index + open_index + 1 + len(fragment[open_index + 1:]) - len(after_open) + id_len
+		after_id := contents[body_start_offset:]
+		next_system_index := strings.index(after_id, "ecs.system")
+		body := after_id
+		if next_system_index >= 0 {
+			body = after_id[:next_system_index]
+		}
+
+		err := register_script_system_from_body(registry, system_id, body, component_bindings, query_bindings)
+		if err != .None {
+			return err
+		}
+		remaining_offset = body_start_offset + len(body)
+		remaining = contents[remaining_offset:]
+	}
+	return .None
+}
+
+register_script_system_from_body :: proc(
+	registry: ^Runtime_Component_Registry,
+	system_id: string,
+	body: string,
+	component_bindings: []Script_Component_Binding,
+	query_bindings: []Script_Query_Binding,
+) -> Project_Error {
+	metadata_body := body
+	if run_index := strings.index(body, "run ="); run_index >= 0 {
+		metadata_body = body[:run_index]
+	}
+
+	phase := Runtime_System_Phase.Update
+	if phase_value, phase_found, phase_ok := parse_script_string_field(metadata_body, "phase"); phase_found {
+		if !phase_ok {
+			return .Invalid_Script
+		}
+		parsed_phase, parsed_phase_ok := parse_script_system_phase(phase_value)
+		if !parsed_phase_ok {
+			return .Invalid_Script
+		}
+		phase = parsed_phase
+	}
+
+	reads := make([dynamic]string)
+	writes := make([dynamic]string)
+	before := make([dynamic]string)
+	after := make([dynamic]string)
+	defer delete(reads)
+	defer delete(writes)
+	defer delete(before)
+	defer delete(after)
+
+	if ok := append_script_refs_field(&reads, metadata_body, "reads", component_bindings); !ok {
+		return .Invalid_Script
+	}
+	if ok := append_script_refs_field(&writes, metadata_body, "writes", component_bindings); !ok {
+		return .Invalid_Script
+	}
+	if ok := append_script_string_array_field(&before, metadata_body, "before"); !ok {
+		return .Invalid_Script
+	}
+	if ok := append_script_string_array_field(&after, metadata_body, "after"); !ok {
+		return .Invalid_Script
+	}
+	if query_name, query_found, query_ok := parse_script_identifier_field(metadata_body, "query"); query_found {
+		if !query_ok {
+			return .Invalid_Script
+		}
+		components, components_ok := script_query_components_for_name(query_bindings, query_name)
+		if !components_ok {
+			return .Invalid_Script
+		}
+		for component_id in components {
+			if !runtime_contains_string(reads[:], component_id) && !runtime_contains_string(writes[:], component_id) {
+				append(&reads, component_id)
+			}
+		}
+	}
+
+	runtime_err := runtime_register_project_system(registry, Runtime_System_Definition{
+		id = system_id,
+		phase = phase,
+		reads = reads[:],
+		writes = writes[:],
+		before = before[:],
+		after = after[:],
+		runner = Runtime_System_Runner{kind = .Luau, ref = 0},
+	})
+	if runtime_err != .None {
+		return .Invalid_Script
+	}
+	return .None
+}
+
+free_script_query_bindings :: proc(bindings: []Script_Query_Binding) {
+	for binding in bindings {
+		if binding.component_ids != nil {
+			delete(binding.component_ids)
+		}
+	}
+}
+
 parse_script_field_definitions :: proc(body: string) -> ([]Runtime_Component_Field_Definition, bool) {
 	fields := make([dynamic]Runtime_Component_Field_Definition)
 	remaining := body
@@ -169,6 +363,241 @@ parse_script_field_definitions :: proc(body: string) -> ([]Runtime_Component_Fie
 	}
 	delete(fields)
 	return out, true
+}
+
+parse_luau_assignment_name_before :: proc(contents: string, absolute_index: int) -> (string, bool) {
+	if absolute_index <= 0 || absolute_index > len(contents) {
+		return "", false
+	}
+	line_start := absolute_index
+	for line_start > 0 && contents[line_start - 1] != '\n' {
+		line_start -= 1
+	}
+	line := strings.trim_space(contents[line_start:absolute_index])
+	if line == "" {
+		return "", false
+	}
+	eq_index := -1
+	for index := len(line) - 1; index >= 0; index -= 1 {
+		if line[index] == '=' {
+			eq_index = index
+			break
+		}
+	}
+	if eq_index < 0 {
+		return "", false
+	}
+	left := strings.trim_space(line[:eq_index])
+	if strings.has_prefix(left, "local ") {
+		left = strings.trim_space(left[len("local "):])
+	}
+	end := len(left)
+	for end > 0 && !is_script_identifier_byte(left[end - 1]) {
+		end -= 1
+	}
+	start := end
+	for start > 0 && is_script_identifier_byte(left[start - 1]) {
+		start -= 1
+	}
+	if start == end || !is_script_identifier_start_byte(left[start]) {
+		return "", false
+	}
+	return left[start:end], true
+}
+
+parse_script_component_ref_list :: proc(body: string, component_bindings: []Script_Component_Binding) -> ([]string, bool) {
+	ids := make([dynamic]string)
+	remaining := body
+	for {
+		token, consumed, found := parse_script_identifier_prefix(remaining)
+		if !found {
+			if strings.trim_space(remaining) != "" {
+				delete(ids)
+				return nil, false
+			}
+			break
+		}
+		component_id, component_ok := script_component_id_for_name(component_bindings, token)
+		if !component_ok {
+			delete(ids)
+			return nil, false
+		}
+		append(&ids, component_id)
+		remaining = remaining[consumed:]
+		tail := strings.trim_space(remaining)
+		if tail == "" {
+			break
+		}
+		if tail[0] != ',' {
+			delete(ids)
+			return nil, false
+		}
+		remaining = tail[1:]
+	}
+	out := make([]string, len(ids))
+	if out == nil && len(ids) > 0 {
+		delete(ids)
+		return nil, false
+	}
+	for id, index in ids {
+		out[index] = id
+	}
+	delete(ids)
+	return out, true
+}
+
+parse_script_string_field :: proc(body, key: string) -> (value: string, found: bool, ok: bool) {
+	raw, raw_found := parse_script_field_line_value(body, key)
+	if !raw_found {
+		return "", false, true
+	}
+	parsed_value, _, quoted_ok := parse_quoted_prefix(strings.trim_space(raw))
+	return parsed_value, true, quoted_ok
+}
+
+parse_script_identifier_field :: proc(body, key: string) -> (value: string, found: bool, ok: bool) {
+	raw, raw_found := parse_script_field_line_value(body, key)
+	if !raw_found {
+		return "", false, true
+	}
+	identifier, _, identifier_ok := parse_script_identifier_prefix(raw)
+	return identifier, true, identifier_ok
+}
+
+parse_script_field_line_value :: proc(body, key: string) -> (string, bool) {
+	remaining := body
+	for line in strings.split_lines_iterator(&remaining) {
+		trimmed := strings.trim_space(strip_line_comment(line))
+		if trimmed == "" {
+			continue
+		}
+		if !strings.has_prefix(trimmed, key) {
+			continue
+		}
+		after_key := strings.trim_space(trimmed[len(key):])
+		if len(after_key) == 0 || after_key[0] != '=' {
+			continue
+		}
+		value := strings.trim_space(after_key[1:])
+		if strings.has_suffix(value, ",") {
+			value = strings.trim_space(value[:len(value) - 1])
+		}
+		return value, true
+	}
+	return "", false
+}
+
+append_script_refs_field :: proc(
+	out: ^[dynamic]string,
+	body, key: string,
+	component_bindings: []Script_Component_Binding,
+) -> bool {
+	raw, found := parse_script_field_line_value(body, key)
+	if !found {
+		return true
+	}
+	refs_index := strings.index(raw, "ecs.refs")
+	if refs_index < 0 {
+		return false
+	}
+	fragment := raw[refs_index:]
+	open_index := strings.index_byte(fragment, '(')
+	if open_index < 0 {
+		return false
+	}
+	after_open := fragment[open_index + 1:]
+	close_index := strings.index_byte(after_open, ')')
+	if close_index < 0 {
+		return false
+	}
+	ids, ids_ok := parse_script_component_ref_list(after_open[:close_index], component_bindings)
+	if !ids_ok {
+		return false
+	}
+	defer delete(ids)
+	for id in ids {
+		append(out, id)
+	}
+	return true
+}
+
+append_script_string_array_field :: proc(out: ^[dynamic]string, body, key: string) -> bool {
+	raw, found := parse_script_field_line_value(body, key)
+	if !found {
+		return true
+	}
+	open_index := strings.index_byte(raw, '{')
+	close_index := strings.index_byte(raw, '}')
+	if open_index < 0 || close_index < open_index {
+		return false
+	}
+	remaining := raw[open_index + 1:close_index]
+	for {
+		quoted_index := strings.index_byte(remaining, '"')
+		if quoted_index < 0 {
+			break
+		}
+		value, consumed, ok := parse_quoted_prefix(remaining[quoted_index:])
+		if !ok {
+			return false
+		}
+		append(out, value)
+		remaining = remaining[quoted_index + consumed:]
+	}
+	return true
+}
+
+parse_script_system_phase :: proc(value: string) -> (Runtime_System_Phase, bool) {
+	switch value {
+	case "startup":
+		return .Startup, true
+	case "update":
+		return .Update, true
+	case "fixed_update":
+		return .Fixed_Update, true
+	case "render":
+		return .Render, true
+	}
+	return .Update, false
+}
+
+script_component_id_for_name :: proc(bindings: []Script_Component_Binding, name: string) -> (string, bool) {
+	for binding in bindings {
+		if binding.name == name {
+			return binding.id, true
+		}
+	}
+	return "", false
+}
+
+script_query_components_for_name :: proc(bindings: []Script_Query_Binding, name: string) -> ([]string, bool) {
+	for binding in bindings {
+		if binding.name == name {
+			return binding.component_ids, true
+		}
+	}
+	return nil, false
+}
+
+parse_script_identifier_prefix :: proc(text: string) -> (value: string, consumed: int, ok: bool) {
+	trimmed := strings.trim_space(text)
+	trimmed_prefix_len := len(text) - len(trimmed)
+	if len(trimmed) == 0 || !is_script_identifier_start_byte(trimmed[0]) {
+		return "", 0, false
+	}
+	end := 1
+	for end < len(trimmed) && is_script_identifier_byte(trimmed[end]) {
+		end += 1
+	}
+	return trimmed[:end], trimmed_prefix_len + end, true
+}
+
+is_script_identifier_start_byte :: proc(byte: u8) -> bool {
+	return (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || byte == '_'
+}
+
+is_script_identifier_byte :: proc(byte: u8) -> bool {
+	return is_script_identifier_start_byte(byte) || (byte >= '0' && byte <= '9')
 }
 
 parse_native_field_array :: proc(contents, array_name: string) -> ([]Runtime_Component_Field_Definition, bool) {

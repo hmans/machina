@@ -89,6 +89,68 @@ test_check_project_reports_missing_script :: proc(t: ^testing.T) {
 	testing.expect_value(t, result.err, Project_Error.Missing_Script)
 }
 
+@(test)
+test_check_project_builds_script_system_schedules :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-system-schedules")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n")
+	write_valid_scene_file(t, root, "scenes/main.scene.toml")
+	write_file(t, root, "scripts/gameplay.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({}),
+})
+
+local Flags = ecs.query(Flag)
+
+ecs.system("prepare_flags", {
+  phase = "startup",
+  writes = ecs.refs(Flag),
+})
+
+ecs.system("observe_flags", {
+  query = Flags,
+  after = { "prepare_flags" },
+})
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	testing.expect_value(t, runtime_system_schedule_system_count(result.startup_schedule), 1)
+	testing.expect_value(t, runtime_system_schedule_system_count(result.update_schedule), 1)
+	testing.expect_value(t, result.startup_schedule.batches[0].systems[0].id, "prepare_flags")
+	testing.expect_value(t, result.update_schedule.batches[0].systems[0].id, "observe_flags")
+}
+
+@(test)
+test_check_project_rejects_cyclic_script_system_order :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-system-cycle")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n")
+	write_valid_scene_file(t, root, "scenes/main.scene.toml")
+	write_file(t, root, "scripts/gameplay.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({}),
+})
+
+ecs.system("first", {
+  after = { "second" },
+  writes = ecs.refs(Flag),
+})
+
+ecs.system("second", {
+  after = { "first" },
+  writes = ecs.refs(Flag),
+})
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Script)
+}
+
 make_test_project :: proc(t: ^testing.T, name: string) -> string {
 	root, join_err := filepath.join([]string{"odin-out", "odin-tests", name})
 	if join_err != nil {

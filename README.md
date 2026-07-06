@@ -22,6 +22,7 @@ A compact, experimental, and probably mostly useless game engine that tries to a
   - [x] Odin runtime registry/entity identity slice
   - [x] Odin ECS component storage/query slice
   - [x] Odin ECS scheduling/deferred mutation slice
+  - [x] Odin script system registration/schedule check slice
   - [ ] Odin CLI feature parity
   - [ ] Zig engine implementation removed
 - Runtime

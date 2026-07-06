@@ -126,3 +126,70 @@ local Stats = ecs.component("stats", {
 	testing.expect_value(t, len(stats.fields), 1)
 	testing.expect_value(t, stats.fields[0].name, "count")
 }
+
+@(test)
+test_component_scan_registers_script_system_access_and_order :: proc(t: ^testing.T) {
+	root := make_test_project(t, "component-scan-script-system")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, "scripts/gameplay.luau", `local Transform = ecs.component<<ScrapbotTransform>>("scrapbot.transform")
+local Health = ecs.component("health", {
+  fields = ecs.fields({
+    current = "f32",
+  }),
+})
+
+local Moving = ecs.query(Transform, Health)
+
+ecs.system("move_entities", {
+  query = Moving,
+  writes = ecs.refs(Transform),
+  after = { "prepare_entities" },
+})
+`)
+
+	registry := Runtime_Component_Registry{}
+	defer runtime_registry_free(&registry)
+	engine_err := runtime_register_engine_components(&registry)
+	testing.expect_value(t, engine_err, Runtime_Error.None)
+	script_path := project_relative_path(root, "scripts/gameplay.luau")
+	defer delete(script_path)
+	err := register_script_components_from_file(&registry, script_path)
+	testing.expect_value(t, err, Project_Error.None)
+
+	system, found := runtime_find_system(registry, "move_entities")
+	testing.expect_value(t, found, true)
+	if !found {
+		return
+	}
+	testing.expect_value(t, system.phase, Runtime_System_Phase.Update)
+	testing.expect_value(t, len(system.reads), 1)
+	testing.expect_value(t, system.reads[0], "health")
+	testing.expect_value(t, len(system.writes), 1)
+	testing.expect_value(t, system.writes[0], TRANSFORM_COMPONENT_ID)
+	testing.expect_value(t, len(system.after), 1)
+	testing.expect_value(t, system.after[0], "prepare_entities")
+	testing.expect_value(t, system.runner.kind, Runtime_System_Runner_Kind.Luau)
+}
+
+@(test)
+test_component_scan_rejects_script_system_unknown_ref :: proc(t: ^testing.T) {
+	root := make_test_project(t, "component-scan-script-system-unknown-ref")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, "scripts/gameplay.luau", `ecs.system("broken", {
+  writes = ecs.refs(Missing),
+})
+`)
+
+	registry := Runtime_Component_Registry{}
+	defer runtime_registry_free(&registry)
+	engine_err := runtime_register_engine_components(&registry)
+	testing.expect_value(t, engine_err, Runtime_Error.None)
+	script_path := project_relative_path(root, "scripts/gameplay.luau")
+	defer delete(script_path)
+	err := register_script_components_from_file(&registry, script_path)
+	testing.expect_value(t, err, Project_Error.Invalid_Script)
+}

@@ -47,9 +47,13 @@ Project :: struct {
 }
 
 Project_Check_Result :: struct {
-	project: Project,
-	scene:   Scene,
-	err:     Project_Error,
+	project:               Project,
+	scene:                 Scene,
+	startup_schedule:      Runtime_System_Schedule,
+	update_schedule:       Runtime_System_Schedule,
+	fixed_update_schedule: Runtime_System_Schedule,
+	render_schedule:       Runtime_System_Schedule,
+	err:                   Project_Error,
 }
 
 check_project :: proc(root_path: string) -> Project_Check_Result {
@@ -108,7 +112,37 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 		return Project_Check_Result{project = project, scene = scene, err = scene_err}
 	}
 
-	return Project_Check_Result{project = project, scene = scene}
+	startup_schedule, startup_schedule_err := runtime_build_system_schedule(registry, .Startup)
+	if startup_schedule_err != .None {
+		return Project_Check_Result{project = project, scene = scene, err = .Invalid_Script}
+	}
+	update_schedule, update_schedule_err := runtime_build_system_schedule(registry, .Update)
+	if update_schedule_err != .None {
+		runtime_system_schedule_free(startup_schedule)
+		return Project_Check_Result{project = project, scene = scene, err = .Invalid_Script}
+	}
+	fixed_update_schedule, fixed_update_schedule_err := runtime_build_system_schedule(registry, .Fixed_Update)
+	if fixed_update_schedule_err != .None {
+		runtime_system_schedule_free(update_schedule)
+		runtime_system_schedule_free(startup_schedule)
+		return Project_Check_Result{project = project, scene = scene, err = .Invalid_Script}
+	}
+	render_schedule, render_schedule_err := runtime_build_system_schedule(registry, .Render)
+	if render_schedule_err != .None {
+		runtime_system_schedule_free(fixed_update_schedule)
+		runtime_system_schedule_free(update_schedule)
+		runtime_system_schedule_free(startup_schedule)
+		return Project_Check_Result{project = project, scene = scene, err = .Invalid_Script}
+	}
+
+	return Project_Check_Result{
+		project = project,
+		scene = scene,
+		startup_schedule = startup_schedule,
+		update_schedule = update_schedule,
+		fixed_update_schedule = fixed_update_schedule,
+		render_schedule = render_schedule,
+	}
 }
 
 load_project :: proc(root_path: string) -> (Project, Project_Error) {
@@ -205,6 +239,10 @@ free_project :: proc(project: Project) {
 free_check_result :: proc(result: Project_Check_Result) {
 	free_project(result.project)
 	free_scene(result.scene)
+	runtime_system_schedule_free(result.startup_schedule)
+	runtime_system_schedule_free(result.update_schedule)
+	runtime_system_schedule_free(result.fixed_update_schedule)
+	runtime_system_schedule_free(result.render_schedule)
 }
 
 project_metadata_file_name :: proc(root_path: string) -> string {

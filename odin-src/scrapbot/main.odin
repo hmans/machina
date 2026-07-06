@@ -237,7 +237,7 @@ run_check :: proc(args: []string) -> int {
 	}
 
 	result := check_project(target_path)
-	defer free_project(result.project)
+	defer free_check_result(result)
 	if result.err != .None {
 		print_check_error(result.err, target_path, format)
 		return 1
@@ -254,13 +254,24 @@ run_check :: proc(args: []string) -> int {
 		fmt.printf("Components: %d\n", scene.component_instance_count)
 		fmt.printf("Renderable cubes: %d\n", scene.renderable_cube_count)
 		fmt.printf("Scripts: %d\n", len(project.scripts))
+		fmt.printf(
+			"Schedules: startup %d batches/%d systems, update %d batches/%d systems, fixed_update %d batches/%d systems, render %d batches/%d systems\n",
+			runtime_system_schedule_batch_count(result.startup_schedule),
+			runtime_system_schedule_system_count(result.startup_schedule),
+			runtime_system_schedule_batch_count(result.update_schedule),
+			runtime_system_schedule_system_count(result.update_schedule),
+			runtime_system_schedule_batch_count(result.fixed_update_schedule),
+			runtime_system_schedule_system_count(result.fixed_update_schedule),
+			runtime_system_schedule_batch_count(result.render_schedule),
+			runtime_system_schedule_system_count(result.render_schedule),
+		)
 		if project.native != "" {
 			fmt.printf("Native source: %s\n", project.native)
 		}
 		if project.native_artifact != "" {
 			fmt.printf("Native artifact: %s\n", project.native_artifact)
 		}
-		fmt.println("Runtime validation: pending Odin port")
+		fmt.println("Runtime validation: schedules ok")
 	case .JSON:
 		fmt.print(`{"ok":true,"project":`)
 		fmt.print(`{"name":"`)
@@ -277,7 +288,17 @@ run_check :: proc(args: []string) -> int {
 			scene.component_instance_count,
 			scene.renderable_cube_count,
 		)
-		fmt.println(`},"runtime_validation":"pending_odin_port"}`)
+		fmt.print(`},"schedule":{`)
+		fmt.print(`"startup":{`)
+		fmt.printf(`"batches":%d,"systems":%d`, runtime_system_schedule_batch_count(result.startup_schedule), runtime_system_schedule_system_count(result.startup_schedule))
+		fmt.print(`},"update":{`)
+		fmt.printf(`"batches":%d,"systems":%d`, runtime_system_schedule_batch_count(result.update_schedule), runtime_system_schedule_system_count(result.update_schedule))
+		fmt.print(`},"fixed_update":{`)
+		fmt.printf(`"batches":%d,"systems":%d`, runtime_system_schedule_batch_count(result.fixed_update_schedule), runtime_system_schedule_system_count(result.fixed_update_schedule))
+		fmt.print(`},"render":{`)
+		fmt.printf(`"batches":%d,"systems":%d`, runtime_system_schedule_batch_count(result.render_schedule), runtime_system_schedule_system_count(result.render_schedule))
+		fmt.print(`}`)
+		fmt.println(`},"runtime_validation":"schedules_ok"}`)
 	}
 
 	return 0

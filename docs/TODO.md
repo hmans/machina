@@ -15,6 +15,7 @@
 - [x] Odin runtime has first-pass component registry and generation-aware entity identity.
 - [x] Odin runtime has first-pass component storage and query iteration.
 - [x] Odin runtime has first-pass system scheduling and deferred structural mutation.
+- [x] Odin `check` can statically register Luau system declarations and validate phase schedules.
 - [x] Shared ECS runtime with generation-aware entities, component tables, system schedules, and script/native access.
 - [x] Live reload for project metadata, scenes, scripts, and project-local native Zig modules.
 - [x] WebGPU renderer with headful SDL windows, offscreen render verification, batching, shadows, and postprocess settings.
@@ -35,7 +36,8 @@
 - [x] Port first-pass ECS entity identity and component registry primitives from Zig to Odin.
 - [x] Port first-pass ECS component storage and query iteration from Zig to Odin.
 - [x] Port first-pass ECS schedules and deferred mutation from Zig to Odin.
-- [ ] Port Luau bridge diagnostics and script ECS registration from Zig to Odin.
+- [x] Port first-pass script ECS registration and schedule validation from Zig to Odin.
+- [ ] Port Luau bridge execution and runtime diagnostics from Zig to Odin.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
 - [ ] Port renderer extraction, offscreen render verification, and hidden headful smoke paths from Zig to Odin.
 - [ ] Replace project-local native Zig modules with project-local native Odin modules.
