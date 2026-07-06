@@ -10,6 +10,9 @@ BUILD_PROJECT_DIR :: "project"
 BUILD_BIN_DIR :: "bin"
 BUILD_LIB_DIR :: "lib"
 BUILD_MANIFEST_PATH :: "scrapbot-build.json"
+BUILD_NATIVE_ARTIFACT_DIR :: ".scrapbot/build/native"
+BUILD_ODIN_NATIVE_SDK_DIR :: ".scrapbot/build/odin-sdk"
+BUILD_ODIN_NATIVE_COLLECTION :: "scrapbot"
 
 Build_Options :: struct {
 	target_path: string,
@@ -181,6 +184,15 @@ build_project :: proc(options: Build_Options) -> (Build_Result, Project_Error) {
 			return Build_Result{}, .Io_Error
 		}
 		native_artifact = owned_native_artifact
+	} else if check.project.native != "" && strings.has_suffix(check.project.native, ".odin") {
+		built_native_artifact, native_build_ok := build_odin_native_artifact(project_bundle_path, check.project.native)
+		if !native_build_ok {
+			return Build_Result{}, .Invalid_Native
+		}
+		native_artifact = built_native_artifact
+		if !rewrite_packaged_project_manifest(project_bundle_path, native_artifact) {
+			return Build_Result{}, .Io_Error
+		}
 	}
 
 	executable_path, executable_err := os.get_executable_path(context.allocator)
@@ -515,6 +527,155 @@ copy_packaged_native_artifact :: proc(project_root_path, project_bundle_path, ar
 	return os.copy_file(dest_path, source_path) == nil
 }
 
+build_odin_native_artifact :: proc(project_bundle_path, native_path: string) -> (string, bool) {
+	native_artifact_project_path, artifact_path_ok := build_native_artifact_project_path()
+	if !artifact_path_ok {
+		return "", false
+	}
+	keep_artifact_project_path := false
+	defer {
+		if !keep_artifact_project_path {
+			delete(native_artifact_project_path)
+		}
+	}
+
+	artifact_full_path := project_relative_path(project_bundle_path, native_artifact_project_path)
+	defer delete(artifact_full_path)
+	artifact_parent := os.dir(artifact_full_path)
+	if !ensure_directory(artifact_parent) {
+		return "", false
+	}
+	if os.exists(artifact_full_path) {
+		os.remove(artifact_full_path)
+	}
+
+	if !write_odin_native_sdk(project_bundle_path) {
+		return "", false
+	}
+
+	native_source_dir := os.dir(native_path)
+	if native_source_dir == "" {
+		native_source_dir = "."
+	}
+	collection_arg := build_odin_collection_arg()
+	if collection_arg == "" {
+		return "", false
+	}
+	defer delete(collection_arg)
+	output_arg := build_prefixed_string("-out:", native_artifact_project_path)
+	if output_arg == "" {
+		return "", false
+	}
+	defer delete(output_arg)
+	command := []string{
+		"odin",
+		"build",
+		native_source_dir,
+		"-build-mode:dll",
+		output_arg,
+		collection_arg,
+	}
+	state, stdout, stderr, exec_err := os.process_exec(os.Process_Desc{
+		working_dir = project_bundle_path,
+		command = command,
+	}, context.allocator)
+	if stdout != nil {
+		delete(stdout)
+	}
+	if stderr != nil {
+		delete(stderr)
+	}
+	if exec_err != nil || !state.exited || state.exit_code != 0 || !os.exists(artifact_full_path) {
+		return "", false
+	}
+
+	keep_artifact_project_path = true
+	return native_artifact_project_path, true
+}
+
+build_native_artifact_project_path :: proc() -> (string, bool) {
+	path, err := filepath.join([]string{BUILD_NATIVE_ARTIFACT_DIR, dynamic_library_file_name()})
+	if err != nil {
+		return "", false
+	}
+	return path, true
+}
+
+build_odin_collection_arg :: proc() -> string {
+	builder := strings.builder_make()
+	defer strings.builder_destroy(&builder)
+	strings.write_string(&builder, "-collection:")
+	strings.write_string(&builder, BUILD_ODIN_NATIVE_COLLECTION)
+	strings.write_rune(&builder, '=')
+	strings.write_string(&builder, BUILD_ODIN_NATIVE_SDK_DIR)
+	return strings.clone(strings.to_string(builder))
+}
+
+build_prefixed_string :: proc(prefix, value: string) -> string {
+	builder := strings.builder_make()
+	defer strings.builder_destroy(&builder)
+	strings.write_string(&builder, prefix)
+	strings.write_string(&builder, value)
+	return strings.clone(strings.to_string(builder))
+}
+
+dynamic_library_file_name :: proc() -> string {
+	when ODIN_OS == .Windows {
+		return "scrapbot_project.dll"
+	}
+	when ODIN_OS == .Darwin {
+		return "libscrapbot_project.dylib"
+	}
+	return "libscrapbot_project.so"
+}
+
+write_odin_native_sdk :: proc(project_bundle_path: string) -> bool {
+	sdk_package_path, sdk_package_err := filepath.join([]string{project_bundle_path, BUILD_ODIN_NATIVE_SDK_DIR, "scrapbot_native"})
+	if sdk_package_err != nil {
+		return false
+	}
+	defer delete(sdk_package_path)
+	if !ensure_directory(sdk_package_path) {
+		return false
+	}
+	sdk_file_path, sdk_file_err := filepath.join([]string{sdk_package_path, "scrapbot_native.odin"})
+	if sdk_file_err != nil {
+		return false
+	}
+	defer delete(sdk_file_path)
+	return os.write_entire_file(sdk_file_path, ODIN_NATIVE_SDK_SOURCE) == nil
+}
+
+rewrite_packaged_project_manifest :: proc(project_bundle_path, native_artifact_path: string) -> bool {
+	metadata_name := project_metadata_file_name(project_bundle_path)
+	if metadata_name == "" {
+		return false
+	}
+	metadata_path := project_relative_path(project_bundle_path, metadata_name)
+	defer delete(metadata_path)
+	contents, read_err := os.read_entire_file(metadata_path, context.allocator)
+	if read_err != nil {
+		return false
+	}
+	defer delete(contents)
+
+	builder := strings.builder_make()
+	defer strings.builder_destroy(&builder)
+	remaining := string(contents)
+	for line in strings.split_lines_iterator(&remaining) {
+		_, has_native_artifact := read_key_value(line, "native_artifact")
+		if has_native_artifact {
+			continue
+		}
+		strings.write_string(&builder, line)
+		strings.write_rune(&builder, '\n')
+	}
+	strings.write_string(&builder, `native_artifact = "`)
+	write_toml_basic_string_contents(&builder, native_artifact_path)
+	strings.write_string(&builder, "\"\n")
+	return os.write_entire_file(metadata_path, strings.to_string(builder)) == nil
+}
+
 executable_file_name :: proc() -> string {
 	when ODIN_OS == .Windows {
 		return "scrapbot.exe"
@@ -645,6 +806,50 @@ write_build_manifest :: proc(path, project_name, bundle_path, runtime_path, proj
 	strings.write_string(&builder, "\n}\n")
 	return os.write_entire_file(path, strings.to_string(builder)) == nil
 }
+
+ODIN_NATIVE_SDK_SOURCE :: `package scrapbot_native
+
+Field_Type :: enum {
+    Boolean,
+    Bool,
+    Int,
+    Float,
+    String,
+    Vec3,
+}
+
+System_Phase :: enum {
+    Startup,
+    Update,
+    Fixed_Update,
+    Render,
+}
+
+Component_Field :: struct {
+    name: string,
+    field_type: Field_Type,
+}
+
+Register_Api :: struct {}
+
+Component_Registration :: struct {
+    id: string,
+    fields: []Component_Field,
+}
+
+System_Registration :: struct {
+    id: string,
+    phase: System_Phase,
+    reads: []string,
+    writes: []string,
+    before: []string,
+    after: []string,
+}
+
+register_component :: proc(api: ^Register_Api, registration: Component_Registration) {}
+
+register_system :: proc(api: ^Register_Api, registration: System_Registration) {}
+`
 
 write_json_string_contents :: proc(builder: ^strings.Builder, value: string) {
 	for c in value {

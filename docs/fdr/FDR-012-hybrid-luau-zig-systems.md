@@ -3,7 +3,7 @@
 **Status:** Active
 **Last reviewed:** 2026-07-03
 
-**Migration note:** This record describes the current Zig-backed native system behavior. [ADR-023](../adr/ADR-023-odin-as-engine-implementation-language.md) makes Odin the target engine implementation language, so future work should replace Zig-specific native module surfaces with Odin equivalents while preserving the language-neutral ECS contract. During the staged rewrite, the Odin `check` path can statically register component and system declarations from `native = "native/game.odin"`; compiling, loading, executing, and live-reloading Odin native modules remain pending.
+**Migration note:** This record describes the current Zig-backed native system behavior. [ADR-023](../adr/ADR-023-odin-as-engine-implementation-language.md) makes Odin the target engine implementation language, so future work should replace Zig-specific native module surfaces with Odin equivalents while preserving the language-neutral ECS contract. During the staged rewrite, the Odin `check` path can statically register component and system declarations from `native = "native/game.odin"`, and the Odin `build` path can compile import-based Odin native sources into packaged dynamic artifacts; loading, executing, and live-reloading those compiled Odin native modules remain pending.
 
 ## Overview
 
@@ -15,7 +15,7 @@ Hybrid Luau and Zig systems let game developers define ECS components and system
 - Developers can define systems in Luau or Zig.
 - Engine-linked Zig code can provide a `NativeExtension` with component and system registrations.
 - Project-local Zig code can be declared with `native = "native/game.zig"` in `project.toml`.
-- During the Odin migration, project-local Odin native declarations can be declared with `native = "native/game.odin"` for static component/system validation in the Odin `check` path.
+- During the Odin migration, project-local Odin native declarations can be declared with `native = "native/game.odin"` for static component/system validation in the Odin `check` path. Buildable Odin native modules import the generated facade with `import scrapbot "scrapbot:scrapbot_native"`.
 - Project-local native modules export `scrapbot_register(api)` and import the engine-provided `scrapbot_native` API.
 - During development, project-local native modules are built to `.scrapbot/native/`, loaded as dynamic libraries, and kept alive for the lifetime of the script program that registered their callbacks.
 - Native components are registered before Luau scripts load, allowing Luau code to reference them with `ecs.component("id")`.

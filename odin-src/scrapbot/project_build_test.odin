@@ -123,6 +123,78 @@ test_build_project_copies_packaged_native_artifact_from_scrapbot_cache :: proc(t
 }
 
 @(test)
+test_build_project_compiles_odin_native_source_artifact :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "build-odin-native-source")
+	defer os.remove_all(root)
+	defer delete(root)
+	output_root := make_test_project_root(t, "build-odin-native-output")
+	defer os.remove_all(output_root)
+	defer delete(output_root)
+
+	testing.expect_value(t, init_project(root, "Odin Native Build"), Project_Error.None)
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Odin Native Build\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative = \"native/game.odin\"\nnative_artifact_backup = \"keep-me\"\n")
+	write_file(t, root, "native/game.odin", `package game
+
+import scrapbot "scrapbot:scrapbot_native"
+
+stats_fields := []scrapbot.Component_Field{
+    {name = "count", field_type = .Int},
+}
+
+@(export)
+scrapbot_register :: proc(api: ^scrapbot.Register_Api) -> bool {
+    scrapbot.register_component(api, {
+        id = "native_stats",
+        fields = stats_fields[:],
+    })
+    return true
+}
+`)
+
+	result, err := build_project(Build_Options{
+		target_path = root,
+		output_root = output_root,
+		name = "odin-native-build",
+	})
+	defer free_build_result(result)
+	testing.expect_value(t, err, Project_Error.None)
+
+	expected_artifact, expected_artifact_ok := build_native_artifact_project_path()
+	defer delete(expected_artifact)
+	testing.expect_value(t, expected_artifact_ok, true)
+	testing.expect_value(t, result.native_artifact, expected_artifact)
+
+	packaged_artifact_path := join_test_path(t, result.project_path, expected_artifact)
+	defer delete(packaged_artifact_path)
+	packaged_sdk_path := join_test_path(t, result.project_path, ".scrapbot/build/odin-sdk/scrapbot_native/scrapbot_native.odin")
+	defer delete(packaged_sdk_path)
+	packaged_project_metadata := join_test_path(t, result.project_path, PROJECT_FILE_NAME)
+	defer delete(packaged_project_metadata)
+	manifest_path := join_test_path(t, result.bundle_path, BUILD_MANIFEST_PATH)
+	defer delete(manifest_path)
+
+	testing.expect_value(t, os.exists(packaged_artifact_path), true)
+	testing.expect_value(t, os.exists(packaged_sdk_path), true)
+
+	packaged := check_project(result.project_path)
+	defer free_check_result(packaged)
+	testing.expect_value(t, packaged.err, Project_Error.None)
+	testing.expect_value(t, packaged.project.native_artifact, expected_artifact)
+
+	metadata, metadata_read_err := os.read_entire_file(packaged_project_metadata, context.allocator)
+	testing.expect_value(t, metadata_read_err, nil)
+	defer delete(metadata)
+	testing.expect(t, strings.contains(string(metadata), `native = "native/game.odin"`))
+	testing.expect(t, strings.contains(string(metadata), `native_artifact_backup = "keep-me"`))
+	testing.expect(t, strings.contains(string(metadata), `native_artifact = ".scrapbot/build/native/`))
+
+	manifest, manifest_read_err := os.read_entire_file(manifest_path, context.allocator)
+	testing.expect_value(t, manifest_read_err, nil)
+	defer delete(manifest)
+	testing.expect(t, strings.contains(string(manifest), `"native_artifact": ".scrapbot/build/native/`))
+}
+
+@(test)
 test_build_project_copies_discoverable_sdl3_candidate :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "build-sdl3-candidate")
 	defer os.remove_all(root)
