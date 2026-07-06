@@ -914,6 +914,17 @@ test_run_command_accepts_initialized_project :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_run_command_accepts_development_odin_native_project :: proc(t: ^testing.T) {
+	root := make_test_project(t, "cli-run-development-odin-native-project")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_native_counter_project(t, root, "1")
+
+	exit_code := run_with_output([]string{"scrapbot", "run", root, "--frames=2", "--hidden"}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_parse_run_options_accepts_frames_editor_and_hidden_flags :: proc(t: ^testing.T) {
 	options, ok := parse_run_options([]string{"--frames", "12", "--editor", "--hidden"}, false)
 	testing.expect_value(t, ok, true)

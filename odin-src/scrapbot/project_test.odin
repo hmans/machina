@@ -809,6 +809,26 @@ test_live_project_keeps_last_good_after_bad_development_odin_native_reload :: pr
 }
 
 @(test)
+test_live_project_run_frames_polls_development_odin_native_source_between_frames :: proc(t: ^testing.T) {
+	root := make_test_project(t, "live-project-run-polls-odin-native-source")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_native_counter_project(t, root, "1")
+	live, init_err := live_project_init(root)
+	defer live_project_free(&live)
+	testing.expect_value(t, init_err, Project_Error.None)
+
+	hook_data := Live_Project_Native_Reload_Test_Hook_Data{t = t, root = root}
+	simulation := live_project_run_frames_with_hook(&live, 2, 0.5, live_project_native_reload_test_hook, rawptr(&hook_data))
+	defer script_diagnostic_free(&simulation.diagnostic)
+	testing.expect_value(t, simulation.ok, true)
+	testing.expect_value(t, simulation.completed_frames, 2)
+	testing.expect_value(t, hook_data.rewrote_source, true)
+	testing.expect_value(t, live_project_counter_value(t, live), 12)
+}
+
+@(test)
 test_run_script_simulation_reports_native_odin_set_field_write_access_diagnostic :: proc(t: ^testing.T) {
 	root := make_test_project(t, "script-simulation-native-odin-set-field-write-access")
 	defer os.remove_all(root)
@@ -1653,6 +1673,25 @@ import scrapbot "scrapbot:scrapbot_native"
 scrapbot_register :: proc "c" (api: ^scrapbot.Register_Api) -> bool {
     return true
 `)
+}
+
+Live_Project_Native_Reload_Test_Hook_Data :: struct {
+	t:              ^testing.T,
+	root:           string,
+	rewrote_source: bool,
+}
+
+live_project_native_reload_test_hook :: proc(project: ^Live_Project, completed_frames: int, user_data: rawptr) -> bool {
+	_ = project
+	data := cast(^Live_Project_Native_Reload_Test_Hook_Data)user_data
+	if data == nil {
+		return false
+	}
+	if completed_frames == 1 && !data.rewrote_source {
+		write_development_native_counter_source(data.t, data.root, "10")
+		data.rewrote_source = true
+	}
+	return true
 }
 
 live_project_counter_value :: proc(t: ^testing.T, live: Live_Project) -> int {

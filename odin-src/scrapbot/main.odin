@@ -338,23 +338,23 @@ run_project :: proc(args: []string, emit_output: bool) -> int {
 		return 1
 	}
 
-	result := check_project(options.target_path)
-	defer free_check_result(result)
-	if result.err != .None {
+	live, live_err := live_project_init(options.target_path)
+	defer live_project_free(&live)
+	if live_err != .None {
 		if emit_output {
-			print_project_check_error(result, options.target_path, .Text)
+			print_project_check_error(live.check, options.target_path, .Text)
 		}
 		return 1
 	}
 
 	completed_frames := 0
 	if options.max_frames > 0 {
-		simulation := run_script_simulation(&result, options.max_frames, 1.0 / 60.0)
+		simulation := live_project_run_frames(&live, options.max_frames, 1.0 / 60.0)
 		if !simulation.ok {
-			result.diagnostic = simulation.diagnostic
-			result.err = .Invalid_Script
+			live.check.diagnostic = simulation.diagnostic
+			live.check.err = .Invalid_Script
 			if emit_output {
-				print_project_check_error(result, options.target_path, .Text)
+				print_project_check_error(live.check, options.target_path, .Text)
 			}
 			return 1
 		}
@@ -362,7 +362,7 @@ run_project :: proc(args: []string, emit_output: bool) -> int {
 	}
 
 	if emit_output {
-		print_run_result(result, options, completed_frames)
+		print_run_result(live.check, options, completed_frames)
 	}
 	return 0
 }

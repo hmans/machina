@@ -48,6 +48,14 @@ script_diagnostic_free :: proc(diagnostic: ^Script_Diagnostic) {
 	diagnostic^ = Script_Diagnostic{}
 }
 
+script_diagnostic_clone_value :: proc(diagnostic: Script_Diagnostic) -> Script_Diagnostic {
+	clone := diagnostic
+	clone.path, clone.path_owned = script_diagnostic_clone(diagnostic.path)
+	clone.system_id, clone.system_id_owned = script_diagnostic_clone(diagnostic.system_id)
+	clone.message, clone.message_owned = script_diagnostic_clone(diagnostic.message)
+	return clone
+}
+
 script_diagnostic_stage_name :: proc(stage: Script_Diagnostic_Stage) -> string {
 	switch stage {
 	case .Load:

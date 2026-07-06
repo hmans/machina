@@ -20,6 +20,8 @@ Live_Reload_Result :: struct {
 	info:    Live_Reload_Info,
 }
 
+Live_Project_Frame_Hook :: proc(project: ^Live_Project, completed_frames: int, user_data: rawptr) -> bool
+
 Live_Project :: struct {
 	check:                 Project_Check_Result,
 	native_stamp:          Source_File_Stamp,
@@ -27,6 +29,7 @@ Live_Project :: struct {
 	last_failed_native:    Source_File_Stamp,
 	has_last_failed_native: bool,
 	last_diagnostic:       Script_Diagnostic,
+	startup_ran:           bool,
 }
 
 live_project_init :: proc(root_path: string) -> (Live_Project, Project_Error) {
@@ -95,6 +98,62 @@ live_project_poll_native_source :: proc(project: ^Live_Project) -> (Live_Reload_
 
 live_project_update :: proc(project: ^Live_Project, frames: int, delta_seconds: f32) -> Simulation_Run_Result {
 	return run_script_simulation(&project.check, frames, delta_seconds)
+}
+
+live_project_run_frames :: proc(project: ^Live_Project, frames: int, delta_seconds: f32) -> Simulation_Run_Result {
+	return live_project_run_frames_with_hook(project, frames, delta_seconds, nil, nil)
+}
+
+live_project_run_frames_with_hook :: proc(
+	project: ^Live_Project,
+	frames: int,
+	delta_seconds: f32,
+	frame_hook: Live_Project_Frame_Hook,
+	hook_data: rawptr,
+) -> Simulation_Run_Result {
+	if !project.startup_ran {
+		startup := script_program_run_schedule(&project.check.script_program, &project.check.registry, &project.check.scene.world, project.check.startup_schedule, 0)
+		if !startup.ok {
+			return Simulation_Run_Result{ok = false, diagnostic = startup.diagnostic}
+		}
+		project.startup_ran = true
+	}
+
+	completed_frames := 0
+	for completed_frames < frames {
+		if frame_hook != nil && !frame_hook(project, completed_frames, hook_data) {
+			return Simulation_Run_Result{
+				ok = false,
+				completed_frames = completed_frames,
+				diagnostic = script_runtime_diagnostic("", "", 0, "live project frame hook failed"),
+			}
+		}
+
+		_, reload_err := live_project_poll_native_source(project)
+		if reload_err != .None {
+			diagnostic, diagnostic_found := live_project_last_diagnostic(project)
+			if diagnostic_found {
+				return Simulation_Run_Result{
+					ok = false,
+					completed_frames = completed_frames,
+					diagnostic = script_diagnostic_clone_value(diagnostic),
+				}
+			}
+			return Simulation_Run_Result{
+				ok = false,
+				completed_frames = completed_frames,
+				diagnostic = script_runtime_diagnostic("", "", 0, project_error_message(reload_err)),
+			}
+		}
+
+		update := script_program_run_schedule(&project.check.script_program, &project.check.registry, &project.check.scene.world, project.check.update_schedule, delta_seconds)
+		if !update.ok {
+			return Simulation_Run_Result{ok = false, completed_frames = completed_frames, diagnostic = update.diagnostic}
+		}
+		completed_frames += 1
+	}
+
+	return Simulation_Run_Result{ok = true, completed_frames = completed_frames}
 }
 
 live_project_last_diagnostic :: proc(project: ^Live_Project) -> (Script_Diagnostic, bool) {
