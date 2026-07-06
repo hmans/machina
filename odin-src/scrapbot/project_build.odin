@@ -823,6 +823,22 @@ Entity :: struct {
     generation: u32,
 }
 
+Vec3 :: struct {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+Field_Value :: struct {
+    name: string,
+    field_type: Field_Type,
+    boolean_value: bool,
+    int_value: int,
+    float_value: f32,
+    vec3_value: Vec3,
+    string_value: string,
+}
+
 System_Phase :: enum {
     Startup,
     Update,
@@ -876,6 +892,14 @@ Get_Float_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_nam
 Set_Float_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, value: f32) -> bool
 Get_Bool_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, out_value: ^bool) -> bool
 Set_Bool_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, value: bool) -> bool
+Get_Vec3_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, out_value: ^Vec3) -> bool
+Set_Vec3_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, value: Vec3) -> bool
+Get_String_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, out_value: ^string) -> bool
+Set_String_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, value: string) -> bool
+Spawn_Entity_Proc :: proc "c" (ctx: rawptr, id, name: string, out_entity: ^Entity) -> bool
+Despawn_Entity_Proc :: proc "c" (ctx: rawptr, entity: Entity) -> bool
+Add_Component_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id: string, fields: []Field_Value) -> bool
+Remove_Component_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id: string) -> bool
 
 System_Api :: struct {
     query_next: Query_Next_Proc,
@@ -885,6 +909,14 @@ System_Api :: struct {
     set_float: Set_Float_Proc,
     get_bool: Get_Bool_Proc,
     set_bool: Set_Bool_Proc,
+    get_vec3: Get_Vec3_Proc,
+    set_vec3: Set_Vec3_Proc,
+    get_string: Get_String_Proc,
+    set_string: Set_String_Proc,
+    spawn_entity: Spawn_Entity_Proc,
+    despawn_entity: Despawn_Entity_Proc,
+    add_component: Add_Component_Proc,
+    remove_component: Remove_Component_Proc,
 }
 
 register_component :: proc "c" (api: ^Register_Api, registration: Component_Registration) -> bool {
@@ -958,6 +990,88 @@ set_bool :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_
         return false
     }
     return ctx.api.set_bool(ctx.host_context, entity, component_id, field_name, value)
+}
+
+get_vec3 :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string) -> (Vec3, bool) {
+    if ctx == nil || ctx.api == nil || ctx.api.get_vec3 == nil {
+        return {}, false
+    }
+    value: Vec3
+    ok := ctx.api.get_vec3(ctx.host_context, entity, component_id, field_name, &value)
+    return value, ok
+}
+
+set_vec3 :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string, value: Vec3) -> bool {
+    if ctx == nil || ctx.api == nil || ctx.api.set_vec3 == nil {
+        return false
+    }
+    return ctx.api.set_vec3(ctx.host_context, entity, component_id, field_name, value)
+}
+
+get_string :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string) -> (string, bool) {
+    if ctx == nil || ctx.api == nil || ctx.api.get_string == nil {
+        return "", false
+    }
+    value: string
+    ok := ctx.api.get_string(ctx.host_context, entity, component_id, field_name, &value)
+    return value, ok
+}
+
+set_string :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string, value: string) -> bool {
+    if ctx == nil || ctx.api == nil || ctx.api.set_string == nil {
+        return false
+    }
+    return ctx.api.set_string(ctx.host_context, entity, component_id, field_name, value)
+}
+
+spawn_entity :: proc "c" (ctx: ^System_Context, id, name: string) -> (Entity, bool) {
+    if ctx == nil || ctx.api == nil || ctx.api.spawn_entity == nil {
+        return {}, false
+    }
+    entity: Entity
+    ok := ctx.api.spawn_entity(ctx.host_context, id, name, &entity)
+    return entity, ok
+}
+
+despawn_entity :: proc "c" (ctx: ^System_Context, entity: Entity) -> bool {
+    if ctx == nil || ctx.api == nil || ctx.api.despawn_entity == nil {
+        return false
+    }
+    return ctx.api.despawn_entity(ctx.host_context, entity)
+}
+
+add_component :: proc "c" (ctx: ^System_Context, entity: Entity, component_id: string, fields: []Field_Value) -> bool {
+    if ctx == nil || ctx.api == nil || ctx.api.add_component == nil {
+        return false
+    }
+    return ctx.api.add_component(ctx.host_context, entity, component_id, fields)
+}
+
+remove_component :: proc "c" (ctx: ^System_Context, entity: Entity, component_id: string) -> bool {
+    if ctx == nil || ctx.api == nil || ctx.api.remove_component == nil {
+        return false
+    }
+    return ctx.api.remove_component(ctx.host_context, entity, component_id)
+}
+
+field_bool :: proc "c" (name: string, value: bool) -> Field_Value {
+    return Field_Value{name = name, field_type = .Bool, boolean_value = value}
+}
+
+field_int :: proc "c" (name: string, value: int) -> Field_Value {
+    return Field_Value{name = name, field_type = .Int, int_value = value}
+}
+
+field_float :: proc "c" (name: string, value: f32) -> Field_Value {
+    return Field_Value{name = name, field_type = .Float, float_value = value}
+}
+
+field_vec3 :: proc "c" (name: string, value: Vec3) -> Field_Value {
+    return Field_Value{name = name, field_type = .Vec3, vec3_value = value}
+}
+
+field_string :: proc "c" (name: string, value: string) -> Field_Value {
+    return Field_Value{name = name, field_type = .String, string_value = value}
 }
 `
 

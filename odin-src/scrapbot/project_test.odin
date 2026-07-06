@@ -419,6 +419,24 @@ name = "Target"
 
 [entities.components.stats]
 count = 1
+ready = true
+gain = 1.5
+direction = [1.0, 2.0, 3.0]
+label = "start"
+
+[[entities]]
+id = "marked"
+name = "Marked"
+
+[entities.components.marker]
+value = 3
+
+[[entities]]
+id = "doomed"
+name = "Doomed"
+
+[entities.components.marker]
+value = 4
 `)
 	write_file(t, root, "native/game.odin", `package game
 
@@ -426,10 +444,27 @@ import scrapbot "scrapbot:scrapbot_native"
 
 stats_fields := []scrapbot.Component_Field{
     {name = "count", field_type = .Int},
+    {name = "ready", field_type = .Bool},
+    {name = "gain", field_type = .Float},
+    {name = "direction", field_type = .Vec3},
+    {name = "label", field_type = .String},
 }
 
-native_tick_writes := []string{"stats"}
+payload_fields := []scrapbot.Component_Field{
+    {name = "count", field_type = .Int},
+    {name = "ready", field_type = .Bool},
+    {name = "gain", field_type = .Float},
+    {name = "direction", field_type = .Vec3},
+    {name = "label", field_type = .String},
+}
+
+marker_fields := []scrapbot.Component_Field{
+    {name = "value", field_type = .Int},
+}
+
+native_tick_writes := []string{"stats", "payload", "marker"}
 stats_query := []string{"stats"}
+marker_query := []string{"marker"}
 
 native_tick :: proc "c" (ctx: ^scrapbot.System_Context) -> bool {
     cursor := 0
@@ -445,6 +480,65 @@ native_tick :: proc "c" (ctx: ^scrapbot.System_Context) -> bool {
         if !scrapbot.set_int(ctx, entity, "stats", "count", count + 1) {
             return false
         }
+        ready, ready_ok := scrapbot.get_bool(ctx, entity, "stats", "ready")
+        if !ready_ok || !scrapbot.set_bool(ctx, entity, "stats", "ready", !ready) {
+            return false
+        }
+        gain, gain_ok := scrapbot.get_float(ctx, entity, "stats", "gain")
+        if !gain_ok || !scrapbot.set_float(ctx, entity, "stats", "gain", gain + f32(ctx.delta_seconds)) {
+            return false
+        }
+        direction, direction_ok := scrapbot.get_vec3(ctx, entity, "stats", "direction")
+        if !direction_ok {
+            return false
+        }
+        next_direction := scrapbot.Vec3{x = direction.x + 1, y = direction.y + 2, z = direction.z + 3}
+        if !scrapbot.set_vec3(ctx, entity, "stats", "direction", next_direction) {
+            return false
+        }
+        label, label_ok := scrapbot.get_string(ctx, entity, "stats", "label")
+        if !label_ok || label != "start" {
+            return false
+        }
+        if !scrapbot.set_string(ctx, entity, "stats", "label", "done") {
+            return false
+        }
+    }
+
+    survivor, survivor_ok := scrapbot.spawn_entity(ctx, "native-survivor", "Native Survivor")
+    if !survivor_ok {
+        return false
+    }
+    payload := []scrapbot.Field_Value{
+        scrapbot.field_int("count", 7),
+        scrapbot.field_bool("ready", true),
+        scrapbot.field_float("gain", 2.5),
+        scrapbot.field_vec3("direction", scrapbot.Vec3{x = 5, y = 6, z = 7}),
+        scrapbot.field_string("label", "spawned"),
+    }
+    if !scrapbot.add_component(ctx, survivor, "payload", payload[:]) {
+        return false
+    }
+
+    marker_cursor := 0
+    for {
+        marker_entity, found := scrapbot.query_next(ctx, marker_query[:], &marker_cursor)
+        if !found {
+            break
+        }
+        value, value_ok := scrapbot.get_int(ctx, marker_entity, "marker", "value")
+        if !value_ok {
+            return false
+        }
+        if value == 3 {
+            if !scrapbot.remove_component(ctx, marker_entity, "marker") {
+                return false
+            }
+        } else if value == 4 {
+            if !scrapbot.despawn_entity(ctx, marker_entity) {
+                return false
+            }
+        }
     }
     return true
 }
@@ -454,6 +548,18 @@ scrapbot_register :: proc "c" (api: ^scrapbot.Register_Api) -> bool {
     if !scrapbot.register_component(api, {
         id = "stats",
         fields = stats_fields[:],
+    }) {
+        return false
+    }
+    if !scrapbot.register_component(api, {
+        id = "payload",
+        fields = payload_fields[:],
+    }) {
+        return false
+    }
+    if !scrapbot.register_component(api, {
+        id = "marker",
+        fields = marker_fields[:],
     }) {
         return false
     }
@@ -490,6 +596,44 @@ scrapbot_register :: proc "c" (api: ^scrapbot.Register_Api) -> bool {
 	testing.expect_value(t, value_err, Runtime_Error.None)
 	testing.expect_value(t, value.value_type, Runtime_Field_Type.Int)
 	testing.expect_value(t, value.int_value, 2)
+	ready, ready_err := runtime_world_get_component_field_value(result.scene.world, entity, "stats", "ready")
+	testing.expect_value(t, ready_err, Runtime_Error.None)
+	testing.expect_value(t, ready.boolean, false)
+	gain, gain_err := runtime_world_get_component_field_value(result.scene.world, entity, "stats", "gain")
+	testing.expect_value(t, gain_err, Runtime_Error.None)
+	testing.expect_value(t, gain.float, f32(2.0))
+	direction, direction_err := runtime_world_get_component_field_value(result.scene.world, entity, "stats", "direction")
+	testing.expect_value(t, direction_err, Runtime_Error.None)
+	testing.expect_value(t, direction.vec3, [3]f32{2.0, 4.0, 6.0})
+	label, label_err := runtime_world_get_component_field_value(result.scene.world, entity, "stats", "label")
+	testing.expect_value(t, label_err, Runtime_Error.None)
+	testing.expect_value(t, label.string_value, "done")
+
+	survivor, survivor_found := runtime_world_find_entity_by_id(result.scene.world, "native-survivor")
+	testing.expect(t, survivor_found)
+	payload_count, payload_count_err := runtime_world_get_component_field_value(result.scene.world, survivor, "payload", "count")
+	testing.expect_value(t, payload_count_err, Runtime_Error.None)
+	testing.expect_value(t, payload_count.int_value, 7)
+	payload_ready, payload_ready_err := runtime_world_get_component_field_value(result.scene.world, survivor, "payload", "ready")
+	testing.expect_value(t, payload_ready_err, Runtime_Error.None)
+	testing.expect_value(t, payload_ready.boolean, true)
+	payload_gain, payload_gain_err := runtime_world_get_component_field_value(result.scene.world, survivor, "payload", "gain")
+	testing.expect_value(t, payload_gain_err, Runtime_Error.None)
+	testing.expect_value(t, payload_gain.float, f32(2.5))
+	payload_direction, payload_direction_err := runtime_world_get_component_field_value(result.scene.world, survivor, "payload", "direction")
+	testing.expect_value(t, payload_direction_err, Runtime_Error.None)
+	testing.expect_value(t, payload_direction.vec3, [3]f32{5.0, 6.0, 7.0})
+	payload_label, payload_label_err := runtime_world_get_component_field_value(result.scene.world, survivor, "payload", "label")
+	testing.expect_value(t, payload_label_err, Runtime_Error.None)
+	testing.expect_value(t, payload_label.string_value, "spawned")
+
+	marked, marked_found := runtime_world_find_entity_by_id(result.scene.world, "marked")
+	testing.expect(t, marked_found)
+	has_marker, has_marker_err := runtime_world_has_component(result.scene.world, marked, "marker")
+	testing.expect_value(t, has_marker_err, Runtime_Error.None)
+	testing.expect_value(t, has_marker, false)
+	_, doomed_found := runtime_world_find_entity_by_id(result.scene.world, "doomed")
+	testing.expect_value(t, doomed_found, false)
 }
 
 @(test)

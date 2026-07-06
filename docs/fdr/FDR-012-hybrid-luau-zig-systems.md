@@ -3,7 +3,7 @@
 **Status:** Active
 **Last reviewed:** 2026-07-03
 
-**Migration note:** This record describes the current Zig-backed native system behavior. [ADR-023](../adr/ADR-023-odin-as-engine-implementation-language.md) makes Odin the target engine implementation language, so future work should replace Zig-specific native module surfaces with Odin equivalents while preserving the language-neutral ECS contract. During the staged rewrite, the Odin `check` path can statically register component and system declarations from `native = "native/game.odin"`, the Odin `build` path can compile import-based Odin native sources into packaged dynamic artifacts, and packaged Odin artifacts can register and run first-pass query plus scalar field callbacks through the shared ECS schedule. Development-time source rebuild/load, live reload, and full host API parity remain pending.
+**Migration note:** This record describes the current Zig-backed native system behavior. [ADR-023](../adr/ADR-023-odin-as-engine-implementation-language.md) makes Odin the target engine implementation language, so future work should replace Zig-specific native module surfaces with Odin equivalents while preserving the language-neutral ECS contract. During the staged rewrite, the Odin `check` path can statically register component and system declarations from `native = "native/game.odin"`, the Odin `build` path can compile import-based Odin native sources into packaged dynamic artifacts, and packaged Odin artifacts can register and run query, typed field, and deferred structural callbacks through the shared ECS schedule. Development-time source rebuild/load and live reload remain pending.
 
 ## Overview
 
