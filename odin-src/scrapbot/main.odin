@@ -633,7 +633,7 @@ run_script_simulation_with_input :: proc(result: ^Project_Check_Result, frames: 
 	for completed_frames < frames {
 		if len(input_frames) > 0 {
 			frame_input := step_input_for_frame(input_frames, completed_frames + 1)
-			route_editor_test_input(&editor_input_state, result.scene.world, &frame_input)
+			route_editor_test_input(&editor_input_state, &result.scene.world, &frame_input)
 			input_err := write_frame_input(&result.scene.world, frame_input)
 			if input_err != .None {
 				return Simulation_Run_Result{

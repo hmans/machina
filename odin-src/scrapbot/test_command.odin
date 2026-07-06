@@ -443,6 +443,8 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 		}
 		if ok {
 			append(&manifest.input_frames, Step_Input_Frame{frame = input.frame, input = input.input})
+		} else {
+			free_test_input_state(input^)
 		}
 		input^ = {}
 		return ok
@@ -484,18 +486,21 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 		}
 		if strings.has_prefix(trimmed, "[") {
 			free_test_manifest(manifest)
+			free_test_input_state(input)
 			return {}, false
 		}
 
 		key, value, key_ok := read_manifest_key_value(trimmed)
 		if !key_ok {
 			free_test_manifest(manifest)
+			free_test_input_state(input)
 			return {}, false
 		}
 		switch section {
 		case .Root:
 			if !parse_test_manifest_root_key(&manifest, key, value) {
 				free_test_manifest(manifest)
+				free_test_input_state(input)
 				return {}, false
 			}
 		case .Expect_Field:
@@ -503,6 +508,7 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 				free_test_manifest(manifest)
 				free_test_expectation_state(expect)
 				free_test_editor_expectation_state(editor_expect)
+				free_test_input_state(input)
 				return {}, false
 			}
 		case .Expect_Editor:
@@ -510,6 +516,7 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 				free_test_manifest(manifest)
 				free_test_expectation_state(expect)
 				free_test_editor_expectation_state(editor_expect)
+				free_test_input_state(input)
 				return {}, false
 			}
 		case .Input_Frame:
@@ -517,6 +524,7 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 				free_test_manifest(manifest)
 				free_test_expectation_state(expect)
 				free_test_editor_expectation_state(editor_expect)
+				free_test_input_state(input)
 				return {}, false
 			}
 		}
@@ -978,6 +986,58 @@ parse_test_manifest_input_key :: proc(input: ^Test_Manifest_Input_State, key, va
 		}
 		input.input.keyboard.editor_toggle_pressed = parsed
 		return true
+	case "editor_enter_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_enter_pressed = parsed
+		return true
+	case "editor_backspace_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_backspace_pressed = parsed
+		return true
+	case "editor_delete_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_delete_pressed = parsed
+		return true
+	case "editor_select_all_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_select_all_pressed = parsed
+		return true
+	case "text_input":
+		parsed, owned, ok := parse_basic_string_unescaped(value)
+		if !ok {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if input.input.text_input != "" {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if owned != "" {
+			input.input.text_input = owned
+		} else {
+			clone_ok: bool
+			input.input.text_input, clone_ok = clone_test_string(parsed)
+			if !clone_ok {
+				return false
+			}
+		}
+		return true
 	case "system_profile_count_hint":
 		hint, ok := parse_positive_int(value)
 		if !ok {
@@ -1072,6 +1132,9 @@ free_test_manifest :: proc(manifest: Test_Manifest) {
 	for expectation in manifest.editor_expectations {
 		free_test_editor_expectation(expectation)
 	}
+	for input_frame in manifest.input_frames {
+		free_test_input_frame(input_frame)
+	}
 	if manifest.expectations != nil {
 		delete(manifest.expectations)
 	}
@@ -1080,6 +1143,18 @@ free_test_manifest :: proc(manifest: Test_Manifest) {
 	}
 	if manifest.input_frames != nil {
 		delete(manifest.input_frames)
+	}
+}
+
+free_test_input_frame :: proc(input_frame: Step_Input_Frame) {
+	if input_frame.input.text_input != "" {
+		delete(input_frame.input.text_input)
+	}
+}
+
+free_test_input_state :: proc(input: Test_Manifest_Input_State) {
+	if input.input.text_input != "" {
+		delete(input.input.text_input)
 	}
 }
 

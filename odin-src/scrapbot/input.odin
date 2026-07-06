@@ -1,5 +1,11 @@
 package main
 
+import "core:fmt"
+import "core:strconv"
+import "core:strings"
+
+EDITOR_TEST_TEXT_INPUT_BUFFER_LEN :: 128
+
 Frame_Input_Pointer :: struct {
 	position:           [2]f32,
 	delta:              [2]f32,
@@ -25,6 +31,10 @@ Frame_Input_Keyboard :: struct {
 	move_up:               bool,
 	move_down:             bool,
 	editor_toggle_pressed: bool,
+	editor_enter_pressed:  bool,
+	editor_backspace_pressed: bool,
+	editor_delete_pressed: bool,
+	editor_select_all_pressed: bool,
 }
 
 Frame_Input :: struct {
@@ -36,6 +46,7 @@ Frame_Input :: struct {
 	viewport_height:           f32,
 	pixel_scale:               f32,
 	system_profile_count_hint: int,
+	text_input:                string,
 }
 
 Step_Input_Frame :: struct {
@@ -66,6 +77,13 @@ Editor_Test_Input_State :: struct {
 	right_sidebar_width:         f32,
 	last_pointer:                [2]f32,
 	has_last_pointer:            bool,
+	text_input_active:           bool,
+	text_input_component:        string,
+	text_input_field:            string,
+	text_input_buffer:           [EDITOR_TEST_TEXT_INPUT_BUFFER_LEN]u8,
+	text_input_len:              int,
+	text_input_cursor:           int,
+	text_input_selection_anchor: int,
 }
 
 frame_input_default :: proc() -> Frame_Input {
@@ -75,13 +93,16 @@ frame_input_default :: proc() -> Frame_Input {
 	}
 }
 
-route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: Runtime_World, input: ^Frame_Input) {
+route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: ^Runtime_World, input: ^Frame_Input) {
 	state.step_once = false
 	if !input.debug_overlay_visible {
 		state.captured_pointer = false
 		return
 	}
 	consumed := false
+	if apply_editor_test_keyboard_edits(state, world, input^) {
+		consumed = true
+	}
 	if input.pointer.has_position {
 		inside_game := editor_pointer_in_game_viewport(input^)
 		ensure_editor_sidebar_widths(state, input^)
@@ -105,21 +126,29 @@ route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: Runtime_
 				state.last_pointer = input.pointer.position
 				state.has_last_pointer = true
 				consumed = true
-			} else if selected, selected_ok := editor_entity_at_pointer(world, state^, input^); selected_ok {
+			} else if selected, selected_ok := editor_entity_at_pointer(world^, state^, input^); selected_ok {
+				commit_editor_test_text_input(world, state)
 				state.selected_entity = selected
 				state.has_selected_entity = true
 				state.has_selected_property = false
 				state.selected_property_component = ""
 				state.selected_property_field = ""
+				clear_editor_test_text_input(state)
 				state.captured_pointer = true
 				consumed = true
-			} else if component_id, field_name, property_ok := editor_inspector_property_at_pointer(world, state^, input^); property_ok {
+			} else if component_id, field_name, property_ok := editor_inspector_property_at_pointer(world^, state^, input^); property_ok {
+				if state.text_input_active &&
+				   (state.text_input_component != component_id || state.text_input_field != field_name) {
+					commit_editor_test_text_input(world, state)
+				}
 				state.selected_property_component = component_id
 				state.selected_property_field = field_name
 				state.has_selected_property = true
+				focus_editor_test_text_input(world^, state, component_id, field_name)
 				state.captured_pointer = true
 				consumed = true
 			} else if !inside_game {
+				commit_editor_test_text_input(world, state)
 				state.captured_pointer = true
 				consumed = true
 			}
@@ -143,10 +172,10 @@ route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: Runtime_
 		if (input.pointer.wheel_delta[0] != 0 || input.pointer.wheel_delta[1] != 0) && !inside_game {
 			if editor_pointer_in_system_list(input^) {
 				state.system_scroll_y = editor_system_scroll_next(input^, state.system_scroll_y, input.pointer.wheel_delta[1])
-			} else if editor_pointer_in_entity_list(world, input^) {
-				state.entity_scroll_y = editor_entity_scroll_next(world, input^, state.entity_scroll_y, input.pointer.wheel_delta[1])
-			} else if editor_pointer_in_inspector(world, state^, input^) {
-				state.inspector_scroll_y = editor_inspector_scroll_next(world, state^, input^, state.inspector_scroll_y, input.pointer.wheel_delta[1])
+			} else if editor_pointer_in_entity_list(world^, input^) {
+				state.entity_scroll_y = editor_entity_scroll_next(world^, input^, state.entity_scroll_y, input.pointer.wheel_delta[1])
+			} else if editor_pointer_in_inspector(world^, state^, input^) {
+				state.inspector_scroll_y = editor_inspector_scroll_next(world^, state^, input^, state.inspector_scroll_y, input.pointer.wheel_delta[1])
 			}
 			consumed = true
 		}
@@ -173,6 +202,238 @@ editor_test_selected_entity_id :: proc(state: Editor_Test_Input_State, world: Ru
 		return "", false
 	}
 	return entity.id, true
+}
+
+apply_editor_test_keyboard_edits :: proc(state: ^Editor_Test_Input_State, world: ^Runtime_World, input: Frame_Input) -> bool {
+	if !state.text_input_active {
+		return false
+	}
+	consumed := false
+	if input.keyboard.editor_select_all_pressed {
+		select_all_editor_test_text_input(state)
+		consumed = true
+	}
+	if input.keyboard.editor_backspace_pressed {
+		editor_test_text_input_backspace(state)
+		consumed = true
+	}
+	if input.keyboard.editor_delete_pressed {
+		editor_test_text_input_delete(state)
+		consumed = true
+	}
+	if input.text_input != "" {
+		editor_test_text_input_insert(state, input.text_input)
+		consumed = true
+	}
+	if input.keyboard.editor_enter_pressed {
+		commit_editor_test_text_input(world, state)
+		return true
+	}
+	return consumed
+}
+
+focus_editor_test_text_input :: proc(world: Runtime_World, state: ^Editor_Test_Input_State, component_id, field_name: string) -> bool {
+	if !state.has_selected_entity {
+		clear_editor_test_text_input(state)
+		return false
+	}
+	value, value_err := runtime_world_get_component_field_value(world, state.selected_entity, component_id, field_name)
+	if value_err != .None {
+		clear_editor_test_text_input(state)
+		return false
+	}
+	formatted, ok := editor_test_format_input_value(&state.text_input_buffer, value)
+	if !ok {
+		clear_editor_test_text_input(state)
+		return false
+	}
+	state.text_input_active = true
+	state.text_input_component = component_id
+	state.text_input_field = field_name
+	state.text_input_len = len(formatted)
+	state.text_input_cursor = state.text_input_len
+	if editor_test_component_value_selects_all_on_focus(value) {
+		state.text_input_selection_anchor = 0
+	} else {
+		state.text_input_selection_anchor = state.text_input_len
+	}
+	return true
+}
+
+commit_editor_test_text_input :: proc(world: ^Runtime_World, state: ^Editor_Test_Input_State) -> bool {
+	if !state.text_input_active || !state.has_selected_entity {
+		return false
+	}
+	current, current_err := runtime_world_get_component_field_value(world^, state.selected_entity, state.text_input_component, state.text_input_field)
+	if current_err != .None {
+		clear_editor_test_text_input(state)
+		return false
+	}
+	text := string(state.text_input_buffer[:state.text_input_len])
+	next, parse_ok := editor_test_parse_input_value(current, text)
+	if !parse_ok {
+		clear_editor_test_text_input(state)
+		return false
+	}
+	set_err := runtime_world_set_component_field_value(world, state.selected_entity, state.text_input_component, state.text_input_field, next)
+	clear_editor_test_text_input(state)
+	return set_err == .None
+}
+
+clear_editor_test_text_input :: proc(state: ^Editor_Test_Input_State) {
+	state.text_input_active = false
+	state.text_input_component = ""
+	state.text_input_field = ""
+	state.text_input_buffer = {}
+	state.text_input_len = 0
+	state.text_input_cursor = 0
+	state.text_input_selection_anchor = 0
+}
+
+editor_test_component_value_selects_all_on_focus :: proc(value: Runtime_Component_Value) -> bool {
+	switch value.value_type {
+	case .Int, .Float, .Vec3:
+		return true
+	case .Boolean, .String:
+		return false
+	}
+	return false
+}
+
+editor_test_format_input_value :: proc(buffer: ^[EDITOR_TEST_TEXT_INPUT_BUFFER_LEN]u8, value: Runtime_Component_Value) -> (string, bool) {
+	buffer^ = {}
+	switch value.value_type {
+	case .Boolean:
+		if value.boolean {
+			copy(buffer[:], "true")
+			return string(buffer[:4]), true
+		}
+		copy(buffer[:], "false")
+		return string(buffer[:5]), true
+	case .Int:
+		text := fmt.bprintf(buffer[:], "%d", value.int_value)
+		return text, true
+	case .Float:
+		text := fmt.bprintf(buffer[:], "%g", value.float)
+		return text, true
+	case .Vec3:
+		text := fmt.bprintf(buffer[:], "%g", value.vec3[0])
+		return text, true
+	case .String:
+		if len(value.string_value) > len(buffer) {
+			return "", false
+		}
+		copy(buffer[:], value.string_value)
+		return string(buffer[:len(value.string_value)]), true
+	}
+	return "", false
+}
+
+editor_test_parse_input_value :: proc(current: Runtime_Component_Value, text: string) -> (Runtime_Component_Value, bool) {
+	trimmed := strings.trim_space(text)
+	switch current.value_type {
+	case .Boolean:
+		if trimmed == "true" || trimmed == "1" {
+			return runtime_component_value_boolean(true), true
+		}
+		if trimmed == "false" || trimmed == "0" {
+			return runtime_component_value_boolean(false), true
+		}
+	case .Int:
+		parsed, ok := strconv.parse_int(trimmed, 10)
+		if ok {
+			return runtime_component_value_int(parsed), true
+		}
+	case .Float:
+		parsed, ok := strconv.parse_f32(trimmed)
+		if ok {
+			return runtime_component_value_float(parsed), true
+		}
+	case .Vec3:
+		parsed, ok := strconv.parse_f32(trimmed)
+		if ok {
+			next := current.vec3
+			next[0] = parsed
+			return runtime_component_value_vec3(next), true
+		}
+	case .String:
+		return runtime_component_value_string(text), true
+	}
+	return Runtime_Component_Value{}, false
+}
+
+select_all_editor_test_text_input :: proc(state: ^Editor_Test_Input_State) {
+	state.text_input_selection_anchor = 0
+	state.text_input_cursor = state.text_input_len
+}
+
+editor_test_text_input_backspace :: proc(state: ^Editor_Test_Input_State) {
+	if editor_test_text_input_has_selection(state^) {
+		editor_test_text_input_delete_selection(state)
+		return
+	}
+	if state.text_input_cursor <= 0 {
+		return
+	}
+	start := state.text_input_cursor - 1
+	copy(state.text_input_buffer[start:], state.text_input_buffer[state.text_input_cursor:state.text_input_len])
+	state.text_input_len -= 1
+	state.text_input_cursor = start
+	state.text_input_selection_anchor = start
+	clear_editor_test_text_input_tail(state)
+}
+
+editor_test_text_input_delete :: proc(state: ^Editor_Test_Input_State) {
+	if editor_test_text_input_has_selection(state^) {
+		editor_test_text_input_delete_selection(state)
+		return
+	}
+	if state.text_input_cursor >= state.text_input_len {
+		return
+	}
+	copy(state.text_input_buffer[state.text_input_cursor:], state.text_input_buffer[state.text_input_cursor + 1:state.text_input_len])
+	state.text_input_len -= 1
+	state.text_input_selection_anchor = state.text_input_cursor
+	clear_editor_test_text_input_tail(state)
+}
+
+editor_test_text_input_insert :: proc(state: ^Editor_Test_Input_State, value: string) {
+	editor_test_text_input_delete_selection(state)
+	for index := 0; index < len(value); index += 1 {
+		if state.text_input_len >= len(state.text_input_buffer) {
+			break
+		}
+		for index := state.text_input_len; index > state.text_input_cursor; index -= 1 {
+			state.text_input_buffer[index] = state.text_input_buffer[index - 1]
+		}
+		state.text_input_buffer[state.text_input_cursor] = value[index]
+		state.text_input_len += 1
+		state.text_input_cursor += 1
+		state.text_input_selection_anchor = state.text_input_cursor
+	}
+}
+
+editor_test_text_input_delete_selection :: proc(state: ^Editor_Test_Input_State) {
+	if !editor_test_text_input_has_selection(state^) {
+		return
+	}
+	start := min_int(state.text_input_cursor, state.text_input_selection_anchor)
+	end := max_int(state.text_input_cursor, state.text_input_selection_anchor)
+	copy(state.text_input_buffer[start:], state.text_input_buffer[end:state.text_input_len])
+	state.text_input_len -= end - start
+	state.text_input_cursor = start
+	state.text_input_selection_anchor = start
+	clear_editor_test_text_input_tail(state)
+}
+
+editor_test_text_input_has_selection :: proc(state: Editor_Test_Input_State) -> bool {
+	return state.text_input_cursor != state.text_input_selection_anchor
+}
+
+clear_editor_test_text_input_tail :: proc(state: ^Editor_Test_Input_State) {
+	for index := state.text_input_len; index < len(state.text_input_buffer); index += 1 {
+		state.text_input_buffer[index] = 0
+	}
 }
 
 ensure_editor_sidebar_widths :: proc(state: ^Editor_Test_Input_State, input: Frame_Input) {
@@ -575,6 +836,13 @@ editor_pointer_in_rect :: proc(input: Frame_Input, x, y, width, height: f32) -> 
 
 max_int :: proc(left, right: int) -> int {
 	if left > right {
+		return left
+	}
+	return right
+}
+
+min_int :: proc(left, right: int) -> int {
+	if left < right {
 		return left
 	}
 	return right
