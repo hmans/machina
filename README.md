@@ -5,6 +5,12 @@ A compact, experimental, and probably mostly useless game engine that tries to a
 > [!WARNING]
 > **Do not expect this engine to be useful**. In particular, **do not try to make a game with it**! It's a **research project** with no aims to be production-ready, stable, or even particularly usable. It is a playground for exploring agentic workflows and game engine design and not much else. You have been warned. (We still love you though!)
 
+## Contributing
+
+Scrapbot is maintained as an agent-first codebase. Before opening a PR, read [`CONTRIBUTING.md`](CONTRIBUTING.md) for contributor expectations and [`AGENTS.md`](AGENTS.md) for the rules coding agents must follow when changing this repository.
+
+The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`](docs/TODO.md), with architecture and feature decisions tracked in [`docs/adr/`](docs/adr/) and [`docs/fdr/`](docs/fdr/).
+
 ## Features / Roadmap
 
 ### Engine Core
@@ -193,3 +199,7 @@ A compact, experimental, and probably mostly useless game engine that tries to a
   - [ ] Networking
   - [ ] Terrain streaming
   - [ ] Large-world streaming
+
+## License
+
+Scrapbot is licensed under the [Apache License 2.0](LICENSE). Third-party notices and vendored dependency license details are tracked in [NOTICE](NOTICE).
