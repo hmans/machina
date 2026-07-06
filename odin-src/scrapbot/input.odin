@@ -52,6 +52,9 @@ Editor_Test_Input_State :: struct {
 	system_scroll_y:     f32,
 	entity_scroll_y:     f32,
 	inspector_scroll_y:  f32,
+	selected_property_component: string,
+	selected_property_field:     string,
+	has_selected_property:       bool,
 }
 
 frame_input_default :: proc() -> Frame_Input {
@@ -83,6 +86,15 @@ route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: Runtime_
 			} else if selected, selected_ok := editor_entity_at_pointer(world, state^, input^); selected_ok {
 				state.selected_entity = selected
 				state.has_selected_entity = true
+				state.has_selected_property = false
+				state.selected_property_component = ""
+				state.selected_property_field = ""
+				state.captured_pointer = true
+				consumed = true
+			} else if component_id, field_name, property_ok := editor_inspector_property_at_pointer(world, state^, input^); property_ok {
+				state.selected_property_component = component_id
+				state.selected_property_field = field_name
+				state.has_selected_property = true
 				state.captured_pointer = true
 				consumed = true
 			} else if !inside_game {
@@ -180,6 +192,41 @@ editor_entity_at_pointer :: proc(world: Runtime_World, state: Editor_Test_Input_
 		return Entity_Handle{}, false
 	}
 	return Entity_Handle{index = u32(row_index), generation = entity.generation}, true
+}
+
+editor_inspector_property_at_pointer :: proc(world: Runtime_World, state: Editor_Test_Input_State, input: Frame_Input) -> (component_id, field_name: string, ok: bool) {
+	if !input.pointer.has_position || !state.has_selected_entity {
+		return "", "", false
+	}
+	selected_index, selected_err := runtime_world_entity_index(world, state.selected_entity)
+	if selected_err != .None {
+		return "", "", false
+	}
+	clip_x, clip_y, clip_width, clip_height := editor_inspector_scroll_clip_rect(input)
+	if !editor_pointer_in_rect(input, clip_x, clip_y, clip_width, clip_height) {
+		return "", "", false
+	}
+	content_y := -state.inspector_scroll_y
+	component_index := 0
+	for table in world.component_tables {
+		if selected_index >= len(table.rows_by_entity) || table.rows_by_entity[selected_index] < 0 {
+			continue
+		}
+		if component_index > 0 {
+			content_y += UI_EDITOR_INSPECTOR_CARD_GAP * 2 + UI_EDITOR_INSPECTOR_SEPARATOR_HEIGHT
+		}
+		field_start_y := UI_EDITOR_INSPECTOR_CARD_PADDING_Y + UI_EDITOR_TEXT_HEIGHT + UI_EDITOR_PANEL_LABEL_GAP
+		for column, field_index in table.columns {
+			field_y := clip_y + content_y + field_start_y + f32(field_index) * UI_EDITOR_INSPECTOR_FIELD_ROW_STRIDE
+			row_y := field_y + UI_EDITOR_INSPECTOR_FIELD_CONTROL_OFFSET_Y - UI_EDITOR_INSPECTOR_INPUT_CELL_PADDING
+			if editor_pointer_in_rect(input, clip_x, row_y, clip_width, UI_EDITOR_INSPECTOR_FIELD_ROW_HEIGHT) {
+				return table.id, column.name, true
+			}
+		}
+		content_y += editor_inspector_component_card_height(len(table.columns))
+		component_index += 1
+	}
+	return "", "", false
 }
 
 editor_pointer_in_system_list :: proc(input: Frame_Input) -> bool {

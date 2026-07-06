@@ -53,6 +53,8 @@ Test_Editor_Expectation :: struct {
 	system_scroll_y:        f32,
 	has_inspector_scroll_y: bool,
 	inspector_scroll_y:     f32,
+	selected_component:     string,
+	selected_field:         string,
 }
 
 Test_Manifest :: struct {
@@ -120,6 +122,8 @@ Test_Manifest_Editor_Expectation_State :: struct {
 	system_scroll_y:        f32,
 	has_inspector_scroll_y: bool,
 	inspector_scroll_y:     f32,
+	selected_component:     string,
+	selected_field:         string,
 }
 
 parse_test_options :: proc(args: []string, emit_output: bool) -> (Test_Options, bool) {
@@ -384,7 +388,13 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 		if !expect.active {
 			return true
 		}
-		ok := expect.selected_entity != "" || expect.has_system_scroll_y || expect.has_inspector_scroll_y
+		has_property := expect.selected_component != "" || expect.selected_field != ""
+		if has_property && (expect.selected_component == "" || expect.selected_field == "") {
+			free_test_editor_expectation_state(expect^)
+			expect^ = {}
+			return false
+		}
+		ok := expect.selected_entity != "" || expect.has_system_scroll_y || expect.has_inspector_scroll_y || (expect.selected_component != "" && expect.selected_field != "")
 		if ok {
 			append(&manifest.editor_expectations, Test_Editor_Expectation{
 				selected_entity = expect.selected_entity,
@@ -392,6 +402,8 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 				system_scroll_y = expect.system_scroll_y,
 				has_inspector_scroll_y = expect.has_inspector_scroll_y,
 				inspector_scroll_y = expect.inspector_scroll_y,
+				selected_component = expect.selected_component,
+				selected_field = expect.selected_field,
 			})
 		} else {
 			free_test_editor_expectation_state(expect^)
@@ -684,6 +696,54 @@ parse_test_manifest_editor_expect_key :: proc(expect: ^Test_Manifest_Editor_Expe
 		}
 		expect.inspector_scroll_y = parsed
 		expect.has_inspector_scroll_y = true
+		return true
+	case "selected_component":
+		parsed, owned, ok := parse_basic_string_unescaped(value)
+		if !ok || parsed == "" {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if expect.selected_component != "" {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if owned != "" {
+			expect.selected_component = owned
+		} else {
+			clone_ok: bool
+			expect.selected_component, clone_ok = clone_test_string(parsed)
+			if !clone_ok {
+				return false
+			}
+		}
+		return true
+	case "selected_field":
+		parsed, owned, ok := parse_basic_string_unescaped(value)
+		if !ok || parsed == "" {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if expect.selected_field != "" {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if owned != "" {
+			expect.selected_field = owned
+		} else {
+			clone_ok: bool
+			expect.selected_field, clone_ok = clone_test_string(parsed)
+			if !clone_ok {
+				return false
+			}
+		}
 		return true
 	}
 	return false
@@ -1001,6 +1061,12 @@ free_test_editor_expectation :: proc(expectation: Test_Editor_Expectation) {
 	if expectation.selected_entity != "" {
 		delete(expectation.selected_entity)
 	}
+	if expectation.selected_component != "" {
+		delete(expectation.selected_component)
+	}
+	if expectation.selected_field != "" {
+		delete(expectation.selected_field)
+	}
 }
 
 free_test_expectation_state :: proc(expect: Test_Manifest_Expectation_State) {
@@ -1021,6 +1087,12 @@ free_test_expectation_state :: proc(expect: Test_Manifest_Expectation_State) {
 free_test_editor_expectation_state :: proc(expect: Test_Manifest_Editor_Expectation_State) {
 	if expect.selected_entity != "" {
 		delete(expect.selected_entity)
+	}
+	if expect.selected_component != "" {
+		delete(expect.selected_component)
+	}
+	if expect.selected_field != "" {
+		delete(expect.selected_field)
 	}
 }
 
@@ -1054,6 +1126,13 @@ test_editor_expectation_matches :: proc(world: Runtime_World, editor_state: Edit
 	}
 	if expectation.has_inspector_scroll_y && !test_float_approx_equal(editor_state.inspector_scroll_y, expectation.inspector_scroll_y) {
 		return false
+	}
+	if expectation.selected_component != "" || expectation.selected_field != "" {
+		if !editor_state.has_selected_property ||
+		   editor_state.selected_property_component != expectation.selected_component ||
+		   editor_state.selected_property_field != expectation.selected_field {
+			return false
+		}
 	}
 	return true
 }
@@ -1149,6 +1228,26 @@ test_editor_expectation_failure_message :: proc(world: Runtime_World, editor_sta
 		append_test_format(&builder, "%g", expectation.inspector_scroll_y)
 		strings.write_string(&builder, ", got ")
 		append_test_format(&builder, "%g", editor_state.inspector_scroll_y)
+		wrote = true
+	}
+	if expectation.selected_component != "" || expectation.selected_field != "" {
+		if wrote {
+			strings.write_string(&builder, "; ")
+		}
+		strings.write_string(&builder, "editor.selected_property: expected \"")
+		strings.write_string(&builder, expectation.selected_component)
+		strings.write_rune(&builder, '.')
+		strings.write_string(&builder, expectation.selected_field)
+		strings.write_rune(&builder, '"')
+		if editor_state.has_selected_property {
+			strings.write_string(&builder, ", got \"")
+			strings.write_string(&builder, editor_state.selected_property_component)
+			strings.write_rune(&builder, '.')
+			strings.write_string(&builder, editor_state.selected_property_field)
+			strings.write_rune(&builder, '"')
+		} else {
+			strings.write_string(&builder, ", got none")
+		}
 	}
 	return strings.clone(strings.to_string(builder))
 }
