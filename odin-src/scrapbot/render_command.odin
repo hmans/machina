@@ -11,7 +11,7 @@ DEFAULT_RENDER_FRAMES :: 1
 DEFAULT_RENDER_OUTPUT :: "odin-out/scrapbot-render.png"
 DEFAULT_RENDER_TEST_OUTPUT :: "odin-out/scrapbot-render-test.png"
 DEFAULT_VISUAL_TEST_OUTPUT :: "odin-out/scrapbot-visual-test.png"
-RENDER_BACKEND_PENDING :: "pending_odin_wgpu_native_binding"
+ODIN_SOFTWARE_RENDER_BACKEND :: "odin software offscreen placeholder; WebGPU binding pending"
 
 Render_Options :: struct {
 	target_path:        string,
@@ -281,7 +281,7 @@ print_render_result :: proc(result: Project_Check_Result, options: Render_Option
 		fmt.printf("Selected entity: %s\n", options.selected_entity_id)
 	}
 	print_render_extract_text(result)
-	fmt.printf("Renderer backend: %s\n", RENDER_BACKEND_PENDING)
+	fmt.printf("Renderer backend: %s\n", ODIN_SOFTWARE_RENDER_BACKEND)
 }
 
 print_render_test_result :: proc(result: Project_Check_Result, options: Render_Options, completed_frames: int, verification: Render_Image_Verification) {
@@ -303,15 +303,25 @@ print_render_test_result :: proc(result: Project_Check_Result, options: Render_O
 		fmt.printf("Selected entity: %s\n", options.selected_entity_id)
 	}
 	print_render_extract_text(result)
-	fmt.println("Renderer backend: odin software offscreen placeholder; WebGPU binding pending")
+	fmt.printf("Renderer backend: %s\n", ODIN_SOFTWARE_RENDER_BACKEND)
 }
 
-print_visual_test_result :: proc(result: Project_Check_Result, options: Visual_Test_Options, completed_frames: int) {
+print_visual_test_result :: proc(result: Project_Check_Result, options: Visual_Test_Options, completed_frames: int, comparison: Render_Image_Comparison, comparison_ok: bool) {
 	if options.update {
-		fmt.printf("Visual test update pending: %s\n", result.project.name)
-		fmt.printf("Golden fixture: %s\n", options.expected_path)
+		fmt.printf("Updated golden fixture: %s\n", options.expected_path)
 	} else {
-		fmt.printf("Visual test pending: %s\n", result.project.name)
+		status := comparison_ok ? "OK" : "FAILED"
+		fmt.printf(
+			"Visual test %s: %dx%d, max delta: %d, mean delta: %.3f, changed pixels: %d/%d (%.3f%%)\n",
+			status,
+			comparison.width,
+			comparison.height,
+			comparison.max_channel_delta,
+			comparison.mean_channel_delta,
+			comparison.changed_pixels,
+			comparison.pixels,
+			comparison.changed_pixel_ratio * 100.0,
+		)
 		fmt.printf("Expected: %s\n", options.expected_path)
 		fmt.printf("Actual: %s\n", options.render.output_path)
 	}
@@ -325,6 +335,5 @@ print_visual_test_result :: proc(result: Project_Check_Result, options: Visual_T
 		fmt.printf("Selected entity: %s\n", options.render.selected_entity_id)
 	}
 	print_render_extract_text(result)
-	fmt.printf("Renderer backend: %s\n", RENDER_BACKEND_PENDING)
-	fmt.println("Image comparison: pending Odin golden comparison")
+	fmt.printf("Renderer backend: %s\n", ODIN_SOFTWARE_RENDER_BACKEND)
 }

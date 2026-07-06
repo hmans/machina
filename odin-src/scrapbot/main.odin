@@ -427,6 +427,13 @@ run_render :: proc(args: []string, emit_output: bool, render_test: bool) -> int 
 		}
 		return 1
 	}
+	metadata_err := render_write_artifact_metadata(options.output_path, options)
+	if metadata_err != .None {
+		if emit_output {
+			fmt.eprintf("%s metadata failed: %s\n", error_name, render_image_error_message(metadata_err))
+		}
+		return 1
+	}
 
 	if emit_output {
 		if render_test {
@@ -498,18 +505,53 @@ run_visual_test :: proc(args: []string, emit_output: bool) -> int {
 		}
 		return 1
 	}
+
+	render_options := options.render
+	if options.update {
+		render_options.output_path = options.expected_path
+	}
+	_, image_err := render_write_scene_image(result.scene.world, render_options, false)
+	if image_err != .None {
+		if emit_output {
+			fmt.eprintf("visual-test render failed: %s\n", render_image_error_message(image_err))
+		}
+		return 1
+	}
+	metadata_err := render_write_artifact_metadata(render_options.output_path, render_options)
+	if metadata_err != .None {
+		if emit_output {
+			fmt.eprintf("visual-test metadata failed: %s\n", render_image_error_message(metadata_err))
+		}
+		return 1
+	}
+
+	comparison := Render_Image_Comparison{}
+	comparison_ok := true
 	if !options.update {
-		_, image_err := render_write_scene_image(result.scene.world, options.render, false)
-		if image_err != .None {
+		compare_err: Render_Image_Error
+		comparison, compare_err = render_compare_image_files(options.expected_path, options.render.output_path)
+		if compare_err != .None {
 			if emit_output {
-				fmt.eprintf("visual-test render failed: %s\n", render_image_error_message(image_err))
+				fmt.eprintf("visual-test comparison failed: %s\n", render_image_error_message(compare_err))
 			}
 			return 1
 		}
+		comparison_ok = render_comparison_passed(comparison)
 	}
 
 	if emit_output {
-		print_visual_test_result(result, options, options.render.frames)
+		print_visual_test_result(result, options, options.render.frames, comparison, comparison_ok)
+		if !options.update && !comparison_ok {
+			fmt.eprintf(
+				"visual-test exceeded tolerances: max delta <= %d, mean delta <= %.3f, changed pixels <= %.3f%%\n",
+				DEFAULT_RENDER_IMAGE_COMPARISON_OPTIONS.max_channel_delta,
+				DEFAULT_RENDER_IMAGE_COMPARISON_OPTIONS.max_mean_channel_delta,
+				DEFAULT_RENDER_IMAGE_COMPARISON_OPTIONS.max_changed_pixel_ratio * 100.0,
+			)
+		}
+	}
+	if !comparison_ok {
+		return 1
 	}
 	return 0
 }
@@ -1081,6 +1123,8 @@ render_image_error_message :: proc(err: Render_Image_Error) -> string {
 		return "io error"
 	case .Invalid_Image:
 		return "invalid image"
+	case .Image_Size_Mismatch:
+		return "image size mismatch"
 	case .Missing_Foreground:
 		return "missing foreground pixels"
 	case .Missing_Visible_Components:

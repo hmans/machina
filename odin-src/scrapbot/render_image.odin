@@ -1,9 +1,13 @@
 package main
 
+import "core:fmt"
 import "core:math"
 import "core:os"
 import "core:path/filepath"
 import "core:strings"
+import core_image "core:image"
+import bmp "core:image/bmp"
+import png "core:image/png"
 
 Render_Image_Error :: enum {
 	None,
@@ -12,6 +16,7 @@ Render_Image_Error :: enum {
 	Out_Of_Memory,
 	Io_Error,
 	Invalid_Image,
+	Image_Size_Mismatch,
 	Missing_Foreground,
 	Missing_Visible_Components,
 	Missing_Color_Groups,
@@ -32,6 +37,30 @@ Render_Image_Verification :: struct {
 	foreground_pixels: int,
 	visible_components: int,
 	color_groups:       int,
+}
+
+Render_Image_Comparison_Options :: struct {
+	max_channel_delta:        u8,
+	max_mean_channel_delta:   f32,
+	max_changed_pixel_ratio:  f32,
+	changed_pixel_delta:      u8,
+}
+
+Render_Image_Comparison :: struct {
+	width:                int,
+	height:               int,
+	pixels:               int,
+	max_channel_delta:    u8,
+	mean_channel_delta:   f32,
+	changed_pixels:       int,
+	changed_pixel_ratio:  f32,
+}
+
+DEFAULT_RENDER_IMAGE_COMPARISON_OPTIONS :: Render_Image_Comparison_Options{
+	max_channel_delta = 8,
+	max_mean_channel_delta = 1.5,
+	max_changed_pixel_ratio = 0.02,
+	changed_pixel_delta = 2,
 }
 
 render_write_scene_image :: proc(world: Runtime_World, options: Render_Options, verify_output: bool) -> (Render_Image_Verification, Render_Image_Error) {
@@ -58,6 +87,158 @@ render_write_scene_image :: proc(world: Runtime_World, options: Render_Options, 
 		return verify, write_err
 	}
 	return verify, .None
+}
+
+render_write_artifact_metadata :: proc(path: string, options: Render_Options) -> Render_Image_Error {
+	metadata_path := render_artifact_metadata_path(path)
+	defer delete(metadata_path)
+	if !render_ensure_output_parent(metadata_path) {
+		return .Io_Error
+	}
+	builder := strings.builder_make()
+	defer strings.builder_destroy(&builder)
+	strings.write_string(&builder, "{\n")
+	strings.write_string(&builder, `  "artifact": "`)
+	write_json_string_contents(&builder, path)
+	strings.write_string(&builder, `",` + "\n")
+	strings.write_string(&builder, `  "physical_width": `)
+	strings.write_string(&builder, fmt.tprintf("%d", options.width))
+	strings.write_string(&builder, "," + "\n")
+	strings.write_string(&builder, `  "physical_height": `)
+	strings.write_string(&builder, fmt.tprintf("%d", options.height))
+	strings.write_string(&builder, "," + "\n")
+	strings.write_string(&builder, `  "logical_width": `)
+	strings.write_string(&builder, render_f32_metadata_string(f32(options.width) / options.pixel_scale))
+	strings.write_string(&builder, "," + "\n")
+	strings.write_string(&builder, `  "logical_height": `)
+	strings.write_string(&builder, render_f32_metadata_string(f32(options.height) / options.pixel_scale))
+	strings.write_string(&builder, "," + "\n")
+	strings.write_string(&builder, `  "pixel_scale": `)
+	strings.write_string(&builder, render_f32_metadata_string(options.pixel_scale))
+	strings.write_string(&builder, "\n}\n")
+	if os.write_entire_file(metadata_path, strings.to_string(builder)) != nil {
+		return .Io_Error
+	}
+	return .None
+}
+
+render_artifact_metadata_path :: proc(path: string) -> string {
+	builder := strings.builder_make()
+	defer strings.builder_destroy(&builder)
+	strings.write_string(&builder, path)
+	strings.write_string(&builder, ".metadata.json")
+	return strings.clone(strings.to_string(builder))
+}
+
+render_f32_metadata_string :: proc(value: f32) -> string {
+	return fmt.tprintf("%.3f", value)
+}
+
+render_compare_image_files :: proc(expected_path, actual_path: string, options := DEFAULT_RENDER_IMAGE_COMPARISON_OPTIONS) -> (Render_Image_Comparison, Render_Image_Error) {
+	expected, expected_err := render_load_rgb_image(expected_path)
+	if expected_err != .None {
+		return Render_Image_Comparison{}, expected_err
+	}
+	defer render_image_free(&expected)
+
+	actual, actual_err := render_load_rgb_image(actual_path)
+	if actual_err != .None {
+		return Render_Image_Comparison{}, actual_err
+	}
+	defer render_image_free(&actual)
+
+	return render_compare_images(expected, actual, options)
+}
+
+render_compare_images :: proc(expected, actual: Render_Image, options: Render_Image_Comparison_Options) -> (Render_Image_Comparison, Render_Image_Error) {
+	if expected.width <= 0 || expected.height <= 0 || expected.rgb == nil || actual.width <= 0 || actual.height <= 0 || actual.rgb == nil {
+		return Render_Image_Comparison{}, .Invalid_Image
+	}
+	if expected.width != actual.width || expected.height != actual.height {
+		return Render_Image_Comparison{}, .Image_Size_Mismatch
+	}
+
+	pixel_count := expected.width * expected.height
+	total_channel_delta: u64 = 0
+	comparison := Render_Image_Comparison{
+		width = expected.width,
+		height = expected.height,
+		pixels = pixel_count,
+	}
+	for index in 0 ..< pixel_count {
+		offset := index * 3
+		pixel_changed := false
+		deltas := [?]u8{
+			render_abs_diff_u8(expected.rgb[offset], actual.rgb[offset]),
+			render_abs_diff_u8(expected.rgb[offset + 1], actual.rgb[offset + 1]),
+			render_abs_diff_u8(expected.rgb[offset + 2], actual.rgb[offset + 2]),
+		}
+		for delta in deltas {
+			comparison.max_channel_delta = max(comparison.max_channel_delta, delta)
+			total_channel_delta += u64(delta)
+			if delta > options.changed_pixel_delta {
+				pixel_changed = true
+			}
+		}
+		if pixel_changed {
+			comparison.changed_pixels += 1
+		}
+	}
+	comparison.mean_channel_delta = f32(total_channel_delta) / f32(pixel_count * 3)
+	comparison.changed_pixel_ratio = f32(comparison.changed_pixels) / f32(pixel_count)
+	return comparison, .None
+}
+
+render_comparison_passed :: proc(comparison: Render_Image_Comparison, options := DEFAULT_RENDER_IMAGE_COMPARISON_OPTIONS) -> bool {
+	return comparison.max_channel_delta <= options.max_channel_delta &&
+	       comparison.mean_channel_delta <= options.max_mean_channel_delta &&
+	       comparison.changed_pixel_ratio <= options.max_changed_pixel_ratio
+}
+
+render_load_rgb_image :: proc(path: string) -> (Render_Image, Render_Image_Error) {
+	format, format_ok := render_image_format_from_path(path)
+	if !format_ok {
+		return Render_Image{}, .Unsupported_Format
+	}
+
+	img: ^core_image.Image
+	err: core_image.Error
+	switch format {
+	case .PNG:
+		img, err = png.load(path)
+	case .BMP:
+		img, err = bmp.load(path)
+	}
+	if err != nil || img == nil {
+		return Render_Image{}, .Invalid_Image
+	}
+	defer core_image.destroy(img)
+
+	if img.width <= 0 || img.height <= 0 || img.depth != 8 || img.channels < 3 || img.channels > 4 {
+		return Render_Image{}, .Invalid_Image
+	}
+	if len(img.pixels.buf) < img.width * img.height * img.channels {
+		return Render_Image{}, .Invalid_Image
+	}
+	pixels := make([]u8, img.width * img.height * 3)
+	if pixels == nil {
+		return Render_Image{}, .Out_Of_Memory
+	}
+	for index in 0 ..< img.width * img.height {
+		source := index * img.channels
+		target := index * 3
+		pixels[target] = img.pixels.buf[source]
+		pixels[target + 1] = img.pixels.buf[source + 1]
+		pixels[target + 2] = img.pixels.buf[source + 2]
+	}
+	return Render_Image{width = img.width, height = img.height, rgb = pixels}, .None
+}
+
+render_abs_diff_u8 :: proc(left, right: u8) -> u8 {
+	if left >= right {
+		return left - right
+	}
+	return right - left
 }
 
 render_image_format_from_path :: proc(path: string) -> (Render_Image_Format, bool) {

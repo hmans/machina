@@ -70,7 +70,7 @@ Until feature parity is reached, some documentation will necessarily describe bo
 17. Port first-pass test command discovery, manifest validation, field assertion execution, script-visible input resource replay, retained scene UI command/scroll routing, editor chrome input ownership, and playback button replay while richer editor-shell input routing and native-backed fixtures still wait for their Odin ports.
 18. Port first-pass bounded `run` command validation while the window loop still waits for the Odin renderer and full callback bridge.
 19. Port first-pass renderer ECS extraction and batch-stat planning before backend-specific drawing.
-20. Port first-pass `render`, `render-test`, and `visual-test` command validation/output while pixel rendering still waits for Odin `wgpu-native` bindings.
+20. Port first-pass `render`, `render-test`, and `visual-test` command validation/output with software artifact output, verification, golden comparison, and metadata sidecars while WebGPU pixels still wait for Odin `wgpu-native` bindings.
 21. Port the rest of the pure engine foundations before backend-heavy systems, including math helpers and runtime diagnostics.
 22. Port detailed Luau bridge runtime diagnostics while preserving existing script fixtures.
 23. Port remaining native and reload runtime diagnostics.

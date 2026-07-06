@@ -997,6 +997,9 @@ test_run_render_command_writes_png_artifact :: proc(t: ^testing.T) {
 	exit_code := run_with_output([]string{"scrapbot", "render", root, output_path}, false)
 	testing.expect_value(t, exit_code, 0)
 	expect_file_prefix(t, output_path, []u8{0x89, 'P', 'N', 'G'})
+	metadata_path := render_artifact_metadata_path(output_path)
+	defer delete(metadata_path)
+	expect_file_prefix(t, metadata_path, []u8{'{', '\n'})
 }
 
 @(test)
@@ -1044,6 +1047,9 @@ test_run_render_test_command_writes_bmp_artifact :: proc(t: ^testing.T) {
 	exit_code := run_with_output([]string{"scrapbot", "render-test", root, output_path}, false)
 	testing.expect_value(t, exit_code, 0)
 	expect_file_prefix(t, output_path, []u8{'B', 'M'})
+	metadata_path := render_artifact_metadata_path(output_path)
+	defer delete(metadata_path)
+	expect_file_prefix(t, metadata_path, []u8{'{', '\n'})
 }
 
 @(test)
@@ -1098,10 +1104,14 @@ test_run_visual_test_command_accepts_initialized_project_with_expected_fixture :
 
 	expected_path := project_relative_path(root, "expected.png")
 	defer delete(expected_path)
-	write_file(t, root, "expected.png", "not a real png yet")
+	actual_path := project_relative_path(root, "actual.png")
+	defer delete(actual_path)
 
-	exit_code := run_with_output([]string{"scrapbot", "visual-test", root, expected_path, "odin-out/test-visual-actual.png"}, false)
+	update_exit_code := run_with_output([]string{"scrapbot", "visual-test", "--update", root, expected_path}, false)
+	testing.expect_value(t, update_exit_code, 0)
+	exit_code := run_with_output([]string{"scrapbot", "visual-test", root, expected_path, actual_path}, false)
 	testing.expect_value(t, exit_code, 0)
+	expect_file_prefix(t, actual_path, []u8{0x89, 'P', 'N', 'G'})
 }
 
 @(test)
@@ -1116,6 +1126,10 @@ test_run_visual_test_command_accepts_update_without_existing_expected_fixture ::
 
 	exit_code := run_with_output([]string{"scrapbot", "visual-test", "--update", root, expected_path}, false)
 	testing.expect_value(t, exit_code, 0)
+	expect_file_prefix(t, expected_path, []u8{0x89, 'P', 'N', 'G'})
+	metadata_path := render_artifact_metadata_path(expected_path)
+	defer delete(metadata_path)
+	expect_file_prefix(t, metadata_path, []u8{'{', '\n'})
 }
 
 @(test)
@@ -1130,7 +1144,8 @@ test_run_visual_test_command_rejects_missing_expected_and_same_actual_path :: pr
 
 	missing_exit_code := run_with_output([]string{"scrapbot", "visual-test", root, expected_path}, false)
 	testing.expect_value(t, missing_exit_code, 1)
-	write_file(t, root, "expected.png", "not a real png yet")
+	update_exit_code := run_with_output([]string{"scrapbot", "visual-test", "--update", root, expected_path}, false)
+	testing.expect_value(t, update_exit_code, 0)
 	same_path_exit_code := run_with_output([]string{"scrapbot", "visual-test", root, expected_path, expected_path}, false)
 	testing.expect_value(t, same_path_exit_code, 1)
 }
@@ -1144,10 +1159,27 @@ test_run_visual_test_command_rejects_missing_selected_entity :: proc(t: ^testing
 
 	expected_path := project_relative_path(root, "expected.png")
 	defer delete(expected_path)
-	write_file(t, root, "expected.png", "not a real png yet")
 
-	exit_code := run_with_output([]string{"scrapbot", "visual-test", "--select", "missing", root, expected_path}, false)
+	exit_code := run_with_output([]string{"scrapbot", "visual-test", "--update", "--select", "missing", root, expected_path}, false)
 	testing.expect_value(t, exit_code, 1)
+}
+
+@(test)
+test_run_visual_test_command_rejects_mismatched_actual_image :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-visual-mismatch")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Visual Mismatch"), Project_Error.None)
+	expected_path := project_relative_path(root, "expected.png")
+	defer delete(expected_path)
+	actual_path := project_relative_path(root, "actual.png")
+	defer delete(actual_path)
+
+	update_exit_code := run_with_output([]string{"scrapbot", "visual-test", "--update", "--width", "320", root, expected_path}, false)
+	testing.expect_value(t, update_exit_code, 0)
+	exit_code := run_with_output([]string{"scrapbot", "visual-test", root, expected_path, actual_path}, false)
+	testing.expect_value(t, exit_code, 1)
+	expect_file_prefix(t, actual_path, []u8{0x89, 'P', 'N', 'G'})
 }
 
 @(test)
@@ -1167,9 +1199,12 @@ test_run_visual_test_command_updates_only_extra_frames :: proc(t: ^testing.T) {
 `)
 	expected_path := project_relative_path(root, "expected.png")
 	defer delete(expected_path)
-	write_file(t, root, "expected.png", "not a real png yet")
+	actual_path := project_relative_path(root, "actual.png")
+	defer delete(actual_path)
+	update_exit_code := run_with_output([]string{"scrapbot", "visual-test", "--update", root, expected_path}, false)
+	testing.expect_value(t, update_exit_code, 0)
 
-	default_exit_code := run_with_output([]string{"scrapbot", "visual-test", root, expected_path}, false)
+	default_exit_code := run_with_output([]string{"scrapbot", "visual-test", root, expected_path, actual_path}, false)
 	testing.expect_value(t, default_exit_code, 0)
 	two_frame_exit_code := run_with_output([]string{"scrapbot", "visual-test", "--frames=2", root, expected_path}, false)
 	testing.expect_value(t, two_frame_exit_code, 1)

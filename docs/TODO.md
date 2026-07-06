@@ -30,7 +30,7 @@
 - [x] Odin `run` can validate projects and execute bounded hidden frame updates while rendering remains pending.
 - [x] Odin render extraction can count renderables, batches, cameras, lights, and UI draw primitives.
 - [x] Odin `render` and `render-test` can validate projects, run bounded frame simulation, check selected entities, and report pending backend render stats.
-- [x] Odin `visual-test` can validate projects, expected/actual paths, selected entities, bounded frame simulation, and pending backend visual-comparison stats.
+- [x] Odin `visual-test` can validate projects, expected/actual paths, selected entities, bounded frame simulation, golden update, image comparison, tolerance checks, and metadata sidecars against first-pass software render artifacts.
 - [x] Odin `check` can statically register project-local native Odin component and system declarations from `native = "native/game.odin"`.
 - [x] Odin runtime reports a structured runtime diagnostic when scheduled Odin-native systems reach the pending execution boundary.
 - [x] Shared ECS runtime with generation-aware entities, component tables, system schedules, and script/native access.
@@ -100,7 +100,8 @@
 - [ ] Port remaining unbounded/window-loop reload diagnostics from Zig to Odin.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
 - [x] Port first-pass Odin software offscreen PNG/BMP image output and render-test pixel verification.
-- [ ] Port Odin WebGPU render image output, visual-test golden comparison, metadata sidecars, and hidden headful smoke paths.
+- [x] Port first-pass Odin visual-test golden update/comparison, tolerance checks, and render artifact metadata sidecars.
+- [ ] Port Odin WebGPU render image output, editor chrome pixels, and hidden headful smoke paths.
 - [ ] Complete unbounded/window-loop Odin project/scene/script/native live reload integration and replacement of the Zig reload path.
 - [ ] Remove Zig build/test/dependency surfaces after Odin parity is verified.
 - [ ] Add scroll support to inspector component vgroups.
