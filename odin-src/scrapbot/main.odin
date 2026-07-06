@@ -13,8 +13,14 @@ main :: proc() {
 }
 
 run :: proc(args: []string) -> int {
+	return run_with_output(args, true)
+}
+
+run_with_output :: proc(args: []string, emit_output: bool) -> int {
 	if len(args) <= 1 {
-		print_help()
+		if emit_output {
+			print_help()
+		}
 		return 0
 	}
 
@@ -24,15 +30,22 @@ run :: proc(args: []string) -> int {
 		return 0
 	}
 	if command == "help" || command == "--help" {
-		print_help()
+		if emit_output {
+			print_help()
+		}
 		return 0
 	}
 	if command == "check" {
 		return run_check(args[2:])
 	}
+	if command == "init" {
+		return run_init(args[2:], emit_output)
+	}
 
-	fmt.eprintf("unknown command: %s\n", command)
-	print_help()
+	if emit_output {
+		fmt.eprintf("unknown command: %s\n", command)
+		print_help()
+	}
 	return 1
 }
 
@@ -42,11 +55,39 @@ print_help :: proc() {
 Usage:
   scrapbot --version
   scrapbot help
+  scrapbot init [path]
   scrapbot check [path] [--format text|json]
 
 Odin migration status:
-  check currently validates project metadata, referenced files, and first-pass scene structure.
+  init and check currently cover text project creation and validation slices.
   Runtime, scripting, rendering, editor, and test execution are still being ported.`)
+}
+
+run_init :: proc(args: []string, emit_output: bool) -> int {
+	target_path := "."
+	if len(args) > 1 {
+		if emit_output {
+			fmt.eprintln("unknown argument")
+		}
+		return 1
+	}
+	if len(args) == 1 {
+		target_path = args[0]
+	}
+
+	name := project_name_from_path(target_path)
+	err := init_project(target_path, name)
+	if err != .None {
+		if emit_output {
+			fmt.eprintf("init failed: %s: %s\n", target_path, project_error_message(err))
+		}
+		return 1
+	}
+
+	if emit_output {
+		fmt.printf("Initialized Scrapbot project at %s\n", target_path)
+	}
+	return 0
 }
 
 run_check :: proc(args: []string) -> int {

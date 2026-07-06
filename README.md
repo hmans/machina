@@ -12,6 +12,7 @@ A compact, experimental, and probably mostly useless game engine that tries to a
 - Implementation Language
   - [x] Odin migration accepted
   - [x] Odin smoke build scaffold
+  - [x] Odin project init command slice
   - [x] Odin project metadata check slice
   - [x] Odin scene structure check slice
   - [x] Odin engine component schema check slice

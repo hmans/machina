@@ -14,6 +14,8 @@ Check_Output_Format :: enum {
 
 Project_Error :: enum {
 	None,
+	Already_Exists,
+	Io_Error,
 	Missing_Project_File,
 	Invalid_Project_Name,
 	Unsupported_Project_Version,
@@ -39,6 +41,7 @@ Project :: struct {
 	scripts:          []string,
 	native:           string,
 	native_artifact:  string,
+	name_storage:     string,
 	metadata_storage: []byte,
 }
 
@@ -121,7 +124,13 @@ load_project :: proc(root_path: string) -> (Project, Project_Error) {
 	}
 
 	text := string(contents)
-	name, name_ok := read_required_string(text, "name")
+	name, name_storage, name_ok := read_required_owned_string(text, "name")
+	keep_name_storage := false
+	defer {
+		if !keep_name_storage && name_storage != "" {
+			delete(name_storage)
+		}
+	}
 	if !name_ok || name == "" {
 		delete(contents)
 		return Project{}, .Invalid_Project_Name
@@ -166,6 +175,7 @@ load_project :: proc(root_path: string) -> (Project, Project_Error) {
 		return Project{}, .Invalid_Native_Artifact
 	}
 
+	keep_name_storage = true
 	return Project{
 		root_path = root_path,
 		metadata_path = metadata_name,
@@ -174,6 +184,7 @@ load_project :: proc(root_path: string) -> (Project, Project_Error) {
 		scripts = scripts,
 		native = native,
 		native_artifact = native_artifact,
+		name_storage = name_storage,
 		metadata_storage = contents,
 	}, .None
 }
@@ -181,6 +192,9 @@ load_project :: proc(root_path: string) -> (Project, Project_Error) {
 free_project :: proc(project: Project) {
 	if project.scripts != nil {
 		delete(project.scripts)
+	}
+	if project.name_storage != "" {
+		delete(project.name_storage)
 	}
 	if project.metadata_storage != nil {
 		delete(project.metadata_storage)
@@ -217,6 +231,19 @@ project_relative_path :: proc(root_path, relative_path: string) -> string {
 read_required_string :: proc(contents, key: string) -> (string, bool) {
 	value, ok := read_optional_string(contents, key)
 	return value, ok && value != ""
+}
+
+read_required_owned_string :: proc(contents, key: string) -> (value: string, owned: string, ok: bool) {
+	remaining := contents
+	for line in strings.split_lines_iterator(&remaining) {
+		raw_value, found := read_key_value(line, key)
+		if !found {
+			continue
+		}
+		value, owned, ok = parse_basic_string_unescaped(raw_value)
+		return value, owned, ok && value != ""
+	}
+	return "", "", false
 }
 
 read_optional_string :: proc(contents, key: string) -> (string, bool) {
@@ -315,10 +342,26 @@ parse_basic_string :: proc(value: string) -> (string, bool) {
 	}
 
 	inner := value[1:len(value) - 1]
-	if strings.contains(inner, "\\") || strings.contains(inner, "\"") {
-		return "", false
+	escaped := false
+	for c in inner {
+		if escaped {
+			switch c {
+			case '"', '\\', 'n', 'r', 't':
+				escaped = false
+				continue
+			case:
+				return "", false
+			}
+		}
+		if c == '\\' {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			return "", false
+		}
 	}
-	return inner, true
+	return inner, !escaped
 }
 
 parse_basic_string_array :: proc(value: string) -> ([]string, bool) {
@@ -398,10 +441,58 @@ is_safe_project_relative_path :: proc(path: string) -> bool {
 	return true
 }
 
+parse_basic_string_unescaped :: proc(value: string) -> (parsed: string, owned: string, ok: bool) {
+	inner, valid := parse_basic_string(value)
+	if !valid {
+		return "", "", false
+	}
+	if !strings.contains(inner, "\\") {
+		return inner, "", true
+	}
+
+	builder := strings.builder_make()
+	defer strings.builder_destroy(&builder)
+	escaped := false
+	for c in inner {
+		if escaped {
+			switch c {
+			case '"':
+				strings.write_rune(&builder, '"')
+			case '\\':
+				strings.write_rune(&builder, '\\')
+			case 'n':
+				strings.write_rune(&builder, '\n')
+			case 'r':
+				strings.write_rune(&builder, '\r')
+			case 't':
+				strings.write_rune(&builder, '\t')
+			case:
+				return "", "", false
+			}
+			escaped = false
+			continue
+		}
+		if c == '\\' {
+			escaped = true
+			continue
+		}
+		strings.write_rune(&builder, c)
+	}
+	if escaped {
+		return "", "", false
+	}
+	owned = strings.clone(strings.to_string(builder))
+	return owned, owned, true
+}
+
 project_error_message :: proc(err: Project_Error) -> string {
 	switch err {
 	case .None:
 		return "ok"
+	case .Already_Exists:
+		return "project already exists"
+	case .Io_Error:
+		return "i/o error"
 	case .Missing_Project_File:
 		return "missing project.toml"
 	case .Invalid_Project_Name:

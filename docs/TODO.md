@@ -5,6 +5,7 @@
 - [x] Text-first Zig engine with Luau scripting, project manifests, and TOML scenes.
 - [x] Odin engine rewrite accepted as the target implementation direction.
 - [x] Odin smoke build scaffold added beside the current Zig engine.
+- [x] Odin `init` can create a checkable text project with the current starter scene.
 - [x] Odin `check` can validate project metadata and referenced project files.
 - [x] Odin `check` can validate first-pass scene structure and report entity/component counts.
 - [x] Odin `check` can validate scene-authored engine component ids, fields, types, defaults, and renderer setting values.
@@ -23,7 +24,7 @@
 
 ## Next Slice
 
-- [ ] Port the Scrapbot CLI entrypoint from Zig to Odin.
+- [ ] Port remaining Scrapbot CLI commands from Zig to Odin.
 - [x] Port first-pass project metadata loading and referenced-file validation from Zig to Odin.
 - [x] Port engine-owned scene component schema validation from Zig to Odin.
 - [x] Port script-defined and native scene component registry validation from Zig to Odin.
