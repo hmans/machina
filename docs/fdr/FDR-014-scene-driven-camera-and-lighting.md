@@ -14,6 +14,7 @@ Scene-driven camera and lighting let projects describe the view and first direct
 - Camera projection data includes vertical field of view, near plane, and far plane.
 - Scenes may author a directional light with `scrapbot.light.directional`.
 - Directional light data includes direction, color, intensity, and ambient contribution.
+- Mesh lighting is the authored ambient contribution plus direct directional diffuse light; there is no scene-independent fill or rim light. A directional light with `ambient = 0.0` and `intensity = 0.0` renders current non-emissive mesh surfaces black.
 - The renderer uses the first available camera and first available directional light in the ECS world.
 - Rendering extracts the selected camera and directional light into the internal render ECS world before drawing.
 - Scenes without camera or directional light components still render with compatibility defaults matching the original demo view and light.

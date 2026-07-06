@@ -78,8 +78,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let ambient = frame.lighting.x;
     let intensity = frame.lighting.y;
     let shadow = shadow_visibility(input);
-    let rim = pow(1.0 - max(abs(normal.z), 0.0), 2.0) * 0.12;
     let lit = input.object_color.xyz * frame.light_color.xyz * diffuse * intensity * shadow;
-    let shaded = input.object_color.xyz * ambient + lit + vec3<f32>(rim * 0.5 + rim * 0.5 * shadow);
+    let shaded = input.object_color.xyz * ambient + lit;
     return vec4<f32>(shaded, 1.0);
 }
