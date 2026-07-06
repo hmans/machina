@@ -46,6 +46,9 @@ Runtime_Error :: enum {
 	Duplicate_Component_Type,
 	Duplicate_Entity_ID,
 	Invalid_Entity,
+	Unknown_Component,
+	Unknown_Field,
+	Invalid_Field_Type,
 }
 
 Runtime_Field_Type :: enum {
@@ -65,6 +68,33 @@ Runtime_Component_Definition :: struct {
 	id:      string,
 	version: int,
 	fields:  []Runtime_Component_Field_Definition,
+}
+
+Runtime_Component_Value :: struct {
+	value_type:   Runtime_Field_Type,
+	boolean:      bool,
+	int_value:    int,
+	float:        f32,
+	vec3:         [3]f32,
+	string_value: string,
+}
+
+Runtime_Component_Field_Value :: struct {
+	name:  string,
+	value: Runtime_Component_Value,
+}
+
+Runtime_Component_Column :: struct {
+	name:       string,
+	value_type: Runtime_Field_Type,
+	values:     [dynamic]Runtime_Component_Value,
+}
+
+Runtime_Component_Table :: struct {
+	id:             string,
+	entities:       [dynamic]Entity_Handle,
+	rows_by_entity: [dynamic]int,
+	columns:        []Runtime_Component_Column,
 }
 
 Runtime_Component_Registry :: struct {
@@ -96,6 +126,7 @@ Runtime_Entity :: struct {
 
 Runtime_World :: struct {
 	entities:               [dynamic]Runtime_Entity,
+	component_tables:       [dynamic]Runtime_Component_Table,
 	next_entity_generation: u32,
 }
 
@@ -231,6 +262,129 @@ runtime_component_definitions_equal :: proc(left, right: Runtime_Component_Defin
 		}
 	}
 	return true
+}
+
+runtime_component_value_boolean :: proc(value: bool) -> Runtime_Component_Value {
+	return Runtime_Component_Value{value_type = .Boolean, boolean = value}
+}
+
+runtime_component_value_int :: proc(value: int) -> Runtime_Component_Value {
+	return Runtime_Component_Value{value_type = .Int, int_value = value}
+}
+
+runtime_component_value_float :: proc(value: f32) -> Runtime_Component_Value {
+	return Runtime_Component_Value{value_type = .Float, float = value}
+}
+
+runtime_component_value_vec3 :: proc(value: [3]f32) -> Runtime_Component_Value {
+	return Runtime_Component_Value{value_type = .Vec3, vec3 = value}
+}
+
+runtime_component_value_string :: proc(value: string) -> Runtime_Component_Value {
+	return Runtime_Component_Value{value_type = .String, string_value = value}
+}
+
+runtime_component_value_clone :: proc(value: Runtime_Component_Value) -> (Runtime_Component_Value, Runtime_Error) {
+	if value.value_type != .String {
+		return value, .None
+	}
+	owned, err := strings.clone(value.string_value)
+	if err != nil {
+		return Runtime_Component_Value{}, .Out_Of_Memory
+	}
+	cloned := value
+	cloned.string_value = owned
+	return cloned, .None
+}
+
+runtime_component_value_free :: proc(value: Runtime_Component_Value) {
+	if value.value_type == .String {
+		delete(value.string_value)
+	}
+}
+
+runtime_component_table_free :: proc(table: Runtime_Component_Table) {
+	if table.id != "" {
+		delete(table.id)
+	}
+	if table.entities != nil {
+		delete(table.entities)
+	}
+	if table.rows_by_entity != nil {
+		delete(table.rows_by_entity)
+	}
+	for column in table.columns {
+		delete(column.name)
+		for value in column.values {
+			runtime_component_value_free(value)
+		}
+		if column.values != nil {
+			delete(column.values)
+		}
+	}
+	if table.columns != nil {
+		delete(table.columns)
+	}
+}
+
+runtime_component_table_field_index :: proc(table: Runtime_Component_Table, field_name: string) -> (int, bool) {
+	for column, index in table.columns {
+		if column.name == field_name {
+			return index, true
+		}
+	}
+	return -1, false
+}
+
+runtime_find_field_value :: proc(fields: []Runtime_Component_Field_Value, field_name: string) -> (Runtime_Component_Field_Value, bool) {
+	for field in fields {
+		if field.name == field_name {
+			return field, true
+		}
+	}
+	return Runtime_Component_Field_Value{}, false
+}
+
+runtime_component_table_validate_fields :: proc(table: Runtime_Component_Table, fields: []Runtime_Component_Field_Value) -> Runtime_Error {
+	if len(fields) != len(table.columns) {
+		return .Unknown_Field
+	}
+	for column in table.columns {
+		field, found := runtime_find_field_value(fields, column.name)
+		if !found {
+			return .Unknown_Field
+		}
+		if field.value.value_type != column.value_type {
+			return .Invalid_Field_Type
+		}
+	}
+	for field, index in fields {
+		if _, found := runtime_component_table_field_index(table, field.name); !found {
+			return .Unknown_Field
+		}
+		for prior in fields[:index] {
+			if prior.name == field.name {
+				return .Unknown_Field
+			}
+		}
+	}
+	return .None
+}
+
+runtime_component_table_row_for_entity :: proc(table: Runtime_Component_Table, handle: Entity_Handle) -> (int, bool) {
+	entity_index := int(handle.index)
+	if entity_index < 0 || entity_index >= len(table.rows_by_entity) {
+		return -1, false
+	}
+	row := table.rows_by_entity[entity_index]
+	if row < 0 || row >= len(table.entities) {
+		return -1, false
+	}
+	stored := table.entities[row]
+	if stored.index != handle.index || (handle.generation != 0 && stored.generation != handle.generation) {
+		return -1, false
+	}
+	return row, true
 }
 
 runtime_register_engine_components :: proc(registry: ^Runtime_Component_Registry) -> Runtime_Error {
@@ -675,6 +829,12 @@ runtime_world_init :: proc() -> Runtime_World {
 }
 
 runtime_world_free :: proc(world: ^Runtime_World) {
+	for table in world.component_tables {
+		runtime_component_table_free(table)
+	}
+	if world.component_tables != nil {
+		delete(world.component_tables)
+	}
 	for entity in world.entities {
 		delete(entity.id)
 		delete(entity.name)
@@ -682,12 +842,21 @@ runtime_world_free :: proc(world: ^Runtime_World) {
 	if world.entities != nil {
 		delete(world.entities)
 	}
+	world.component_tables = nil
 	world.entities = nil
 	world.next_entity_generation = 1
 }
 
 runtime_world_entity_count :: proc(world: Runtime_World) -> int {
 	return len(world.entities)
+}
+
+runtime_world_component_instance_count :: proc(world: Runtime_World) -> int {
+	count := 0
+	for table in world.component_tables {
+		count += len(table.entities)
+	}
+	return count
 }
 
 runtime_world_create_entity :: proc(world: ^Runtime_World, id, name: string) -> (Entity_Handle, Runtime_Error) {
@@ -725,6 +894,9 @@ runtime_world_create_entity_with_provenance :: proc(
 		generation = generation,
 		provenance = provenance,
 	})
+	for &table in world.component_tables {
+		append(&table.rows_by_entity, -1)
+	}
 	return handle, .None
 }
 
@@ -749,6 +921,323 @@ runtime_world_find_entity_by_id :: proc(world: Runtime_World, id: string) -> (En
 	return Entity_Handle{}, false
 }
 
+runtime_world_find_component_table :: proc(world: Runtime_World, component_id: string) -> (^Runtime_Component_Table, bool) {
+	for &table in world.component_tables {
+		if table.id == component_id {
+			return &table, true
+		}
+	}
+	return nil, false
+}
+
+runtime_world_ensure_component_table :: proc(
+	world: ^Runtime_World,
+	component_id: string,
+	fields: []Runtime_Component_Field_Value,
+) -> (int, Runtime_Error) {
+	for table, index in world.component_tables {
+		if table.id == component_id {
+			validate_err := runtime_component_table_validate_fields(table, fields)
+			if validate_err != .None {
+				return -1, validate_err
+			}
+			return index, .None
+		}
+	}
+
+	owned_id, id_err := strings.clone(component_id)
+	if id_err != nil {
+		return -1, .Out_Of_Memory
+	}
+	columns := make([]Runtime_Component_Column, len(fields))
+	if columns == nil && len(fields) > 0 {
+		delete(owned_id)
+		return -1, .Out_Of_Memory
+	}
+	initialized_columns := 0
+	for field, index in fields {
+		for prior in fields[:index] {
+			if prior.name == field.name {
+				for column in columns[:initialized_columns] {
+					delete(column.name)
+				}
+				delete(columns)
+				delete(owned_id)
+				return -1, .Unknown_Field
+			}
+		}
+		owned_name, name_err := strings.clone(field.name)
+		if name_err != nil {
+			for column in columns[:initialized_columns] {
+				delete(column.name)
+			}
+			delete(columns)
+			delete(owned_id)
+			return -1, .Out_Of_Memory
+		}
+		columns[index] = Runtime_Component_Column{
+			name = owned_name,
+			value_type = field.value.value_type,
+		}
+		initialized_columns += 1
+	}
+
+	rows_by_entity := make([dynamic]int)
+	for _ in world.entities {
+		append(&rows_by_entity, -1)
+	}
+
+	append(&world.component_tables, Runtime_Component_Table{
+		id = owned_id,
+		rows_by_entity = rows_by_entity,
+		columns = columns,
+	})
+	return len(world.component_tables) - 1, .None
+}
+
+runtime_world_set_component :: proc(
+	world: ^Runtime_World,
+	handle: Entity_Handle,
+	component_id: string,
+	fields: []Runtime_Component_Field_Value,
+) -> Runtime_Error {
+	entity_index, index_err := runtime_world_entity_index(world^, handle)
+	if index_err != .None {
+		return index_err
+	}
+	table_index, table_err := runtime_world_ensure_component_table(world, component_id, fields)
+	if table_err != .None {
+		return table_err
+	}
+	table := &world.component_tables[table_index]
+	if table.rows_by_entity[entity_index] >= 0 {
+		return runtime_world_update_component_row(table, table.rows_by_entity[entity_index], fields)
+	}
+	return runtime_world_append_component_row(table, handle, entity_index, fields)
+}
+
+runtime_world_append_component_row :: proc(
+	table: ^Runtime_Component_Table,
+	handle: Entity_Handle,
+	entity_index: int,
+	fields: []Runtime_Component_Field_Value,
+) -> Runtime_Error {
+	validate_err := runtime_component_table_validate_fields(table^, fields)
+	if validate_err != .None {
+		return validate_err
+	}
+	row := len(table.entities)
+	append(&table.entities, handle)
+	table.rows_by_entity[entity_index] = row
+	appended_columns := 0
+	for &column in table.columns {
+		field, found := runtime_find_field_value(fields, column.name)
+		if !found {
+			for &rollback_column in table.columns[:appended_columns] {
+				runtime_component_value_free(pop(&rollback_column.values))
+			}
+			table.rows_by_entity[entity_index] = -1
+			pop(&table.entities)
+			return .Unknown_Field
+		}
+		cloned, clone_err := runtime_component_value_clone(field.value)
+		if clone_err != .None {
+			for &rollback_column in table.columns[:appended_columns] {
+				runtime_component_value_free(pop(&rollback_column.values))
+			}
+			table.rows_by_entity[entity_index] = -1
+			pop(&table.entities)
+			return clone_err
+		}
+		append(&column.values, cloned)
+		appended_columns += 1
+	}
+	return .None
+}
+
+runtime_world_update_component_row :: proc(
+	table: ^Runtime_Component_Table,
+	row: int,
+	fields: []Runtime_Component_Field_Value,
+) -> Runtime_Error {
+	validate_err := runtime_component_table_validate_fields(table^, fields)
+	if validate_err != .None {
+		return validate_err
+	}
+	for &column in table.columns {
+		field, found := runtime_find_field_value(fields, column.name)
+		if !found {
+			return .Unknown_Field
+		}
+		if field.value.value_type != column.value_type {
+			return .Invalid_Field_Type
+		}
+		cloned, clone_err := runtime_component_value_clone(field.value)
+		if clone_err != .None {
+			return clone_err
+		}
+		runtime_component_value_free(column.values[row])
+		column.values[row] = cloned
+	}
+	return .None
+}
+
+runtime_world_remove_component :: proc(world: ^Runtime_World, handle: Entity_Handle, component_id: string) -> (bool, Runtime_Error) {
+	entity_index, index_err := runtime_world_entity_index(world^, handle)
+	if index_err != .None {
+		return false, index_err
+	}
+	table, found := runtime_world_find_component_table(world^, component_id)
+	if !found || entity_index >= len(table.rows_by_entity) {
+		return false, .None
+	}
+	row := table.rows_by_entity[entity_index]
+	if row < 0 {
+		return false, .None
+	}
+	last_row := len(table.entities) - 1
+	removed_entity := table.entities[row]
+	moved_entity := table.entities[last_row]
+
+	table.entities[row] = moved_entity
+	pop(&table.entities)
+	table.rows_by_entity[int(removed_entity.index)] = -1
+	if row != last_row {
+		table.rows_by_entity[int(moved_entity.index)] = row
+	}
+
+	for &column in table.columns {
+		runtime_component_column_swap_remove(&column, row)
+	}
+	return true, .None
+}
+
+runtime_component_column_swap_remove :: proc(column: ^Runtime_Component_Column, row: int) {
+	last_index := len(column.values) - 1
+	if row == last_index {
+		runtime_component_value_free(pop(&column.values))
+		return
+	}
+	runtime_component_value_free(column.values[row])
+	column.values[row] = column.values[last_index]
+	pop(&column.values)
+}
+
+runtime_world_has_component :: proc(world: Runtime_World, handle: Entity_Handle, component_id: string) -> (bool, Runtime_Error) {
+	entity_index, index_err := runtime_world_entity_index(world, handle)
+	if index_err != .None {
+		return false, index_err
+	}
+	table, found := runtime_world_find_component_table(world, component_id)
+	if !found || entity_index >= len(table.rows_by_entity) {
+		return false, .None
+	}
+	return table.rows_by_entity[entity_index] >= 0, .None
+}
+
+runtime_world_has_components :: proc(world: Runtime_World, handle: Entity_Handle, component_ids: []string) -> (bool, Runtime_Error) {
+	for component_id in component_ids {
+		has_component, err := runtime_world_has_component(world, handle, component_id)
+		if err != .None || !has_component {
+			return false, err
+		}
+	}
+	return true, .None
+}
+
+runtime_world_get_component_field_value :: proc(
+	world: Runtime_World,
+	handle: Entity_Handle,
+	component_id, field_name: string,
+) -> (Runtime_Component_Value, Runtime_Error) {
+	_, index_err := runtime_world_entity_index(world, handle)
+	if index_err != .None {
+		return Runtime_Component_Value{}, index_err
+	}
+	table, found := runtime_world_find_component_table(world, component_id)
+	if !found {
+		return Runtime_Component_Value{}, .Unknown_Component
+	}
+	row, row_found := runtime_component_table_row_for_entity(table^, handle)
+	if !row_found {
+		return Runtime_Component_Value{}, .Unknown_Component
+	}
+	column_index, column_found := runtime_component_table_field_index(table^, field_name)
+	if !column_found {
+		return Runtime_Component_Value{}, .Unknown_Field
+	}
+	return table.columns[column_index].values[row], .None
+}
+
+runtime_world_set_component_field_value :: proc(
+	world: ^Runtime_World,
+	handle: Entity_Handle,
+	component_id, field_name: string,
+	value: Runtime_Component_Value,
+) -> Runtime_Error {
+	_, index_err := runtime_world_entity_index(world^, handle)
+	if index_err != .None {
+		return index_err
+	}
+	table, found := runtime_world_find_component_table(world^, component_id)
+	if !found {
+		return .Unknown_Component
+	}
+	row, row_found := runtime_component_table_row_for_entity(table^, handle)
+	if !row_found {
+		return .Unknown_Component
+	}
+	column_index, column_found := runtime_component_table_field_index(table^, field_name)
+	if !column_found {
+		return .Unknown_Field
+	}
+	column := &table.columns[column_index]
+	if value.value_type != column.value_type {
+		return .Invalid_Field_Type
+	}
+	cloned, clone_err := runtime_component_value_clone(value)
+	if clone_err != .None {
+		return clone_err
+	}
+	runtime_component_value_free(column.values[row])
+	column.values[row] = cloned
+	return .None
+}
+
+runtime_world_query_next :: proc(world: Runtime_World, component_ids: []string, cursor: ^int) -> (Entity_Handle, bool) {
+	driver, driver_found := runtime_world_query_driver_table(world, component_ids)
+	if !driver_found {
+		return Entity_Handle{}, false
+	}
+	for cursor^ < len(driver.entities) {
+		handle := driver.entities[cursor^]
+		cursor^ += 1
+		matches, err := runtime_world_has_components(world, handle, component_ids)
+		if err == .None && matches {
+			return handle, true
+		}
+	}
+	return Entity_Handle{}, false
+}
+
+runtime_world_query_driver_table :: proc(world: Runtime_World, component_ids: []string) -> (table: ^Runtime_Component_Table, ok: bool) {
+	if len(component_ids) == 0 {
+		return nil, false
+	}
+	best_len := 0
+	for component_id in component_ids {
+		candidate, found := runtime_world_find_component_table(world, component_id)
+		if !found {
+			return nil, false
+		}
+		if table == nil || len(candidate.entities) < best_len {
+			table = candidate
+			best_len = len(candidate.entities)
+		}
+	}
+	return table, true
+}
+
 runtime_world_remove_entity :: proc(world: ^Runtime_World, handle: Entity_Handle) -> Runtime_Error {
 	index := int(handle.index)
 	if _, err := runtime_world_entity(world^, handle); err != .None {
@@ -756,13 +1245,59 @@ runtime_world_remove_entity :: proc(world: ^Runtime_World, handle: Entity_Handle
 	}
 
 	last_index := len(world.entities) - 1
+	for {
+		removed_component := false
+		for table in world.component_tables {
+			if index < len(table.rows_by_entity) && table.rows_by_entity[index] >= 0 {
+				_, remove_err := runtime_world_remove_component(world, handle, table.id)
+				if remove_err != .None {
+					return remove_err
+				}
+				removed_component = true
+				break
+			}
+		}
+		if !removed_component {
+			break
+		}
+	}
+
 	delete(world.entities[index].id)
 	delete(world.entities[index].name)
 	if index != last_index {
 		world.entities[index] = world.entities[last_index]
 	}
 	pop(&world.entities)
+	for &table in world.component_tables {
+		moved_row := -1
+		if index != last_index && last_index < len(table.rows_by_entity) {
+			moved_row = table.rows_by_entity[last_index]
+		}
+		if index < len(table.rows_by_entity) {
+			table.rows_by_entity[index] = moved_row
+		}
+		if moved_row >= 0 {
+			table.entities[moved_row] = Entity_Handle{
+				index = u32(index),
+				generation = world.entities[index].generation,
+			}
+		}
+		if len(table.rows_by_entity) > 0 {
+			pop(&table.rows_by_entity)
+		}
+	}
 	return .None
+}
+
+runtime_world_entity_index :: proc(world: Runtime_World, handle: Entity_Handle) -> (int, Runtime_Error) {
+	index := int(handle.index)
+	if index < 0 || index >= len(world.entities) {
+		return -1, .Invalid_Entity
+	}
+	if handle.generation != 0 && world.entities[index].generation != handle.generation {
+		return -1, .Invalid_Entity
+	}
+	return index, .None
 }
 
 runtime_world_next_entity_generation :: proc(world: ^Runtime_World) -> u32 {
