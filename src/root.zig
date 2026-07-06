@@ -11,7 +11,7 @@ const scene_loader = @import("project/scene_loader.zig");
 const script = @import("script.zig");
 const ui_layout = @import("ui_layout.zig");
 
-pub const version = "0.1.0-dev"; // x-release-please-version
+pub const version = "0.1.0"; // x-release-please-version
 pub const project_file_name = "project.toml";
 pub const legacy_project_file_name = "project.scrapbot.toml";
 pub const default_scene_path = "scenes/main.scene.toml";
