@@ -103,6 +103,9 @@ route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: Runtime_
 			}
 		}
 		if (input.pointer.wheel_delta[0] != 0 || input.pointer.wheel_delta[1] != 0) && !inside_game {
+			if editor_pointer_in_entity_list(world, input^) {
+				state.entity_scroll_y = editor_entity_scroll_next(world, input^, state.entity_scroll_y, input.pointer.wheel_delta[1])
+			}
 			consumed = true
 		}
 	} else if input.pointer.primary_released {
@@ -173,6 +176,19 @@ editor_entity_at_pointer :: proc(world: Runtime_World, state: Editor_Test_Input_
 	return Entity_Handle{index = u32(row_index), generation = entity.generation}, true
 }
 
+editor_pointer_in_entity_list :: proc(world: Runtime_World, input: Frame_Input) -> bool {
+	if !input.pointer.has_position || runtime_world_entity_count(world) == 0 {
+		return false
+	}
+	clip_x, clip_y, clip_width, clip_height := editor_entity_list_clip_rect(world, input)
+	return editor_pointer_in_rect(input, clip_x, clip_y, clip_width, clip_height)
+}
+
+editor_entity_scroll_next :: proc(world: Runtime_World, input: Frame_Input, current_y, wheel_delta_y: f32) -> f32 {
+	next := current_y + -wheel_delta_y * UI_EDITOR_SCROLL_PIXELS_PER_WHEEL
+	return clamp_f32(next, 0, editor_entity_max_scroll_y(world, input))
+}
+
 state_entity_scroll_y :: proc(state: Editor_Test_Input_State) -> f32 {
 	return state.entity_scroll_y
 }
@@ -228,6 +244,20 @@ editor_entity_visible_rows :: proc(panel_y, panel_height: f32) -> int {
 		return 1
 	}
 	return rows
+}
+
+editor_entity_max_scroll_y :: proc(world: Runtime_World, input: Frame_Input) -> f32 {
+	visible_rows := editor_entity_visible_rows_from_input(input)
+	entity_count := runtime_world_entity_count(world)
+	if entity_count <= visible_rows {
+		return 0
+	}
+	return f32(entity_count - visible_rows) * UI_EDITOR_ENTITY_ROW_STRIDE
+}
+
+editor_entity_visible_rows_from_input :: proc(input: Frame_Input) -> int {
+	_, panel_y, _, panel_height := editor_entity_panel_rect(input.viewport_width, input.viewport_height)
+	return editor_entity_visible_rows(panel_y, panel_height)
 }
 
 editor_entity_table_content_height :: proc(row_count: int) -> f32 {
