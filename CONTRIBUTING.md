@@ -9,6 +9,7 @@ PRs are welcome, but please be aware that this codebase is designed to be primar
 - You may use your coding agent to draft the PR title and body. Please include the motivation for the change, a summary of what changed, and the commands or checks used for verification.
 - Either you or your agent must be able to answer review questions. PRs with unresolved review feedback and no response for 3 days may be closed.
 - Changes and improvements to the repository's agent skills and instructions are welcome, but please post them as separate PRs.
+- Maintainers should follow [`docs/RELEASING.md`](docs/RELEASING.md) when cutting releases.
 
 ## Pull Request Checklist
 
