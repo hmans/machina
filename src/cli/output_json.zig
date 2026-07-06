@@ -486,3 +486,7 @@ fn writeDiagnosticPositionJson(jw: *JsonWriter, position: scrapbot.ScriptDiagnos
     }
     try jw.endObject();
 }
+
+test {
+    _ = @import("output_json_tests.zig");
+}

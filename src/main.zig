@@ -53,3 +53,7 @@ fn runLeakChecked(
         },
     }
 }
+
+test {
+    _ = @import("cli.zig");
+}

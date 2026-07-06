@@ -63,6 +63,7 @@ Use this skill for Zig implementation, review, or architecture work. Treat local
 ## Tests
 
 - Add tests close to the module under test unless an integration fixture gives better coverage.
+- For non-trivial modules, prefer a sibling `*_tests.zig` file imported from the production module with a small bottom-of-file `test { _ = @import("foo_tests.zig"); }` block. This keeps test code discoverable without turning production files into mixed test suites.
 - Use `std.testing.expectEqual`, `expectError`, `expectEqualStrings`, and approximate float checks instead of hand-written boolean assertions where they produce better failure output.
 - Use named tests that describe behavior, not implementation details.
 - In this repository, do not run `zig build test` and `mise test` concurrently because fixed temp paths can collide.
