@@ -1,0 +1,66 @@
+# ADR-022: Odin as the Engine Implementation Language
+
+**Date:** 2026-07-06
+
+## Status
+
+Accepted. Supersedes [ADR-002](ADR-002-zig-as-engine-implementation-language.md).
+
+## Context
+
+Scrapbot began as a Zig engine because Zig gave the project explicit allocation, direct C ABI interop, cross-platform builds, and a simple low-level model for ECS storage, rendering, scripting bridges, editor tooling, and command-line workflows.
+
+The project is now intentionally changing direction: the engine implementation should move to Odin. The request is not a renderer, scripting, ECS, or scene-format redesign. The target end state is still a compact text-first game engine with Luau scripting, TOML project and scene files, an ECS runtime, retained UI/editor tooling, `wgpu-native` rendering, and deterministic command-line verification. The implementation language and toolchain are what change.
+
+The current codebase still contains substantial Zig implementation while the migration is underway. A single replacement commit would remove too much working behavior at once and would make verification nearly meaningless. The migration therefore needs a staged path where Odin code can be built and tested beside the existing Zig engine until each subsystem reaches parity.
+
+## Decision
+
+Scrapbot's engine implementation language is Odin.
+
+New engine implementation work should move toward Odin modules and Odin build/test workflows. The repository may keep Zig implementation code temporarily as migration scaffolding, but Zig is no longer the desired end state for engine-owned runtime, renderer, scripting bridge, UI/editor, CLI, or test implementation.
+
+The migration starts with a separate Odin source root and explicit Odin build tasks. Existing Zig commands remain available until their Odin replacements are feature-complete enough to preserve the current project, scene, scripting, rendering, editor, and verification contracts.
+
+The migration keeps these architectural commitments unless later ADRs explicitly change them:
+
+- Luau remains the project-local scripting language.
+- Project and scene data remain text-first TOML files.
+- Runtime behavior remains ECS-shaped, with component registry validation, access-checked schedules, generation-aware entity handles, and deferred structural mutation.
+- Rendering continues through engine-owned abstractions backed by `wgpu-native` through C ABI boundaries.
+- External native dependency details stay behind engine-owned boundaries.
+- The `scrapbot` CLI remains the primary automation and verification surface.
+
+Project-local native modules should migrate from the current Zig source contract to an Odin source contract once the Odin host API exists. Until then, existing Zig native-module support is compatibility scaffolding for the migration, not a permanent language decision.
+
+## Consequences
+
+The project gains a clear target language for future engine work and a concrete way to start porting without deleting working behavior prematurely.
+
+The migration must replace several Zig-specific surfaces:
+
+- `build.zig` and `build.zig.zon` package/build orchestration.
+- The vendored Zig `wgpu-native` binding package.
+- Project-local native Zig module builds, generated `scrapbot_native` APIs, fixtures, and diagnostics.
+- Zig-specific CI setup, test commands, cache directories, and agent guidance.
+- Zig tests that currently prove ECS, scripting, UI layout, renderer extraction, editor interaction, native reload, and CLI behavior.
+
+Odin introduces its own toolchain and package conventions. The repository uses `mise.toml` as the shared tool entrypoint, so Odin provisioning and tasks should live there while the migration is active.
+
+Until feature parity is reached, some documentation will necessarily describe both the current Zig implementation and the intended Odin target. Those references should be explicit about migration status rather than implying that both languages are equally supported end states.
+
+## Migration Order
+
+1. Add Odin toolchain provisioning and a buildable smoke executable.
+2. Port pure engine foundations before backend-heavy systems: CLI shape, project metadata parsing, scene validation data structures, math helpers, ECS identity, registry, storage, and scheduling.
+3. Port Luau bridge behavior and diagnostics while preserving existing script fixtures.
+4. Port `wgpu-native` bindings and renderer extraction/offscreen verification.
+5. Port retained UI, editor routing, and headful window integration.
+6. Port project-local native modules from Zig to Odin.
+7. Remove Zig build/test/dependency surfaces only after Odin replacements pass equivalent checks.
+
+## Related
+
+- **Supersedes:** ADR-002
+- **ADRs:** ADR-001, ADR-003, ADR-004, ADR-005, ADR-006, ADR-008, ADR-009, ADR-018, ADR-019, ADR-021
+- **FDRs:** FDR-001, FDR-003, FDR-010, FDR-012, FDR-013, FDR-019

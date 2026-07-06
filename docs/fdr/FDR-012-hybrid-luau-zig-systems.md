@@ -3,6 +3,8 @@
 **Status:** Active
 **Last reviewed:** 2026-07-03
 
+**Migration note:** This record describes the current Zig-backed native system behavior. [ADR-022](../adr/ADR-022-odin-as-engine-implementation-language.md) makes Odin the target engine implementation language, so future work should replace Zig-specific native module surfaces with Odin equivalents while preserving the language-neutral ECS contract.
+
 ## Overview
 
 Hybrid Luau and Zig systems let game developers define ECS components and systems in either scripting code or native game code while sharing the same runtime world. The feature exists to support fast Luau prototyping first, then selective porting of hot paths to Zig when performance, platform integration, or native library access requires it.

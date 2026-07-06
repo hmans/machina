@@ -2,6 +2,7 @@
 node = "24"
 pnpm = "10"
 zig = "latest"
+odin = "latest"
 
 [tasks.build]
 description = "Build the scrapbot CLI optimized for interactive use"
@@ -15,6 +16,14 @@ run = "pnpm install --frozen-lockfile"
 [tasks.build-debug]
 description = "Build the scrapbot CLI with Debug safety checks"
 run = "zig build -Doptimize=Debug"
+
+[tasks.build-odin]
+description = "Build the Odin migration scaffold"
+run = "mkdir -p odin-out && odin build odin-src/scrapbot -out:odin-out/scrapbot"
+
+[tasks.odin-smoke]
+description = "Build and run the Odin migration scaffold"
+run = "mise build-odin && ./odin-out/scrapbot"
 
 [tasks.test]
 description = "Run the full Scrapbot test suite"

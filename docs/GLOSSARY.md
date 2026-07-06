@@ -4,7 +4,7 @@ This glossary defines recurring Scrapbot terms in the project's context. It is a
 
 ## Project Model
 
-**Scrapbot** - A text-first game engine implemented in Zig, with project-local Luau and optional Zig native modules for gameplay behavior. See [ADR-001](adr/ADR-001-agent-native-text-first-project-model.md), [ADR-002](adr/ADR-002-zig-as-engine-implementation-language.md), and [ADR-006](adr/ADR-006-embeddable-scripting-language-for-game-logic.md).
+**Scrapbot** - A text-first game engine migrating from Zig to Odin, with project-local Luau and optional native modules for gameplay behavior. See [ADR-001](adr/ADR-001-agent-native-text-first-project-model.md), [ADR-022](adr/ADR-022-odin-as-engine-implementation-language.md), and [ADR-006](adr/ADR-006-embeddable-scripting-language-for-game-logic.md).
 
 **Text-first project model** - The rule that engine-authored project state lives in inspectable, reviewable text files while binary files are limited to source assets, generated artifacts, vendored dependencies, and build outputs. See [ADR-001](adr/ADR-001-agent-native-text-first-project-model.md).
 
@@ -82,9 +82,9 @@ This glossary defines recurring Scrapbot terms in the project's context. It is a
 
 **`ecs.fields(...)`** - The preferred Luau component field-schema declaration form, used by runtime validation and editor payload type inference. See [ADR-012](adr/ADR-012-luau-type-functions-for-ecs-editor-types.md).
 
-**Project-local native module** - A project-owned Zig source file declared with `native = "native/game.zig"` and loaded through Scrapbot's native host boundary during development. See [ADR-019](adr/ADR-019-project-local-native-zig-modules.md).
+**Project-local native module** - A project-owned native source file loaded through Scrapbot's native host boundary during development. The current migration-era contract is a Zig source file declared with `native = "native/game.zig"`; the target contract is Odin once the Odin host API exists. See [ADR-019](adr/ADR-019-project-local-native-zig-modules.md) and [ADR-022](adr/ADR-022-odin-as-engine-implementation-language.md).
 
-**`scrapbot_native`** - The generated Zig API module imported by project-local native code to register components/systems and use access-checked host callbacks. See [ADR-019](adr/ADR-019-project-local-native-zig-modules.md).
+**`scrapbot_native`** - The current generated Zig API module imported by project-local native code to register components/systems and use access-checked host callbacks. It is migration scaffolding until an Odin native-module API replaces it. See [ADR-019](adr/ADR-019-project-local-native-zig-modules.md) and [ADR-022](adr/ADR-022-odin-as-engine-implementation-language.md).
 
 **Native extension** - An engine-linked Zig registration surface for native ECS components and systems, used before and alongside project-local native modules. See [ADR-018](adr/ADR-018-engine-linked-native-ecs-systems.md).
 

@@ -9,6 +9,11 @@ A compact, experimental, and probably mostly useless game engine that tries to a
 
 ### Engine Core
 
+- Implementation Language
+  - [x] Odin migration accepted
+  - [x] Odin smoke build scaffold
+  - [ ] Odin CLI feature parity
+  - [ ] Zig engine implementation removed
 - Runtime
   - [x] Single-binary CLI
   - [x] Cross-platform runtime
@@ -58,6 +63,7 @@ A compact, experimental, and probably mostly useless game engine that tries to a
   - [ ] Editor scripting
 - Native
   - [x] Native Zig modules
+  - [ ] Native Odin modules
   - [x] Native hot reload
   - [ ] Native extension examples
   - [ ] Static native packaging

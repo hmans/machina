@@ -3,6 +3,8 @@
 ## Landed Baseline
 
 - [x] Text-first Zig engine with Luau scripting, project manifests, and TOML scenes.
+- [x] Odin engine rewrite accepted as the target implementation direction.
+- [x] Odin smoke build scaffold added beside the current Zig engine.
 - [x] Shared ECS runtime with generation-aware entities, component tables, system schedules, and script/native access.
 - [x] Live reload for project metadata, scenes, scripts, and project-local native Zig modules.
 - [x] WebGPU renderer with headful SDL windows, offscreen render verification, batching, shadows, and postprocess settings.
@@ -14,6 +16,15 @@
 
 ## Next Slice
 
+- [ ] Port the Scrapbot CLI entrypoint from Zig to Odin.
+- [ ] Port project metadata loading and validation from Zig to Odin.
+- [ ] Port scene parsing and component registry validation from Zig to Odin.
+- [ ] Port ECS entity identity, component storage, queries, schedules, and deferred mutation from Zig to Odin.
+- [ ] Port Luau bridge diagnostics and script ECS registration from Zig to Odin.
+- [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
+- [ ] Port renderer extraction, offscreen render verification, and hidden headful smoke paths from Zig to Odin.
+- [ ] Replace project-local native Zig modules with project-local native Odin modules.
+- [ ] Remove Zig build/test/dependency surfaces after Odin parity is verified.
 - [ ] Add scroll support to inspector component vgroups.
 - [ ] Add typed inspector controls for floats, ints, strings, and enums.
 - [ ] Add editor controls to add and remove components on the selected entity.
@@ -68,7 +79,7 @@
 - [ ] Improve Luau diagnostics for typed query and component declaration failures.
 - [ ] Add Luau type definitions for new editor and UI APIs.
 - [ ] Add richer script reload diagnostics in the editor UI.
-- [ ] Add static-link packaging for project-native Zig modules.
+- [ ] Add static-link packaging for project-native modules after the Odin native-module contract is designed.
 - [ ] Add project-native examples for custom components and systems.
 - [ ] Add native API helpers for additional field types.
 - [ ] Decide how script and native package namespaces are distributed.

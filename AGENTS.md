@@ -1,6 +1,6 @@
 # Scrapbot Agent Guide
 
-Scrapbot is an experimental, text-first game engine written in Zig with embedded Luau for project-local scripting. This file is the authoritative home for rules agents must follow before changing code. ADRs, FDRs, and skills are further reading, not replacements for these rules.
+Scrapbot is an experimental, text-first game engine migrating from Zig to Odin, with embedded Luau for project-local scripting. This file is the authoritative home for rules agents must follow before changing code. ADRs, FDRs, and skills are further reading, not replacements for these rules.
 
 ## Project Goals
 
@@ -20,7 +20,7 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 
 ## Non-Negotiable Design Rules
 
-- The engine is implemented in Zig. Luau is for project-local game scripting only; do not implement engine features in Luau.
+- The target engine implementation language is Odin; the current Zig engine remains migration scaffolding until Odin reaches parity. Luau is for project-local game scripting only; do not implement engine features in Luau.
 - Implement behavior through reusable ECS components, systems, schedules, and shared runtime services. Do not add per-entity callbacks or hardcoded one-off entity logic that bypasses the ECS model.
 - Route runtime state through ECS worlds. Engine subsystems may own internal worlds and schedules, but they must use the shared runtime ECS implementation rather than a parallel ECS model.
 - Preserve component registry validation for scene data, script ECS declarations, native ECS declarations, and project-local component ids.
@@ -33,7 +33,7 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 ## Project and Scene Data
 
 - Keep project and scene data text-based, inspectable, and diffable.
-- Projects use `project.scrapbot.toml`, a default scene path, optional `scripts = [...]`, and at most one project-local native Zig module declared with `native = "native/game.zig"`.
+- Projects use `project.scrapbot.toml`, a default scene path, optional `scripts = [...]`, and at most one project-local native module. The current migration-era native module contract is still Zig with `native = "native/game.zig"`; the target contract is Odin once the Odin host API exists.
 - Scenes are TOML files with root `name` and `version` fields plus `[[entities]]` records containing component tables.
 - Scene-authored component ids and fields must validate against the engine, script, and native component registry.
 - New scene-authored renderables should use `scrapbot.geometry.primitive` plus `scrapbot.material.surface`; treat `scrapbot.render.cube` as a legacy shortcut.
@@ -52,7 +52,7 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 - In hot Luau loops, cache component fields in locals before reusing them. Repeated field access crosses the host ECS bridge, and repeated vec3 field access allocates tables.
 - For large measured Luau loops, prefer explicit `Query:view(world)` bulk `f32`/`vec3` buffers over per-entity proxy access only when the buffer complexity is justified.
 - Measure Luau bridge hot-loop optimizations before keeping them. Query-local field-index caching has already regressed versus the simpler resolved-row path in `spawn_swarm`.
-- Project-local native Zig code imports `scrapbot_native`, exports `scrapbot_register(api)`, and uses the access-checked host API. Do not expose or depend on raw `runtime.World` from project native modules.
+- Project-local native code must use the access-checked host API. Current Zig modules import `scrapbot_native` and export `scrapbot_register(api)`; future Odin modules should preserve the same narrow host boundary. Do not expose or depend on raw runtime world internals from project native modules.
 - Native systems and components must use the same component registry, scheduler, profiling path, and deferred mutation semantics as Luau systems.
 
 ## UI, Input, and Editor Rules

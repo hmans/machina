@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-03
 
+**Migration note:** This record describes the current migration-era native module behavior. [ADR-022](ADR-022-odin-as-engine-implementation-language.md) makes Odin the target engine implementation language and requires a future Odin native-module contract to replace the Zig source contract.
+
 ## Context
 
 Scrapbot's hybrid ECS model needs a way for game projects to own native Zig code without placing game-specific hot paths inside the engine binary. Developers should be able to prototype in Luau, then port measured systems to Zig while keeping the same component ids, scene data, scheduler declarations, profiling, and diagnostics.
