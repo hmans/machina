@@ -1,5 +1,4 @@
 const std = @import("std");
-const render = @import("../render.zig");
 const runtime = @import("../runtime.zig");
 
 const Io = std.Io;
@@ -7,10 +6,6 @@ const Io = std.Io;
 pub const Scene = struct {
     name: []const u8,
     world: runtime.World,
-
-    pub fn renderScene(self: *Scene) render.Scene {
-        return .{ .world = &self.world };
-    }
 
     pub fn entityCount(self: Scene) usize {
         return self.world.entityCount();
@@ -42,6 +37,10 @@ pub fn loadSceneFile(io: Io, allocator: std.mem.Allocator, root_dir: Io.Dir, sce
     };
     defer allocator.free(contents);
 
+    return loadSceneText(allocator, contents, registry);
+}
+
+pub fn loadSceneText(allocator: std.mem.Allocator, contents: []const u8, registry: runtime.ComponentRegistry) !Scene {
     const name = try readRequiredRootString(allocator, contents, "name") orelse return error.InvalidProject;
     errdefer allocator.free(name);
 

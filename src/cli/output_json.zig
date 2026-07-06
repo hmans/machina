@@ -230,10 +230,12 @@ pub fn printBuildOkJson(writer: *Io.Writer, result: scrapbot.BuildResult) !void 
     try jw.beginObject();
     try writeField(&jw, "ok", true);
     try writeField(&jw, "project", result.project_name);
+    try writeField(&jw, "target", result.target.label());
     try writeField(&jw, "bundle", result.bundle_path);
     try writeField(&jw, "project_path", result.project_path);
     try writeField(&jw, "runtime", result.runtime_path);
     try writeField(&jw, "launcher", result.launcher_path);
+    try writeField(&jw, "web_player", result.web_entrypoint_path);
     try writeField(&jw, "native_artifact", result.native_artifact);
     try writeField(&jw, "sdl3_bundled", result.sdl3_bundled);
     try writeField(&jw, "sdl3_warning", result.sdl3_warning);

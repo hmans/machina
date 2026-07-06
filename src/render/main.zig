@@ -1,6 +1,7 @@
 const engine = @import("engine.zig");
 
 pub const RenderError = engine.RenderError;
+pub const RenderBackend = engine.RenderBackend;
 pub const Stats = engine.Stats;
 pub const WindowOptions = engine.WindowOptions;
 pub const ImageRenderOptions = engine.ImageRenderOptions;

@@ -17,6 +17,11 @@ const World = root.World;
 const build_default_output_dir_name = project_build.default_output_dir_name;
 const build_manifest_path = project_build.manifest_path;
 const build_native_artifact_dir = project_build.native_artifact_dir;
+const build_web_entrypoint_path = project_build.web_entrypoint_path;
+const build_web_manifest_path = project_build.web_manifest_path;
+const build_web_player_script_path = project_build.web_player_script_path;
+const build_web_project_data_path = project_build.web_project_data_path;
+const build_web_wasm_path = project_build.web_wasm_path;
 const checkProject = root.checkProject;
 const checkProjectDetailed = root.checkProjectDetailed;
 const default_scene_path = root.default_scene_path;
@@ -312,8 +317,9 @@ test "buildProject creates a host bundle for a simple project" {
     });
     defer result.deinit(std.testing.allocator);
 
-    try std.testing.expect(fileExists(io, cwd, result.launcher_path));
-    try std.testing.expect(fileExists(io, cwd, result.runtime_path));
+    try std.testing.expectEqual(root.BuildTarget.host, result.target);
+    try std.testing.expect(fileExists(io, cwd, result.launcher_path.?));
+    try std.testing.expect(fileExists(io, cwd, result.runtime_path.?));
     const packaged_manifest = try std.fs.path.join(std.testing.allocator, &.{ result.project_path, project_file_name });
     defer std.testing.allocator.free(packaged_manifest);
     try std.testing.expect(fileExists(io, cwd, packaged_manifest));
@@ -321,7 +327,7 @@ test "buildProject creates a host bundle for a simple project" {
     defer std.testing.allocator.free(build_manifest);
     try std.testing.expect(fileExists(io, cwd, build_manifest));
 
-    const launcher_contents = try cwd.readFileAlloc(io, result.launcher_path, std.testing.allocator, .limited(16 * 1024));
+    const launcher_contents = try cwd.readFileAlloc(io, result.launcher_path.?, std.testing.allocator, .limited(16 * 1024));
     defer std.testing.allocator.free(launcher_contents);
     switch (builtin.os.tag) {
         .windows => try std.testing.expect(std.mem.indexOf(u8, launcher_contents, "PATH=%SCRIPT_DIR%lib;%SCRIPT_DIR%bin;%PATH%") != null),
@@ -329,6 +335,104 @@ test "buildProject creates a host bundle for a simple project" {
         .linux => try std.testing.expect(std.mem.indexOf(u8, launcher_contents, "LD_LIBRARY_PATH") != null),
         else => {},
     }
+}
+
+test "buildProject creates a web proof of concept bundle for a simple project" {
+    const root_path = ".zig-cache/test-build-project-web-source";
+    const output_root = ".zig-cache/test-build-project-web-output";
+    const wasm_fixture_path = ".zig-cache/test-build-project-web-player.wasm";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    cwd.deleteTree(io, output_root) catch {};
+    cwd.deleteFile(io, wasm_fixture_path) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, output_root) catch {};
+    defer cwd.deleteFile(io, wasm_fixture_path) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Web Demo");
+    try cwd.writeFile(io, .{
+        .sub_path = wasm_fixture_path,
+        .data = "test wasm fixture",
+    });
+    const result = try buildProject(io, std.testing.allocator, root_path, .{
+        .output_root = output_root,
+        .name = "web-demo-test",
+        .target = .web,
+        .web_player_wasm_path = wasm_fixture_path,
+    });
+    defer result.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(root.BuildTarget.web, result.target);
+    try std.testing.expect(result.runtime_path == null);
+    try std.testing.expect(result.launcher_path == null);
+    try std.testing.expect(result.web_entrypoint_path != null);
+    try std.testing.expect(fileExists(io, cwd, result.web_entrypoint_path.?));
+
+    const player_script_path = try std.fs.path.join(std.testing.allocator, &.{ result.bundle_path, build_web_player_script_path });
+    defer std.testing.allocator.free(player_script_path);
+    try std.testing.expect(fileExists(io, cwd, player_script_path));
+    const player_script = try cwd.readFileAlloc(io, player_script_path, std.testing.allocator, .limited(128 * 1024));
+    defer std.testing.allocator.free(player_script);
+    try std.testing.expect(std.mem.indexOf(u8, player_script, "scrapbot_renderable_snapshot_ptr") != null);
+    try std.testing.expect(std.mem.indexOf(u8, player_script, "Canvas2D preview") != null);
+
+    const wasm_path = try std.fs.path.join(std.testing.allocator, &.{ result.bundle_path, build_web_wasm_path });
+    defer std.testing.allocator.free(wasm_path);
+    try std.testing.expect(fileExists(io, cwd, wasm_path));
+
+    const project_data_path = try std.fs.path.join(std.testing.allocator, &.{ result.bundle_path, build_web_project_data_path });
+    defer std.testing.allocator.free(project_data_path);
+    try std.testing.expect(fileExists(io, cwd, project_data_path));
+
+    const web_manifest_path = try std.fs.path.join(std.testing.allocator, &.{ result.bundle_path, build_web_manifest_path });
+    defer std.testing.allocator.free(web_manifest_path);
+    try std.testing.expect(fileExists(io, cwd, web_manifest_path));
+
+    const packaged_manifest = try std.fs.path.join(std.testing.allocator, &.{ result.project_path, project_file_name });
+    defer std.testing.allocator.free(packaged_manifest);
+    try std.testing.expect(fileExists(io, cwd, packaged_manifest));
+
+    const web_manifest = try cwd.readFileAlloc(io, web_manifest_path, std.testing.allocator, .limited(16 * 1024));
+    defer std.testing.allocator.free(web_manifest);
+    try std.testing.expect(std.mem.indexOf(u8, web_manifest, "\"target\": \"web\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, web_manifest, "\"render_backend\": \"web_poc\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, web_manifest, "\"backend_status\": \"canvas2d_preview\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, web_manifest, "\"wasm\": \"scrapbot-web-player.wasm\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, web_manifest, "\"project_data\": \"project-data.json\"") != null);
+
+    const project_data = try cwd.readFileAlloc(io, project_data_path, std.testing.allocator, .limited(64 * 1024));
+    defer std.testing.allocator.free(project_data);
+    try std.testing.expect(std.mem.indexOf(u8, project_data, "\"schema\": \"scrapbot.web-project-data.v1\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, project_data, "\"project\": \"Web Demo\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, project_data, "\"default_scene\": \"scenes/main.scene.toml\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, project_data, "\"scene_source\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, project_data, "\"scripts\"") != null);
+}
+
+test "buildProject rejects web proof of concept bundles with native modules" {
+    const root_path = ".zig-cache/test-build-project-web-native-source";
+    const output_root = ".zig-cache/test-build-project-web-native-output";
+    const io = Io.Threaded.global_single_threaded.io();
+    const cwd = Io.Dir.cwd();
+    cwd.deleteTree(io, root_path) catch {};
+    cwd.deleteTree(io, output_root) catch {};
+    defer cwd.deleteTree(io, root_path) catch {};
+    defer cwd.deleteTree(io, output_root) catch {};
+
+    try initProject(io, std.testing.allocator, root_path, "Web Native");
+    const root_dir = try cwd.openDir(io, root_path, .{});
+    defer root_dir.close(io);
+    try root_dir.writeFile(io, .{
+        .sub_path = project_file_name,
+        .data = "name = \"Web Native\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/main.luau\"]\nnative = \"native/game.zig\"\n",
+    });
+
+    try std.testing.expectError(ProjectError.UnsupportedWebNativeModule, buildProject(io, std.testing.allocator, root_path, .{
+        .output_root = output_root,
+        .name = "web-native-test",
+        .target = .web,
+    }));
 }
 
 test "buildProject default output skips absolute in-project output tree" {

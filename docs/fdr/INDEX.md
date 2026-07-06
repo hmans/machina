@@ -22,3 +22,4 @@
 | [FDR-018](FDR-018-editor-entity-inspector.md) | Editor Entity Inspector | Active | 2026-07-05 |
 | [FDR-019](FDR-019-host-game-builds.md) | Host Game Builds | Active | 2026-07-04 |
 | [FDR-020](FDR-020-postprocess-and-hdr-render-settings.md) | Postprocess and HDR Render Settings | Active | 2026-07-05 |
+| [FDR-021](FDR-021-web-export-proof-of-concept.md) | Web Export Proof of Concept | Active | 2026-07-06 |

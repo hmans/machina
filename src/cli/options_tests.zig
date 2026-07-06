@@ -187,13 +187,14 @@ test "parseTestOptions accepts path and json format" {
     try std.testing.expectEqual(CheckOutputFormat.json, parsed.format);
 }
 
-test "parseBuildOptions accepts path output name force and json format" {
-    const args = [_][]const u8{ "examples/minimal", "--output=zig-out/packages", "--name", "minimal-demo", "--force", "--format=json" };
+test "parseBuildOptions accepts path output name force target and json format" {
+    const args = [_][]const u8{ "examples/minimal", "--output=zig-out/packages", "--name", "minimal-demo", "--force", "--target=web", "--format=json" };
     const parsed = try options.parseBuildOptions(std.testing.allocator, &args);
     try std.testing.expectEqualStrings("examples/minimal", parsed.target_path);
     try std.testing.expectEqualStrings("zig-out/packages", parsed.output_root.?);
     try std.testing.expectEqualStrings("minimal-demo", parsed.name.?);
     try std.testing.expect(parsed.force);
+    try std.testing.expectEqual(@as(@TypeOf(parsed.build_target), .web), parsed.build_target);
     try std.testing.expectEqual(CheckOutputFormat.json, parsed.format);
 }
 
@@ -201,6 +202,12 @@ test "parseBuildOptions defaults output root to project build directory" {
     const parsed = try options.parseBuildOptions(std.testing.allocator, &.{});
     try std.testing.expectEqualStrings(".", parsed.target_path);
     try std.testing.expect(parsed.output_root == null);
+    try std.testing.expectEqual(@as(@TypeOf(parsed.build_target), .host), parsed.build_target);
+}
+
+test "parseBuildOptions rejects unknown build target" {
+    const args = [_][]const u8{"--target=mobile"};
+    try std.testing.expectError(ArgumentError.InvalidBuildTarget, options.parseBuildOptions(std.testing.allocator, &args));
 }
 
 test "parseBuildOptions rejects extra positionals" {

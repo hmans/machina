@@ -27,6 +27,11 @@ pub const LoadResult = union(enum) {
     diagnostic: Diagnostic,
 };
 
+pub const MemorySource = struct {
+    path: []const u8,
+    contents: []const u8,
+};
+
 pub const NativeSystemContext = native_api.SystemContext;
 pub const NativeSystemFn = native_api.SystemRunFn;
 
@@ -932,6 +937,42 @@ pub fn loadProjectProgramDetailedWithNative(
     };
     registerNativeSystems(&program, native_extension) catch |err| {
         const diagnostic = try nativeRegistrationDiagnostic(allocator, failedNativeSystemId(native_extension, program.native_systems.items.len), err);
+        program.deinit();
+        return .{ .diagnostic = diagnostic };
+    };
+    registerDeclaredSystems(&program) catch |err| {
+        const diagnostic = try registrationDiagnostic(&program, err);
+        program.deinit();
+        return .{ .diagnostic = diagnostic };
+    };
+    program.schedule = buildRuntimeSchedule(allocator, program.registry) catch |err| {
+        const diagnostic = try makeDiagnostic(allocator, .{
+            .stage = .schedule,
+            .message = @errorName(err),
+        });
+        program.deinit();
+        return .{ .diagnostic = diagnostic };
+    };
+    try program.initializeSystemProfiles();
+    return .{ .program = program };
+}
+
+pub fn loadMemoryProgramDetailed(
+    allocator: std.mem.Allocator,
+    sources: []const MemorySource,
+) !LoadResult {
+    var program = try initProgram(allocator);
+    errdefer program.deinit();
+
+    for (sources) |source| {
+        if (try loadChunk(&program, source.path, source.contents)) |diagnostic| {
+            program.deinit();
+            return .{ .diagnostic = diagnostic };
+        }
+    }
+
+    registerDeclaredComponents(&program) catch |err| {
+        const diagnostic = try registrationDiagnostic(&program, err);
         program.deinit();
         return .{ .diagnostic = diagnostic };
     };

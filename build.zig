@@ -17,6 +17,11 @@ pub fn build(b: *std.Build) void {
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "zig_exe", b.graph.zig_exe);
     const sanitize_c: ?std.zig.SanitizeC = if (target.result.os.tag == .windows and target.result.abi == .msvc) .off else null;
+    const web_target = b.resolveTargetQuery(.{
+        .cpu_arch = .wasm32,
+        .os_tag = .wasi,
+        .abi = .musl,
+    });
 
     const scrapbot_mod = b.addModule("scrapbot", .{
         .root_source_file = b.path("src/root.zig"),
@@ -48,6 +53,29 @@ pub fn build(b: *std.Build) void {
     linkWindowPlatform(exe, target, window_platform);
 
     b.installArtifact(exe);
+
+    const web_player_mod = b.createModule(.{
+        .root_source_file = b.path("src/web_player.zig"),
+        .target = web_target,
+        .optimize = .ReleaseSmall,
+        .sanitize_c = null,
+    });
+    linkLuau(b, web_player_mod, web_target);
+    web_player_mod.addCSourceFiles(.{
+        .root = b.path(""),
+        .language = .cpp,
+        .flags = &.{"-std=c++17"},
+        .files = &.{"src/wasm_cxxabi_stubs.cpp"},
+    });
+    const web_player = b.addExecutable(.{
+        .name = "scrapbot-web-player",
+        .root_module = web_player_mod,
+    });
+    web_player.entry = .disabled;
+    web_player.rdynamic = true;
+    web_player.wasi_exec_model = .reactor;
+    web_player.root_module.linkSystemLibrary("c++abi", .{});
+    b.installArtifact(web_player);
 
     const run_step = b.step("run", "Run scrapbot");
     const run_cmd = b.addRunArtifact(exe);
@@ -117,6 +145,9 @@ fn linkLuau(b: *std.Build, module: *std.Build.Module, target: std.Build.Resolved
         module.linkSystemLibrary("msvcprt", .{});
     } else {
         module.linkSystemLibrary("c++", .{});
+        if (target.result.os.tag == .wasi) {
+            module.linkSystemLibrary("c++abi", .{});
+        }
     }
     module.addCSourceFiles(.{
         .root = b.path(""),
