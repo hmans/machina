@@ -14,6 +14,7 @@ A compact, experimental, and probably mostly useless game engine that tries to a
   - [x] Odin smoke build scaffold
   - [x] Odin project metadata check slice
   - [x] Odin scene structure check slice
+  - [x] Odin engine component schema check slice
   - [ ] Odin CLI feature parity
   - [ ] Zig engine implementation removed
 - Runtime
