@@ -36,6 +36,7 @@ A compact, experimental, and probably mostly useless game engine that tries to a
   - [x] Odin test discovery/manifest command slice
   - [x] Odin test field assertion execution slice
   - [x] Odin test input resource replay slice
+  - [x] Odin retained scene UI replay slice
   - [x] Odin bounded run command slice
   - [x] Odin render extraction stats slice
   - [x] Odin render command validation slice

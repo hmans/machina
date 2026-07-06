@@ -351,6 +351,18 @@ equals_bool = true
 }
 
 @(test)
+test_run_test_command_replays_retained_ui_commands :: proc(t: ^testing.T) {
+	exit_code := run_with_output([]string{"scrapbot", "test", "tests/projects/ui_command_replay"}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_run_test_command_replays_retained_ui_scroll :: proc(t: ^testing.T) {
+	exit_code := run_with_output([]string{"scrapbot", "test", "tests/projects/ui_scroll_replay"}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_run_command_accepts_initialized_project :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-run-project")
 	defer os.remove_all(root)
