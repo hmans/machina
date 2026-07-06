@@ -18,6 +18,9 @@ WGPU_Flags :: u64
 WGPU_Buffer_Usage :: WGPU_Flags
 WGPU_Texture_Usage :: WGPU_Flags
 WGPU_Texture_Format :: u32
+WGPU_Texture_Dimension :: u32
+WGPU_Texture_View_Dimension :: u32
+WGPU_Texture_Aspect :: u32
 WGPU_SType :: u32
 WGPU_Status :: u32
 WGPU_Optional_Bool :: u32
@@ -39,6 +42,9 @@ WGPU_Bind_Group_Layout :: rawptr
 WGPU_Command_Encoder :: rawptr
 WGPU_Command_Buffer :: rawptr
 WGPU_Render_Pass_Encoder :: rawptr
+
+WGPU_FALSE :: WGPU_Bool(0)
+WGPU_TRUE :: WGPU_Bool(1)
 
 WGPU_STATUS_SUCCESS :: WGPU_Status(0x00000001)
 WGPU_STATUS_ERROR :: WGPU_Status(0x00000002)
@@ -83,6 +89,24 @@ WGPU_TEXTURE_FORMAT_DEPTH24_PLUS_STENCIL8 :: WGPU_Texture_Format(0x00000029)
 WGPU_TEXTURE_FORMAT_DEPTH32_FLOAT :: WGPU_Texture_Format(0x0000002A)
 WGPU_TEXTURE_FORMAT_DEPTH32_FLOAT_STENCIL8 :: WGPU_Texture_Format(0x0000002B)
 
+WGPU_TEXTURE_DIMENSION_UNDEFINED :: WGPU_Texture_Dimension(0x00000000)
+WGPU_TEXTURE_DIMENSION_1D :: WGPU_Texture_Dimension(0x00000001)
+WGPU_TEXTURE_DIMENSION_2D :: WGPU_Texture_Dimension(0x00000002)
+WGPU_TEXTURE_DIMENSION_3D :: WGPU_Texture_Dimension(0x00000003)
+
+WGPU_TEXTURE_VIEW_DIMENSION_UNDEFINED :: WGPU_Texture_View_Dimension(0x00000000)
+WGPU_TEXTURE_VIEW_DIMENSION_1D :: WGPU_Texture_View_Dimension(0x00000001)
+WGPU_TEXTURE_VIEW_DIMENSION_2D :: WGPU_Texture_View_Dimension(0x00000002)
+WGPU_TEXTURE_VIEW_DIMENSION_2D_ARRAY :: WGPU_Texture_View_Dimension(0x00000003)
+WGPU_TEXTURE_VIEW_DIMENSION_CUBE :: WGPU_Texture_View_Dimension(0x00000004)
+WGPU_TEXTURE_VIEW_DIMENSION_CUBE_ARRAY :: WGPU_Texture_View_Dimension(0x00000005)
+WGPU_TEXTURE_VIEW_DIMENSION_3D :: WGPU_Texture_View_Dimension(0x00000006)
+
+WGPU_TEXTURE_ASPECT_UNDEFINED :: WGPU_Texture_Aspect(0x00000000)
+WGPU_TEXTURE_ASPECT_ALL :: WGPU_Texture_Aspect(0x00000001)
+WGPU_TEXTURE_ASPECT_STENCIL_ONLY :: WGPU_Texture_Aspect(0x00000002)
+WGPU_TEXTURE_ASPECT_DEPTH_ONLY :: WGPU_Texture_Aspect(0x00000003)
+
 WGPU_BUFFER_USAGE_NONE :: WGPU_Buffer_Usage(0x0000000000000000)
 WGPU_BUFFER_USAGE_MAP_READ :: WGPU_Buffer_Usage(0x0000000000000001)
 WGPU_BUFFER_USAGE_MAP_WRITE :: WGPU_Buffer_Usage(0x0000000000000002)
@@ -105,6 +129,9 @@ WGPU_TEXTURE_USAGE_RENDER_ATTACHMENT :: WGPU_Texture_Usage(0x0000000000000010)
 WGPU_DEFAULT_TARGET_FORMAT :: WGPU_TEXTURE_FORMAT_BGRA8_UNORM_SRGB
 WGPU_DEPTH_FORMAT :: WGPU_TEXTURE_FORMAT_DEPTH24_PLUS
 WGPU_SHADOW_DEPTH_FORMAT :: WGPU_TEXTURE_FORMAT_DEPTH32_FLOAT
+WGPU_ARRAY_LAYER_COUNT_UNDEFINED :: WGPU_U32_MAX
+WGPU_MIP_LEVEL_COUNT_UNDEFINED :: WGPU_U32_MAX
+WGPU_COPY_STRIDE_UNDEFINED :: WGPU_U32_MAX
 
 WGPU_String_View :: struct #align(align_of(rawptr)) {
 	data:   rawptr,
@@ -121,6 +148,46 @@ WGPU_Chained_Struct_Out :: struct #align(align_of(rawptr)) {
 	s_type: WGPU_SType,
 }
 
+WGPU_Extent_3D :: struct {
+	width:                 u32,
+	height:                u32,
+	depth_or_array_layers: u32,
+}
+
+WGPU_Buffer_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain:      ^WGPU_Chained_Struct,
+	label:              WGPU_String_View,
+	usage:              WGPU_Buffer_Usage,
+	size:               u64,
+	mapped_at_creation: WGPU_Bool,
+}
+
+WGPU_Texture_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain:    ^WGPU_Chained_Struct,
+	label:            WGPU_String_View,
+	usage:            WGPU_Texture_Usage,
+	dimension:        WGPU_Texture_Dimension,
+	size:             WGPU_Extent_3D,
+	format:           WGPU_Texture_Format,
+	mip_level_count:  u32,
+	sample_count:     u32,
+	view_format_count: c.size_t,
+	view_formats:     rawptr,
+}
+
+WGPU_Texture_View_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain:    ^WGPU_Chained_Struct,
+	label:            WGPU_String_View,
+	format:           WGPU_Texture_Format,
+	dimension:        WGPU_Texture_View_Dimension,
+	base_mip_level:   u32,
+	mip_level_count:  u32,
+	base_array_layer: u32,
+	array_layer_count: u32,
+	aspect:           WGPU_Texture_Aspect,
+	usage:            WGPU_Texture_Usage,
+}
+
 wgpu_string_view_null :: proc() -> WGPU_String_View {
 	return WGPU_String_View{data = nil, length = WGPU_STRLEN}
 }
@@ -131,6 +198,65 @@ wgpu_string_view_empty :: proc() -> WGPU_String_View {
 
 wgpu_string_view_from_raw :: proc(data: rawptr, length: c.size_t) -> WGPU_String_View {
 	return WGPU_String_View{data = data, length = length}
+}
+
+wgpu_extent_3d :: proc(width, height: u32, depth_or_array_layers: u32 = 1) -> WGPU_Extent_3D {
+	return WGPU_Extent_3D{
+		width = width,
+		height = height,
+		depth_or_array_layers = depth_or_array_layers,
+	}
+}
+
+wgpu_texture_descriptor_2d :: proc(label: WGPU_String_View, width, height: u32, format: WGPU_Texture_Format, usage: WGPU_Texture_Usage) -> WGPU_Texture_Descriptor {
+	return WGPU_Texture_Descriptor{
+		next_in_chain = nil,
+		label = label,
+		usage = usage,
+		dimension = WGPU_TEXTURE_DIMENSION_2D,
+		size = wgpu_extent_3d(width, height),
+		format = format,
+		mip_level_count = 1,
+		sample_count = 1,
+		view_format_count = 0,
+		view_formats = nil,
+	}
+}
+
+wgpu_texture_view_descriptor_default :: proc(label: WGPU_String_View) -> WGPU_Texture_View_Descriptor {
+	return WGPU_Texture_View_Descriptor{
+		next_in_chain = nil,
+		label = label,
+		format = WGPU_TEXTURE_FORMAT_UNDEFINED,
+		dimension = WGPU_TEXTURE_VIEW_DIMENSION_UNDEFINED,
+		base_mip_level = 0,
+		mip_level_count = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
+		base_array_layer = 0,
+		array_layer_count = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
+		aspect = WGPU_TEXTURE_ASPECT_ALL,
+		usage = WGPU_TEXTURE_USAGE_NONE,
+	}
+}
+
+wgpu_single_mip_texture_view_descriptor :: proc(label: WGPU_String_View) -> WGPU_Texture_View_Descriptor {
+	descriptor := wgpu_texture_view_descriptor_default(label)
+	descriptor.mip_level_count = 1
+	descriptor.array_layer_count = 1
+	return descriptor
+}
+
+wgpu_buffer_descriptor :: proc(label: WGPU_String_View, usage: WGPU_Buffer_Usage, size: u64, mapped_at_creation: bool = false) -> WGPU_Buffer_Descriptor {
+	mapped := WGPU_FALSE
+	if mapped_at_creation {
+		mapped = WGPU_TRUE
+	}
+	return WGPU_Buffer_Descriptor{
+		next_in_chain = nil,
+		label = label,
+		usage = usage,
+		size = size,
+		mapped_at_creation = mapped,
+	}
 }
 
 wgpu_offscreen_texture_usage :: proc() -> WGPU_Texture_Usage {

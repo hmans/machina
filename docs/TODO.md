@@ -101,6 +101,7 @@
 - [x] Report first-pass Odin bounded-run reload events for project, scene, script, and native source changes.
 - [x] Extract the Odin live-project per-frame reload/update tick for future unbounded window-loop integration.
 - [x] Add first-pass Odin `wgpu-native` C ABI type and renderer constant boundary.
+- [x] Add first-pass Odin `wgpu-native` texture, texture-view, and buffer descriptor boundary.
 - [ ] Port remaining unbounded/window-loop reload diagnostics from Zig to Odin.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
 - [x] Port first-pass Odin software offscreen PNG/BMP image output and render-test pixel verification.
