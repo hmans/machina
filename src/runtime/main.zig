@@ -2174,7 +2174,7 @@ pub const UiRectIterator = struct {
     size_column: ?*const ComponentColumn = null,
     color_column: ?*const ComponentColumn = null,
     corner_radius_column: ?*const ComponentColumn = null,
-    row: usize = 0,
+    entity_index: usize = 0,
 
     pub fn next(self: *UiRectIterator) ?UiRect {
         const table = self.table orelse return null;
@@ -2182,9 +2182,10 @@ pub const UiRectIterator = struct {
         const size_column = self.size_column orelse return null;
         const color_column = self.color_column orelse return null;
         const corner_radius_column = self.corner_radius_column orelse return null;
-        while (self.row < table.entities.items.len) {
-            const row = self.row;
-            self.row += 1;
+        while (self.entity_index < table.rows_by_entity.items.len) {
+            const entity_index = self.entity_index;
+            self.entity_index += 1;
+            const row = table.rows_by_entity.items[entity_index] orelse continue;
             const handle = table.entities.items[row];
             const stored_entity = self.world.entity(handle) catch continue;
             return .{
@@ -2209,7 +2210,7 @@ pub const UiTextIterator = struct {
     size_column: ?*const ComponentColumn = null,
     color_column: ?*const ComponentColumn = null,
     value_column: ?*const ComponentColumn = null,
-    row: usize = 0,
+    entity_index: usize = 0,
 
     pub fn next(self: *UiTextIterator) ?UiText {
         const table = self.table orelse return null;
@@ -2217,9 +2218,10 @@ pub const UiTextIterator = struct {
         const size_column = self.size_column orelse return null;
         const color_column = self.color_column orelse return null;
         const value_column = self.value_column orelse return null;
-        while (self.row < table.entities.items.len) {
-            const row = self.row;
-            self.row += 1;
+        while (self.entity_index < table.rows_by_entity.items.len) {
+            const entity_index = self.entity_index;
+            self.entity_index += 1;
+            const row = table.rows_by_entity.items[entity_index] orelse continue;
             const handle = table.entities.items[row];
             const stored_entity = self.world.entity(handle) catch continue;
             return .{
@@ -2242,16 +2244,17 @@ pub const UiSeparatorIterator = struct {
     position_column: ?*const ComponentColumn = null,
     size_column: ?*const ComponentColumn = null,
     color_column: ?*const ComponentColumn = null,
-    row: usize = 0,
+    entity_index: usize = 0,
 
     pub fn next(self: *UiSeparatorIterator) ?UiSeparator {
         const table = self.table orelse return null;
         const position_column = self.position_column orelse return null;
         const size_column = self.size_column orelse return null;
         const color_column = self.color_column orelse return null;
-        while (self.row < table.entities.items.len) {
-            const row = self.row;
-            self.row += 1;
+        while (self.entity_index < table.rows_by_entity.items.len) {
+            const entity_index = self.entity_index;
+            self.entity_index += 1;
+            const row = table.rows_by_entity.items[entity_index] orelse continue;
             const handle = table.entities.items[row];
             const stored_entity = self.world.entity(handle) catch continue;
             return .{
@@ -2272,7 +2275,8 @@ fn tableHasEntity(table: ComponentTable, handle: EntityHandle) bool {
     if (index >= table.rows_by_entity.items.len) {
         return false;
     }
-    return table.rows_by_entity.items[index] != null;
+    const row = table.rows_by_entity.items[index] orelse return false;
+    return table.entities.items[row].generation == handle.generation;
 }
 
 fn columnVec3At(column: *const ComponentColumn, row: usize) ?[3]f32 {

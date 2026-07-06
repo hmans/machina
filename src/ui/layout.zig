@@ -52,9 +52,9 @@ pub const LayoutItem = struct {
 
 pub const LayoutCache = struct {
     allocator: std.mem.Allocator,
-    resolved: std.ArrayList(?ResolvedLayout) = .empty,
-    item_sizes: std.ArrayList(?[3]f32) = .empty,
-    resolved_item_sizes: std.ArrayList(?[3]f32) = .empty,
+    resolved: std.ArrayList(?CachedResolvedLayout) = .empty,
+    item_sizes: std.ArrayList(?CachedSize) = .empty,
+    resolved_item_sizes: std.ArrayList(?CachedSize) = .empty,
     linear_groups: std.ArrayList(CachedLinearGroup) = .empty,
 
     pub fn init(allocator: std.mem.Allocator) LayoutCache {
@@ -94,12 +94,22 @@ pub const LayoutCache = struct {
         }
     }
 
-    fn ensureOptionalSizeCapacity(self: *LayoutCache, list: *std.ArrayList(?[3]f32), count: usize) Error!void {
+    fn ensureOptionalSizeCapacity(self: *LayoutCache, list: *std.ArrayList(?CachedSize), count: usize) Error!void {
         try list.ensureTotalCapacity(self.allocator, count);
         while (list.items.len < count) {
             list.appendAssumeCapacity(null);
         }
     }
+};
+
+const CachedResolvedLayout = struct {
+    entity: runtime.EntityHandle,
+    layout: ResolvedLayout,
+};
+
+const CachedSize = struct {
+    entity: runtime.EntityHandle,
+    size: [3]f32,
 };
 
 const CachedLinearGroup = struct {
@@ -401,12 +411,14 @@ fn resolveBaseWithCache(cache: *LayoutCache, world: *const runtime.World, entity
         return error.InvalidLayout;
     }
     if (cache.resolved.items[index]) |cached| {
-        return cached;
+        if (cached.entity.generation == entity.generation) {
+            return cached.layout;
+        }
     }
 
     var resolved: ResolvedLayout = .{ .position = .{ 0.0, 0.0, 0.0 } };
     const item = (try layoutItem(world, entity)) orelse {
-        cache.resolved.items[index] = resolved;
+        cache.resolved.items[index] = .{ .entity = entity, .layout = resolved };
         return resolved;
     };
     const parent = world.findEntityById(item.parent) orelse return error.InvalidLayout;
@@ -470,7 +482,7 @@ fn resolveBaseWithCache(cache: *LayoutCache, world: *const runtime.World, entity
     const parent_base = try resolveBaseWithCache(cache, world, parent, depth + 1);
     resolved.position = addVec3(resolved.position, parent_base.position);
     resolved.clip = try combineClip(resolved.clip, parent_base.clip);
-    cache.resolved.items[index] = resolved;
+    cache.resolved.items[index] = .{ .entity = entity, .layout = resolved };
     return resolved;
 }
 
@@ -785,7 +797,9 @@ pub fn resolvedItemSizeWithCache(cache: *LayoutCache, world: *const runtime.Worl
         return error.InvalidLayout;
     }
     if (cache.resolved_item_sizes.items[index]) |cached| {
-        return cached;
+        if (cached.entity.generation == entity.generation) {
+            return cached.size;
+        }
     }
 
     const size = blk: {
@@ -802,7 +816,7 @@ pub fn resolvedItemSizeWithCache(cache: *LayoutCache, world: *const runtime.Worl
         }
         break :blk try itemSizeWithCache(cache, world, entity);
     };
-    cache.resolved_item_sizes.items[index] = size;
+    cache.resolved_item_sizes.items[index] = .{ .entity = entity, .size = size };
     return size;
 }
 
@@ -855,7 +869,9 @@ fn itemSizeWithCache(cache: *LayoutCache, world: *const runtime.World, entity: r
         return error.InvalidLayout;
     }
     if (cache.item_sizes.items[index]) |cached| {
-        return cached;
+        if (cached.entity.generation == entity.generation) {
+            return cached.size;
+        }
     }
     var size = try itemNaturalSizeCached(cache, world, entity);
     if (try layoutItem(world, entity)) |item| {
@@ -873,7 +889,7 @@ fn itemSizeWithCache(cache: *LayoutCache, world: *const runtime.World, entity: r
         size[1] += item.margin[1] * 2.0;
         size[2] += item.margin[2] * 2.0;
     }
-    cache.item_sizes.items[index] = size;
+    cache.item_sizes.items[index] = .{ .entity = entity, .size = size };
     return size;
 }
 
@@ -1214,7 +1230,7 @@ fn resolvedLinearGroupSlots(world: *const runtime.World, parent: runtime.EntityH
 
 fn resolvedLinearGroupSlotsCached(cache: *LayoutCache, world: *const runtime.World, parent: runtime.EntityHandle, group: HGroup, main_axis: usize) Error!*LinearLayoutSlots {
     for (cache.linear_groups.items) |*entry| {
-        if (entry.parent.index == parent.index and entry.main_axis == main_axis) {
+        if (entry.parent.index == parent.index and entry.parent.generation == parent.generation and entry.main_axis == main_axis) {
             return &entry.slots;
         }
     }

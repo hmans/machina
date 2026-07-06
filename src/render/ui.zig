@@ -482,7 +482,7 @@ fn appendUiText(
     }
 
     const origin_x = text.position[0];
-    if (!rectIntersectsClip(text.position, textPixelSize(text.value, text.size), clip)) {
+    if (!(try rectIntersectsClip(text.position, textPixelSize(text.value, text.size), clip))) {
         return;
     }
     var cursor_x = origin_x;
@@ -542,11 +542,14 @@ fn appendGlyph(
     }
 }
 
-fn rectIntersectsClip(position: [3]f32, size: [3]f32, clip: ?UiClipRect) bool {
+fn rectIntersectsClip(position: [3]f32, size: [3]f32, clip: ?UiClipRect) RenderError!bool {
     if (size[0] <= 0.0 or size[1] <= 0.0) {
         return false;
     }
     const clip_rect = clip orelse return true;
+    if (!isFiniteVec3(clip_rect.position) or !isFiniteVec3(clip_rect.size)) {
+        return RenderError.InvalidScene;
+    }
     if (clip_rect.size[0] <= 0.0 or clip_rect.size[1] <= 0.0) {
         return false;
     }
