@@ -658,7 +658,8 @@ test "editor overlay extracts selected entity inspector and translate gizmo" {
     };
     try state.extractSceneWithInput(.{ .world = &scene_world }, frame_input);
 
-    try std.testing.expectEqual(@as(usize, 4), state.world.renderableMeshCount());
+    try std.testing.expectEqual(@as(usize, 3), state.world.renderableMeshCount());
+    try std.testing.expectEqual(@as(usize, 4), state.extractedRenderableMeshes().len);
     try std.testing.expect(state.world.findEntityById("scrapbot.editor.inspector.panel") != null);
     try std.testing.expect(state.world.findEntityById("scrapbot.editor.inspector.accent") == null);
 

@@ -120,6 +120,19 @@ pub const Entity = struct {
     provenance: EntityProvenance = .spawned,
 };
 
+pub const StructuralEventKind = enum {
+    entity_created,
+    entity_removed,
+    component_added,
+    component_removed,
+};
+
+pub const StructuralEvent = struct {
+    kind: StructuralEventKind,
+    entity: EntityHandle,
+    component_id: ?[]const u8 = null,
+};
+
 pub const Transform = struct {
     position: [3]f32 = .{ 0.0, 0.0, 0.0 },
     rotation: [3]f32 = .{ 0.0, 0.0, 0.0 },

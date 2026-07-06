@@ -77,6 +77,7 @@
 
 ## Rendering
 
+- [ ] Move editor/UI overlay entities into a main-world engine-transient lifecycle.
 - [ ] Add mesh asset import and asset-cache lifecycle.
 - [ ] Add texture assets and texture-backed materials.
 - [ ] Add material variants beyond flat surface color.

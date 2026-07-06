@@ -3,23 +3,16 @@ const runtime = @import("../runtime.zig");
 const editor_gizmo = @import("../editor/gizmo.zig");
 const editor_metrics = @import("../editor/metrics.zig");
 const editor_theme = @import("../editor/theme.zig");
-const render_camera_module = @import("camera.zig");
 const render_extract = @import("extract.zig");
 const render_input = @import("input.zig");
 const render_editor_extract = @import("editor/extract.zig");
 const render_types = @import("types.zig");
 const render_ui = @import("ui.zig");
 
-const CameraState = render_camera_module.CameraState;
-const DirectionalLightState = render_camera_module.DirectionalLightState;
 const FrameInput = render_input.FrameInput;
 const RenderError = render_types.RenderError;
 const UiCanvasTransform = render_ui.UiCanvasTransform;
-const cameraState = render_camera_module.cameraState;
-const directionalLightState = render_camera_module.directionalLightState;
-const extractMeshInto = render_extract.extractMeshInto;
 const extractSceneUiInto = render_extract.extractSceneUiInto;
-const extractRendererInto = render_extract.extractRendererInto;
 const extractDebugOverlayInto = render_editor_extract.extractDebugOverlayInto;
 const monotonicTimestampNs = render_editor_extract.monotonicTimestampNs;
 const setRenderFrameInput = render_ui.setRenderFrameInput;
@@ -99,6 +92,9 @@ pub const RenderEcsState = struct {
     registry: runtime.ComponentRegistry,
     schedule: runtime.SystemSchedule,
     world: runtime.World,
+    scratch_world: runtime.World,
+    extracted_renderables: std.ArrayList(runtime.RenderableMesh) = .empty,
+    scratch_renderables: std.ArrayList(runtime.RenderableMesh) = .empty,
     system_profiles: std.ArrayList(RenderSystemProfileState) = .empty,
     system_profile_snapshots: std.ArrayList(runtime.SystemProfileSnapshot) = .empty,
     combined_system_profile_snapshots: std.ArrayList(runtime.SystemProfileSnapshot) = .empty,
@@ -120,6 +116,7 @@ pub const RenderEcsState = struct {
             .registry = registry,
             .schedule = schedule,
             .world = runtime.World.init(allocator),
+            .scratch_world = runtime.World.init(allocator),
         };
         errdefer state.deinit();
         try state.initializeSystemProfiles();
@@ -134,6 +131,9 @@ pub const RenderEcsState = struct {
         self.system_profile_snapshots.deinit(self.allocator);
         self.clearSystemProfiles();
         self.system_profiles.deinit(self.allocator);
+        self.scratch_renderables.deinit(self.allocator);
+        self.extracted_renderables.deinit(self.allocator);
+        self.scratch_world.deinit();
         self.world.deinit();
         self.schedule.deinit();
         self.registry.deinit();
@@ -252,71 +252,58 @@ pub const RenderEcsState = struct {
     }
 
     pub fn extractSceneWithInput(self: *RenderEcsState, scene: Scene, input: FrameInput) RenderError!void {
-        var next_world = runtime.World.init(self.allocator);
-        errdefer next_world.deinit();
+        self.scratch_renderables.clearRetainingCapacity();
+        self.scratch_world.clearRetainingCapacity();
 
-        setRenderFrameInput(&next_world, input) catch |err| {
+        setRenderFrameInput(&self.scratch_world, input) catch |err| {
             std.log.err("render extract failed while setting frame input: {s}", .{@errorName(err)});
             return err;
         };
-        extractRendererInto(&next_world, scene.world) catch |err| {
-            std.log.err("render extract failed while extracting renderer settings: {s}", .{@errorName(err)});
-            return err;
-        };
 
-        var mesh_index: usize = 0;
         var meshes = scene.world.renderableMeshes();
         while (meshes.next()) |mesh| {
-            extractMeshInto(self.allocator, &next_world, mesh_index, mesh) catch |err| {
-                std.log.err("render extract failed while extracting mesh {d}: {s}", .{ mesh_index, @errorName(err) });
-                return err;
-            };
-            mesh_index += 1;
+            self.scratch_renderables.append(self.allocator, mesh) catch return RenderError.OutOfMemory;
         }
 
         if (input.debug_overlay_visible) {
-            extractEditorGizmoInto(self.allocator, &next_world, scene.world, input) catch |err| {
+            extractEditorGizmoInto(self.allocator, &self.scratch_world, scene.world, input) catch |err| {
                 std.log.err("render extract failed while extracting editor gizmo: {s}", .{@errorName(err)});
+                return err;
+            };
+            self.appendExtractedEditorGizmoMeshes() catch |err| {
+                std.log.err("render extract failed while snapshotting editor gizmo: {s}", .{@errorName(err)});
                 return err;
             };
         }
 
         if (input.ui_visible) {
-            extractSceneUiInto(&next_world, scene.world) catch |err| {
+            extractSceneUiInto(&self.scratch_world, scene.world) catch |err| {
                 std.log.err("render extract failed while extracting scene UI: {s}", .{@errorName(err)});
                 return err;
             };
         }
 
         if (input.debug_overlay_visible) {
-            extractDebugOverlayInto(self.allocator, &next_world, input, scene.world) catch |err| {
+            extractDebugOverlayInto(self.allocator, &self.scratch_world, input, scene.world) catch |err| {
                 std.log.err("render extract failed while extracting editor overlay: {s}", .{@errorName(err)});
                 return err;
             };
         }
 
-        var render_camera = cameraState(scene.world) catch |err| {
-            std.log.err("render extract failed while resolving camera: {s}", .{@errorName(err)});
-            return err;
-        };
-        if (input.camera_override) |camera_transform| {
-            render_camera.transform = camera_transform;
-        }
-        extractCameraInto(&next_world, render_camera) catch |err| {
-            std.log.err("render extract failed while extracting camera: {s}", .{@errorName(err)});
-            return err;
-        };
-        const light = directionalLightState(scene.world) catch |err| {
-            std.log.err("render extract failed while resolving directional light: {s}", .{@errorName(err)});
-            return err;
-        };
-        extractDirectionalLightInto(&next_world, light) catch |err| {
-            std.log.err("render extract failed while extracting directional light: {s}", .{@errorName(err)});
-            return err;
-        };
+        std.mem.swap(runtime.World, &self.world, &self.scratch_world);
+        std.mem.swap(std.ArrayList(runtime.RenderableMesh), &self.extracted_renderables, &self.scratch_renderables);
+    }
 
-        self.world.deinit();
-        self.world = next_world;
+    pub fn extractedRenderableMeshes(self: *const RenderEcsState) []const runtime.RenderableMesh {
+        return self.extracted_renderables.items;
+    }
+
+    fn appendExtractedEditorGizmoMeshes(self: *RenderEcsState) RenderError!void {
+        for (editor_gizmo.translate_entity_ids) |entity_id| {
+            const entity = self.scratch_world.findEntityById(entity_id) orelse continue;
+            const mesh = self.scratch_world.renderableMeshForEntity(entity) orelse continue;
+            self.scratch_renderables.append(self.allocator, mesh) catch return RenderError.OutOfMemory;
+        }
     }
 
     pub fn updateUiInteractions(self: *RenderEcsState) RenderError!void {
@@ -623,26 +610,6 @@ fn extractEditorGizmoInto(
             .accent_soft = editor_palette.accent_soft,
         },
     ) catch |err| return mapEditorGizmoError(err);
-}
-
-fn extractCameraInto(world: *runtime.World, camera: CameraState) RenderError!void {
-    const entity = world.createEntity("scrapbot.render.extract.camera", "Render Camera") catch |err| return mapWorldError(err);
-    world.setTransform(entity, camera.transform) catch |err| return mapWorldError(err);
-    world.setCamera(entity, .{
-        .fov_y_degrees = camera.fov_y_degrees,
-        .near = camera.near,
-        .far = camera.far,
-    }) catch |err| return mapWorldError(err);
-}
-
-fn extractDirectionalLightInto(world: *runtime.World, light: DirectionalLightState) RenderError!void {
-    const entity = world.createEntity("scrapbot.render.extract.directional_light", "Render Directional Light") catch |err| return mapWorldError(err);
-    world.setDirectionalLight(entity, .{
-        .direction = light.direction,
-        .color = light.color,
-        .intensity = light.intensity,
-        .ambient = light.ambient,
-    }) catch |err| return mapWorldError(err);
 }
 
 fn batchIndexFromDrawEntity(world: *const runtime.World, entity: runtime.EntityHandle) RenderError!usize {
