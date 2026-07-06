@@ -15,9 +15,9 @@ Host game builds let users package a Scrapbot project into a runnable bundle for
 - Users can choose the output root, bundle name, text or JSON output, and whether to replace a previous Scrapbot-generated bundle.
 - Generated project caches and repository/build directories are excluded from the copied project tree.
 - Projects with `native = "..."` are packaged with a prebuilt native library artifact.
-- Projects that already contain only `native_artifact` copy that artifact explicitly even when it lives under the otherwise-excluded `.scrapbot` directory. During the Odin migration, the Odin `scrapbot build` path preserves these existing artifacts and can compile `native = "native/game.odin"` sources that import `scrapbot "scrapbot:scrapbot_native"` into packaged native artifacts before runtime loading is available.
+- Projects that already contain only `native_artifact` copy that artifact explicitly even when it lives under the otherwise-excluded `.scrapbot` directory. During the Odin migration, the Odin `scrapbot build` path preserves these existing artifacts and can compile `native = "native/game.odin"` sources that import `scrapbot "scrapbot:scrapbot_native"` into packaged native artifacts.
 - Packaged projects load `native_artifact` when present, so they do not need the Zig compiler or native source file to run.
-- Build validates the copied packaged project before reporting success. The current Zig path loads and registers packaged native artifacts; during the Odin migration, the Odin path validates preserved or newly built artifact presence and packaged metadata until compiled Odin-native module loading exists.
+- Build validates the copied packaged project before reporting success. The current Zig path loads and registers packaged native artifacts; during the Odin migration, the Odin path loads preserved or newly built Odin artifacts for first-pass registration and scalar callback execution while full host API parity remains pending.
 - Build bundles are host-only. Cross-platform export, mobile packaging, codesigning, notarization, and fully static project-native executables are not part of this feature.
 
 ## Design Decisions

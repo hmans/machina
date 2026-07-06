@@ -89,10 +89,11 @@
 - [x] Port packaged `native_artifact` copying and build-manifest reporting to Odin `scrapbot build`.
 - [x] Port SDL3 host-library discovery, copy, launcher search paths, and manifest reporting to Odin `scrapbot build`.
 - [x] Port build-time Odin-native source compilation into packaged `native_artifact` output for `scrapbot build`.
+- [x] Load packaged Odin native artifacts and execute first-pass query plus scalar field callbacks through the shared ECS schedule.
 - [ ] Port remaining script runtime diagnostics from Zig to Odin, including reload execution paths and native execution once native systems can run.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
 - [ ] Port Odin render image output, offscreen image verification, and hidden headful smoke paths.
-- [ ] Load and execute general project-local native Odin systems from compiled modules and replace the Zig native reload path.
+- [ ] Complete the project-local Odin native host API, including vec3/string/structural callbacks, development-time source rebuild/load, reload diagnostics, and replacement of the Zig native reload path.
 - [ ] Remove Zig build/test/dependency surfaces after Odin parity is verified.
 - [ ] Add scroll support to inspector component vgroups.
 - [ ] Add typed inspector controls for floats, ints, strings, and enums.

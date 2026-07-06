@@ -401,6 +401,98 @@ scrapbot_register :: proc(api: ^scrapbot.Register_Api) -> bool {
 }
 
 @(test)
+test_run_script_simulation_executes_packaged_odin_native_artifact_callback :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-simulation-packaged-odin-native")
+	defer os.remove_all(root)
+	defer delete(root)
+	output_root := make_test_project_root(t, "script-simulation-packaged-odin-native-output")
+	defer os.remove_all(output_root)
+	defer delete(output_root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative = \"native/game.odin\"\n")
+	write_file(t, root, "scenes/main.scene.toml", `name = "Main"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.stats]
+count = 1
+`)
+	write_file(t, root, "native/game.odin", `package game
+
+import scrapbot "scrapbot:scrapbot_native"
+
+stats_fields := []scrapbot.Component_Field{
+    {name = "count", field_type = .Int},
+}
+
+native_tick_writes := []string{"stats"}
+stats_query := []string{"stats"}
+
+native_tick :: proc "c" (ctx: ^scrapbot.System_Context) -> bool {
+    cursor := 0
+    for {
+        entity, found := scrapbot.query_next(ctx, stats_query[:], &cursor)
+        if !found {
+            break
+        }
+        count, count_ok := scrapbot.get_int(ctx, entity, "stats", "count")
+        if !count_ok {
+            return false
+        }
+        if !scrapbot.set_int(ctx, entity, "stats", "count", count + 1) {
+            return false
+        }
+    }
+    return true
+}
+
+@(export)
+scrapbot_register :: proc "c" (api: ^scrapbot.Register_Api) -> bool {
+    if !scrapbot.register_component(api, {
+        id = "stats",
+        fields = stats_fields[:],
+    }) {
+        return false
+    }
+    return scrapbot.register_system(api, {
+        id = "native_tick",
+        phase = .Update,
+        writes = native_tick_writes[:],
+        run = native_tick,
+    })
+}
+`)
+
+	build, build_err := build_project(Build_Options{
+		target_path = root,
+		output_root = output_root,
+		name = "packaged-native",
+	})
+	defer free_build_result(build)
+	testing.expect_value(t, build_err, Project_Error.None)
+	testing.expect(t, build.native_artifact != "")
+
+	result := check_project(build.project_path)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	testing.expect_value(t, runtime_system_schedule_system_count(result.update_schedule), 1)
+	simulation := run_script_simulation(&result, 1, 0.5)
+	defer script_diagnostic_free(&simulation.diagnostic)
+	testing.expect_value(t, simulation.ok, true)
+	testing.expect_value(t, simulation.completed_frames, 1)
+
+	entity, entity_found := runtime_world_find_entity_by_id(result.scene.world, "target")
+	testing.expect(t, entity_found)
+	value, value_err := runtime_world_get_component_field_value(result.scene.world, entity, "stats", "count")
+	testing.expect_value(t, value_err, Runtime_Error.None)
+	testing.expect_value(t, value.value_type, Runtime_Field_Type.Int)
+	testing.expect_value(t, value.int_value, 2)
+}
+
+@(test)
 test_run_script_simulation_reports_native_odin_set_field_write_access_diagnostic :: proc(t: ^testing.T) {
 	root := make_test_project(t, "script-simulation-native-odin-set-field-write-access")
 	defer os.remove_all(root)

@@ -83,13 +83,31 @@ test_build_project_copies_packaged_native_artifact_from_scrapbot_cache :: proc(t
 	defer delete(output_root)
 
 	testing.expect_value(t, init_project(root, "Artifact Game"), Project_Error.None)
-	artifact_project_path := ".scrapbot/build/native/libscrapbot_project.test"
-	artifact_full_path := project_relative_path(root, artifact_project_path)
-	defer delete(artifact_full_path)
-	artifact_parent := os.dir(artifact_full_path)
-	testing.expect_value(t, ensure_directory(artifact_parent), true)
-	testing.expect_value(t, os.write_entire_file(artifact_full_path, "native artifact bytes"), nil)
-	write_file(t, root, PROJECT_FILE_NAME, "name = \"Artifact Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative_artifact = \".scrapbot/build/native/libscrapbot_project.test\"\n")
+	write_file(t, root, "native/game.odin", `package game
+
+import scrapbot "scrapbot:scrapbot_native"
+
+stats_fields := []scrapbot.Component_Field{
+    {name = "count", field_type = .Int},
+}
+
+@(export)
+scrapbot_register :: proc "c" (api: ^scrapbot.Register_Api) -> bool {
+    return scrapbot.register_component(api, {
+        id = "native_stats",
+        fields = stats_fields[:],
+    })
+}
+`)
+	artifact_project_path, artifact_build_ok := build_odin_native_artifact(root, "native/game.odin")
+	defer delete(artifact_project_path)
+	testing.expect_value(t, artifact_build_ok, true)
+	metadata := strings.builder_make()
+	defer strings.builder_destroy(&metadata)
+	strings.write_string(&metadata, "name = \"Artifact Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative_artifact = \"")
+	strings.write_string(&metadata, artifact_project_path)
+	strings.write_string(&metadata, "\"\n")
+	write_file(t, root, PROJECT_FILE_NAME, strings.to_string(metadata))
 
 	result, err := build_project(Build_Options{
 		target_path = root,
@@ -109,7 +127,7 @@ test_build_project_copies_packaged_native_artifact_from_scrapbot_cache :: proc(t
 	copied_artifact, copied_read_err := os.read_entire_file(packaged_artifact_path, context.allocator)
 	testing.expect_value(t, copied_read_err, nil)
 	defer delete(copied_artifact)
-	testing.expect_value(t, string(copied_artifact), "native artifact bytes")
+	testing.expect(t, len(copied_artifact) > 0)
 
 	packaged := check_project(result.project_path)
 	defer free_check_result(packaged)
@@ -119,7 +137,7 @@ test_build_project_copies_packaged_native_artifact_from_scrapbot_cache :: proc(t
 	manifest, read_err := os.read_entire_file(manifest_path, context.allocator)
 	testing.expect_value(t, read_err, nil)
 	defer delete(manifest)
-	testing.expect(t, strings.contains(string(manifest), `"native_artifact": ".scrapbot/build/native/libscrapbot_project.test"`))
+	testing.expect(t, strings.contains(string(manifest), `"native_artifact": ".scrapbot/build/native/`))
 }
 
 @(test)
@@ -142,12 +160,11 @@ stats_fields := []scrapbot.Component_Field{
 }
 
 @(export)
-scrapbot_register :: proc(api: ^scrapbot.Register_Api) -> bool {
-    scrapbot.register_component(api, {
+scrapbot_register :: proc "c" (api: ^scrapbot.Register_Api) -> bool {
+    return scrapbot.register_component(api, {
         id = "native_stats",
         fields = stats_fields[:],
     })
-    return true
 }
 `)
 

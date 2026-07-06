@@ -368,7 +368,11 @@ script_program_run_native_system :: proc(
 	registry: ^Runtime_Component_Registry,
 	world: ^Runtime_World,
 	system: Runtime_Scheduled_System,
+	delta_seconds: f32,
 ) -> Script_Run_Result {
+	if loaded_system, loaded_ok := native_find_loaded_system(program^, system); loaded_ok {
+		return native_run_loaded_system(program, registry, world, system, loaded_system, delta_seconds)
+	}
 	operation, operation_ok := script_program_find_native_operation(program^, system)
 	if !operation_ok {
 		path, line := script_program_origin_for_system(program^, system.id, system.runner.ref)

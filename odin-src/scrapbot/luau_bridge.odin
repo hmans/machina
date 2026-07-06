@@ -311,6 +311,8 @@ Script_Program :: struct {
 	vm:                 rawptr,
 	system_origins:     [dynamic]Script_System_Origin,
 	native_operations:  [dynamic]Native_System_Operation,
+	native_modules:     [dynamic]Native_Loaded_Module,
+	native_loaded_systems: [dynamic]Native_Loaded_System,
 	active_registry:    ^Runtime_Component_Registry,
 	active_system:      Runtime_Scheduled_System,
 	has_active_system:  bool,
@@ -358,6 +360,14 @@ script_program_free :: proc(program: ^Script_Program) {
 	native_system_operations_free(program.native_operations[:])
 	if program.native_operations != nil {
 		delete(program.native_operations)
+	}
+	native_loaded_systems_free(program.native_loaded_systems[:])
+	if program.native_loaded_systems != nil {
+		delete(program.native_loaded_systems)
+	}
+	native_loaded_modules_free(program.native_modules[:])
+	if program.native_modules != nil {
+		delete(program.native_modules)
 	}
 	script_program_clear_host_error(program)
 	program^ = Script_Program{}
@@ -564,7 +574,7 @@ script_program_run_schedule :: proc(
 				continue
 			}
 			if system.runner.kind == .Native {
-				native_result := script_program_run_native_system(program, registry, world, system)
+				native_result := script_program_run_native_system(program, registry, world, system, delta_seconds)
 				if !native_result.ok {
 					return native_result
 				}

@@ -97,6 +97,9 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 		}
 		script_program = program
 	}
+	if script_program.odin_context.allocator.procedure == nil {
+		script_program.odin_context = context
+	}
 
 	for script_path in project.scripts {
 		full_path := project_relative_path(project.root_path, script_path)
@@ -110,7 +113,17 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 		}
 	}
 
-	if project.native != "" {
+	if project.native_artifact != "" {
+		full_path := project_relative_path(project.root_path, project.native_artifact)
+		defer delete(full_path)
+		if !os.exists(full_path) {
+			return Project_Check_Result{project = project, err = .Missing_Native_Artifact}
+		}
+		native_err := script_program_load_native_artifact(&script_program, &registry, full_path, project.native_artifact)
+		if native_err != .None {
+			return Project_Check_Result{project = project, err = native_err}
+		}
+	} else if project.native != "" {
 		full_path := project_relative_path(project.root_path, project.native)
 		defer delete(full_path)
 		if !os.exists(full_path) {
@@ -123,14 +136,6 @@ check_project :: proc(root_path: string) -> Project_Check_Result {
 		native_exec_err := script_program_load_native_file(&script_program, full_path, project.native)
 		if native_exec_err != .None {
 			return Project_Check_Result{project = project, err = native_exec_err}
-		}
-	}
-
-	if project.native_artifact != "" {
-		full_path := project_relative_path(project.root_path, project.native_artifact)
-		defer delete(full_path)
-		if !os.exists(full_path) {
-			return Project_Check_Result{project = project, err = .Missing_Native_Artifact}
 		}
 	}
 

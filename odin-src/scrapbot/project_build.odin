@@ -818,6 +818,11 @@ Field_Type :: enum {
     Vec3,
 }
 
+Entity :: struct {
+    index: u32,
+    generation: u32,
+}
+
 System_Phase :: enum {
     Startup,
     Update,
@@ -830,12 +835,20 @@ Component_Field :: struct {
     field_type: Field_Type,
 }
 
-Register_Api :: struct {}
-
 Component_Registration :: struct {
     id: string,
+    version: int,
     fields: []Component_Field,
 }
+
+System_Context :: struct {
+    host_context: rawptr,
+    api: ^System_Api,
+    delta_seconds: f32,
+    system_id: string,
+}
+
+System_Run_Proc :: proc "c" (ctx: ^System_Context) -> bool
 
 System_Registration :: struct {
     id: string,
@@ -844,11 +857,108 @@ System_Registration :: struct {
     writes: []string,
     before: []string,
     after: []string,
+    run: System_Run_Proc,
 }
 
-register_component :: proc(api: ^Register_Api, registration: Component_Registration) {}
+Register_Component_Proc :: proc "c" (ctx: rawptr, registration: ^Component_Registration) -> bool
+Register_System_Proc :: proc "c" (ctx: rawptr, registration: ^System_Registration) -> bool
 
-register_system :: proc(api: ^Register_Api, registration: System_Registration) {}
+Register_Api :: struct {
+    user_context: rawptr,
+    register_component: Register_Component_Proc,
+    register_system: Register_System_Proc,
+}
+
+Query_Next_Proc :: proc "c" (ctx: rawptr, component_ids: []string, cursor: ^int, out_entity: ^Entity) -> bool
+Get_Int_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, out_value: ^int) -> bool
+Set_Int_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, value: int) -> bool
+Get_Float_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, out_value: ^f32) -> bool
+Set_Float_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, value: f32) -> bool
+Get_Bool_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, out_value: ^bool) -> bool
+Set_Bool_Proc :: proc "c" (ctx: rawptr, entity: Entity, component_id, field_name: string, value: bool) -> bool
+
+System_Api :: struct {
+    query_next: Query_Next_Proc,
+    get_int: Get_Int_Proc,
+    set_int: Set_Int_Proc,
+    get_float: Get_Float_Proc,
+    set_float: Set_Float_Proc,
+    get_bool: Get_Bool_Proc,
+    set_bool: Set_Bool_Proc,
+}
+
+register_component :: proc "c" (api: ^Register_Api, registration: Component_Registration) -> bool {
+    if api == nil || api.register_component == nil {
+        return false
+    }
+    local_registration := registration
+    return api.register_component(api.user_context, &local_registration)
+}
+
+register_system :: proc "c" (api: ^Register_Api, registration: System_Registration) -> bool {
+    if api == nil || api.register_system == nil {
+        return false
+    }
+    local_registration := registration
+    return api.register_system(api.user_context, &local_registration)
+}
+
+query_next :: proc "c" (ctx: ^System_Context, component_ids: []string, cursor: ^int) -> (Entity, bool) {
+    if ctx == nil || ctx.api == nil || ctx.api.query_next == nil {
+        return {}, false
+    }
+    entity: Entity
+    ok := ctx.api.query_next(ctx.host_context, component_ids, cursor, &entity)
+    return entity, ok
+}
+
+get_int :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string) -> (int, bool) {
+    if ctx == nil || ctx.api == nil || ctx.api.get_int == nil {
+        return 0, false
+    }
+    value: int
+    ok := ctx.api.get_int(ctx.host_context, entity, component_id, field_name, &value)
+    return value, ok
+}
+
+set_int :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string, value: int) -> bool {
+    if ctx == nil || ctx.api == nil || ctx.api.set_int == nil {
+        return false
+    }
+    return ctx.api.set_int(ctx.host_context, entity, component_id, field_name, value)
+}
+
+get_float :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string) -> (f32, bool) {
+    if ctx == nil || ctx.api == nil || ctx.api.get_float == nil {
+        return 0, false
+    }
+    value: f32
+    ok := ctx.api.get_float(ctx.host_context, entity, component_id, field_name, &value)
+    return value, ok
+}
+
+set_float :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string, value: f32) -> bool {
+    if ctx == nil || ctx.api == nil || ctx.api.set_float == nil {
+        return false
+    }
+    return ctx.api.set_float(ctx.host_context, entity, component_id, field_name, value)
+}
+
+get_bool :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string) -> (bool, bool) {
+    if ctx == nil || ctx.api == nil || ctx.api.get_bool == nil {
+        return false, false
+    }
+    value: bool
+    ok := ctx.api.get_bool(ctx.host_context, entity, component_id, field_name, &value)
+    return value, ok
+}
+
+set_bool :: proc "c" (ctx: ^System_Context, entity: Entity, component_id, field_name: string, value: bool) -> bool {
+    if ctx == nil || ctx.api == nil || ctx.api.set_bool == nil {
+        return false
+    }
+    return ctx.api.set_bool(ctx.host_context, entity, component_id, field_name, value)
+}
 `
 
 write_json_string_contents :: proc(builder: ^strings.Builder, value: string) {
