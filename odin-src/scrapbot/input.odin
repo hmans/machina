@@ -51,6 +51,7 @@ Editor_Test_Input_State :: struct {
 	has_selected_entity: bool,
 	system_scroll_y:     f32,
 	entity_scroll_y:     f32,
+	inspector_scroll_y:  f32,
 }
 
 frame_input_default :: proc() -> Frame_Input {
@@ -108,6 +109,8 @@ route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: Runtime_
 				state.system_scroll_y = editor_system_scroll_next(input^, state.system_scroll_y, input.pointer.wheel_delta[1])
 			} else if editor_pointer_in_entity_list(world, input^) {
 				state.entity_scroll_y = editor_entity_scroll_next(world, input^, state.entity_scroll_y, input.pointer.wheel_delta[1])
+			} else if editor_pointer_in_inspector(world, state^, input^) {
+				state.inspector_scroll_y = editor_inspector_scroll_next(world, state^, input^, state.inspector_scroll_y, input.pointer.wheel_delta[1])
 			}
 			consumed = true
 		}
@@ -192,6 +195,22 @@ editor_system_scroll_next :: proc(input: Frame_Input, current_y, wheel_delta_y: 
 	return clamp_f32(next, 0, editor_system_max_scroll_y(input))
 }
 
+editor_pointer_in_inspector :: proc(world: Runtime_World, state: Editor_Test_Input_State, input: Frame_Input) -> bool {
+	if !input.pointer.has_position || !state.has_selected_entity {
+		return false
+	}
+	if editor_inspector_max_scroll_y(world, state, input) <= 0 {
+		return false
+	}
+	clip_x, clip_y, clip_width, clip_height := editor_inspector_scroll_clip_rect(input)
+	return editor_pointer_in_rect(input, clip_x, clip_y, clip_width, clip_height)
+}
+
+editor_inspector_scroll_next :: proc(world: Runtime_World, state: Editor_Test_Input_State, input: Frame_Input, current_y, wheel_delta_y: f32) -> f32 {
+	next := current_y + -wheel_delta_y * UI_EDITOR_SCROLL_PIXELS_PER_WHEEL
+	return clamp_f32(next, 0, editor_inspector_max_scroll_y(world, state, input))
+}
+
 editor_pointer_in_entity_list :: proc(world: Runtime_World, input: Frame_Input) -> bool {
 	if !input.pointer.has_position || runtime_world_entity_count(world) == 0 {
 		return false
@@ -267,6 +286,17 @@ editor_left_sidebar_panel_rect :: proc(window_width, window_height: f32) -> (x, 
 	       max_f32(body_height - UI_EDITOR_SIDEBAR_PANEL_MARGIN * 2, 1)
 }
 
+editor_right_sidebar_panel_rect :: proc(window_width, window_height: f32) -> (x, y, width, height: f32) {
+	body_width := max_f32(window_width, 1)
+	body_y := UI_EDITOR_TOP_BAR_HEIGHT
+	body_height := max_f32(window_height - UI_EDITOR_TOP_BAR_HEIGHT - UI_EDITOR_BOTTOM_BAR_HEIGHT, 1)
+	_, right := editor_side_widths(window_width)
+	return max_f32(body_width - right + UI_EDITOR_SIDEBAR_PANEL_MARGIN, UI_EDITOR_SIDEBAR_PANEL_MARGIN),
+	       body_y + UI_EDITOR_SIDEBAR_PANEL_MARGIN,
+	       max_f32(right - UI_EDITOR_SIDEBAR_PANEL_MARGIN * 2, 1),
+	       max_f32(body_height - UI_EDITOR_SIDEBAR_PANEL_MARGIN * 2, 1)
+}
+
 editor_entity_panel_height :: proc(total_height: f32) -> f32 {
 	if total_height <= UI_EDITOR_LEFT_PANEL_GAP + 2 {
 		return max_f32(total_height * 0.5, 1)
@@ -310,6 +340,15 @@ editor_system_max_scroll_y :: proc(input: Frame_Input) -> f32 {
 	return f32(profile_count - visible_rows) * UI_EDITOR_SYSTEM_ROW_STRIDE
 }
 
+editor_inspector_max_scroll_y :: proc(world: Runtime_World, state: Editor_Test_Input_State, input: Frame_Input) -> f32 {
+	_, _, _, clip_height := editor_inspector_scroll_clip_rect(input)
+	content_height := editor_inspector_component_content_height(world, state)
+	if content_height <= clip_height {
+		return 0
+	}
+	return content_height - clip_height
+}
+
 editor_entity_max_scroll_y :: proc(world: Runtime_World, input: Frame_Input) -> f32 {
 	visible_rows := editor_entity_visible_rows_from_input(input)
 	entity_count := runtime_world_entity_count(world)
@@ -331,6 +370,44 @@ editor_entity_visible_rows_from_input :: proc(input: Frame_Input) -> int {
 
 editor_system_table_content_height :: proc(row_count: int) -> f32 {
 	return UI_EDITOR_SYSTEM_CARD_PADDING_Y * 2 + f32(row_count) * UI_EDITOR_SYSTEM_ROW_STRIDE
+}
+
+editor_inspector_scroll_clip_rect :: proc(input: Frame_Input) -> (x, y, width, height: f32) {
+	sidebar_x, sidebar_y, sidebar_width, sidebar_height := editor_right_sidebar_panel_rect(input.viewport_width, input.viewport_height)
+	clip_y := sidebar_y + UI_EDITOR_PANEL_PADDING_Y + UI_EDITOR_INSPECTOR_LINE_STRIDE * 2.5
+	return sidebar_x,
+	       clip_y,
+	       max_f32(sidebar_width, 1),
+	       max_f32(sidebar_y + sidebar_height - clip_y, 1)
+}
+
+editor_inspector_component_content_height :: proc(world: Runtime_World, state: Editor_Test_Input_State) -> f32 {
+	if !state.has_selected_entity {
+		return 0
+	}
+	selected_index, selected_err := runtime_world_entity_index(world, state.selected_entity)
+	if selected_err != .None {
+		return 0
+	}
+	height := f32(0)
+	component_count := 0
+	for table in world.component_tables {
+		if selected_index < len(table.rows_by_entity) && table.rows_by_entity[selected_index] >= 0 {
+			if component_count > 0 {
+				height += UI_EDITOR_INSPECTOR_CARD_GAP * 2 + UI_EDITOR_INSPECTOR_SEPARATOR_HEIGHT
+			}
+			height += editor_inspector_component_card_height(len(table.columns))
+			component_count += 1
+		}
+	}
+	return height
+}
+
+editor_inspector_component_card_height :: proc(field_count: int) -> f32 {
+	return UI_EDITOR_INSPECTOR_CARD_PADDING_Y * 2 +
+	       UI_EDITOR_TEXT_HEIGHT +
+	       UI_EDITOR_PANEL_LABEL_GAP +
+	       f32(field_count) * UI_EDITOR_INSPECTOR_FIELD_ROW_STRIDE
 }
 
 editor_entity_table_content_height :: proc(row_count: int) -> f32 {

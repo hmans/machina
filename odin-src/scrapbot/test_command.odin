@@ -48,9 +48,11 @@ Test_Expectation :: struct {
 }
 
 Test_Editor_Expectation :: struct {
-	selected_entity:      string,
-	has_system_scroll_y:  bool,
-	system_scroll_y:      f32,
+	selected_entity:        string,
+	has_system_scroll_y:    bool,
+	system_scroll_y:        f32,
+	has_inspector_scroll_y: bool,
+	inspector_scroll_y:     f32,
 }
 
 Test_Manifest :: struct {
@@ -112,10 +114,12 @@ Test_Manifest_Input_State :: struct {
 }
 
 Test_Manifest_Editor_Expectation_State :: struct {
-	active:              bool,
-	selected_entity:     string,
-	has_system_scroll_y: bool,
-	system_scroll_y:     f32,
+	active:                 bool,
+	selected_entity:        string,
+	has_system_scroll_y:    bool,
+	system_scroll_y:        f32,
+	has_inspector_scroll_y: bool,
+	inspector_scroll_y:     f32,
 }
 
 parse_test_options :: proc(args: []string, emit_output: bool) -> (Test_Options, bool) {
@@ -380,12 +384,14 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 		if !expect.active {
 			return true
 		}
-		ok := expect.selected_entity != "" || expect.has_system_scroll_y
+		ok := expect.selected_entity != "" || expect.has_system_scroll_y || expect.has_inspector_scroll_y
 		if ok {
 			append(&manifest.editor_expectations, Test_Editor_Expectation{
 				selected_entity = expect.selected_entity,
 				has_system_scroll_y = expect.has_system_scroll_y,
 				system_scroll_y = expect.system_scroll_y,
+				has_inspector_scroll_y = expect.has_inspector_scroll_y,
+				inspector_scroll_y = expect.inspector_scroll_y,
 			})
 		} else {
 			free_test_editor_expectation_state(expect^)
@@ -667,6 +673,17 @@ parse_test_manifest_editor_expect_key :: proc(expect: ^Test_Manifest_Editor_Expe
 		}
 		expect.system_scroll_y = parsed
 		expect.has_system_scroll_y = true
+		return true
+	case "inspector_scroll_y":
+		if expect.has_inspector_scroll_y {
+			return false
+		}
+		parsed, ok := strconv.parse_f32(value)
+		if !ok || !test_float_is_finite(parsed) || parsed < 0 {
+			return false
+		}
+		expect.inspector_scroll_y = parsed
+		expect.has_inspector_scroll_y = true
 		return true
 	}
 	return false
@@ -1035,6 +1052,9 @@ test_editor_expectation_matches :: proc(world: Runtime_World, editor_state: Edit
 	if expectation.has_system_scroll_y && !test_float_approx_equal(editor_state.system_scroll_y, expectation.system_scroll_y) {
 		return false
 	}
+	if expectation.has_inspector_scroll_y && !test_float_approx_equal(editor_state.inspector_scroll_y, expectation.inspector_scroll_y) {
+		return false
+	}
 	return true
 }
 
@@ -1119,6 +1139,16 @@ test_editor_expectation_failure_message :: proc(world: Runtime_World, editor_sta
 		append_test_format(&builder, "%g", expectation.system_scroll_y)
 		strings.write_string(&builder, ", got ")
 		append_test_format(&builder, "%g", editor_state.system_scroll_y)
+		wrote = true
+	}
+	if expectation.has_inspector_scroll_y {
+		if wrote {
+			strings.write_string(&builder, "; ")
+		}
+		strings.write_string(&builder, "editor.inspector_scroll_y: expected ")
+		append_test_format(&builder, "%g", expectation.inspector_scroll_y)
+		strings.write_string(&builder, ", got ")
+		append_test_format(&builder, "%g", editor_state.inspector_scroll_y)
 	}
 	return strings.clone(strings.to_string(builder))
 }
