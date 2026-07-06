@@ -116,6 +116,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Native Odin pending-execution diagnostics
   - [x] Native Odin set-field execution slice
   - [x] Native Odin lifecycle execution slice
+  - [x] Native artifact packaging in Odin build
   - [ ] Native Odin module execution
   - [x] Native hot reload
   - [ ] Native extension examples

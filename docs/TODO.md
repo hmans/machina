@@ -86,6 +86,7 @@
 - [x] Port first-pass pending Odin-native system execution diagnostics.
 - [x] Port first-pass Odin-native set-field system execution.
 - [x] Port first-pass Odin-native lifecycle structural operations.
+- [x] Port packaged `native_artifact` copying and build-manifest reporting to Odin `scrapbot build`.
 - [ ] Port remaining script runtime diagnostics from Zig to Odin, including reload execution paths and native execution once native systems can run.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
 - [ ] Port Odin render image output, offscreen image verification, and hidden headful smoke paths.

@@ -56,6 +56,55 @@ test_build_project_creates_host_bundle :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_build_project_copies_packaged_native_artifact_from_scrapbot_cache :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "build-native-artifact-source")
+	defer os.remove_all(root)
+	defer delete(root)
+	output_root := make_test_project_root(t, "build-native-artifact-output")
+	defer os.remove_all(output_root)
+	defer delete(output_root)
+
+	testing.expect_value(t, init_project(root, "Artifact Game"), Project_Error.None)
+	artifact_project_path := ".scrapbot/build/native/libscrapbot_project.test"
+	artifact_full_path := project_relative_path(root, artifact_project_path)
+	defer delete(artifact_full_path)
+	artifact_parent := os.dir(artifact_full_path)
+	testing.expect_value(t, ensure_directory(artifact_parent), true)
+	testing.expect_value(t, os.write_entire_file(artifact_full_path, "native artifact bytes"), nil)
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Artifact Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative_artifact = \".scrapbot/build/native/libscrapbot_project.test\"\n")
+
+	result, err := build_project(Build_Options{
+		target_path = root,
+		output_root = output_root,
+		name = "artifact-game",
+	})
+	defer free_build_result(result)
+	testing.expect_value(t, err, Project_Error.None)
+	testing.expect_value(t, result.native_artifact, artifact_project_path)
+
+	packaged_artifact_path := join_test_path(t, result.project_path, artifact_project_path)
+	defer delete(packaged_artifact_path)
+	manifest_path := join_test_path(t, result.bundle_path, BUILD_MANIFEST_PATH)
+	defer delete(manifest_path)
+
+	testing.expect_value(t, os.exists(packaged_artifact_path), true)
+	copied_artifact, copied_read_err := os.read_entire_file(packaged_artifact_path, context.allocator)
+	testing.expect_value(t, copied_read_err, nil)
+	defer delete(copied_artifact)
+	testing.expect_value(t, string(copied_artifact), "native artifact bytes")
+
+	packaged := check_project(result.project_path)
+	defer free_check_result(packaged)
+	testing.expect_value(t, packaged.err, Project_Error.None)
+	testing.expect_value(t, packaged.project.native_artifact, artifact_project_path)
+
+	manifest, read_err := os.read_entire_file(manifest_path, context.allocator)
+	testing.expect_value(t, read_err, nil)
+	defer delete(manifest)
+	testing.expect(t, strings.contains(string(manifest), `"native_artifact": ".scrapbot/build/native/libscrapbot_project.test"`))
+}
+
+@(test)
 test_build_project_default_output_skips_project_build_tree :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "build-default-output")
 	defer os.remove_all(root)

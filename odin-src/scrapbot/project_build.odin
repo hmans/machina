@@ -24,6 +24,7 @@ Build_Result :: struct {
 	project_path: string,
 	runtime_path: string,
 	launcher_path: string,
+	native_artifact: string,
 	sdl3_warning: string,
 }
 
@@ -42,6 +43,9 @@ free_build_result :: proc(result: Build_Result) {
 	}
 	if result.launcher_path != "" {
 		delete(result.launcher_path)
+	}
+	if result.native_artifact != "" {
+		delete(result.native_artifact)
 	}
 	if result.sdl3_warning != "" {
 		delete(result.sdl3_warning)
@@ -160,6 +164,24 @@ build_project :: proc(options: Build_Options) -> (Build_Result, Project_Error) {
 		return Build_Result{}, .Io_Error
 	}
 
+	native_artifact := ""
+	keep_native_artifact := false
+	defer {
+		if !keep_native_artifact && native_artifact != "" {
+			delete(native_artifact)
+		}
+	}
+	if check.project.native_artifact != "" {
+		if !copy_packaged_native_artifact(check.project.root_path, project_bundle_path, check.project.native_artifact) {
+			return Build_Result{}, .Io_Error
+		}
+		owned_native_artifact := strings.clone(check.project.native_artifact)
+		if owned_native_artifact == "" {
+			return Build_Result{}, .Io_Error
+		}
+		native_artifact = owned_native_artifact
+	}
+
 	executable_path, executable_err := os.get_executable_path(context.allocator)
 	if executable_err != nil {
 		return Build_Result{}, .Io_Error
@@ -212,7 +234,7 @@ build_project :: proc(options: Build_Options) -> (Build_Result, Project_Error) {
 			delete(sdl3_warning)
 		}
 	}
-	if !write_build_manifest(manifest_path, check.project.name, bundle_path, runtime_bundle_path, project_bundle_path, sdl3_warning) {
+	if !write_build_manifest(manifest_path, check.project.name, bundle_path, runtime_bundle_path, project_bundle_path, native_artifact, sdl3_warning) {
 		return Build_Result{}, .Io_Error
 	}
 
@@ -229,6 +251,7 @@ build_project :: proc(options: Build_Options) -> (Build_Result, Project_Error) {
 	keep_project_bundle_path = true
 	keep_runtime_bundle_path = true
 	keep_launcher_path = true
+	keep_native_artifact = true
 	keep_sdl3_warning = true
 	keep_project_name = true
 	return Build_Result{
@@ -237,6 +260,7 @@ build_project :: proc(options: Build_Options) -> (Build_Result, Project_Error) {
 		project_path = project_bundle_path,
 		runtime_path = runtime_bundle_path,
 		launcher_path = launcher_path,
+		native_artifact = native_artifact,
 		sdl3_warning = sdl3_warning,
 	}, .None
 }
@@ -468,6 +492,21 @@ should_skip_project_root_entry :: proc(name, skip_root_entry: string) -> bool {
 	return false
 }
 
+copy_packaged_native_artifact :: proc(project_root_path, project_bundle_path, artifact_path: string) -> bool {
+	source_path := project_relative_path(project_root_path, artifact_path)
+	defer delete(source_path)
+	dest_path := project_relative_path(project_bundle_path, artifact_path)
+	defer delete(dest_path)
+	parent := os.dir(dest_path)
+	if !ensure_directory(parent) {
+		return false
+	}
+	if os.exists(dest_path) {
+		os.remove(dest_path)
+	}
+	return os.copy_file(dest_path, source_path) == nil
+}
+
 executable_file_name :: proc() -> string {
 	when ODIN_OS == .Windows {
 		return "scrapbot.exe"
@@ -490,7 +529,7 @@ write_launcher :: proc(path: string) -> bool {
 	return ok
 }
 
-write_build_manifest :: proc(path, project_name, bundle_path, runtime_path, project_path, sdl3_warning: string) -> bool {
+write_build_manifest :: proc(path, project_name, bundle_path, runtime_path, project_path, native_artifact, sdl3_warning: string) -> bool {
 	builder := strings.builder_make()
 	defer strings.builder_destroy(&builder)
 	strings.write_string(&builder, "{\n")
@@ -510,7 +549,15 @@ write_build_manifest :: proc(path, project_name, bundle_path, runtime_path, proj
 	strings.write_string(&builder, `  "project_path": "`)
 	write_json_string_contents(&builder, project_path)
 	strings.write_string(&builder, `",` + "\n")
-	strings.write_string(&builder, `  "native_artifact": null,` + "\n")
+	strings.write_string(&builder, `  "native_artifact": `)
+	if native_artifact == "" {
+		strings.write_string(&builder, `null`)
+	} else {
+		strings.write_rune(&builder, '"')
+		write_json_string_contents(&builder, native_artifact)
+		strings.write_rune(&builder, '"')
+	}
+	strings.write_string(&builder, "," + "\n")
 	strings.write_string(&builder, `  "sdl3_bundled": false,` + "\n")
 	strings.write_string(&builder, `  "sdl3_warning": "`)
 	write_json_string_contents(&builder, sdl3_warning)

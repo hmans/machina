@@ -15,9 +15,9 @@ Host game builds let users package a Scrapbot project into a runnable bundle for
 - Users can choose the output root, bundle name, text or JSON output, and whether to replace a previous Scrapbot-generated bundle.
 - Generated project caches and repository/build directories are excluded from the copied project tree.
 - Projects with `native = "..."` are packaged with a prebuilt native library artifact.
-- Projects that already contain only `native_artifact` copy that artifact explicitly even when it lives under the otherwise-excluded `.scrapbot` directory.
+- Projects that already contain only `native_artifact` copy that artifact explicitly even when it lives under the otherwise-excluded `.scrapbot` directory. During the Odin migration, the Odin `scrapbot build` path preserves these existing artifacts and reports them in the build manifest before compiled Odin-native module builds are available.
 - Packaged projects load `native_artifact` when present, so they do not need the Zig compiler or native source file to run.
-- Build validates the copied packaged project before reporting success, including loading and registering the packaged native artifact.
+- Build validates the copied packaged project before reporting success. The current Zig path loads and registers packaged native artifacts; during the Odin migration, the Odin path validates preserved artifact presence and packaged metadata until compiled Odin-native module loading exists.
 - Build bundles are host-only. Cross-platform export, mobile packaging, codesigning, notarization, and fully static project-native executables are not part of this feature.
 
 ## Design Decisions
@@ -36,7 +36,7 @@ Host game builds let users package a Scrapbot project into a runnable bundle for
 
 ### 3. Validate packaged output before success
 
-**Decision:** `scrapbot build` validates the copied project after manifest rewriting and artifact copying, then reports any packaged native build/load/registration failure as a structured diagnostic.
+**Decision:** `scrapbot build` validates the copied project after manifest rewriting and artifact copying, then reports packaged native build/load/registration failures as structured diagnostics on native-loading paths.
 **Why:** The development-time precheck can validate a Debug native build while the bundle uses a ReleaseFast artifact. The build command must prove the artifact it ships can actually load and register.
 **Tradeoff:** Native projects pay one extra packaged validation pass during build.
 

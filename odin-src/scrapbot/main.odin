@@ -961,6 +961,9 @@ print_build_result :: proc(result: Build_Result, format: Check_Output_Format) {
 		fmt.printf("Project: %s\n", result.project_path)
 		fmt.printf("Runtime: %s\n", result.runtime_path)
 		fmt.printf("Launcher: %s\n", result.launcher_path)
+		if result.native_artifact != "" {
+			fmt.printf("Native artifact: %s\n", result.native_artifact)
+		}
 		if result.sdl3_warning != "" {
 			fmt.printf("Warning: %s\n", result.sdl3_warning)
 		}
@@ -975,7 +978,15 @@ print_build_result :: proc(result: Build_Result, format: Check_Output_Format) {
 		json_print(result.runtime_path, false)
 		fmt.print(`","launcher":"`)
 		json_print(result.launcher_path, false)
-		fmt.print(`","native_artifact":null,"sdl3_bundled":false,"sdl3_warning":"`)
+		fmt.print(`","native_artifact":`)
+		if result.native_artifact == "" {
+			fmt.print(`null`)
+		} else {
+			fmt.print(`"`)
+			json_print(result.native_artifact, false)
+			fmt.print(`"`)
+		}
+		fmt.print(`,"sdl3_bundled":false,"sdl3_warning":"`)
 		json_print(result.sdl3_warning, false)
 		fmt.println(`"}`)
 	}
