@@ -249,6 +249,49 @@ test_run_test_command_rejects_invalid_manifest :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_run_command_accepts_initialized_project :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-run-project")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Run"), Project_Error.None)
+
+	exit_code := run_with_output([]string{"scrapbot", "run", root, "--frames=2", "--hidden"}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_parse_run_options_accepts_frames_editor_and_hidden_flags :: proc(t: ^testing.T) {
+	options, ok := parse_run_options([]string{"--frames", "12", "--editor", "--hidden"}, false)
+	testing.expect_value(t, ok, true)
+	testing.expect_value(t, options.max_frames, 12)
+	testing.expect_value(t, options.editor, true)
+	testing.expect_value(t, options.hidden, true)
+}
+
+@(test)
+test_run_command_rejects_hidden_without_frame_limit :: proc(t: ^testing.T) {
+	exit_code := run_with_output([]string{"scrapbot", "run", "--hidden"}, false)
+	testing.expect_value(t, exit_code, 1)
+}
+
+@(test)
+test_run_command_rejects_extra_arguments :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-run-extra")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Run Extra"), Project_Error.None)
+
+	exit_code := run_with_output([]string{"scrapbot", "run", root, "extra"}, false)
+	testing.expect_value(t, exit_code, 1)
+}
+
+@(test)
+test_run_command_rejects_extra_argument_after_explicit_current_directory :: proc(t: ^testing.T) {
+	exit_code := run_with_output([]string{"scrapbot", "run", ".", "extra"}, false)
+	testing.expect_value(t, exit_code, 1)
+}
+
+@(test)
 test_parse_test_manifest_summary_counts_expectations_and_input_frames :: proc(t: ^testing.T) {
 	summary, ok := parse_test_manifest_summary(`frames = 2
 dt = 0.016

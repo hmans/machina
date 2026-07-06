@@ -60,6 +60,9 @@ run_with_output :: proc(args: []string, emit_output: bool) -> int {
 	if command == "test" {
 		return run_test(args[2:], emit_output)
 	}
+	if command == "run" {
+		return run_project(args[2:], emit_output)
+	}
 	if command == "init" {
 		return run_init(args[2:], emit_output)
 	}
@@ -85,11 +88,12 @@ Usage:
   scrapbot step [path] [--frames N] [--dt seconds] [--format text|json]
   scrapbot bench [path] [--frames N] [--dt seconds] [--format text|json]
   scrapbot test [path] [--format text|json]
+  scrapbot run [path] [--frames N] [--editor] [--hidden]
   scrapbot build [path] [--output DIR] [--name NAME] [--force] [--format text|json]
 
 Odin migration status:
-  init, check, build, deterministic step, benchmark, and test discovery currently cover
-  text project creation, validation, packaging, and schedule-aware frame accounting slices.
+  init, check, build, deterministic step, benchmark, test discovery, and bounded run
+  currently cover text project creation, validation, packaging, and schedule-aware frame accounting slices.
   Luau/native callback execution, assertion evaluation, rendering, and editor are still being ported.`)
 }
 
@@ -296,6 +300,27 @@ run_test :: proc(args: []string, emit_output: bool) -> int {
 	}
 	if result.summary.failed > 0 {
 		return 1
+	}
+	return 0
+}
+
+run_project :: proc(args: []string, emit_output: bool) -> int {
+	options, options_ok := parse_run_options(args, emit_output)
+	if !options_ok {
+		return 1
+	}
+
+	result := check_project(options.target_path)
+	defer free_check_result(result)
+	if result.err != .None {
+		if emit_output {
+			print_check_error(result.err, options.target_path, .Text)
+		}
+		return 1
+	}
+
+	if emit_output {
+		print_run_result(result, options)
 	}
 	return 0
 }
