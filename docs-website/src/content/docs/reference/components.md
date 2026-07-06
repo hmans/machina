@@ -102,6 +102,8 @@ Scene-driven directional light data.
 | `intensity` | `float` | Required | Direct light strength. |
 | `ambient` | `float` | Required | Ambient contribution. |
 
+Mesh lighting is the authored ambient contribution plus direct directional diffuse light. Current non-emissive mesh surfaces render black when both `ambient` and `intensity` are `0.0`.
+
 If no directional light is present, the renderer uses a fallback light.
 
 ### `scrapbot.shadow.caster`

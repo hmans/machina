@@ -112,6 +112,8 @@ If a scene provides a camera entity with `scrapbot.transform` and `scrapbot.came
 
 If a scene provides a directional light with `scrapbot.light.directional`, the renderer uses it.
 
+Mesh lighting is limited to the authored ambient contribution plus direct directional diffuse light. Setting both `ambient` and `intensity` to `0.0` renders current non-emissive mesh surfaces black.
+
 Fallback camera and light defaults exist so simple scenes can render before they author explicit camera/light data.
 
 ## UI Overlay
