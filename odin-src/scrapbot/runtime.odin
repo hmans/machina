@@ -35,6 +35,7 @@ UI_SEPARATOR_COMPONENT_ID :: "scrapbot.ui.separator"
 INPUT_POINTER_COMPONENT_ID :: "scrapbot.input.pointer"
 INPUT_KEYBOARD_COMPONENT_ID :: "scrapbot.input.keyboard"
 INPUT_FRAME_COMPONENT_ID :: "scrapbot.input.frame"
+INPUT_ENTITY_ID :: "scrapbot.input.frame"
 
 Runtime_Error :: enum {
 	None,

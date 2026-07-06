@@ -107,7 +107,7 @@ Odin migration status:
   init, check, build, deterministic step, benchmark, test discovery, and bounded run
   currently cover text project creation, validation, packaging, and schedule-aware frame accounting slices.
   Luau execution and render/visual command validation are partially ported; native execution,
-  assertion evaluation, image comparison, WebGPU presentation, and editor are still being ported.`)
+  retained UI/editor input routing, image comparison, WebGPU presentation, and editor are still being ported.`)
 }
 
 run_init :: proc(args: []string, emit_output: bool) -> int {
@@ -619,12 +619,26 @@ Simulation_Run_Result :: struct {
 }
 
 run_script_simulation :: proc(result: ^Project_Check_Result, frames: int, delta_seconds: f32) -> Simulation_Run_Result {
+	return run_script_simulation_with_input(result, frames, delta_seconds, nil)
+}
+
+run_script_simulation_with_input :: proc(result: ^Project_Check_Result, frames: int, delta_seconds: f32, input_frames: []Step_Input_Frame) -> Simulation_Run_Result {
 	startup := script_program_run_schedule(&result.script_program, &result.registry, &result.scene.world, result.startup_schedule, 0)
 	if !startup.ok {
 		return Simulation_Run_Result{ok = false, diagnostic = startup.diagnostic}
 	}
 	completed_frames := 0
 	for completed_frames < frames {
+		if len(input_frames) > 0 {
+			input_err := write_frame_input(&result.scene.world, step_input_for_frame(input_frames, completed_frames + 1))
+			if input_err != .None {
+				return Simulation_Run_Result{
+					ok = false,
+					completed_frames = completed_frames,
+					diagnostic = script_runtime_diagnostic("", "", 0, runtime_error_label(input_err)),
+				}
+			}
+		}
 		update := script_program_run_schedule(&result.script_program, &result.registry, &result.scene.world, result.update_schedule, delta_seconds)
 		if !update.ok {
 			return Simulation_Run_Result{ok = false, completed_frames = completed_frames, diagnostic = update.diagnostic}

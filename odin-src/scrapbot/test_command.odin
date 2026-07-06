@@ -50,7 +50,7 @@ Test_Expectation :: struct {
 Test_Manifest :: struct {
 	frames:        int,
 	delta_seconds: f32,
-	input_frames:  int,
+	input_frames:  [dynamic]Step_Input_Frame,
 	expectations:  [dynamic]Test_Expectation,
 }
 
@@ -99,7 +99,8 @@ Test_Manifest_Expectation_State :: struct {
 
 Test_Manifest_Input_State :: struct {
 	active: bool,
-	frame:  bool,
+	frame:  int,
+	input:  Frame_Input,
 }
 
 parse_test_options :: proc(args: []string, emit_output: bool) -> (Test_Options, bool) {
@@ -208,7 +209,7 @@ run_test_case :: proc(project_path: string) -> Test_Case_Result {
 	result.frames = manifest.frames
 	result.delta_seconds = manifest.delta_seconds
 	result.expectations = len(manifest.expectations)
-	result.input_frames = manifest.input_frames
+	result.input_frames = len(manifest.input_frames)
 
 	check := check_project(project_path)
 	defer free_check_result(check)
@@ -218,7 +219,7 @@ run_test_case :: proc(project_path: string) -> Test_Case_Result {
 		return result
 	}
 
-	simulation := run_script_simulation(&check, manifest.frames, manifest.delta_seconds)
+	simulation := run_script_simulation_with_input(&check, manifest.frames, manifest.delta_seconds, manifest.input_frames[:])
 	result.completed_frames = simulation.completed_frames
 	if !simulation.ok {
 		result.status = .Failed
@@ -310,7 +311,7 @@ test_manifest_summary :: proc(manifest: Test_Manifest) -> Test_Manifest_Summary 
 		frames = manifest.frames,
 		delta_seconds = manifest.delta_seconds,
 		expectations = len(manifest.expectations),
-		input_frames = manifest.input_frames,
+		input_frames = len(manifest.input_frames),
 	}
 }
 
@@ -327,6 +328,7 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 	manifest := Test_Manifest{
 		frames = DEFAULT_STEP_FRAMES,
 		delta_seconds = DEFAULT_STEP_DELTA_SECONDS,
+		input_frames = make([dynamic]Step_Input_Frame),
 		expectations = make([dynamic]Test_Expectation),
 	}
 	section := Test_Manifest_Section.Root
@@ -351,11 +353,22 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 		expect^ = {}
 		return ok
 	}
-	finish_input := proc(input: ^Test_Manifest_Input_State) -> bool {
+	finish_input := proc(manifest: ^Test_Manifest, input: ^Test_Manifest_Input_State) -> bool {
 		if !input.active {
 			return true
 		}
-		ok := input.frame
+		ok := input.frame > 0
+		if ok {
+			for existing in manifest.input_frames {
+				if existing.frame == input.frame {
+					ok = false
+					break
+				}
+			}
+		}
+		if ok {
+			append(&manifest.input_frames, Step_Input_Frame{frame = input.frame, input = input.input})
+		}
 		input^ = {}
 		return ok
 	}
@@ -367,7 +380,7 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 			continue
 		}
 		if trimmed == "[[expect.field]]" || trimmed == "[[expect]]" {
-			if !finish_expect(&manifest, &expect) || !finish_input(&input) {
+			if !finish_expect(&manifest, &expect) || !finish_input(&manifest, &input) {
 				free_test_manifest(manifest)
 				return {}, false
 			}
@@ -376,13 +389,13 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 			continue
 		}
 		if trimmed == "[[input.frame]]" {
-			if !finish_expect(&manifest, &expect) || !finish_input(&input) {
+			if !finish_expect(&manifest, &expect) || !finish_input(&manifest, &input) {
 				free_test_manifest(manifest)
 				return {}, false
 			}
 			section = .Input_Frame
 			input.active = true
-			manifest.input_frames += 1
+			input.input = frame_input_default()
 			continue
 		}
 		if strings.has_prefix(trimmed, "[") {
@@ -416,7 +429,7 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 		}
 	}
 
-	if !finish_expect(&manifest, &expect) || !finish_input(&input) {
+	if !finish_expect(&manifest, &expect) || !finish_input(&manifest, &input) {
 		free_test_manifest(manifest)
 		return {}, false
 	}
@@ -563,21 +576,212 @@ parse_test_manifest_expect_key :: proc(expect: ^Test_Manifest_Expectation_State,
 parse_test_manifest_input_key :: proc(input: ^Test_Manifest_Input_State, key, value: string) -> bool {
 	switch key {
 	case "frame":
-		_, ok := parse_positive_int(value)
+		frame, ok := parse_positive_int(value)
 		if !ok {
 			return false
 		}
-		input.frame = true
+		if input.frame > 0 {
+			return false
+		}
+		input.frame = frame
 		return true
-	case "viewport", "pointer", "wheel_delta":
-		return parse_test_manifest_vec2(value)
-	case "primary_down", "primary_held", "primary_pressed", "primary_released", "debug_overlay_visible":
-		return value == "true" || value == "false"
+	case "ui_visible":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.ui_visible = parsed
+		return true
+	case "debug_overlay_visible", "editor_visible":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.debug_overlay_visible = parsed
+		return true
+	case "viewport":
+		parsed, ok := parse_test_manifest_vec2_value(value)
+		if !ok {
+			return false
+		}
+		input.input.viewport_width = parsed[0]
+		input.input.viewport_height = parsed[1]
+		return true
+	case "pixel_scale":
+		parsed, ok := strconv.parse_f32(value)
+		if !ok || !test_float_is_finite(parsed) || parsed <= 0 {
+			return false
+		}
+		input.input.pixel_scale = parsed
+		return true
+	case "pointer", "pointer_position":
+		parsed, ok := parse_test_manifest_vec2_value(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.position = parsed
+		input.input.pointer.has_position = true
+		return true
+	case "pointer_delta", "delta":
+		parsed, ok := parse_test_manifest_vec2_value(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.delta = parsed
+		return true
+	case "pointer_has_position":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.has_position = parsed
+		return true
+	case "wheel", "wheel_delta":
+		parsed, ok := parse_test_manifest_vec2_value(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.wheel_delta = parsed
+		return true
+	case "primary_down", "primary_held":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.primary_down = parsed
+		return true
+	case "primary_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.primary_pressed = parsed
+		return true
+	case "primary_released":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.primary_released = parsed
+		return true
+	case "secondary_down":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.secondary_down = parsed
+		return true
+	case "secondary_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.secondary_pressed = parsed
+		return true
+	case "secondary_released":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.pointer.secondary_released = parsed
+		return true
+	case "ctrl_down":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.ctrl_down = parsed
+		input.input.keyboard.move_down = parsed
+		return true
+	case "shift_down":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.shift_down = parsed
+		return true
+	case "alt_down":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.alt_down = parsed
+		return true
+	case "super_down":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.super_down = parsed
+		return true
+	case "move_forward":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.move_forward = parsed
+		return true
+	case "move_back":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.move_back = parsed
+		return true
+	case "move_left":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.move_left = parsed
+		return true
+	case "move_right":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.move_right = parsed
+		return true
+	case "move_up":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.move_up = parsed
+		return true
+	case "move_down":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.move_down = parsed
+		return true
+	case "editor_toggle_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_toggle_pressed = parsed
+		return true
 	case "system_profile_count_hint":
-		_, ok := parse_positive_int(value)
+		hint, ok := parse_positive_int(value)
+		if !ok {
+			return false
+		}
+		input.input.system_profile_count_hint = hint
 		return ok
 	}
 	return false
+}
+
+parse_test_manifest_bool :: proc(value: string) -> (bool, bool) {
+	if value == "true" {
+		return true, true
+	}
+	if value == "false" {
+		return false, true
+	}
+	return false, false
 }
 
 parse_test_manifest_float :: proc(value: string) -> bool {
@@ -588,24 +792,27 @@ parse_test_manifest_float :: proc(value: string) -> bool {
 	return true
 }
 
-parse_test_manifest_vec2 :: proc(value: string) -> bool {
+parse_test_manifest_vec2_value :: proc(value: string) -> ([2]f32, bool) {
 	if len(value) < 5 || value[0] != '[' || value[len(value) - 1] != ']' {
-		return false
+		return {}, false
 	}
+	result: [2]f32
 	count := 0
 	inner := value[1:len(value) - 1]
 	remaining := inner
 	for part in strings.split_iterator(&remaining, ",") {
 		if count >= 2 {
-			return false
+			return {}, false
 		}
 		trimmed := strings.trim_space(part)
-		if trimmed == "" || !parse_test_manifest_float(trimmed) {
-			return false
+		parsed, ok := strconv.parse_f32(trimmed)
+		if trimmed == "" || !ok || !test_float_is_finite(parsed) {
+			return {}, false
 		}
+		result[count] = parsed
 		count += 1
 	}
-	return count == 2
+	return result, count == 2
 }
 
 parse_test_manifest_vec3_value :: proc(value: string) -> ([3]f32, bool) {
@@ -649,6 +856,9 @@ free_test_manifest :: proc(manifest: Test_Manifest) {
 	}
 	if manifest.expectations != nil {
 		delete(manifest.expectations)
+	}
+	if manifest.input_frames != nil {
+		delete(manifest.input_frames)
 	}
 }
 

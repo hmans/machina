@@ -280,6 +280,77 @@ equals_bool = false
 }
 
 @(test)
+test_run_test_command_replays_input_resources :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-input-replay")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "Input Replay Test"), Project_Error.None)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Input Replay Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/gameplay.luau"]
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Input Replay Test"
+version = 1
+
+[[entities]]
+id = "flag"
+name = "Flag"
+
+[entities.components.flag]
+active = false
+`)
+	write_file(t, root, "scripts/gameplay.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({
+    active = "boolean",
+  }),
+})
+local Pointer = ecs.component("scrapbot.input.pointer")
+local Keyboard = ecs.component("scrapbot.input.keyboard")
+local Frame = ecs.component("scrapbot.input.frame")
+
+local Flags = ecs.query(Flag)
+local Inputs = ecs.query(Pointer, Keyboard, Frame)
+
+ecs.system("read_input", {
+  phase = "update",
+  query = Inputs,
+  reads = ecs.refs(Pointer, Keyboard, Frame),
+  writes = ecs.refs(Flag),
+  run = function(world, _dt)
+    for _input_entity, pointer, keyboard, frame in Inputs:iter(world) do
+      if pointer.has_position and pointer.primary_released and keyboard.move_forward and frame.debug_overlay_visible then
+        for _flag_entity, flag in Flags:iter(world) do
+          flag.active = true
+        end
+      end
+    end
+  end,
+})
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 1
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+debug_overlay_visible = true
+viewport = [1280.0, 720.0]
+pointer = [180.0, 148.0]
+primary_released = true
+move_forward = true
+
+[[expect.field]]
+entity = "flag"
+component = "flag"
+field = "active"
+equals_bool = true
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_run_command_accepts_initialized_project :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-run-project")
 	defer os.remove_all(root)
@@ -541,6 +612,28 @@ equals_int = 2
 	testing.expect_value(t, summary.frames, 2)
 	testing.expect_value(t, summary.input_frames, 1)
 	testing.expect_value(t, summary.expectations, 2)
+}
+
+@(test)
+test_parse_test_manifest_rejects_duplicate_input_frames :: proc(t: ^testing.T) {
+	_, ok := parse_test_manifest(`frames = 2
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+pointer = [20.0, 20.0]
+
+[[input.frame]]
+frame = 1
+pointer = [40.0, 40.0]
+
+[[expect.field]]
+entity = "flag"
+component = "flag"
+field = "active"
+equals_bool = true
+`)
+	testing.expect_value(t, ok, false)
 }
 
 write_valid_test_manifest :: proc(t: ^testing.T, root: string) {
