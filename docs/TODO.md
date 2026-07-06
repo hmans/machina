@@ -99,7 +99,8 @@
 - [x] Port first-pass Odin scene source reload transactions and bounded `scrapbot run --frames` polling with last-known-good behavior.
 - [ ] Port remaining unbounded/window-loop reload diagnostics from Zig to Odin.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
-- [ ] Port Odin render image output, offscreen image verification, and hidden headful smoke paths.
+- [x] Port first-pass Odin software offscreen PNG/BMP image output and render-test pixel verification.
+- [ ] Port Odin WebGPU render image output, visual-test golden comparison, metadata sidecars, and hidden headful smoke paths.
 - [ ] Complete unbounded/window-loop Odin project/scene/script/native live reload integration and replacement of the Zig reload path.
 - [ ] Remove Zig build/test/dependency surfaces after Odin parity is verified.
 - [ ] Add scroll support to inspector component vgroups.

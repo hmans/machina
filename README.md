@@ -58,6 +58,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Odin bounded run command slice
   - [x] Odin render extraction stats slice
   - [x] Odin render command validation slice
+  - [x] Odin software render image output slice
   - [x] Odin visual-test command validation slice
   - [x] Odin native declaration registration slice
   - [x] Odin native execution boundary diagnostics slice

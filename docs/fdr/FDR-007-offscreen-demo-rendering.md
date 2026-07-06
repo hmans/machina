@@ -7,7 +7,7 @@
 
 Offscreen demo rendering proves that Scrapbot can initialize the WebGPU backend, create GPU resources, render through a graphics pipeline, read pixels back, and write an inspectable image artifact without opening a window.
 
-**Odin migration note:** During the staged Odin rewrite, the Odin `render` and `render-test` commands currently validate projects, parse render flags, run bounded Luau frame simulation, check selected entity ids, and report render extraction stats with an explicit pending backend marker. Pixel output, metadata sidecars, image verification, and WebGPU readback still remain in the Zig implementation until the Odin `wgpu-native` renderer lands.
+**Odin migration note:** During the staged Odin rewrite, the Odin `render` and `render-test` commands currently validate projects, parse render flags, run bounded Luau frame simulation, check selected entity ids, write first-pass software PNG/BMP artifacts from ECS render data, and verify `render-test` foreground coverage, visible components, and color groups. WebGPU readback, metadata sidecars, editor chrome pixels, and visual-test golden comparison still remain in the Zig implementation until the Odin `wgpu-native` renderer lands.
 
 ## Behavior
 

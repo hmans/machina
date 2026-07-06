@@ -284,6 +284,28 @@ print_render_result :: proc(result: Project_Check_Result, options: Render_Option
 	fmt.printf("Renderer backend: %s\n", RENDER_BACKEND_PENDING)
 }
 
+print_render_test_result :: proc(result: Project_Check_Result, options: Render_Options, completed_frames: int, verification: Render_Image_Verification) {
+	fmt.printf(
+		"Render test OK: %s, %dx%d, foreground pixels: %d, visible components: %d, color groups: %d\n",
+		result.project.name,
+		options.width,
+		options.height,
+		verification.foreground_pixels,
+		verification.visible_components,
+		verification.color_groups,
+	)
+	fmt.printf("Output: %s\n", options.output_path)
+	fmt.printf("Frames: %d/%d\n", completed_frames, options.frames)
+	if options.editor {
+		fmt.println("Editor: requested, pending Odin editor shell")
+	}
+	if options.selected_entity_id != "" {
+		fmt.printf("Selected entity: %s\n", options.selected_entity_id)
+	}
+	print_render_extract_text(result)
+	fmt.println("Renderer backend: odin software offscreen placeholder; WebGPU binding pending")
+}
+
 print_visual_test_result :: proc(result: Project_Check_Result, options: Visual_Test_Options, completed_frames: int) {
 	if options.update {
 		fmt.printf("Visual test update pending: %s\n", result.project.name)
@@ -304,5 +326,5 @@ print_visual_test_result :: proc(result: Project_Check_Result, options: Visual_T
 	}
 	print_render_extract_text(result)
 	fmt.printf("Renderer backend: %s\n", RENDER_BACKEND_PENDING)
-	fmt.println("Image comparison: pending Odin render image output")
+	fmt.println("Image comparison: pending Odin golden comparison")
 }

@@ -420,9 +420,20 @@ run_render :: proc(args: []string, emit_output: bool, render_test: bool) -> int 
 		}
 		return 1
 	}
+	verification, image_err := render_write_scene_image(result.scene.world, options, render_test)
+	if image_err != .None {
+		if emit_output {
+			fmt.eprintf("%s failed: %s\n", error_name, render_image_error_message(image_err))
+		}
+		return 1
+	}
 
 	if emit_output {
-		print_render_result(result, options, options.frames, command_name)
+		if render_test {
+			print_render_test_result(result, options, options.frames, verification)
+		} else {
+			print_render_result(result, options, options.frames, command_name)
+		}
 	}
 	return 0
 }
@@ -486,6 +497,15 @@ run_visual_test :: proc(args: []string, emit_output: bool) -> int {
 			fmt.eprintln("visual-test failed: invalid scene render data")
 		}
 		return 1
+	}
+	if !options.update {
+		_, image_err := render_write_scene_image(result.scene.world, options.render, false)
+		if image_err != .None {
+			if emit_output {
+				fmt.eprintf("visual-test render failed: %s\n", render_image_error_message(image_err))
+			}
+			return 1
+		}
 	}
 
 	if emit_output {
@@ -1045,6 +1065,30 @@ print_project_check_error :: proc(result: Project_Check_Result, target_path: str
 		print_script_diagnostic_json(diagnostic, target_path, true)
 		fmt.eprintln(`}`)
 	}
+}
+
+render_image_error_message :: proc(err: Render_Image_Error) -> string {
+	switch err {
+	case .None:
+		return "none"
+	case .Invalid_Output:
+		return "invalid output"
+	case .Unsupported_Format:
+		return "unsupported image format"
+	case .Out_Of_Memory:
+		return "out of memory"
+	case .Io_Error:
+		return "io error"
+	case .Invalid_Image:
+		return "invalid image"
+	case .Missing_Foreground:
+		return "missing foreground pixels"
+	case .Missing_Visible_Components:
+		return "missing visible components"
+	case .Missing_Color_Groups:
+		return "missing color groups"
+	}
+	return "unknown render image error"
 }
 
 print_script_diagnostic_json :: proc(diagnostic: Script_Diagnostic, root_path: string, stderr: bool) {

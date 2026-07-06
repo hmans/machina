@@ -1,0 +1,549 @@
+package main
+
+import "core:math"
+import "core:os"
+import "core:path/filepath"
+import "core:strings"
+
+Render_Image_Error :: enum {
+	None,
+	Invalid_Output,
+	Unsupported_Format,
+	Out_Of_Memory,
+	Io_Error,
+	Invalid_Image,
+	Missing_Foreground,
+	Missing_Visible_Components,
+	Missing_Color_Groups,
+}
+
+Render_Image_Format :: enum {
+	PNG,
+	BMP,
+}
+
+Render_Image :: struct {
+	width:  int,
+	height: int,
+	rgb:    []u8,
+}
+
+Render_Image_Verification :: struct {
+	foreground_pixels: int,
+	visible_components: int,
+	color_groups:       int,
+}
+
+render_write_scene_image :: proc(world: Runtime_World, options: Render_Options, verify_output: bool) -> (Render_Image_Verification, Render_Image_Error) {
+	format, format_ok := render_image_format_from_path(options.output_path)
+	if !format_ok {
+		return Render_Image_Verification{}, .Unsupported_Format
+	}
+	image, image_ok := render_image_from_scene(world, options.width, options.height)
+	if !image_ok {
+		return Render_Image_Verification{}, .Out_Of_Memory
+	}
+	defer render_image_free(&image)
+
+	verify := Render_Image_Verification{}
+	if verify_output {
+		verify_err: Render_Image_Error
+		verify, verify_err = render_verify_image(image)
+		if verify_err != .None {
+			return verify, verify_err
+		}
+	}
+	write_err := render_write_image_file(image, options.output_path, format)
+	if write_err != .None {
+		return verify, write_err
+	}
+	return verify, .None
+}
+
+render_image_format_from_path :: proc(path: string) -> (Render_Image_Format, bool) {
+	lower := strings.to_lower(filepath.ext(path))
+	defer delete(lower)
+	switch lower {
+	case ".png":
+		return .PNG, true
+	case ".bmp":
+		return .BMP, true
+	}
+	return .PNG, false
+}
+
+render_image_from_scene :: proc(world: Runtime_World, width, height: int) -> (Render_Image, bool) {
+	if width <= 0 || height <= 0 {
+		return Render_Image{}, false
+	}
+	pixels := make([]u8, width * height * 3)
+	if pixels == nil {
+		return Render_Image{}, false
+	}
+	image := Render_Image{width = width, height = height, rgb = pixels}
+	render_fill(&image, {18, 22, 29})
+	render_draw_scene_renderables(&image, world)
+	render_draw_scene_ui(&image, world)
+	return image, true
+}
+
+render_image_free :: proc(image: ^Render_Image) {
+	if image.rgb != nil {
+		delete(image.rgb)
+	}
+	image^ = Render_Image{}
+}
+
+render_fill :: proc(image: ^Render_Image, color: [3]u8) {
+	for y in 0 ..< image.height {
+		for x in 0 ..< image.width {
+			render_set_pixel(image, x, y, color)
+		}
+	}
+}
+
+render_draw_scene_renderables :: proc(image: ^Render_Image, world: Runtime_World) {
+	cursor := 0
+	index := 0
+	for {
+		entity, found := runtime_world_query_next(world, []string{TRANSFORM_COMPONENT_ID}, &cursor)
+		if !found {
+			break
+		}
+		has_geometry := render_entity_has_component(world, entity, GEOMETRY_PRIMITIVE_COMPONENT_ID) &&
+		                render_entity_has_component(world, entity, SURFACE_MATERIAL_COMPONENT_ID)
+		has_legacy_cube := render_entity_has_component(world, entity, CUBE_RENDERER_COMPONENT_ID)
+		if !has_geometry && !has_legacy_cube {
+			continue
+		}
+		color := render_entity_color(world, entity, index)
+		rect := render_renderable_rect(image.width, image.height, index)
+		render_fill_rect(image, rect.x, rect.y, rect.width, rect.height, color)
+		render_stroke_rect(image, rect.x, rect.y, rect.width, rect.height, render_lighten_color(color))
+		index += 1
+	}
+}
+
+render_draw_scene_ui :: proc(image: ^Render_Image, world: Runtime_World) {
+	cursor := 0
+	for {
+		entity, found := runtime_world_query_next(world, []string{UI_RECT_COMPONENT_ID}, &cursor)
+		if !found {
+			break
+		}
+		position, position_err := runtime_world_get_vec3(world, entity, UI_RECT_COMPONENT_ID, "position")
+		size, size_err := runtime_world_get_vec3(world, entity, UI_RECT_COMPONENT_ID, "size")
+		color_value, color_err := runtime_world_get_component_field_value(world, entity, UI_RECT_COMPONENT_ID, "color")
+		if position_err != .None || size_err != .None || color_err != .None || color_value.value_type != .Vec3 {
+			continue
+		}
+		x := int(math.round_f32(position[0]))
+		y := int(math.round_f32(position[1]))
+		width := max(1, int(math.round_f32(size[0])))
+		height := max(1, int(math.round_f32(size[1])))
+		color := render_vec3_to_rgb(color_value.vec3, {80, 170, 245})
+		render_fill_rect(image, x, y, width, height, color)
+	}
+}
+
+Renderable_Rect :: struct {
+	x:      int,
+	y:      int,
+	width:  int,
+	height: int,
+}
+
+render_renderable_rect :: proc(width, height, index: int) -> Renderable_Rect {
+	cell_width := max(64, width / 4)
+	cell_height := max(64, height / 3)
+	size := min(min(cell_width, cell_height) * 3 / 5, 120)
+	x := (index % 4) * cell_width + (cell_width - size) / 2
+	y := (index / 4) * cell_height + (cell_height - size) / 2
+	if y + size >= height {
+		y = max(0, height - size - 8)
+	}
+	return Renderable_Rect{x = x, y = y, width = size, height = size}
+}
+
+render_entity_color :: proc(world: Runtime_World, entity: Entity_Handle, index: int) -> [3]u8 {
+	if value, err := runtime_world_get_component_field_value(world, entity, SURFACE_MATERIAL_COMPONENT_ID, "base_color"); err == .None && value.value_type == .Vec3 {
+		return render_vec3_to_rgb(value.vec3, render_fallback_color(index))
+	}
+	if value, err := runtime_world_get_component_field_value(world, entity, CUBE_RENDERER_COMPONENT_ID, "color"); err == .None && value.value_type == .Vec3 {
+		return render_vec3_to_rgb(value.vec3, render_fallback_color(index))
+	}
+	return render_fallback_color(index)
+}
+
+render_fallback_color :: proc(index: int) -> [3]u8 {
+	colors := [?][3]u8{
+		{235, 112, 67},
+		{62, 155, 230},
+		{226, 190, 72},
+		{116, 207, 138},
+	}
+	return colors[index % len(colors)]
+}
+
+render_vec3_to_rgb :: proc(value: [3]f32, fallback: [3]u8) -> [3]u8 {
+	if !render_f32_is_finite(value[0]) || !render_f32_is_finite(value[1]) || !render_f32_is_finite(value[2]) {
+		return fallback
+	}
+	return {
+		u8(math.clamp(value[0], 0.0, 1.0) * 255.0),
+		u8(math.clamp(value[1], 0.0, 1.0) * 255.0),
+		u8(math.clamp(value[2], 0.0, 1.0) * 255.0),
+	}
+}
+
+render_f32_is_finite :: proc(value: f32) -> bool {
+	return !math.is_nan_f32(value) && !math.is_inf_f32(value)
+}
+
+render_lighten_color :: proc(color: [3]u8) -> [3]u8 {
+	return {
+		u8(min(255, int(color[0]) + 38)),
+		u8(min(255, int(color[1]) + 38)),
+		u8(min(255, int(color[2]) + 38)),
+	}
+}
+
+render_fill_rect :: proc(image: ^Render_Image, x, y, width, height: int, color: [3]u8) {
+	min_x := max(0, x)
+	min_y := max(0, y)
+	max_x := min(image.width, x + width)
+	max_y := min(image.height, y + height)
+	for py in min_y ..< max_y {
+		for px in min_x ..< max_x {
+			render_set_pixel(image, px, py, color)
+		}
+	}
+}
+
+render_stroke_rect :: proc(image: ^Render_Image, x, y, width, height: int, color: [3]u8) {
+	render_fill_rect(image, x, y, width, 2, color)
+	render_fill_rect(image, x, y + height - 2, width, 2, color)
+	render_fill_rect(image, x, y, 2, height, color)
+	render_fill_rect(image, x + width - 2, y, 2, height, color)
+}
+
+render_set_pixel :: proc(image: ^Render_Image, x, y: int, color: [3]u8) {
+	if x < 0 || y < 0 || x >= image.width || y >= image.height {
+		return
+	}
+	offset := (y * image.width + x) * 3
+	image.rgb[offset] = color[0]
+	image.rgb[offset + 1] = color[1]
+	image.rgb[offset + 2] = color[2]
+}
+
+render_verify_image :: proc(image: Render_Image) -> (Render_Image_Verification, Render_Image_Error) {
+	if image.width <= 0 || image.height <= 0 || image.rgb == nil {
+		return Render_Image_Verification{}, .Invalid_Image
+	}
+	pixel_count := image.width * image.height
+	visited := make([]bool, pixel_count)
+	if visited == nil {
+		return Render_Image_Verification{}, .Out_Of_Memory
+	}
+	defer delete(visited)
+	stack := make([]int, pixel_count)
+	if stack == nil {
+		return Render_Image_Verification{}, .Out_Of_Memory
+	}
+	defer delete(stack)
+
+	verify := Render_Image_Verification{}
+	warm_pixels := 0
+	cool_pixels := 0
+	for start in 0 ..< pixel_count {
+		if visited[start] {
+			continue
+		}
+		visited[start] = true
+		if !render_is_foreground(image.rgb[start * 3:][:3]) {
+			continue
+		}
+
+		component_area := 0
+		stack_len := 1
+		stack[0] = start
+		for stack_len > 0 {
+			stack_len -= 1
+			index := stack[stack_len]
+			component_area += 1
+			pixel := image.rgb[index * 3:][:3]
+			if render_is_warm(pixel) {
+				warm_pixels += 1
+			}
+			if render_is_cool(pixel) {
+				cool_pixels += 1
+			}
+
+			x := index % image.width
+			y := index / image.width
+			neighbors := [?]int{
+				x > 0 ? index - 1 : -1,
+				x + 1 < image.width ? index + 1 : -1,
+				y > 0 ? index - image.width : -1,
+				y + 1 < image.height ? index + image.width : -1,
+			}
+			for neighbor in neighbors {
+				if neighbor < 0 || visited[neighbor] {
+					continue
+				}
+				visited[neighbor] = true
+				if !render_is_foreground(image.rgb[neighbor * 3:][:3]) {
+					continue
+				}
+				stack[stack_len] = neighbor
+				stack_len += 1
+			}
+		}
+
+		verify.foreground_pixels += component_area
+		if component_area >= 100 {
+			verify.visible_components += 1
+		}
+	}
+	if warm_pixels >= 500 {
+		verify.color_groups += 1
+	}
+	if cool_pixels >= 500 {
+		verify.color_groups += 1
+	}
+	if verify.foreground_pixels < 1000 {
+		return verify, .Missing_Foreground
+	}
+	if verify.visible_components < 1 {
+		return verify, .Missing_Visible_Components
+	}
+	if verify.color_groups < 1 {
+		return verify, .Missing_Color_Groups
+	}
+	return verify, .None
+}
+
+render_is_foreground :: proc(pixel: []u8) -> bool {
+	return int(pixel[0]) + int(pixel[1]) + int(pixel[2]) > 96
+}
+
+render_is_warm :: proc(pixel: []u8) -> bool {
+	return pixel[0] > pixel[2] && pixel[0] > 96
+}
+
+render_is_cool :: proc(pixel: []u8) -> bool {
+	return pixel[2] > pixel[0] && pixel[2] > 96
+}
+
+render_write_image_file :: proc(image: Render_Image, path: string, format: Render_Image_Format) -> Render_Image_Error {
+	if !render_ensure_output_parent(path) {
+		return .Io_Error
+	}
+	switch format {
+	case .PNG:
+		return render_write_png(image, path)
+	case .BMP:
+		return render_write_bmp(image, path)
+	}
+	return .Unsupported_Format
+}
+
+render_ensure_output_parent :: proc(path: string) -> bool {
+	dir, _ := filepath.split(path)
+	if dir == "" || os.exists(dir) {
+		return true
+	}
+	return os.mkdir_all(dir) == nil
+}
+
+render_write_png :: proc(image: Render_Image, path: string) -> Render_Image_Error {
+	filtered_len := (image.width * 3 + 1) * image.height
+	filtered := make([]u8, filtered_len)
+	if filtered == nil {
+		return .Out_Of_Memory
+	}
+	defer delete(filtered)
+	cursor := 0
+	for y in 0 ..< image.height {
+		filtered[cursor] = 0
+		cursor += 1
+		row_start := y * image.width * 3
+		copy(filtered[cursor:][:image.width * 3], image.rgb[row_start:][:image.width * 3])
+		cursor += image.width * 3
+	}
+
+	zlib := render_zlib_store(filtered)
+	if zlib == nil {
+		return .Out_Of_Memory
+	}
+	defer delete(zlib)
+
+	output: [dynamic]u8
+	defer delete(output)
+	render_append_bytes(&output, []u8{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
+	ihdr: [13]u8
+	render_put_be_u32(ihdr[:], 0, u32(image.width))
+	render_put_be_u32(ihdr[:], 4, u32(image.height))
+	ihdr[8] = 8
+	ihdr[9] = 2
+	ihdr[10] = 0
+	ihdr[11] = 0
+	ihdr[12] = 0
+	render_append_png_chunk(&output, "IHDR", ihdr[:])
+	render_append_png_chunk(&output, "IDAT", zlib)
+	render_append_png_chunk(&output, "IEND", nil)
+	if os.write_entire_file(path, output[:]) != nil {
+		return .Io_Error
+	}
+	return .None
+}
+
+render_zlib_store :: proc(data: []u8) -> []u8 {
+	output: [dynamic]u8
+	append(&output, u8(0x78))
+	append(&output, u8(0x01))
+	cursor := 0
+	for cursor < len(data) {
+		remaining := len(data) - cursor
+		block_len := min(remaining, 65535)
+		final := cursor + block_len == len(data)
+		append(&output, final ? u8(0x01) : u8(0x00))
+		len16 := u16(block_len)
+		nlen16 := ~len16
+		render_append_le_u16(&output, len16)
+		render_append_le_u16(&output, nlen16)
+		render_append_bytes(&output, data[cursor:][:block_len])
+		cursor += block_len
+	}
+	adler := render_adler32(data)
+	render_append_be_u32(&output, adler)
+	return output[:]
+}
+
+render_append_png_chunk :: proc(output: ^[dynamic]u8, chunk_type: string, data: []u8) {
+	render_append_be_u32(output, u32(len(data)))
+	start := len(output^)
+	render_append_bytes(output, transmute([]u8)chunk_type)
+	if data != nil {
+		render_append_bytes(output, data)
+	}
+	crc := render_crc32(output^[start:])
+	render_append_be_u32(output, crc)
+}
+
+render_write_bmp :: proc(image: Render_Image, path: string) -> Render_Image_Error {
+	row_bytes := render_bmp_row_bytes(image.width)
+	file_size := 54 + row_bytes * image.height
+	output := make([]u8, file_size)
+	if output == nil {
+		return .Out_Of_Memory
+	}
+	defer delete(output)
+	cursor := 0
+	render_write_bytes(output, &cursor, []u8{'B', 'M'})
+	render_write_le_u32(output, &cursor, u32(file_size))
+	render_write_le_u32(output, &cursor, 0)
+	render_write_le_u32(output, &cursor, 54)
+	render_write_le_u32(output, &cursor, 40)
+	render_write_le_u32(output, &cursor, u32(image.width))
+	render_write_le_u32(output, &cursor, u32(image.height))
+	render_write_le_u16(output, &cursor, 1)
+	render_write_le_u16(output, &cursor, 24)
+	for _ in 0 ..< 24 {
+		output[cursor] = 0
+		cursor += 1
+	}
+	for row in 0 ..< image.height {
+		source_y := image.height - row - 1
+		for x in 0 ..< image.width {
+			source := (source_y * image.width + x) * 3
+			output[cursor] = image.rgb[source + 2]
+			output[cursor + 1] = image.rgb[source + 1]
+			output[cursor + 2] = image.rgb[source]
+			cursor += 3
+		}
+		padding := row_bytes - image.width * 3
+		for _ in 0 ..< padding {
+			output[cursor] = 0
+			cursor += 1
+		}
+	}
+	if os.write_entire_file(path, output) != nil {
+		return .Io_Error
+	}
+	return .None
+}
+
+render_bmp_row_bytes :: proc(width: int) -> int {
+	return ((width * 3 + 3) / 4) * 4
+}
+
+render_append_bytes :: proc(output: ^[dynamic]u8, bytes: []u8) {
+	for byte in bytes {
+		append(output, byte)
+	}
+}
+
+render_append_le_u16 :: proc(output: ^[dynamic]u8, value: u16) {
+	append(output, u8(value & 0xff))
+	append(output, u8((value >> 8) & 0xff))
+}
+
+render_append_be_u32 :: proc(output: ^[dynamic]u8, value: u32) {
+	append(output, u8((value >> 24) & 0xff))
+	append(output, u8((value >> 16) & 0xff))
+	append(output, u8((value >> 8) & 0xff))
+	append(output, u8(value & 0xff))
+}
+
+render_write_bytes :: proc(output: []u8, cursor: ^int, bytes: []u8) {
+	copy(output[cursor^:], bytes)
+	cursor^ += len(bytes)
+}
+
+render_write_le_u16 :: proc(output: []u8, cursor: ^int, value: u16) {
+	output[cursor^] = u8(value & 0xff)
+	output[cursor^ + 1] = u8((value >> 8) & 0xff)
+	cursor^ += 2
+}
+
+render_write_le_u32 :: proc(output: []u8, cursor: ^int, value: u32) {
+	output[cursor^] = u8(value & 0xff)
+	output[cursor^ + 1] = u8((value >> 8) & 0xff)
+	output[cursor^ + 2] = u8((value >> 16) & 0xff)
+	output[cursor^ + 3] = u8((value >> 24) & 0xff)
+	cursor^ += 4
+}
+
+render_put_be_u32 :: proc(output: []u8, offset: int, value: u32) {
+	output[offset] = u8((value >> 24) & 0xff)
+	output[offset + 1] = u8((value >> 16) & 0xff)
+	output[offset + 2] = u8((value >> 8) & 0xff)
+	output[offset + 3] = u8(value & 0xff)
+}
+
+render_crc32 :: proc(data: []u8) -> u32 {
+	crc := u32(0xffffffff)
+	for byte in data {
+		crc = crc ~ u32(byte)
+		for _ in 0 ..< 8 {
+			if crc & 1 != 0 {
+				crc = (crc >> 1) ~ u32(0xedb88320)
+			} else {
+				crc = crc >> 1
+			}
+		}
+	}
+	return ~crc
+}
+
+render_adler32 :: proc(data: []u8) -> u32 {
+	a := u32(1)
+	b := u32(0)
+	for byte in data {
+		a = (a + u32(byte)) % 65521
+		b = (b + a) % 65521
+	}
+	return (b << 16) | a
+}

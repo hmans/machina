@@ -986,6 +986,20 @@ test_run_render_command_accepts_initialized_project :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_run_render_command_writes_png_artifact :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-render-writes-png")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Render PNG"), Project_Error.None)
+	output_path := project_relative_path(root, "render.png")
+	defer delete(output_path)
+
+	exit_code := run_with_output([]string{"scrapbot", "render", root, output_path}, false)
+	testing.expect_value(t, exit_code, 0)
+	expect_file_prefix(t, output_path, []u8{0x89, 'P', 'N', 'G'})
+}
+
+@(test)
 test_run_render_command_updates_only_extra_frames :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-render-extra-frame-updates")
 	defer os.remove_all(root)
@@ -1016,6 +1030,20 @@ test_run_render_test_command_accepts_selected_entity :: proc(t: ^testing.T) {
 
 	exit_code := run_with_output([]string{"scrapbot", "render-test", "--select", "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001", root}, false)
 	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_run_render_test_command_writes_bmp_artifact :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-render-test-writes-bmp")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Render Test BMP"), Project_Error.None)
+	output_path := project_relative_path(root, "render-test.bmp")
+	defer delete(output_path)
+
+	exit_code := run_with_output([]string{"scrapbot", "render-test", root, output_path}, false)
+	testing.expect_value(t, exit_code, 0)
+	expect_file_prefix(t, output_path, []u8{'B', 'M'})
 }
 
 @(test)
@@ -1145,6 +1173,20 @@ test_run_visual_test_command_updates_only_extra_frames :: proc(t: ^testing.T) {
 	testing.expect_value(t, default_exit_code, 0)
 	two_frame_exit_code := run_with_output([]string{"scrapbot", "visual-test", "--frames=2", root, expected_path}, false)
 	testing.expect_value(t, two_frame_exit_code, 1)
+}
+
+expect_file_prefix :: proc(t: ^testing.T, path: string, prefix: []u8) {
+	contents, read_err := os.read_entire_file(path, context.allocator)
+	if read_err != nil {
+		testing.fail_now(t, "failed to read output artifact")
+	}
+	defer delete(contents)
+	if len(contents) < len(prefix) {
+		testing.fail_now(t, "output artifact is too short")
+	}
+	for byte, index in prefix {
+		testing.expect_value(t, contents[index], byte)
+	}
 }
 
 @(test)
