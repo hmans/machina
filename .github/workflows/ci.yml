@@ -142,6 +142,8 @@ jobs:
             "tests/projects/batching_animation",
             "tests/projects/editor_chrome_input",
             "tests/projects/health_tick",
+            "tests/projects/native_lifecycle",
+            "tests/projects/native_motion",
             "tests/projects/projectile_lifetime",
             "tests/projects/render_camera_light",
             "tests/projects/spawn_lifecycle",
