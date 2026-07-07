@@ -179,7 +179,10 @@ sdl_input_apply_key :: proc(state: ^Sdl_Input_State, input: ^Frame_Input, scanco
 		input.keyboard.editor_toggle_pressed = down && !repeat && state.ctrl_down
 	case:
 	}
-	input.keyboard.editor_select_all_pressed = down && !repeat && scancode == .A && (state.ctrl_down || state.super_down)
+	editor_shortcut_down := state.ctrl_down || state.super_down
+	input.keyboard.editor_select_all_pressed = down && !repeat && scancode == .A && editor_shortcut_down
+	input.keyboard.editor_undo_pressed = down && !repeat && scancode == .Z && editor_shortcut_down && !state.shift_down
+	input.keyboard.editor_redo_pressed = down && !repeat && editor_shortcut_down && ((scancode == .Z && state.shift_down) || scancode == .Y)
 	sdl_input_sync_keyboard_state(input, state^)
 }
 

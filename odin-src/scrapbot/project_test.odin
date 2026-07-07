@@ -967,6 +967,7 @@ test_live_project_run_frame_with_editor_input_can_pause_updates :: proc(t: ^test
 	testing.expect_value(t, init_err, Project_Error.None)
 
 	editor_state := Editor_Test_Input_State{}
+	defer editor_test_input_state_free(&editor_state)
 	pause_input := frame_input_default()
 	pause_input.debug_overlay_visible = true
 	pause_input.viewport_width = 1280

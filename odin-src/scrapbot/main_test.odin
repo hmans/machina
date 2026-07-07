@@ -825,6 +825,164 @@ equals_float = 7.5
 }
 
 @(test)
+test_run_test_command_replays_editor_inspector_text_edit_undo :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-inspector-text-edit-undo")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Inspector Text Edit Undo Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local C0 = ecs.component("c0", {
+  fields = ecs.fields({
+    a = "float",
+    b = "float",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Inspector Text Edit Undo Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.c0]
+a = 1.0
+b = 2.0
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 4
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [900.0, 285.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 3
+editor_visible = true
+viewport = [1280.0, 720.0]
+text_input = "7.5"
+editor_enter_pressed = true
+
+[[input.frame]]
+frame = 4
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_undo_pressed = true
+
+[[expect.editor]]
+selected_entity = "target"
+selected_component = "c0"
+selected_field = "b"
+
+[[expect.field]]
+entity = "target"
+component = "c0"
+field = "b"
+equals_float = 2.0
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_run_test_command_replays_editor_inspector_text_edit_redo :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-inspector-text-edit-redo")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Inspector Text Edit Redo Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local C0 = ecs.component("c0", {
+  fields = ecs.fields({
+    a = "float",
+    b = "float",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Inspector Text Edit Redo Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.c0]
+a = 1.0
+b = 2.0
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 5
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [900.0, 285.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 3
+editor_visible = true
+viewport = [1280.0, 720.0]
+text_input = "7.5"
+editor_enter_pressed = true
+
+[[input.frame]]
+frame = 4
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_undo_pressed = true
+
+[[input.frame]]
+frame = 5
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_redo_pressed = true
+
+[[expect.editor]]
+selected_entity = "target"
+selected_component = "c0"
+selected_field = "b"
+
+[[expect.field]]
+entity = "target"
+component = "c0"
+field = "b"
+equals_float = 7.5
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_run_test_command_replays_editor_inspector_text_caret_selection :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-test-editor-inspector-text-caret-selection")
 	defer os.remove_all(root)
@@ -1103,6 +1261,68 @@ entity = "target"
 component = "scrapbot.geometry.primitive"
 field = "primitive"
 equals_string = "plane"
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_run_test_command_replays_editor_inspector_primitive_selector_undo :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-inspector-primitive-selector-undo")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Inspector Primitive Selector Undo Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Inspector Primitive Selector Undo Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components."scrapbot.geometry.primitive"]
+primitive = "box"
+segments = 16
+rings = 8
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 3
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [900.0, 250.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 3
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_undo_pressed = true
+
+[[expect.editor]]
+selected_entity = "target"
+selected_component = "scrapbot.geometry.primitive"
+selected_field = "primitive"
+
+[[expect.field]]
+entity = "target"
+component = "scrapbot.geometry.primitive"
+field = "primitive"
+equals_string = "box"
 `)
 
 	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)

@@ -1111,6 +1111,7 @@ run_script_simulation_with_input :: proc(result: ^Project_Check_Result, frames: 
 	}
 	completed_frames := 0
 	editor_input_state := Editor_Test_Input_State{}
+	defer editor_test_input_state_free(&editor_input_state)
 	for completed_frames < frames {
 		if len(input_frames) > 0 {
 			frame_input := step_input_for_frame(input_frames, completed_frames + 1)

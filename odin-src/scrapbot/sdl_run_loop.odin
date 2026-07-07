@@ -206,6 +206,7 @@ sdl_run_live_project_loop :: proc(
 	previous_ticks_ns := sdl3.GetTicksNS()
 	input_state := Sdl_Input_State{}
 	editor_state := Editor_Test_Input_State{}
+	defer editor_test_input_state_free(&editor_state)
 	for !sdl_run_loop_frame_limit_reached(completed_frames, max_frames) {
 		frame_input := sdl_input_begin_frame(input_state, size, editor)
 		if sdl_run_loop_pump_input_events(&input_state, &frame_input, size) {
@@ -359,6 +360,7 @@ sdl_run_live_project_wgpu_loop :: proc(
 	previous_ticks_ns := sdl3.GetTicksNS()
 	input_state := Sdl_Input_State{}
 	editor_state := Editor_Test_Input_State{}
+	defer editor_test_input_state_free(&editor_state)
 	for !sdl_run_loop_frame_limit_reached(completed_frames, max_frames) {
 		frame_input := sdl_input_begin_frame(input_state, size, editor)
 		if sdl_run_loop_pump_input_events(&input_state, &frame_input, size) {

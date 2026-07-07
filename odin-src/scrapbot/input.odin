@@ -6,6 +6,7 @@ import "core:strconv"
 import "core:strings"
 
 EDITOR_TEST_TEXT_INPUT_BUFFER_LEN :: 128
+EDITOR_TEST_UNDO_CAPACITY :: 64
 EDITOR_TEST_GIZMO_AXIS_LENGTH :: f32(1.35)
 EDITOR_TEST_GIZMO_PICK_RADIUS_PX :: f32(12.0)
 EDITOR_TEST_DEFAULT_CAMERA_POSITION :: [3]f32{0.0, 0.0, 4.8}
@@ -39,6 +40,8 @@ Frame_Input_Keyboard :: struct {
 	move_down:             bool,
 	editor_toggle_pressed: bool,
 	editor_enter_pressed:  bool,
+	editor_undo_pressed:   bool,
+	editor_redo_pressed:   bool,
 	editor_left_pressed:   bool,
 	editor_right_pressed:  bool,
 	editor_home_pressed:   bool,
@@ -78,6 +81,15 @@ Editor_Test_Axis :: enum {
 	Z,
 }
 
+Editor_Test_Field_Edit_Command :: struct {
+	entity:    Entity_Handle,
+	component: string,
+	field:     string,
+	lane:      int,
+	old_value: Runtime_Component_Value,
+	new_value: Runtime_Component_Value,
+}
+
 Editor_Test_Input_State :: struct {
 	captured_pointer:    bool,
 	paused:              bool,
@@ -105,6 +117,10 @@ Editor_Test_Input_State :: struct {
 	text_input_len:              int,
 	text_input_cursor:           int,
 	text_input_selection_anchor: int,
+	undo_stack:                  [EDITOR_TEST_UNDO_CAPACITY]Editor_Test_Field_Edit_Command,
+	undo_len:                    int,
+	redo_stack:                  [EDITOR_TEST_UNDO_CAPACITY]Editor_Test_Field_Edit_Command,
+	redo_len:                    int,
 }
 
 frame_input_default :: proc() -> Frame_Input {
@@ -244,60 +260,71 @@ editor_test_selected_entity_id :: proc(state: Editor_Test_Input_State, world: Ru
 	return entity.id, true
 }
 
+editor_test_input_state_free :: proc(state: ^Editor_Test_Input_State) {
+	clear_editor_test_field_command_stack(&state.undo_stack, &state.undo_len)
+	clear_editor_test_field_command_stack(&state.redo_stack, &state.redo_len)
+}
+
 apply_editor_test_keyboard_edits :: proc(state: ^Editor_Test_Input_State, world: ^Runtime_World, input: Frame_Input) -> bool {
-	if !state.text_input_active {
-		return false
-	}
 	consumed := false
-	if input.keyboard.editor_select_all_pressed {
-		select_all_editor_test_text_input(state)
-		consumed = true
-	}
-	if input.keyboard.editor_home_pressed {
-		editor_test_text_input_move_cursor(state, 0, input.keyboard.shift_down)
-		consumed = true
-	}
-	if input.keyboard.editor_end_pressed {
-		editor_test_text_input_move_cursor(state, state.text_input_len, input.keyboard.shift_down)
-		consumed = true
-	}
-	if input.keyboard.editor_left_pressed {
-		next_cursor := state.text_input_cursor
-		if !input.keyboard.shift_down && editor_test_text_input_has_selection(state^) {
-			next_cursor = min_int(state.text_input_cursor, state.text_input_selection_anchor)
-		} else {
-			next_cursor = max_int(state.text_input_cursor - 1, 0)
+	if state.text_input_active {
+		if input.keyboard.editor_select_all_pressed {
+			select_all_editor_test_text_input(state)
+			consumed = true
 		}
-		editor_test_text_input_move_cursor(state, next_cursor, input.keyboard.shift_down)
-		consumed = true
-	}
-	if input.keyboard.editor_right_pressed {
-		next_cursor := state.text_input_cursor
-		if !input.keyboard.shift_down && editor_test_text_input_has_selection(state^) {
-			next_cursor = max_int(state.text_input_cursor, state.text_input_selection_anchor)
-		} else {
-			next_cursor = min_int(state.text_input_cursor + 1, state.text_input_len)
+		if input.keyboard.editor_home_pressed {
+			editor_test_text_input_move_cursor(state, 0, input.keyboard.shift_down)
+			consumed = true
 		}
-		editor_test_text_input_move_cursor(state, next_cursor, input.keyboard.shift_down)
-		consumed = true
+		if input.keyboard.editor_end_pressed {
+			editor_test_text_input_move_cursor(state, state.text_input_len, input.keyboard.shift_down)
+			consumed = true
+		}
+		if input.keyboard.editor_left_pressed {
+			next_cursor := state.text_input_cursor
+			if !input.keyboard.shift_down && editor_test_text_input_has_selection(state^) {
+				next_cursor = min_int(state.text_input_cursor, state.text_input_selection_anchor)
+			} else {
+				next_cursor = max_int(state.text_input_cursor - 1, 0)
+			}
+			editor_test_text_input_move_cursor(state, next_cursor, input.keyboard.shift_down)
+			consumed = true
+		}
+		if input.keyboard.editor_right_pressed {
+			next_cursor := state.text_input_cursor
+			if !input.keyboard.shift_down && editor_test_text_input_has_selection(state^) {
+				next_cursor = max_int(state.text_input_cursor, state.text_input_selection_anchor)
+			} else {
+				next_cursor = min_int(state.text_input_cursor + 1, state.text_input_len)
+			}
+			editor_test_text_input_move_cursor(state, next_cursor, input.keyboard.shift_down)
+			consumed = true
+		}
+		if input.keyboard.editor_backspace_pressed {
+			editor_test_text_input_backspace(state)
+			consumed = true
+		}
+		if input.keyboard.editor_delete_pressed {
+			editor_test_text_input_delete(state)
+			consumed = true
+		}
+		if input.text_input != "" {
+			editor_test_text_input_insert(state, input.text_input)
+			consumed = true
+		}
+		if input.keyboard.editor_enter_pressed {
+			commit_editor_test_text_input(world, state)
+			return true
+		}
+		return consumed
 	}
-	if input.keyboard.editor_backspace_pressed {
-		editor_test_text_input_backspace(state)
-		consumed = true
+	if input.keyboard.editor_undo_pressed {
+		return undo_editor_test_field_edit(world, state)
 	}
-	if input.keyboard.editor_delete_pressed {
-		editor_test_text_input_delete(state)
-		consumed = true
+	if input.keyboard.editor_redo_pressed {
+		return redo_editor_test_field_edit(world, state)
 	}
-	if input.text_input != "" {
-		editor_test_text_input_insert(state, input.text_input)
-		consumed = true
-	}
-	if input.keyboard.editor_enter_pressed {
-		commit_editor_test_text_input(world, state)
-		return true
-	}
-	return consumed
+	return false
 }
 
 apply_editor_test_typed_control_click :: proc(
@@ -317,8 +344,7 @@ apply_editor_test_typed_control_click :: proc(
 	if !typed_ok {
 		return false
 	}
-	set_err := runtime_world_set_component_field_value(world, state.selected_entity, component_id, field_name, new_value)
-	if set_err != .None {
+	if !apply_editor_test_field_value(world, state, state.selected_entity, component_id, field_name, lane, new_value, true) {
 		return false
 	}
 	clear_editor_test_text_input(state)
@@ -407,9 +433,227 @@ commit_editor_test_text_input :: proc(world: ^Runtime_World, state: ^Editor_Test
 		clear_editor_test_text_input(state)
 		return false
 	}
-	set_err := runtime_world_set_component_field_value(world, state.selected_entity, state.text_input_component, state.text_input_field, next)
+	set_ok := apply_editor_test_field_value(
+		world,
+		state,
+		state.selected_entity,
+		state.text_input_component,
+		state.text_input_field,
+		state.text_input_lane,
+		next,
+		true,
+	)
 	clear_editor_test_text_input(state)
-	return set_err == .None
+	return set_ok
+}
+
+apply_editor_test_field_value :: proc(
+	world: ^Runtime_World,
+	state: ^Editor_Test_Input_State,
+	entity: Entity_Handle,
+	component_id, field_name: string,
+	lane: int,
+	new_value: Runtime_Component_Value,
+	push_undo: bool,
+) -> bool {
+	old_value, old_err := runtime_world_get_component_field_value(world^, entity, component_id, field_name)
+	if old_err != .None {
+		return false
+	}
+	if editor_test_component_values_equal(old_value, new_value) {
+		return true
+	}
+	set_err := runtime_world_set_component_field_value(world, entity, component_id, field_name, new_value)
+	if set_err != .None {
+		return false
+	}
+	if push_undo {
+		push_editor_test_field_command(&state.undo_stack, &state.undo_len, entity, component_id, field_name, lane, old_value, new_value)
+		clear_editor_test_field_command_stack(&state.redo_stack, &state.redo_len)
+	}
+	return true
+}
+
+undo_editor_test_field_edit :: proc(world: ^Runtime_World, state: ^Editor_Test_Input_State) -> bool {
+	command, ok := pop_editor_test_field_command(&state.undo_stack, &state.undo_len)
+	if !ok {
+		return false
+	}
+	component_id := editor_test_field_command_component(&command)
+	field_name := editor_test_field_command_field(&command)
+	set_err := runtime_world_set_component_field_value(world, command.entity, component_id, field_name, command.old_value)
+	if set_err != .None {
+		editor_test_field_command_free(&command)
+		return false
+	}
+	push_editor_test_field_command(&state.redo_stack, &state.redo_len, command.entity, component_id, field_name, command.lane, command.old_value, command.new_value)
+	select_editor_test_field_edit_command(world^, state, &command)
+	editor_test_field_command_free(&command)
+	return true
+}
+
+redo_editor_test_field_edit :: proc(world: ^Runtime_World, state: ^Editor_Test_Input_State) -> bool {
+	command, ok := pop_editor_test_field_command(&state.redo_stack, &state.redo_len)
+	if !ok {
+		return false
+	}
+	component_id := editor_test_field_command_component(&command)
+	field_name := editor_test_field_command_field(&command)
+	set_err := runtime_world_set_component_field_value(world, command.entity, component_id, field_name, command.new_value)
+	if set_err != .None {
+		editor_test_field_command_free(&command)
+		return false
+	}
+	push_editor_test_field_command(&state.undo_stack, &state.undo_len, command.entity, component_id, field_name, command.lane, command.old_value, command.new_value)
+	select_editor_test_field_edit_command(world^, state, &command)
+	editor_test_field_command_free(&command)
+	return true
+}
+
+select_editor_test_field_edit_command :: proc(world: Runtime_World, state: ^Editor_Test_Input_State, command: ^Editor_Test_Field_Edit_Command) {
+	component_id := editor_test_field_command_component(command)
+	field_name := editor_test_field_command_field(command)
+	table, table_ok := runtime_world_find_component_table(world, component_id)
+	if !table_ok {
+		return
+	}
+	field_index, field_ok := runtime_component_table_field_index(table^, field_name)
+	if !field_ok {
+		return
+	}
+	state.selected_entity = command.entity
+	state.has_selected_entity = true
+	state.selected_property_component = table.id
+	state.selected_property_field = table.columns[field_index].name
+	state.selected_property_lane = command.lane
+	state.has_selected_property = true
+	clear_editor_test_text_input(state)
+}
+
+push_editor_test_field_command :: proc(
+	stack: ^[EDITOR_TEST_UNDO_CAPACITY]Editor_Test_Field_Edit_Command,
+	stack_len: ^int,
+	entity: Entity_Handle,
+	component_id, field_name: string,
+	lane: int,
+	old_value, new_value: Runtime_Component_Value,
+) -> bool {
+	if stack_len^ >= EDITOR_TEST_UNDO_CAPACITY {
+		editor_test_field_command_free(&stack[0])
+		for index := 1; index < EDITOR_TEST_UNDO_CAPACITY; index += 1 {
+			stack[index - 1] = stack[index]
+		}
+		stack[EDITOR_TEST_UNDO_CAPACITY - 1] = Editor_Test_Field_Edit_Command{}
+		stack_len^ = EDITOR_TEST_UNDO_CAPACITY - 1
+	}
+	slot := &stack[stack_len^]
+	if !editor_test_field_command_init(slot, entity, component_id, field_name, lane, old_value, new_value) {
+		slot^ = Editor_Test_Field_Edit_Command{}
+		return false
+	}
+	stack_len^ += 1
+	return true
+}
+
+pop_editor_test_field_command :: proc(
+	stack: ^[EDITOR_TEST_UNDO_CAPACITY]Editor_Test_Field_Edit_Command,
+	stack_len: ^int,
+) -> (Editor_Test_Field_Edit_Command, bool) {
+	if stack_len^ <= 0 {
+		return Editor_Test_Field_Edit_Command{}, false
+	}
+	stack_len^ -= 1
+	command := stack[stack_len^]
+	stack[stack_len^] = Editor_Test_Field_Edit_Command{}
+	return command, true
+}
+
+clear_editor_test_field_command_stack :: proc(
+	stack: ^[EDITOR_TEST_UNDO_CAPACITY]Editor_Test_Field_Edit_Command,
+	stack_len: ^int,
+) {
+	for index := 0; index < stack_len^; index += 1 {
+		editor_test_field_command_free(&stack[index])
+	}
+	stack_len^ = 0
+}
+
+editor_test_field_command_init :: proc(
+	command: ^Editor_Test_Field_Edit_Command,
+	entity: Entity_Handle,
+	component_id, field_name: string,
+	lane: int,
+	old_value, new_value: Runtime_Component_Value,
+) -> bool {
+	command^ = Editor_Test_Field_Edit_Command{}
+	owned_component, component_err := strings.clone(component_id)
+	if component_err != nil {
+		return false
+	}
+	owned_field, field_err := strings.clone(field_name)
+	if field_err != nil {
+		delete(owned_component)
+		return false
+	}
+	owned_old, old_err := runtime_component_value_clone(old_value)
+	if old_err != .None {
+		delete(owned_component)
+		delete(owned_field)
+		return false
+	}
+	owned_new, new_err := runtime_component_value_clone(new_value)
+	if new_err != .None {
+		delete(owned_component)
+		delete(owned_field)
+		runtime_component_value_free(owned_old)
+		return false
+	}
+	command.entity = entity
+	command.component = owned_component
+	command.field = owned_field
+	command.lane = clamp_int(lane, 0, 2)
+	command.old_value = owned_old
+	command.new_value = owned_new
+	return true
+}
+
+editor_test_field_command_free :: proc(command: ^Editor_Test_Field_Edit_Command) {
+	if command.component != "" {
+		delete(command.component)
+	}
+	if command.field != "" {
+		delete(command.field)
+	}
+	runtime_component_value_free(command.old_value)
+	runtime_component_value_free(command.new_value)
+	command^ = Editor_Test_Field_Edit_Command{}
+}
+
+editor_test_field_command_component :: proc(command: ^Editor_Test_Field_Edit_Command) -> string {
+	return command.component
+}
+
+editor_test_field_command_field :: proc(command: ^Editor_Test_Field_Edit_Command) -> string {
+	return command.field
+}
+
+editor_test_component_values_equal :: proc(left, right: Runtime_Component_Value) -> bool {
+	if left.value_type != right.value_type {
+		return false
+	}
+	switch left.value_type {
+	case .Boolean:
+		return left.boolean == right.boolean
+	case .Int:
+		return left.int_value == right.int_value
+	case .Float:
+		return left.float == right.float
+	case .Vec3:
+		return left.vec3 == right.vec3
+	case .String:
+		return left.string_value == right.string_value
+	}
+	return false
 }
 
 clear_editor_test_text_input :: proc(state: ^Editor_Test_Input_State) {
