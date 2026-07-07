@@ -24,6 +24,9 @@ WGPU_Texture_View_Dimension :: u32
 WGPU_Texture_Aspect :: u32
 WGPU_Map_Mode :: WGPU_Flags
 WGPU_Callback_Mode :: u32
+WGPU_Index_Format :: u32
+WGPU_Load_Op :: u32
+WGPU_Store_Op :: u32
 WGPU_Feature_Level :: u32
 WGPU_Power_Preference :: u32
 WGPU_Backend_Type :: u32
@@ -54,6 +57,7 @@ WGPU_Command_Encoder :: rawptr
 WGPU_Command_Buffer :: rawptr
 WGPU_Render_Pass_Encoder :: rawptr
 WGPU_Limits :: rawptr
+WGPU_Query_Set :: rawptr
 
 WGPU_FALSE :: WGPU_Bool(0)
 WGPU_TRUE :: WGPU_Bool(1)
@@ -74,6 +78,18 @@ WGPU_MAP_ASYNC_STATUS_UNKNOWN :: WGPU_Map_Async_Status(0x00000005)
 WGPU_CALLBACK_MODE_WAIT_ANY_ONLY :: WGPU_Callback_Mode(0x00000001)
 WGPU_CALLBACK_MODE_ALLOW_PROCESS_EVENTS :: WGPU_Callback_Mode(0x00000002)
 WGPU_CALLBACK_MODE_ALLOW_SPONTANEOUS :: WGPU_Callback_Mode(0x00000003)
+
+WGPU_INDEX_FORMAT_UNDEFINED :: WGPU_Index_Format(0x00000000)
+WGPU_INDEX_FORMAT_UINT16 :: WGPU_Index_Format(0x00000001)
+WGPU_INDEX_FORMAT_UINT32 :: WGPU_Index_Format(0x00000002)
+
+WGPU_LOAD_OP_UNDEFINED :: WGPU_Load_Op(0x00000000)
+WGPU_LOAD_OP_LOAD :: WGPU_Load_Op(0x00000001)
+WGPU_LOAD_OP_CLEAR :: WGPU_Load_Op(0x00000002)
+
+WGPU_STORE_OP_UNDEFINED :: WGPU_Store_Op(0x00000000)
+WGPU_STORE_OP_STORE :: WGPU_Store_Op(0x00000001)
+WGPU_STORE_OP_DISCARD :: WGPU_Store_Op(0x00000002)
 
 WGPU_FEATURE_LEVEL_COMPATIBILITY :: WGPU_Feature_Level(0x00000001)
 WGPU_FEATURE_LEVEL_CORE :: WGPU_Feature_Level(0x00000002)
@@ -191,6 +207,7 @@ WGPU_SHADOW_DEPTH_FORMAT :: WGPU_TEXTURE_FORMAT_DEPTH32_FLOAT
 WGPU_ARRAY_LAYER_COUNT_UNDEFINED :: WGPU_U32_MAX
 WGPU_MIP_LEVEL_COUNT_UNDEFINED :: WGPU_U32_MAX
 WGPU_COPY_STRIDE_UNDEFINED :: WGPU_U32_MAX
+WGPU_DEPTH_SLICE_UNDEFINED :: WGPU_U32_MAX
 
 WGPU_String_View :: struct #align(align_of(rawptr)) {
 	data:   rawptr,
@@ -285,6 +302,45 @@ WGPU_Command_Buffer_Descriptor :: struct #align(align_of(rawptr)) {
 	label:         WGPU_String_View,
 }
 
+WGPU_Color :: struct {
+	r: f64,
+	g: f64,
+	b: f64,
+	a: f64,
+}
+
+WGPU_Color_Attachment :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	view:          WGPU_Texture_View,
+	depth_slice:   u32,
+	resolve_target: WGPU_Texture_View,
+	load_op:       WGPU_Load_Op,
+	store_op:      WGPU_Store_Op,
+	clear_value:   WGPU_Color,
+}
+
+WGPU_Depth_Stencil_Attachment :: struct #align(align_of(rawptr)) {
+	view:                WGPU_Texture_View,
+	depth_load_op:       WGPU_Load_Op,
+	depth_store_op:      WGPU_Store_Op,
+	depth_clear_value:   f32,
+	depth_read_only:     WGPU_Bool,
+	stencil_load_op:     WGPU_Load_Op,
+	stencil_store_op:    WGPU_Store_Op,
+	stencil_clear_value: u32,
+	stencil_read_only:   WGPU_Bool,
+}
+
+WGPU_Render_Pass_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain:              ^WGPU_Chained_Struct,
+	label:                      WGPU_String_View,
+	color_attachment_count:     c.size_t,
+	color_attachments:          [^]WGPU_Color_Attachment,
+	depth_stencil_attachment:   ^WGPU_Depth_Stencil_Attachment,
+	occlusion_query_set:        WGPU_Query_Set,
+	timestamp_writes:           rawptr,
+}
+
 WGPU_Instance_Capabilities :: struct #align(align_of(rawptr)) {
 	next_in_chain:            ^WGPU_Chained_Struct_Out,
 	timed_wait_any_enable:    WGPU_Bool,
@@ -375,8 +431,18 @@ WGPU_Device_Create_Buffer_Proc :: proc "c" (device: WGPU_Device, descriptor: ^WG
 WGPU_Device_Create_Command_Encoder_Proc :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Command_Encoder_Descriptor) -> WGPU_Command_Encoder
 WGPU_Texture_Create_View_Proc :: proc "c" (texture: WGPU_Texture, descriptor: ^WGPU_Texture_View_Descriptor) -> WGPU_Texture_View
 WGPU_Command_Encoder_Copy_Texture_To_Buffer_Proc :: proc "c" (encoder: WGPU_Command_Encoder, source: ^WGPU_Texel_Copy_Texture_Info, destination: ^WGPU_Texel_Copy_Buffer_Info, copy_size: ^WGPU_Extent_3D)
+WGPU_Command_Encoder_Begin_Render_Pass_Proc :: proc "c" (encoder: WGPU_Command_Encoder, descriptor: ^WGPU_Render_Pass_Descriptor) -> WGPU_Render_Pass_Encoder
 WGPU_Command_Encoder_Finish_Proc :: proc "c" (encoder: WGPU_Command_Encoder, descriptor: ^WGPU_Command_Buffer_Descriptor) -> WGPU_Command_Buffer
 WGPU_Queue_Submit_Proc :: proc "c" (queue: WGPU_Queue, command_count: c.size_t, commands: [^]WGPU_Command_Buffer)
+WGPU_Render_Pass_Encoder_Set_Pipeline_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder, pipeline: WGPU_Render_Pipeline)
+WGPU_Render_Pass_Encoder_Set_Bind_Group_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder, group_index: u32, group: WGPU_Bind_Group, dynamic_offset_count: c.size_t, dynamic_offsets: [^]u32)
+WGPU_Render_Pass_Encoder_Set_Vertex_Buffer_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder, slot: u32, buffer: WGPU_Buffer, offset, size: u64)
+WGPU_Render_Pass_Encoder_Set_Index_Buffer_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder, buffer: WGPU_Buffer, format: WGPU_Index_Format, offset, size: u64)
+WGPU_Render_Pass_Encoder_Set_Viewport_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder, x, y, width, height, min_depth, max_depth: f32)
+WGPU_Render_Pass_Encoder_Set_Scissor_Rect_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder, x, y, width, height: u32)
+WGPU_Render_Pass_Encoder_Draw_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder, vertex_count, instance_count, first_vertex, first_instance: u32)
+WGPU_Render_Pass_Encoder_Draw_Indexed_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder, index_count, instance_count, first_index: u32, base_vertex: i32, first_instance: u32)
+WGPU_Render_Pass_Encoder_End_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder)
 WGPU_Buffer_Map_Async_Proc :: proc "c" (buffer: WGPU_Buffer, mode: WGPU_Map_Mode, offset, size: c.size_t, callback_info: WGPU_Buffer_Map_Callback_Info) -> WGPU_Future
 WGPU_Buffer_Get_Mapped_Range_Proc :: proc "c" (buffer: WGPU_Buffer, offset, size: c.size_t) -> rawptr
 WGPU_Buffer_Unmap_Proc :: proc "c" (buffer: WGPU_Buffer)
@@ -386,6 +452,7 @@ WGPU_Texture_View_Release_Proc :: proc "c" (texture_view: WGPU_Texture_View)
 WGPU_Buffer_Release_Proc :: proc "c" (buffer: WGPU_Buffer)
 WGPU_Command_Encoder_Release_Proc :: proc "c" (encoder: WGPU_Command_Encoder)
 WGPU_Command_Buffer_Release_Proc :: proc "c" (command_buffer: WGPU_Command_Buffer)
+WGPU_Render_Pass_Encoder_Release_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder)
 WGPU_Create_Instance_Proc :: proc "c" (descriptor: ^WGPU_Instance_Descriptor) -> WGPU_Instance
 WGPU_Instance_Request_Adapter_Proc :: proc "c" (instance: WGPU_Instance, options: ^WGPU_Request_Adapter_Options, callback_info: WGPU_Request_Adapter_Callback_Info) -> WGPU_Future
 WGPU_Adapter_Request_Device_Proc :: proc "c" (adapter: WGPU_Adapter, descriptor: ^WGPU_Device_Descriptor, callback_info: WGPU_Request_Device_Callback_Info) -> WGPU_Future
@@ -404,8 +471,18 @@ WGPU_SYMBOL_DEVICE_CREATE_BUFFER :: "wgpuDeviceCreateBuffer"
 WGPU_SYMBOL_DEVICE_CREATE_COMMAND_ENCODER :: "wgpuDeviceCreateCommandEncoder"
 WGPU_SYMBOL_TEXTURE_CREATE_VIEW :: "wgpuTextureCreateView"
 WGPU_SYMBOL_COMMAND_ENCODER_COPY_TEXTURE_TO_BUFFER :: "wgpuCommandEncoderCopyTextureToBuffer"
+WGPU_SYMBOL_COMMAND_ENCODER_BEGIN_RENDER_PASS :: "wgpuCommandEncoderBeginRenderPass"
 WGPU_SYMBOL_COMMAND_ENCODER_FINISH :: "wgpuCommandEncoderFinish"
 WGPU_SYMBOL_QUEUE_SUBMIT :: "wgpuQueueSubmit"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_PIPELINE :: "wgpuRenderPassEncoderSetPipeline"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_BIND_GROUP :: "wgpuRenderPassEncoderSetBindGroup"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_VERTEX_BUFFER :: "wgpuRenderPassEncoderSetVertexBuffer"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_INDEX_BUFFER :: "wgpuRenderPassEncoderSetIndexBuffer"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_VIEWPORT :: "wgpuRenderPassEncoderSetViewport"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_SCISSOR_RECT :: "wgpuRenderPassEncoderSetScissorRect"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_DRAW :: "wgpuRenderPassEncoderDraw"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_DRAW_INDEXED :: "wgpuRenderPassEncoderDrawIndexed"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_END :: "wgpuRenderPassEncoderEnd"
 WGPU_SYMBOL_BUFFER_MAP_ASYNC :: "wgpuBufferMapAsync"
 WGPU_SYMBOL_BUFFER_GET_MAPPED_RANGE :: "wgpuBufferGetMappedRange"
 WGPU_SYMBOL_BUFFER_UNMAP :: "wgpuBufferUnmap"
@@ -415,6 +492,7 @@ WGPU_SYMBOL_TEXTURE_VIEW_RELEASE :: "wgpuTextureViewRelease"
 WGPU_SYMBOL_BUFFER_RELEASE :: "wgpuBufferRelease"
 WGPU_SYMBOL_COMMAND_ENCODER_RELEASE :: "wgpuCommandEncoderRelease"
 WGPU_SYMBOL_COMMAND_BUFFER_RELEASE :: "wgpuCommandBufferRelease"
+WGPU_SYMBOL_RENDER_PASS_ENCODER_RELEASE :: "wgpuRenderPassEncoderRelease"
 WGPU_SYMBOL_CREATE_INSTANCE :: "wgpuCreateInstance"
 WGPU_SYMBOL_INSTANCE_REQUEST_ADAPTER :: "wgpuInstanceRequestAdapter"
 WGPU_SYMBOL_ADAPTER_REQUEST_DEVICE :: "wgpuAdapterRequestDevice"
@@ -434,8 +512,18 @@ WGPU_Offscreen_Procs :: struct {
 	device_create_command_encoder:          WGPU_Device_Create_Command_Encoder_Proc,
 	texture_create_view:                    WGPU_Texture_Create_View_Proc,
 	command_encoder_copy_texture_to_buffer: WGPU_Command_Encoder_Copy_Texture_To_Buffer_Proc,
+	command_encoder_begin_render_pass:      WGPU_Command_Encoder_Begin_Render_Pass_Proc,
 	command_encoder_finish:                 WGPU_Command_Encoder_Finish_Proc,
 	queue_submit:                           WGPU_Queue_Submit_Proc,
+	render_pass_encoder_set_pipeline:       WGPU_Render_Pass_Encoder_Set_Pipeline_Proc,
+	render_pass_encoder_set_bind_group:     WGPU_Render_Pass_Encoder_Set_Bind_Group_Proc,
+	render_pass_encoder_set_vertex_buffer:  WGPU_Render_Pass_Encoder_Set_Vertex_Buffer_Proc,
+	render_pass_encoder_set_index_buffer:   WGPU_Render_Pass_Encoder_Set_Index_Buffer_Proc,
+	render_pass_encoder_set_viewport:       WGPU_Render_Pass_Encoder_Set_Viewport_Proc,
+	render_pass_encoder_set_scissor_rect:   WGPU_Render_Pass_Encoder_Set_Scissor_Rect_Proc,
+	render_pass_encoder_draw:               WGPU_Render_Pass_Encoder_Draw_Proc,
+	render_pass_encoder_draw_indexed:       WGPU_Render_Pass_Encoder_Draw_Indexed_Proc,
+	render_pass_encoder_end:                WGPU_Render_Pass_Encoder_End_Proc,
 	buffer_map_async:                       WGPU_Buffer_Map_Async_Proc,
 	buffer_get_mapped_range:                WGPU_Buffer_Get_Mapped_Range_Proc,
 	buffer_unmap:                           WGPU_Buffer_Unmap_Proc,
@@ -445,6 +533,7 @@ WGPU_Offscreen_Procs :: struct {
 	buffer_release:                         WGPU_Buffer_Release_Proc,
 	command_encoder_release:                WGPU_Command_Encoder_Release_Proc,
 	command_buffer_release:                 WGPU_Command_Buffer_Release_Proc,
+	render_pass_encoder_release:            WGPU_Render_Pass_Encoder_Release_Proc,
 	instance_release:                       WGPU_Instance_Release_Proc,
 	adapter_release:                        WGPU_Adapter_Release_Proc,
 	device_release:                         WGPU_Device_Release_Proc,
@@ -561,6 +650,60 @@ wgpu_command_encoder_descriptor :: proc(label: WGPU_String_View) -> WGPU_Command
 
 wgpu_command_buffer_descriptor :: proc(label: WGPU_String_View) -> WGPU_Command_Buffer_Descriptor {
 	return WGPU_Command_Buffer_Descriptor{next_in_chain = nil, label = label}
+}
+
+wgpu_color :: proc(r, g, b, a: f64) -> WGPU_Color {
+	return WGPU_Color{r = r, g = g, b = b, a = a}
+}
+
+wgpu_color_attachment_clear :: proc(view: WGPU_Texture_View, clear_value: WGPU_Color) -> WGPU_Color_Attachment {
+	return WGPU_Color_Attachment{
+		next_in_chain = nil,
+		view = view,
+		depth_slice = WGPU_DEPTH_SLICE_UNDEFINED,
+		resolve_target = nil,
+		load_op = WGPU_LOAD_OP_CLEAR,
+		store_op = WGPU_STORE_OP_STORE,
+		clear_value = clear_value,
+	}
+}
+
+wgpu_color_attachment_load :: proc(view: WGPU_Texture_View) -> WGPU_Color_Attachment {
+	return WGPU_Color_Attachment{
+		next_in_chain = nil,
+		view = view,
+		depth_slice = WGPU_DEPTH_SLICE_UNDEFINED,
+		resolve_target = nil,
+		load_op = WGPU_LOAD_OP_LOAD,
+		store_op = WGPU_STORE_OP_STORE,
+		clear_value = WGPU_Color{},
+	}
+}
+
+wgpu_depth_stencil_attachment_clear :: proc(view: WGPU_Texture_View, depth_clear_value: f32 = 1.0) -> WGPU_Depth_Stencil_Attachment {
+	return WGPU_Depth_Stencil_Attachment{
+		view = view,
+		depth_load_op = WGPU_LOAD_OP_CLEAR,
+		depth_store_op = WGPU_STORE_OP_STORE,
+		depth_clear_value = depth_clear_value,
+		depth_read_only = WGPU_FALSE,
+		stencil_load_op = WGPU_LOAD_OP_UNDEFINED,
+		stencil_store_op = WGPU_STORE_OP_UNDEFINED,
+		stencil_clear_value = 0,
+		stencil_read_only = WGPU_FALSE,
+	}
+}
+
+wgpu_render_pass_descriptor :: proc(label: WGPU_String_View, color_attachments: [^]WGPU_Color_Attachment, color_attachment_count: c.size_t, depth_stencil_attachment: ^WGPU_Depth_Stencil_Attachment = nil) -> WGPU_Render_Pass_Descriptor {
+	return WGPU_Render_Pass_Descriptor{
+		next_in_chain = nil,
+		label = label,
+		color_attachment_count = color_attachment_count,
+		color_attachments = color_attachments,
+		depth_stencil_attachment = depth_stencil_attachment,
+		occlusion_query_set = nil,
+		timestamp_writes = nil,
+	}
 }
 
 wgpu_instance_descriptor_default :: proc() -> WGPU_Instance_Descriptor {
@@ -702,6 +845,10 @@ wgpu_resolve_offscreen_procs :: proc(resolver: WGPU_Symbol_Resolver, user_data: 
 	if symbol == nil do return procs, WGPU_SYMBOL_COMMAND_ENCODER_COPY_TEXTURE_TO_BUFFER, false
 	procs.command_encoder_copy_texture_to_buffer = cast(WGPU_Command_Encoder_Copy_Texture_To_Buffer_Proc)symbol
 
+	symbol = resolver(WGPU_SYMBOL_COMMAND_ENCODER_BEGIN_RENDER_PASS, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_COMMAND_ENCODER_BEGIN_RENDER_PASS, false
+	procs.command_encoder_begin_render_pass = cast(WGPU_Command_Encoder_Begin_Render_Pass_Proc)symbol
+
 	symbol = resolver(WGPU_SYMBOL_COMMAND_ENCODER_FINISH, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_COMMAND_ENCODER_FINISH, false
 	procs.command_encoder_finish = cast(WGPU_Command_Encoder_Finish_Proc)symbol
@@ -709,6 +856,42 @@ wgpu_resolve_offscreen_procs :: proc(resolver: WGPU_Symbol_Resolver, user_data: 
 	symbol = resolver(WGPU_SYMBOL_QUEUE_SUBMIT, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_QUEUE_SUBMIT, false
 	procs.queue_submit = cast(WGPU_Queue_Submit_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_PIPELINE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_PIPELINE, false
+	procs.render_pass_encoder_set_pipeline = cast(WGPU_Render_Pass_Encoder_Set_Pipeline_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_BIND_GROUP, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_BIND_GROUP, false
+	procs.render_pass_encoder_set_bind_group = cast(WGPU_Render_Pass_Encoder_Set_Bind_Group_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_VERTEX_BUFFER, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_VERTEX_BUFFER, false
+	procs.render_pass_encoder_set_vertex_buffer = cast(WGPU_Render_Pass_Encoder_Set_Vertex_Buffer_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_INDEX_BUFFER, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_INDEX_BUFFER, false
+	procs.render_pass_encoder_set_index_buffer = cast(WGPU_Render_Pass_Encoder_Set_Index_Buffer_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_VIEWPORT, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_VIEWPORT, false
+	procs.render_pass_encoder_set_viewport = cast(WGPU_Render_Pass_Encoder_Set_Viewport_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_SCISSOR_RECT, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_SET_SCISSOR_RECT, false
+	procs.render_pass_encoder_set_scissor_rect = cast(WGPU_Render_Pass_Encoder_Set_Scissor_Rect_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_DRAW, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_DRAW, false
+	procs.render_pass_encoder_draw = cast(WGPU_Render_Pass_Encoder_Draw_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_DRAW_INDEXED, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_DRAW_INDEXED, false
+	procs.render_pass_encoder_draw_indexed = cast(WGPU_Render_Pass_Encoder_Draw_Indexed_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_END, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_END, false
+	procs.render_pass_encoder_end = cast(WGPU_Render_Pass_Encoder_End_Proc)symbol
 
 	symbol = resolver(WGPU_SYMBOL_BUFFER_MAP_ASYNC, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_BUFFER_MAP_ASYNC, false
@@ -745,6 +928,10 @@ wgpu_resolve_offscreen_procs :: proc(resolver: WGPU_Symbol_Resolver, user_data: 
 	symbol = resolver(WGPU_SYMBOL_COMMAND_BUFFER_RELEASE, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_COMMAND_BUFFER_RELEASE, false
 	procs.command_buffer_release = cast(WGPU_Command_Buffer_Release_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_RENDER_PASS_ENCODER_RELEASE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_RENDER_PASS_ENCODER_RELEASE, false
+	procs.render_pass_encoder_release = cast(WGPU_Render_Pass_Encoder_Release_Proc)symbol
 
 	symbol = resolver(WGPU_SYMBOL_INSTANCE_RELEASE, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_INSTANCE_RELEASE, false
