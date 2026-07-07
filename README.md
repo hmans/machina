@@ -13,19 +13,32 @@ Scrapbot is maintained as an agent-first codebase. Before opening a PR, read [`C
 
 The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`](docs/TODO.md), with architecture and feature decisions tracked in [`docs/adr/`](docs/adr/) and [`docs/fdr/`](docs/fdr/).
 
+## Current Runtime Slice
+
+Scrapbot currently has a small Odin CLI and runtime skeleton:
+
+- `scrapbot init [path] [name]` creates a text-first project with `project.toml` and `scenes/main.scene.toml`.
+- `scrapbot check [path]` validates the project manifest and default scene.
+- `scrapbot run [path] [--headless]` loads the scene into a tiny native ECS world and submits one frame to a null renderer.
+- `scrapbot help <command>` prints command-specific options parsed by Odin's `core:flags`.
+
+During development, use `mise scrapbot [args...]` to compile and run the CLI with arguments forwarded to Scrapbot. Use `mise scrapbot -- [args...]` when forwarding Scrapbot's own `--help`.
+
+This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Rendering is pluggable at the runtime boundary; the first real backend is planned to be `wgpu-native`.
+
 ## Features / Roadmap
 
 ### Engine Core
 
 - Runtime
-  - [ ] Single-binary CLI
+  - [x] Single-binary CLI
   - [ ] Cross-platform runtime
   - [ ] Interactive commands
-  - [ ] Headless commands
+  - [x] Headless commands
 - Projects
-  - [ ] Text-first projects
-  - [ ] TOML scene files
-  - [ ] Project initialization
+  - [x] Text-first projects
+  - [x] TOML scene files
+  - [x] Project initialization
   - [ ] Project templates
   - [ ] Scene migrations
 - Reloading
@@ -42,7 +55,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
 - World Model
   - [ ] Shared ECS runtime
   - [ ] Reflected components
-  - [ ] Generation-aware entities
+  - [x] Generation-aware entities
   - [ ] Component registry
   - [ ] Component lifecycles
   - [ ] World snapshots

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$script_dir/../.."
+
+mkdir -p bin
+odin build src/scrapbot_cli -out:bin/scrapbot
+exec bin/scrapbot "$@"
