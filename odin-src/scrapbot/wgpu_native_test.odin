@@ -979,8 +979,8 @@ test_wgpu_native_dynamic_library_file_name_matches_host_platform :: proc(t: ^tes
 }
 
 @(test)
-test_wgpu_default_library_search_discovers_zig_package_cache_layout :: proc(t: ^testing.T) {
-	root := make_test_project_root(t, "wgpu-default-library-search")
+test_wgpu_default_library_search_ignores_zig_package_cache_layout :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "wgpu-default-library-search-ignores-zig-cache")
 	defer os.remove_all(root)
 	defer delete(root)
 
@@ -992,8 +992,7 @@ test_wgpu_default_library_search_discovers_zig_package_cache_layout :: proc(t: ^
 
 	found_path, found := wgpu_find_default_offscreen_library(root)
 	defer if found { delete(found_path) }
-	testing.expect_value(t, found, true)
-	testing.expect_value(t, same_resolved_path(found_path, cache_library_path), true)
+	testing.expect_value(t, found, false)
 }
 
 @(test)
@@ -1012,8 +1011,8 @@ test_wgpu_default_library_search_discovers_odin_out_lib_layout :: proc(t: ^testi
 }
 
 @(test)
-test_wgpu_default_library_search_prefers_odin_out_lib_over_zig_package_cache :: proc(t: ^testing.T) {
-	root := make_test_project_root(t, "wgpu-default-library-search-prefers-odin-out-lib")
+test_wgpu_default_library_search_uses_odin_out_lib_when_zig_cache_exists :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "wgpu-default-library-search-uses-odin-out-lib")
 	defer os.remove_all(root)
 	defer delete(root)
 
@@ -1030,13 +1029,13 @@ test_wgpu_default_library_search_prefers_odin_out_lib_over_zig_package_cache :: 
 }
 
 @(test)
-test_wgpu_default_library_loader_uses_discovered_zig_package_cache_library :: proc(t: ^testing.T) {
+test_wgpu_default_library_loader_uses_discovered_odin_out_library :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "wgpu-default-library-load")
 	defer os.remove_all(root)
 	defer delete(root)
 
-	cache_library_path := stage_fake_wgpu_zig_package_library(t, root)
-	defer delete(cache_library_path)
+	library_path := stage_fake_wgpu_odin_out_library(t, root)
+	defer delete(library_path)
 
 	loaded, missing, ok := wgpu_load_default_offscreen_library(root)
 	defer wgpu_unload_offscreen_library(&loaded)
@@ -1048,51 +1047,51 @@ test_wgpu_default_library_loader_uses_discovered_zig_package_cache_library :: pr
 }
 
 @(test)
-test_wgpu_default_instance_smoke_uses_discovered_zig_package_cache_library :: proc(t: ^testing.T) {
+test_wgpu_default_instance_smoke_uses_discovered_odin_out_library :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "wgpu-default-instance-smoke")
 	defer os.remove_all(root)
 	defer delete(root)
 
-	cache_library_path := stage_fake_wgpu_zig_package_library(t, root)
-	defer delete(cache_library_path)
+	library_path := stage_fake_wgpu_odin_out_library(t, root)
+	defer delete(library_path)
 
 	smoke_path, missing, ok := wgpu_smoke_default_offscreen_instance(root)
 	defer if ok { delete(smoke_path) }
 	testing.expect_value(t, ok, true)
 	testing.expect_value(t, missing, "")
-	testing.expect_value(t, same_resolved_path(smoke_path, cache_library_path), true)
+	testing.expect_value(t, same_resolved_path(smoke_path, library_path), true)
 }
 
 @(test)
-test_wgpu_default_context_smoke_uses_discovered_zig_package_cache_library :: proc(t: ^testing.T) {
+test_wgpu_default_context_smoke_uses_discovered_odin_out_library :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "wgpu-default-context-smoke")
 	defer os.remove_all(root)
 	defer delete(root)
 
-	cache_library_path := stage_fake_wgpu_zig_package_library(t, root)
-	defer delete(cache_library_path)
+	library_path := stage_fake_wgpu_odin_out_library(t, root)
+	defer delete(library_path)
 
 	smoke_path, missing, ok := wgpu_smoke_default_offscreen_context(root)
 	defer if ok { delete(smoke_path) }
 	testing.expect_value(t, ok, true)
 	testing.expect_value(t, missing, "")
-	testing.expect_value(t, same_resolved_path(smoke_path, cache_library_path), true)
+	testing.expect_value(t, same_resolved_path(smoke_path, library_path), true)
 }
 
 @(test)
-test_wgpu_default_triangle_readback_smoke_uses_discovered_zig_package_cache_library :: proc(t: ^testing.T) {
+test_wgpu_default_triangle_readback_smoke_uses_discovered_odin_out_library :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "wgpu-default-triangle-readback-smoke")
 	defer os.remove_all(root)
 	defer delete(root)
 
-	cache_library_path := stage_fake_wgpu_zig_package_library(t, root)
-	defer delete(cache_library_path)
+	library_path := stage_fake_wgpu_odin_out_library(t, root)
+	defer delete(library_path)
 
 	smoke_path, missing, ok := wgpu_smoke_default_offscreen_triangle_readback(root)
 	defer if ok { delete(smoke_path) }
 	testing.expect_value(t, ok, true)
 	testing.expect_value(t, missing, "")
-	testing.expect_value(t, same_resolved_path(smoke_path, cache_library_path), true)
+	testing.expect_value(t, same_resolved_path(smoke_path, library_path), true)
 }
 
 build_fake_wgpu_library :: proc(t: ^testing.T, root, source: string) -> string {

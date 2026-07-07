@@ -20,12 +20,12 @@ test_run_wgpu_check_command_reports_missing_library :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_run_wgpu_check_command_loads_zig_package_cache_library :: proc(t: ^testing.T) {
+test_run_wgpu_check_command_loads_odin_out_library :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-wgpu-check-loads")
 	defer os.remove_all(root)
 	defer delete(root)
 
-	staged_library := stage_fake_wgpu_zig_package_library(t, root)
+	staged_library := stage_fake_wgpu_odin_out_library(t, root)
 	defer delete(staged_library)
 
 	testing.expect_value(t, run_with_output([]string{"scrapbot", "wgpu-check", root}, false), 0)
@@ -44,12 +44,12 @@ test_run_wgpu_render_test_command_reports_missing_library :: proc(t: ^testing.T)
 }
 
 @(test)
-test_run_wgpu_render_test_command_writes_zig_package_cache_library_png :: proc(t: ^testing.T) {
+test_run_wgpu_render_test_command_writes_odin_out_library_png :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-wgpu-render-test-loads")
 	defer os.remove_all(root)
 	defer delete(root)
 
-	staged_library := stage_fake_wgpu_zig_package_library(t, root)
+	staged_library := stage_fake_wgpu_odin_out_library(t, root)
 	defer delete(staged_library)
 
 	output_path := join_test_path(t, root, "wgpu-render.png")
@@ -1115,7 +1115,7 @@ test_run_render_command_writes_wgpu_backend_png_with_fake_library :: proc(t: ^te
 	defer delete(root)
 	testing.expect_value(t, init_project(root, "CLI Render WGPU"), Project_Error.None)
 
-	staged_library := stage_fake_wgpu_zig_package_library(t, root)
+	staged_library := stage_fake_wgpu_odin_out_library(t, root)
 	defer delete(staged_library)
 
 	output_path := project_relative_path(root, "wgpu-render.png")
@@ -1147,7 +1147,7 @@ test_run_render_command_writes_wgpu_editor_chrome_with_fake_library :: proc(t: ^
 	defer os.remove_all(root)
 	defer delete(root)
 	testing.expect_value(t, init_project(root, "CLI Render WGPU Editor"), Project_Error.None)
-	staged_library := stage_fake_wgpu_zig_package_library(t, root)
+	staged_library := stage_fake_wgpu_odin_out_library(t, root)
 	defer delete(staged_library)
 
 	output_path := project_relative_path(root, "wgpu-editor-render.png")

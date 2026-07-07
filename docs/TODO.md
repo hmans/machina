@@ -36,6 +36,7 @@
 - [x] Odin visible software window-loop reloads emit live reload diagnostics while suppressing duplicate final-summary events.
 - [x] Odin visible software runs can present software-rendered scene and first-pass editor chrome pixels through an SDL texture.
 - [x] Odin visible software and WebGPU SDL run loops can route first-pass editor pointer, keyboard, and text input through the shared runtime input/editor model.
+- [x] Odin WebGPU dynamic library discovery no longer falls back to migration-era Zig `zig-out` or `zig-pkg` cache paths.
 - [x] Odin render extraction can count renderables, batches, cameras, lights, and UI draw primitives.
 - [x] Odin `render` and `render-test` can validate projects, run bounded frame simulation, check selected entities, and report pending backend render stats.
 - [x] Odin `visual-test` can validate projects, expected/actual paths, selected entities, bounded frame simulation, golden update, image comparison, tolerance checks, and metadata sidecars against first-pass software render artifacts.
@@ -131,6 +132,7 @@
 - [x] Port first-pass Odin hidden SDL WebGPU surface presentation smoke paths.
 - [x] Port bounded hidden Odin `run --backend wgpu` scene surface presentation.
 - [x] Stage the host `wgpu-native` runtime library directly for Odin WebGPU smokes without relying on the Zig build task to populate `zig-pkg`.
+- [x] Remove Odin `wgpu-native` dynamic library discovery fallback to migration-era Zig `zig-out` and `zig-pkg` caches.
 - [x] Port bounded visible Odin `run --backend wgpu --frames N` scene surface presentation through an SDL event loop.
 - [x] Port unbounded visible Odin `run --backend wgpu` scene surface presentation through a persistent SDL/WebGPU loop.
 - [x] Port first-pass WebGPU editor chrome overlay vertices for Odin render/run surfaces.

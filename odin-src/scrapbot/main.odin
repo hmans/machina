@@ -226,7 +226,7 @@ run_wgpu_surface_check :: proc(args: []string, emit_output: bool) -> int {
 	if !found {
 		if emit_output {
 			fmt.eprintf("wgpu-native library not found under %s\n", root)
-			fmt.eprintf("Set %s to an explicit library path or populate zig-pkg.\n", WGPU_OFFSCREEN_LIBRARY_ENV)
+			fmt.eprintf("Set %s to an explicit library path or run mise stage-odin-wgpu-native.\n", WGPU_OFFSCREEN_LIBRARY_ENV)
 		}
 		return 1
 	}
@@ -319,7 +319,7 @@ run_wgpu_check :: proc(args: []string, emit_output: bool) -> int {
 	if !found {
 		if emit_output {
 			fmt.eprintf("wgpu-native library not found under %s\n", root)
-			fmt.eprintf("Set %s to an explicit library path or populate zig-pkg.\n", WGPU_OFFSCREEN_LIBRARY_ENV)
+			fmt.eprintf("Set %s to an explicit library path or run mise stage-odin-wgpu-native.\n", WGPU_OFFSCREEN_LIBRARY_ENV)
 		}
 		return 1
 	}
@@ -930,7 +930,7 @@ run_wgpu_render_test :: proc(args: []string, emit_output: bool) -> int {
 	if !found {
 		if emit_output {
 			fmt.eprintf("wgpu-native library not found under %s\n", root)
-			fmt.eprintf("Set %s to an explicit library path or populate zig-pkg.\n", WGPU_OFFSCREEN_LIBRARY_ENV)
+			fmt.eprintf("Set %s to an explicit library path or run mise stage-odin-wgpu-native.\n", WGPU_OFFSCREEN_LIBRARY_ENV)
 		}
 		return 1
 	}

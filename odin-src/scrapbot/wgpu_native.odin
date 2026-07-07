@@ -3116,8 +3116,6 @@ wgpu_find_default_offscreen_library :: proc(root: string = ".") -> (string, bool
 	candidates := [?][]string{
 		{root, "odin-out", wgpu_native_dynamic_library_file_name()},
 		{root, "odin-out", "lib", wgpu_native_dynamic_library_file_name()},
-		{root, "zig-out", "bin", wgpu_native_dynamic_library_file_name()},
-		{root, "zig-out", "lib", wgpu_native_dynamic_library_file_name()},
 		{root, wgpu_native_dynamic_library_file_name()},
 	}
 	for candidate in candidates {
@@ -3126,37 +3124,6 @@ wgpu_find_default_offscreen_library :: proc(root: string = ".") -> (string, bool
 		}
 	}
 
-	return wgpu_find_zig_package_offscreen_library(root)
-}
-
-wgpu_find_zig_package_offscreen_library :: proc(root: string = ".") -> (string, bool) {
-	zig_pkg_path, join_err := filepath.join([]string{root, "zig-pkg"})
-	if join_err != nil {
-		return "", false
-	}
-	defer delete(zig_pkg_path)
-	if !os.exists(zig_pkg_path) {
-		return "", false
-	}
-
-	entries, read_err := os.read_all_directory_by_path(zig_pkg_path, context.allocator)
-	if read_err != nil {
-		return "", false
-	}
-	defer os.file_info_slice_delete(entries, context.allocator)
-
-	for entry in entries {
-		if entry.type != .Directory {
-			continue
-		}
-		if entry.name == "." || entry.name == ".." {
-			continue
-		}
-		path, ok := wgpu_find_existing_path([]string{zig_pkg_path, entry.name, "lib", wgpu_native_dynamic_library_file_name()})
-		if ok {
-			return path, true
-		}
-	}
 	return "", false
 }
 
