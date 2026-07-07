@@ -58,6 +58,10 @@ test_sdl_input_scales_pointer_to_high_density_pixels :: proc(t: ^testing.T) {
 	testing.expect_value(t, input.pointer.has_position, true)
 	testing.expect_value(t, input.pointer.position, [2]f32{40, 60})
 	testing.expect_value(t, input.pointer.delta, [2]f32{40, 60})
+
+	sdl_input_apply_mouse_motion(&state, &input, size, 100, 120, 5, -2)
+	testing.expect_value(t, input.pointer.position, [2]f32{200, 240})
+	testing.expect_value(t, input.pointer.delta, [2]f32{50, 56})
 }
 
 @(test)
@@ -149,6 +153,16 @@ test_sdl_input_maps_keyboard_state_and_editor_shortcuts :: proc(t: ^testing.T) {
 	input = sdl_input_begin_frame(state, Sdl_Window_Size{width = 100, height = 100, pixel_width = 100, pixel_height = 100}, false)
 	sdl_input_apply_key(&state, &input, .TAB, true, false)
 	testing.expect_value(t, input.keyboard.editor_toggle_pressed, true)
+
+	input = sdl_input_begin_frame(state, Sdl_Window_Size{width = 100, height = 100, pixel_width = 100, pixel_height = 100}, false)
+	sdl_input_apply_key(&state, &input, .SPACE, true, false)
+	testing.expect_value(t, state.move_up, true)
+	testing.expect_value(t, input.keyboard.move_up, true)
+	sdl_input_apply_key(&state, &input, .E, true, false)
+	sdl_input_apply_key(&state, &input, .SPACE, false, false)
+	testing.expect_value(t, state.move_up, true)
+	sdl_input_apply_key(&state, &input, .E, false, false)
+	testing.expect_value(t, state.move_up, false)
 }
 
 @(test)
@@ -189,6 +203,81 @@ test_sdl_run_loop_editor_toggle_updates_frame_visibility :: proc(t: ^testing.T) 
 	sdl_run_loop_apply_editor_toggle(&editor_visible, &input)
 	testing.expect_value(t, editor_visible, false)
 	testing.expect_value(t, input.debug_overlay_visible, false)
+}
+
+@(test)
+test_sdl_fly_camera_capture_respects_editor_game_viewport :: proc(t: ^testing.T) {
+	input := frame_input_default()
+	input.viewport_width = 1280
+	input.viewport_height = 720
+	input.pointer.secondary_down = true
+	input.pointer.has_position = true
+	input.pointer.position = {640, 360}
+
+	testing.expect_value(t, sdl_fly_camera_can_capture(input, false), true)
+	testing.expect_value(t, sdl_fly_camera_can_capture(input, true), true)
+
+	input.pointer.position = {8, 8}
+	testing.expect_value(t, sdl_fly_camera_can_capture(input, true), false)
+
+	input.pointer.secondary_down = false
+	testing.expect_value(t, sdl_fly_camera_can_capture(input, false), false)
+}
+
+@(test)
+test_sdl_fly_camera_initializes_from_scene_and_does_not_mutate_world_camera :: proc(t: ^testing.T) {
+	world := runtime_world_init()
+	defer runtime_world_free(&world)
+
+	camera_entity, entity_err := runtime_world_create_entity(&world, "camera", "Camera")
+	testing.expect_value(t, entity_err, Runtime_Error.None)
+	testing.expect_value(t, runtime_world_set_component(&world, camera_entity, TRANSFORM_COMPONENT_ID, []Runtime_Component_Field_Value{
+		{name = "position", value = runtime_component_value_vec3([3]f32{1, 2, 3})},
+		{name = "rotation", value = runtime_component_value_vec3([3]f32{0, 0, 0})},
+		{name = "scale", value = runtime_component_value_vec3([3]f32{1, 1, 1})},
+	}), Runtime_Error.None)
+	testing.expect_value(t, runtime_world_set_component(&world, camera_entity, CAMERA_COMPONENT_ID, []Runtime_Component_Field_Value{
+		{name = "fov_y_degrees", value = runtime_component_value_float(60)},
+		{name = "near", value = runtime_component_value_float(0.1)},
+		{name = "far", value = runtime_component_value_float(200)},
+	}), Runtime_Error.None)
+
+	input := frame_input_default()
+	input.viewport_width = 1280
+	input.viewport_height = 720
+	input.pointer.secondary_down = true
+	input.keyboard.move_forward = true
+
+	fly_camera := Sdl_Fly_Camera_State{}
+	sdl_fly_camera_update(&fly_camera, world, input, false, 0.5)
+
+	testing.expect_value(t, fly_camera.initialized, true)
+	testing.expect_value(t, fly_camera.active, true)
+	testing.expect_value(t, fly_camera.position, [3]f32{1, 2, 0.5})
+	testing.expect_value(t, fly_camera.rotation, [3]f32{0, 0, 0})
+
+	scene_position, scene_position_err := runtime_world_get_vec3(world, camera_entity, TRANSFORM_COMPONENT_ID, "position")
+	testing.expect_value(t, scene_position_err, Runtime_Error.None)
+	testing.expect_value(t, scene_position, [3]f32{1, 2, 3})
+}
+
+@(test)
+test_sdl_fly_camera_uses_pointer_delta_and_modifier_descent :: proc(t: ^testing.T) {
+	world := runtime_world_init()
+	defer runtime_world_free(&world)
+
+	input := frame_input_default()
+	input.pointer.secondary_down = true
+	input.pointer.delta = {10, -20}
+	input.keyboard.ctrl_down = true
+
+	fly_camera := Sdl_Fly_Camera_State{}
+	sdl_fly_camera_update(&fly_camera, world, input, false, 1.0)
+
+	testing.expect_value(t, fly_camera.active, true)
+	testing.expect_value(t, fly_camera.rotation[0], f32(0.060000002))
+	testing.expect_value(t, fly_camera.rotation[1], f32(0.030000001))
+	testing.expect_value(t, fly_camera.position[1], f32(-5))
 }
 
 @(test)

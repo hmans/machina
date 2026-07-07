@@ -1,6 +1,7 @@
 package main
 
 import "core:c"
+import "core:math"
 import sdl3 "vendor:sdl3"
 
 SDL_RUN_LOOP_FIXED_DELTA_SECONDS :: f32(1.0 / 60.0)
@@ -13,6 +14,9 @@ SDL_SOFTWARE_RENDER_CLEAR_ERROR :: "SDL render clear failed"
 SDL_SOFTWARE_RENDER_TEXTURE_ERROR :: "SDL render texture failed"
 SDL_SOFTWARE_RENDER_PRESENT_ERROR :: "SDL render present failed"
 SDL_SOFTWARE_INVALID_SIZE_ERROR :: "SDL window has invalid pixel size"
+SDL_FLY_CAMERA_LOOK_SENSITIVITY :: f32(0.003)
+SDL_FLY_CAMERA_MOVE_SPEED :: f32(5.0)
+SDL_FLY_CAMERA_MAX_PITCH :: f32(1.5)
 
 Sdl_Run_Loop_Result :: struct {
 	completed_frames:          int,
@@ -31,6 +35,9 @@ Sdl_Run_Loop_Result :: struct {
 	editor_visible:            bool,
 	editor_paused:             bool,
 	editor_selected_entity_id: string,
+	fly_camera_active:         bool,
+	fly_camera_position:       [3]f32,
+	fly_camera_rotation:       [3]f32,
 }
 
 Sdl_Software_Presenter :: struct {
@@ -38,6 +45,16 @@ Sdl_Software_Presenter :: struct {
 	texture: ^sdl3.Texture,
 	width:    int,
 	height:   int,
+}
+
+Sdl_Fly_Camera_State :: struct {
+	initialized:   bool,
+	active:        bool,
+	position:      [3]f32,
+	rotation:      [3]f32,
+	fov_y_degrees: f32,
+	near:          f32,
+	far:           f32,
 }
 
 sdl_run_loop_event_requests_quit :: proc(event: sdl3.Event) -> bool {
@@ -93,6 +110,101 @@ sdl_run_loop_sync_text_input :: proc(window: ^sdl3.Window, editor_visible: bool,
 		_ = sdl3.StopTextInput(window)
 		text_input_active^ = false
 	}
+}
+
+sdl_run_loop_sync_relative_mouse :: proc(window: ^sdl3.Window, fly_camera_active: bool, relative_mouse_active: ^bool) {
+	if fly_camera_active == relative_mouse_active^ {
+		return
+	}
+	if sdl3.SetWindowRelativeMouseMode(window, fly_camera_active) {
+		relative_mouse_active^ = fly_camera_active
+	}
+}
+
+sdl_fly_camera_init_from_world :: proc(world: Runtime_World) -> Sdl_Fly_Camera_State {
+	camera, ok := editor_test_camera_state(world)
+	if !ok {
+		camera = Editor_Test_Camera_State{
+			position = EDITOR_TEST_DEFAULT_CAMERA_POSITION,
+			rotation = {},
+			fov_y_degrees = EDITOR_TEST_DEFAULT_CAMERA_FOV_Y_DEGREES,
+			near = EDITOR_TEST_DEFAULT_CAMERA_NEAR,
+			far = EDITOR_TEST_DEFAULT_CAMERA_FAR,
+		}
+	}
+	return Sdl_Fly_Camera_State{
+		initialized = true,
+		position = camera.position,
+		rotation = camera.rotation,
+		fov_y_degrees = camera.fov_y_degrees,
+		near = camera.near,
+		far = camera.far,
+	}
+}
+
+sdl_fly_camera_can_capture :: proc(input: Frame_Input, editor_visible: bool) -> bool {
+	if !input.pointer.secondary_down {
+		return false
+	}
+	if editor_visible {
+		return input.pointer.has_position && editor_pointer_in_game_viewport(input)
+	}
+	return true
+}
+
+sdl_fly_camera_update :: proc(state: ^Sdl_Fly_Camera_State, world: Runtime_World, input: Frame_Input, editor_visible: bool, delta_seconds: f32) {
+	if !state.initialized {
+		state^ = sdl_fly_camera_init_from_world(world)
+	}
+	state.active = sdl_fly_camera_can_capture(input, editor_visible)
+	if !state.active {
+		return
+	}
+
+	state.rotation[1] += input.pointer.delta[0] * SDL_FLY_CAMERA_LOOK_SENSITIVITY
+	state.rotation[0] = clamp_f32(state.rotation[0] - input.pointer.delta[1] * SDL_FLY_CAMERA_LOOK_SENSITIVITY, -SDL_FLY_CAMERA_MAX_PITCH, SDL_FLY_CAMERA_MAX_PITCH)
+
+	movement := sdl_fly_camera_movement_vector(input, state.rotation)
+	length := editor_test_vec3_length(movement)
+	if length <= 0.00001 {
+		return
+	}
+	step := SDL_FLY_CAMERA_MOVE_SPEED * max_f32(delta_seconds, 0.0) / length
+	state.position[0] += movement[0] * step
+	state.position[1] += movement[1] * step
+	state.position[2] += movement[2] * step
+}
+
+sdl_fly_camera_movement_vector :: proc(input: Frame_Input, rotation: [3]f32) -> [3]f32 {
+	yaw := rotation[1]
+	pitch := rotation[0]
+	cos_pitch := f32(math.cos(f64(pitch)))
+	forward := [3]f32{
+		f32(math.sin(f64(yaw))) * cos_pitch,
+		-f32(math.sin(f64(pitch))),
+		-f32(math.cos(f64(yaw))) * cos_pitch,
+	}
+	right := [3]f32{f32(math.cos(f64(yaw))), 0.0, f32(math.sin(f64(yaw)))}
+	movement := [3]f32{}
+	if input.keyboard.move_forward {
+		movement = editor_test_add_vec3(movement, forward)
+	}
+	if input.keyboard.move_back {
+		movement = editor_test_subtract_vec3(movement, forward)
+	}
+	if input.keyboard.move_right {
+		movement = editor_test_add_vec3(movement, right)
+	}
+	if input.keyboard.move_left {
+		movement = editor_test_subtract_vec3(movement, right)
+	}
+	if input.keyboard.move_up {
+		movement[1] += 1.0
+	}
+	if input.keyboard.move_down || input.keyboard.ctrl_down {
+		movement[1] -= 1.0
+	}
+	return movement
 }
 
 sdl_run_loop_frame_limit_reached :: proc(completed_frames, max_frames: int) -> bool {
@@ -228,7 +340,10 @@ sdl_run_live_project_loop :: proc(
 	previous_ticks_ns := sdl3.GetTicksNS()
 	input_state := Sdl_Input_State{}
 	editor_state := Editor_Test_Input_State{}
+	fly_camera := Sdl_Fly_Camera_State{}
+	relative_mouse_active := false
 	defer editor_test_input_state_free(&editor_state)
+	defer if relative_mouse_active do _ = sdl3.SetWindowRelativeMouseMode(window.window, false)
 	for !sdl_run_loop_frame_limit_reached(completed_frames, max_frames) {
 		frame_input := sdl_input_begin_frame(input_state, size, editor_visible)
 		if sdl_run_loop_pump_input_events(&input_state, &frame_input, size) {
@@ -240,6 +355,8 @@ sdl_run_live_project_loop :: proc(
 		current_ticks_ns := sdl3.GetTicksNS()
 		delta_seconds := sdl_run_loop_delta_seconds(previous_ticks_ns, current_ticks_ns)
 		previous_ticks_ns = current_ticks_ns
+		sdl_fly_camera_update(&fly_camera, project.check.scene.world, frame_input, editor_visible, delta_seconds)
+		sdl_run_loop_sync_relative_mouse(window.window, fly_camera.active, &relative_mouse_active)
 		frame := live_project_run_frame_with_input(project, delta_seconds, completed_frames, report, &editor_state, frame_input)
 		sdl_run_loop_flush_editor_clipboard(&editor_state)
 		if !frame.ok {
@@ -304,6 +421,9 @@ sdl_run_live_project_loop :: proc(
 		} else {
 			result.editor_selected_entity_id = ""
 		}
+		result.fly_camera_active = fly_camera.active
+		result.fly_camera_position = fly_camera.position
+		result.fly_camera_rotation = fly_camera.rotation
 
 		if max_frames == 0 {
 			sdl3.Delay(SDL_RUN_LOOP_IDLE_DELAY_MS)
@@ -395,7 +515,10 @@ sdl_run_live_project_wgpu_loop :: proc(
 	previous_ticks_ns := sdl3.GetTicksNS()
 	input_state := Sdl_Input_State{}
 	editor_state := Editor_Test_Input_State{}
+	fly_camera := Sdl_Fly_Camera_State{}
+	relative_mouse_active := false
 	defer editor_test_input_state_free(&editor_state)
+	defer if relative_mouse_active do _ = sdl3.SetWindowRelativeMouseMode(window.window, false)
 	for !sdl_run_loop_frame_limit_reached(completed_frames, max_frames) {
 		frame_input := sdl_input_begin_frame(input_state, size, editor_visible)
 		if sdl_run_loop_pump_input_events(&input_state, &frame_input, size) {
@@ -407,6 +530,8 @@ sdl_run_live_project_wgpu_loop :: proc(
 		current_ticks_ns := sdl3.GetTicksNS()
 		delta_seconds := sdl_run_loop_delta_seconds(previous_ticks_ns, current_ticks_ns)
 		previous_ticks_ns = current_ticks_ns
+		sdl_fly_camera_update(&fly_camera, project.check.scene.world, frame_input, editor_visible, delta_seconds)
+		sdl_run_loop_sync_relative_mouse(window.window, fly_camera.active, &relative_mouse_active)
 		frame := live_project_run_frame_with_input(project, delta_seconds, completed_frames, report, &editor_state, frame_input)
 		sdl_run_loop_flush_editor_clipboard(&editor_state)
 		if !frame.ok {
@@ -457,6 +582,9 @@ sdl_run_live_project_wgpu_loop :: proc(
 		result.editor_visible = editor_visible
 		result.editor_paused = editor_state.paused
 		result.editor_selected_entity_id = selected_entity_id
+		result.fly_camera_active = fly_camera.active
+		result.fly_camera_position = fly_camera.position
+		result.fly_camera_rotation = fly_camera.rotation
 
 		if max_frames == 0 {
 			sdl3.Delay(SDL_RUN_LOOP_IDLE_DELAY_MS)

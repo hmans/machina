@@ -16,6 +16,8 @@ Sdl_Input_State :: struct {
 	move_left:        bool,
 	move_right:       bool,
 	move_up:          bool,
+	move_up_e:        bool,
+	move_up_space:    bool,
 	move_down:        bool,
 	text_input_buffer: [EDITOR_TEST_TEXT_INPUT_BUFFER_LEN]u8,
 	text_input_len:    int,
@@ -74,20 +76,13 @@ sdl_input_window_to_pixel_position :: proc(size: Sdl_Window_Size, x, y: f32) -> 
 
 sdl_input_apply_mouse_motion :: proc(state: ^Sdl_Input_State, input: ^Frame_Input, size: Sdl_Window_Size, x, y, xrel, yrel: f32) {
 	position := sdl_input_window_to_pixel_position(size, x, y)
-	previous := state.pointer_position
-	had_pointer := state.has_pointer
+	relative := sdl_input_window_to_pixel_position(size, xrel, yrel)
 	state.pointer_position = position
 	state.has_pointer = true
 	input.pointer.position = position
 	input.pointer.has_position = true
-	if had_pointer {
-		input.pointer.delta[0] += position[0] - previous[0]
-		input.pointer.delta[1] += position[1] - previous[1]
-	} else {
-		relative := sdl_input_window_to_pixel_position(size, xrel, yrel)
-		input.pointer.delta[0] += relative[0]
-		input.pointer.delta[1] += relative[1]
-	}
+	input.pointer.delta[0] += relative[0]
+	input.pointer.delta[1] += relative[1]
 }
 
 sdl_input_apply_mouse_button :: proc(state: ^Sdl_Input_State, input: ^Frame_Input, size: Sdl_Window_Size, button: sdl3.Uint8, down: bool, x, y: f32) {
@@ -163,7 +158,11 @@ sdl_input_apply_key :: proc(state: ^Sdl_Input_State, input: ^Frame_Input, scanco
 	case .D:
 		state.move_right = down
 	case .E:
-		state.move_up = down
+		state.move_up_e = down
+		state.move_up = state.move_up_e || state.move_up_space
+	case .SPACE:
+		state.move_up_space = down
+		state.move_up = state.move_up_e || state.move_up_space
 	case .Q:
 		state.move_down = down
 	case .RETURN:

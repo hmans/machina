@@ -37,6 +37,7 @@
 - [x] Odin visible software window-loop reloads emit live reload diagnostics while suppressing duplicate final-summary events.
 - [x] Odin visible software runs can present software-rendered scene and first-pass editor chrome pixels through an SDL texture.
 - [x] Odin visible software and WebGPU SDL run loops can route first-pass editor pointer, keyboard, and text input through the shared runtime input/editor model.
+- [x] Odin visible software and WebGPU SDL run loops can track first-pass fly-camera input state from right-mouse capture, pointer deltas, and semantic movement keys.
 - [x] Odin `render-bench` can benchmark first-pass in-memory software render generation with text/JSON output.
 - [x] Default `mise build`, `mise test`, and `mise scrapbot` now target the Odin CLI; migration-era Zig tasks are explicit `*-zig` compatibility tasks.
 - [x] Odin WebGPU dynamic library discovery no longer falls back to migration-era Zig `zig-out` or `zig-pkg` cache paths.
