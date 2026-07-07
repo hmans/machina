@@ -24,6 +24,14 @@ WGPU_Texture_View_Dimension :: u32
 WGPU_Texture_Aspect :: u32
 WGPU_Map_Mode :: WGPU_Flags
 WGPU_Callback_Mode :: u32
+WGPU_Feature_Level :: u32
+WGPU_Power_Preference :: u32
+WGPU_Backend_Type :: u32
+WGPU_Request_Adapter_Status :: u32
+WGPU_Request_Device_Status :: u32
+WGPU_Device_Lost_Reason :: u32
+WGPU_Error_Type :: u32
+WGPU_Feature_Name :: u32
 WGPU_SType :: u32
 WGPU_Status :: u32
 WGPU_Optional_Bool :: u32
@@ -45,6 +53,7 @@ WGPU_Bind_Group_Layout :: rawptr
 WGPU_Command_Encoder :: rawptr
 WGPU_Command_Buffer :: rawptr
 WGPU_Render_Pass_Encoder :: rawptr
+WGPU_Limits :: rawptr
 
 WGPU_FALSE :: WGPU_Bool(0)
 WGPU_TRUE :: WGPU_Bool(1)
@@ -65,6 +74,45 @@ WGPU_MAP_ASYNC_STATUS_UNKNOWN :: WGPU_Map_Async_Status(0x00000005)
 WGPU_CALLBACK_MODE_WAIT_ANY_ONLY :: WGPU_Callback_Mode(0x00000001)
 WGPU_CALLBACK_MODE_ALLOW_PROCESS_EVENTS :: WGPU_Callback_Mode(0x00000002)
 WGPU_CALLBACK_MODE_ALLOW_SPONTANEOUS :: WGPU_Callback_Mode(0x00000003)
+
+WGPU_FEATURE_LEVEL_COMPATIBILITY :: WGPU_Feature_Level(0x00000001)
+WGPU_FEATURE_LEVEL_CORE :: WGPU_Feature_Level(0x00000002)
+
+WGPU_POWER_PREFERENCE_UNDEFINED :: WGPU_Power_Preference(0x00000000)
+WGPU_POWER_PREFERENCE_LOW_POWER :: WGPU_Power_Preference(0x00000001)
+WGPU_POWER_PREFERENCE_HIGH_PERFORMANCE :: WGPU_Power_Preference(0x00000002)
+
+WGPU_BACKEND_TYPE_UNDEFINED :: WGPU_Backend_Type(0x00000000)
+WGPU_BACKEND_TYPE_NULL :: WGPU_Backend_Type(0x00000001)
+WGPU_BACKEND_TYPE_WEBGPU :: WGPU_Backend_Type(0x00000002)
+WGPU_BACKEND_TYPE_D3D11 :: WGPU_Backend_Type(0x00000003)
+WGPU_BACKEND_TYPE_D3D12 :: WGPU_Backend_Type(0x00000004)
+WGPU_BACKEND_TYPE_METAL :: WGPU_Backend_Type(0x00000005)
+WGPU_BACKEND_TYPE_VULKAN :: WGPU_Backend_Type(0x00000006)
+WGPU_BACKEND_TYPE_OPENGL :: WGPU_Backend_Type(0x00000007)
+WGPU_BACKEND_TYPE_OPENGL_ES :: WGPU_Backend_Type(0x00000008)
+
+WGPU_REQUEST_ADAPTER_STATUS_SUCCESS :: WGPU_Request_Adapter_Status(0x00000001)
+WGPU_REQUEST_ADAPTER_STATUS_INSTANCE_DROPPED :: WGPU_Request_Adapter_Status(0x00000002)
+WGPU_REQUEST_ADAPTER_STATUS_UNAVAILABLE :: WGPU_Request_Adapter_Status(0x00000003)
+WGPU_REQUEST_ADAPTER_STATUS_ERROR :: WGPU_Request_Adapter_Status(0x00000004)
+WGPU_REQUEST_ADAPTER_STATUS_UNKNOWN :: WGPU_Request_Adapter_Status(0x00000005)
+
+WGPU_REQUEST_DEVICE_STATUS_SUCCESS :: WGPU_Request_Device_Status(0x00000001)
+WGPU_REQUEST_DEVICE_STATUS_INSTANCE_DROPPED :: WGPU_Request_Device_Status(0x00000002)
+WGPU_REQUEST_DEVICE_STATUS_ERROR :: WGPU_Request_Device_Status(0x00000003)
+WGPU_REQUEST_DEVICE_STATUS_UNKNOWN :: WGPU_Request_Device_Status(0x00000004)
+
+WGPU_DEVICE_LOST_REASON_UNKNOWN :: WGPU_Device_Lost_Reason(0x00000001)
+WGPU_DEVICE_LOST_REASON_DESTROYED :: WGPU_Device_Lost_Reason(0x00000002)
+WGPU_DEVICE_LOST_REASON_INSTANCE_DROPPED :: WGPU_Device_Lost_Reason(0x00000003)
+WGPU_DEVICE_LOST_REASON_FAILED_CREATION :: WGPU_Device_Lost_Reason(0x00000004)
+
+WGPU_ERROR_TYPE_NO_ERROR :: WGPU_Error_Type(0x00000001)
+WGPU_ERROR_TYPE_VALIDATION :: WGPU_Error_Type(0x00000002)
+WGPU_ERROR_TYPE_OUT_OF_MEMORY :: WGPU_Error_Type(0x00000003)
+WGPU_ERROR_TYPE_INTERNAL :: WGPU_Error_Type(0x00000004)
+WGPU_ERROR_TYPE_UNKNOWN :: WGPU_Error_Type(0x00000005)
 
 WGPU_STYPE_SHADER_SOURCE_SPIRV :: WGPU_SType(0x00000001)
 WGPU_STYPE_SHADER_SOURCE_WGSL :: WGPU_SType(0x00000002)
@@ -237,6 +285,81 @@ WGPU_Command_Buffer_Descriptor :: struct #align(align_of(rawptr)) {
 	label:         WGPU_String_View,
 }
 
+WGPU_Instance_Capabilities :: struct #align(align_of(rawptr)) {
+	next_in_chain:            ^WGPU_Chained_Struct_Out,
+	timed_wait_any_enable:    WGPU_Bool,
+	timed_wait_any_max_count: c.size_t,
+}
+
+WGPU_Instance_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	features:      WGPU_Instance_Capabilities,
+}
+
+WGPU_Request_Adapter_Options :: struct #align(align_of(rawptr)) {
+	next_in_chain:          ^WGPU_Chained_Struct,
+	feature_level:          WGPU_Feature_Level,
+	power_preference:       WGPU_Power_Preference,
+	force_fallback_adapter: WGPU_Bool,
+	backend_type:           WGPU_Backend_Type,
+	compatible_surface:     WGPU_Surface,
+}
+
+WGPU_Queue_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	label:         WGPU_String_View,
+}
+
+WGPU_Device_Lost_Callback :: proc "c" (device: rawptr, reason: WGPU_Device_Lost_Reason, message: WGPU_String_View, userdata1, userdata2: rawptr)
+
+WGPU_Device_Lost_Callback_Info :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	mode:          WGPU_Callback_Mode,
+	callback:      WGPU_Device_Lost_Callback,
+	userdata1:     rawptr,
+	userdata2:     rawptr,
+}
+
+WGPU_Uncaptured_Error_Callback :: proc "c" (device: WGPU_Device, error_type: WGPU_Error_Type, message: WGPU_String_View, userdata1, userdata2: rawptr)
+
+WGPU_Uncaptured_Error_Callback_Info :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	callback:      WGPU_Uncaptured_Error_Callback,
+	userdata1:     rawptr,
+	userdata2:     rawptr,
+}
+
+WGPU_Device_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain:                  ^WGPU_Chained_Struct,
+	label:                          WGPU_String_View,
+	required_feature_count:         c.size_t,
+	required_features:              rawptr,
+	required_limits:                WGPU_Limits,
+	default_queue:                  WGPU_Queue_Descriptor,
+	device_lost_callback_info:      WGPU_Device_Lost_Callback_Info,
+	uncaptured_error_callback_info: WGPU_Uncaptured_Error_Callback_Info,
+}
+
+WGPU_Request_Adapter_Callback :: proc "c" (status: WGPU_Request_Adapter_Status, adapter: WGPU_Adapter, message: WGPU_String_View, userdata1, userdata2: rawptr)
+
+WGPU_Request_Adapter_Callback_Info :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	mode:          WGPU_Callback_Mode,
+	callback:      WGPU_Request_Adapter_Callback,
+	userdata1:     rawptr,
+	userdata2:     rawptr,
+}
+
+WGPU_Request_Device_Callback :: proc "c" (status: WGPU_Request_Device_Status, device: WGPU_Device, message: WGPU_String_View, userdata1, userdata2: rawptr)
+
+WGPU_Request_Device_Callback_Info :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	mode:          WGPU_Callback_Mode,
+	callback:      WGPU_Request_Device_Callback,
+	userdata1:     rawptr,
+	userdata2:     rawptr,
+}
+
 WGPU_Buffer_Map_Callback :: proc "c" (status: WGPU_Map_Async_Status, message: WGPU_String_View, userdata1, userdata2: rawptr)
 
 WGPU_Buffer_Map_Callback_Info :: struct #align(align_of(rawptr)) {
@@ -263,6 +386,14 @@ WGPU_Texture_View_Release_Proc :: proc "c" (texture_view: WGPU_Texture_View)
 WGPU_Buffer_Release_Proc :: proc "c" (buffer: WGPU_Buffer)
 WGPU_Command_Encoder_Release_Proc :: proc "c" (encoder: WGPU_Command_Encoder)
 WGPU_Command_Buffer_Release_Proc :: proc "c" (command_buffer: WGPU_Command_Buffer)
+WGPU_Create_Instance_Proc :: proc "c" (descriptor: ^WGPU_Instance_Descriptor) -> WGPU_Instance
+WGPU_Instance_Request_Adapter_Proc :: proc "c" (instance: WGPU_Instance, options: ^WGPU_Request_Adapter_Options, callback_info: WGPU_Request_Adapter_Callback_Info) -> WGPU_Future
+WGPU_Adapter_Request_Device_Proc :: proc "c" (adapter: WGPU_Adapter, descriptor: ^WGPU_Device_Descriptor, callback_info: WGPU_Request_Device_Callback_Info) -> WGPU_Future
+WGPU_Device_Get_Queue_Proc :: proc "c" (device: WGPU_Device) -> WGPU_Queue
+WGPU_Instance_Release_Proc :: proc "c" (instance: WGPU_Instance)
+WGPU_Adapter_Release_Proc :: proc "c" (adapter: WGPU_Adapter)
+WGPU_Device_Release_Proc :: proc "c" (device: WGPU_Device)
+WGPU_Queue_Release_Proc :: proc "c" (queue: WGPU_Queue)
 
 WGPU_Symbol_Resolver :: proc(name: string, user_data: rawptr) -> rawptr
 
@@ -284,8 +415,20 @@ WGPU_SYMBOL_TEXTURE_VIEW_RELEASE :: "wgpuTextureViewRelease"
 WGPU_SYMBOL_BUFFER_RELEASE :: "wgpuBufferRelease"
 WGPU_SYMBOL_COMMAND_ENCODER_RELEASE :: "wgpuCommandEncoderRelease"
 WGPU_SYMBOL_COMMAND_BUFFER_RELEASE :: "wgpuCommandBufferRelease"
+WGPU_SYMBOL_CREATE_INSTANCE :: "wgpuCreateInstance"
+WGPU_SYMBOL_INSTANCE_REQUEST_ADAPTER :: "wgpuInstanceRequestAdapter"
+WGPU_SYMBOL_ADAPTER_REQUEST_DEVICE :: "wgpuAdapterRequestDevice"
+WGPU_SYMBOL_DEVICE_GET_QUEUE :: "wgpuDeviceGetQueue"
+WGPU_SYMBOL_INSTANCE_RELEASE :: "wgpuInstanceRelease"
+WGPU_SYMBOL_ADAPTER_RELEASE :: "wgpuAdapterRelease"
+WGPU_SYMBOL_DEVICE_RELEASE :: "wgpuDeviceRelease"
+WGPU_SYMBOL_QUEUE_RELEASE :: "wgpuQueueRelease"
 
 WGPU_Offscreen_Procs :: struct {
+	create_instance:                        WGPU_Create_Instance_Proc,
+	instance_request_adapter:               WGPU_Instance_Request_Adapter_Proc,
+	adapter_request_device:                 WGPU_Adapter_Request_Device_Proc,
+	device_get_queue:                       WGPU_Device_Get_Queue_Proc,
 	device_create_texture:                  WGPU_Device_Create_Texture_Proc,
 	device_create_buffer:                   WGPU_Device_Create_Buffer_Proc,
 	device_create_command_encoder:          WGPU_Device_Create_Command_Encoder_Proc,
@@ -302,6 +445,10 @@ WGPU_Offscreen_Procs :: struct {
 	buffer_release:                         WGPU_Buffer_Release_Proc,
 	command_encoder_release:                WGPU_Command_Encoder_Release_Proc,
 	command_buffer_release:                 WGPU_Command_Buffer_Release_Proc,
+	instance_release:                       WGPU_Instance_Release_Proc,
+	adapter_release:                        WGPU_Adapter_Release_Proc,
+	device_release:                         WGPU_Device_Release_Proc,
+	queue_release:                          WGPU_Queue_Release_Proc,
 }
 
 WGPU_Offscreen_Dynamic_Library :: struct {
@@ -416,6 +563,95 @@ wgpu_command_buffer_descriptor :: proc(label: WGPU_String_View) -> WGPU_Command_
 	return WGPU_Command_Buffer_Descriptor{next_in_chain = nil, label = label}
 }
 
+wgpu_instance_descriptor_default :: proc() -> WGPU_Instance_Descriptor {
+	return WGPU_Instance_Descriptor{
+		next_in_chain = nil,
+		features = WGPU_Instance_Capabilities{
+			next_in_chain = nil,
+			timed_wait_any_enable = WGPU_FALSE,
+			timed_wait_any_max_count = 0,
+		},
+	}
+}
+
+wgpu_request_adapter_options :: proc(compatible_surface: WGPU_Surface = nil) -> WGPU_Request_Adapter_Options {
+	return WGPU_Request_Adapter_Options{
+		next_in_chain = nil,
+		feature_level = WGPU_FEATURE_LEVEL_CORE,
+		power_preference = WGPU_POWER_PREFERENCE_UNDEFINED,
+		force_fallback_adapter = WGPU_FALSE,
+		backend_type = WGPU_BACKEND_TYPE_UNDEFINED,
+		compatible_surface = compatible_surface,
+	}
+}
+
+wgpu_queue_descriptor :: proc(label: WGPU_String_View) -> WGPU_Queue_Descriptor {
+	return WGPU_Queue_Descriptor{
+		next_in_chain = nil,
+		label = label,
+	}
+}
+
+wgpu_device_lost_callback_info :: proc(callback: WGPU_Device_Lost_Callback, userdata1: rawptr = nil, userdata2: rawptr = nil) -> WGPU_Device_Lost_Callback_Info {
+	return WGPU_Device_Lost_Callback_Info{
+		next_in_chain = nil,
+		mode = WGPU_CALLBACK_MODE_ALLOW_PROCESS_EVENTS,
+		callback = callback,
+		userdata1 = userdata1,
+		userdata2 = userdata2,
+	}
+}
+
+wgpu_uncaptured_error_callback_info :: proc(callback: WGPU_Uncaptured_Error_Callback = nil, userdata1: rawptr = nil, userdata2: rawptr = nil) -> WGPU_Uncaptured_Error_Callback_Info {
+	return WGPU_Uncaptured_Error_Callback_Info{
+		next_in_chain = nil,
+		callback = callback,
+		userdata1 = userdata1,
+		userdata2 = userdata2,
+	}
+}
+
+wgpu_device_descriptor_default :: proc() -> WGPU_Device_Descriptor {
+	return WGPU_Device_Descriptor{
+		next_in_chain = nil,
+		label = wgpu_string_view_empty(),
+		required_feature_count = 0,
+		required_features = nil,
+		required_limits = nil,
+		default_queue = wgpu_queue_descriptor(wgpu_string_view_empty()),
+		device_lost_callback_info = wgpu_device_lost_callback_info(wgpu_default_device_lost_callback),
+		uncaptured_error_callback_info = wgpu_uncaptured_error_callback_info(),
+	}
+}
+
+wgpu_request_adapter_callback_info :: proc(callback: WGPU_Request_Adapter_Callback, userdata1: rawptr = nil, userdata2: rawptr = nil) -> WGPU_Request_Adapter_Callback_Info {
+	return WGPU_Request_Adapter_Callback_Info{
+		next_in_chain = nil,
+		mode = WGPU_CALLBACK_MODE_ALLOW_PROCESS_EVENTS,
+		callback = callback,
+		userdata1 = userdata1,
+		userdata2 = userdata2,
+	}
+}
+
+wgpu_request_device_callback_info :: proc(callback: WGPU_Request_Device_Callback, userdata1: rawptr = nil, userdata2: rawptr = nil) -> WGPU_Request_Device_Callback_Info {
+	return WGPU_Request_Device_Callback_Info{
+		next_in_chain = nil,
+		mode = WGPU_CALLBACK_MODE_ALLOW_PROCESS_EVENTS,
+		callback = callback,
+		userdata1 = userdata1,
+		userdata2 = userdata2,
+	}
+}
+
+wgpu_default_device_lost_callback :: proc "c" (device: rawptr, reason: WGPU_Device_Lost_Reason, message: WGPU_String_View, userdata1, userdata2: rawptr) {
+	_ = device
+	_ = reason
+	_ = message
+	_ = userdata1
+	_ = userdata2
+}
+
 wgpu_buffer_map_callback_info :: proc(callback: WGPU_Buffer_Map_Callback, userdata1: rawptr = nil, userdata2: rawptr = nil) -> WGPU_Buffer_Map_Callback_Info {
 	return WGPU_Buffer_Map_Callback_Info{
 		next_in_chain = nil,
@@ -429,6 +665,22 @@ wgpu_buffer_map_callback_info :: proc(callback: WGPU_Buffer_Map_Callback, userda
 wgpu_resolve_offscreen_procs :: proc(resolver: WGPU_Symbol_Resolver, user_data: rawptr = nil) -> (WGPU_Offscreen_Procs, string, bool) {
 	procs: WGPU_Offscreen_Procs
 	symbol: rawptr
+
+	symbol = resolver(WGPU_SYMBOL_CREATE_INSTANCE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_CREATE_INSTANCE, false
+	procs.create_instance = cast(WGPU_Create_Instance_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_INSTANCE_REQUEST_ADAPTER, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_INSTANCE_REQUEST_ADAPTER, false
+	procs.instance_request_adapter = cast(WGPU_Instance_Request_Adapter_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_ADAPTER_REQUEST_DEVICE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_ADAPTER_REQUEST_DEVICE, false
+	procs.adapter_request_device = cast(WGPU_Adapter_Request_Device_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_DEVICE_GET_QUEUE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_GET_QUEUE, false
+	procs.device_get_queue = cast(WGPU_Device_Get_Queue_Proc)symbol
 
 	symbol = resolver(WGPU_SYMBOL_DEVICE_CREATE_TEXTURE, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_CREATE_TEXTURE, false
@@ -493,6 +745,22 @@ wgpu_resolve_offscreen_procs :: proc(resolver: WGPU_Symbol_Resolver, user_data: 
 	symbol = resolver(WGPU_SYMBOL_COMMAND_BUFFER_RELEASE, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_COMMAND_BUFFER_RELEASE, false
 	procs.command_buffer_release = cast(WGPU_Command_Buffer_Release_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_INSTANCE_RELEASE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_INSTANCE_RELEASE, false
+	procs.instance_release = cast(WGPU_Instance_Release_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_ADAPTER_RELEASE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_ADAPTER_RELEASE, false
+	procs.adapter_release = cast(WGPU_Adapter_Release_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_DEVICE_RELEASE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_RELEASE, false
+	procs.device_release = cast(WGPU_Device_Release_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_QUEUE_RELEASE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_QUEUE_RELEASE, false
+	procs.queue_release = cast(WGPU_Queue_Release_Proc)symbol
 
 	return procs, "", true
 }

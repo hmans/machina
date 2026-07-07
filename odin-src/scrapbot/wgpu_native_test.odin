@@ -18,6 +18,15 @@ test_wgpu_abi_structs_have_c_pointer_alignment :: proc(t: ^testing.T) {
 	testing.expect_value(t, align_of(WGPU_Texel_Copy_Buffer_Info), align_of(rawptr))
 	testing.expect_value(t, align_of(WGPU_Command_Encoder_Descriptor), align_of(rawptr))
 	testing.expect_value(t, align_of(WGPU_Command_Buffer_Descriptor), align_of(rawptr))
+	testing.expect_value(t, align_of(WGPU_Instance_Capabilities), align_of(rawptr))
+	testing.expect_value(t, align_of(WGPU_Instance_Descriptor), align_of(rawptr))
+	testing.expect_value(t, align_of(WGPU_Request_Adapter_Options), align_of(rawptr))
+	testing.expect_value(t, align_of(WGPU_Queue_Descriptor), align_of(rawptr))
+	testing.expect_value(t, align_of(WGPU_Device_Lost_Callback_Info), align_of(rawptr))
+	testing.expect_value(t, align_of(WGPU_Uncaptured_Error_Callback_Info), align_of(rawptr))
+	testing.expect_value(t, align_of(WGPU_Device_Descriptor), align_of(rawptr))
+	testing.expect_value(t, align_of(WGPU_Request_Adapter_Callback_Info), align_of(rawptr))
+	testing.expect_value(t, align_of(WGPU_Request_Device_Callback_Info), align_of(rawptr))
 	testing.expect_value(t, align_of(WGPU_Buffer_Map_Callback_Info), align_of(rawptr))
 }
 
@@ -133,14 +142,65 @@ test_wgpu_buffer_map_callback_info_uses_process_events_mode :: proc(t: ^testing.
 }
 
 @(test)
+test_wgpu_context_request_descriptors_match_open_gpu_defaults :: proc(t: ^testing.T) {
+	instance := wgpu_instance_descriptor_default()
+	testing.expect_value(t, instance.next_in_chain, (^WGPU_Chained_Struct)(nil))
+	testing.expect_value(t, instance.features.next_in_chain, (^WGPU_Chained_Struct_Out)(nil))
+	testing.expect_value(t, instance.features.timed_wait_any_enable, WGPU_FALSE)
+	testing.expect_value(t, instance.features.timed_wait_any_max_count, c.size_t(0))
+
+	adapter := wgpu_request_adapter_options(WGPU_Surface(rawptr(uintptr(0x7777))))
+	testing.expect_value(t, adapter.next_in_chain, (^WGPU_Chained_Struct)(nil))
+	testing.expect_value(t, adapter.feature_level, WGPU_FEATURE_LEVEL_CORE)
+	testing.expect_value(t, adapter.power_preference, WGPU_POWER_PREFERENCE_UNDEFINED)
+	testing.expect_value(t, adapter.force_fallback_adapter, WGPU_FALSE)
+	testing.expect_value(t, adapter.backend_type, WGPU_BACKEND_TYPE_UNDEFINED)
+	testing.expect_value(t, adapter.compatible_surface, WGPU_Surface(rawptr(uintptr(0x7777))))
+
+	device := wgpu_device_descriptor_default()
+	testing.expect_value(t, device.next_in_chain, (^WGPU_Chained_Struct)(nil))
+	testing.expect_value(t, device.label, wgpu_string_view_empty())
+	testing.expect_value(t, device.required_feature_count, c.size_t(0))
+	testing.expect_value(t, device.required_features, rawptr(nil))
+	testing.expect_value(t, device.required_limits, WGPU_Limits(nil))
+	testing.expect_value(t, device.default_queue.next_in_chain, (^WGPU_Chained_Struct)(nil))
+	testing.expect_value(t, device.default_queue.label, wgpu_string_view_empty())
+	testing.expect_value(t, device.device_lost_callback_info.mode, WGPU_CALLBACK_MODE_ALLOW_PROCESS_EVENTS)
+	testing.expect_value(t, device.device_lost_callback_info.callback, WGPU_Device_Lost_Callback(wgpu_default_device_lost_callback))
+	testing.expect_value(t, device.uncaptured_error_callback_info.callback, WGPU_Uncaptured_Error_Callback(nil))
+}
+
+@(test)
+test_wgpu_request_callback_infos_use_process_events_mode :: proc(t: ^testing.T) {
+	userdata1 := rawptr(uintptr(0x1212))
+	userdata2 := rawptr(uintptr(0x3434))
+	adapter := wgpu_request_adapter_callback_info(wgpu_test_request_adapter_callback, userdata1, userdata2)
+	testing.expect_value(t, adapter.next_in_chain, (^WGPU_Chained_Struct)(nil))
+	testing.expect_value(t, adapter.mode, WGPU_CALLBACK_MODE_ALLOW_PROCESS_EVENTS)
+	testing.expect_value(t, adapter.callback, WGPU_Request_Adapter_Callback(wgpu_test_request_adapter_callback))
+	testing.expect_value(t, adapter.userdata1, userdata1)
+	testing.expect_value(t, adapter.userdata2, userdata2)
+
+	device := wgpu_request_device_callback_info(wgpu_test_request_device_callback, userdata1, userdata2)
+	testing.expect_value(t, device.next_in_chain, (^WGPU_Chained_Struct)(nil))
+	testing.expect_value(t, device.mode, WGPU_CALLBACK_MODE_ALLOW_PROCESS_EVENTS)
+	testing.expect_value(t, device.callback, WGPU_Request_Device_Callback(wgpu_test_request_device_callback))
+	testing.expect_value(t, device.userdata1, userdata1)
+	testing.expect_value(t, device.userdata2, userdata2)
+}
+
+@(test)
 test_wgpu_offscreen_proc_table_resolves_required_symbols :: proc(t: ^testing.T) {
 	ctx := WGPU_Test_Resolver_Context{}
 	procs, missing, ok := wgpu_resolve_offscreen_procs(wgpu_test_symbol_resolver, rawptr(&ctx))
 
 	testing.expect_value(t, ok, true)
 	testing.expect_value(t, missing, "")
-	testing.expect_value(t, ctx.calls, 16)
+	testing.expect_value(t, ctx.calls, 24)
 	testing.expect_value(t, ctx.last_user_data, rawptr(&ctx))
+
+	instance := procs.create_instance((^WGPU_Instance_Descriptor)(nil))
+	testing.expect_value(t, instance, WGPU_Instance(rawptr(uintptr(0x100A))))
 
 	texture := procs.device_create_texture(WGPU_Device(nil), (^WGPU_Texture_Descriptor)(nil))
 	testing.expect_value(t, texture, WGPU_Texture(rawptr(uintptr(0x1001))))
@@ -150,6 +210,9 @@ test_wgpu_offscreen_proc_table_resolves_required_symbols :: proc(t: ^testing.T) 
 
 	future := procs.buffer_map_async(WGPU_Buffer(nil), WGPU_MAP_MODE_READ, 0, 16, wgpu_buffer_map_callback_info(wgpu_test_buffer_map_callback))
 	testing.expect_value(t, future, WGPU_Future{id = 0x1008})
+
+	queue := procs.device_get_queue(WGPU_Device(nil))
+	testing.expect_value(t, queue, WGPU_Queue(rawptr(uintptr(0x100D))))
 }
 
 @(test)
@@ -159,7 +222,7 @@ test_wgpu_offscreen_proc_table_reports_first_missing_symbol :: proc(t: ^testing.
 
 	testing.expect_value(t, ok, false)
 	testing.expect_value(t, missing, WGPU_SYMBOL_COMMAND_ENCODER_FINISH)
-	testing.expect_value(t, ctx.calls, 6)
+	testing.expect_value(t, ctx.calls, 10)
 }
 
 @(test)
@@ -176,6 +239,18 @@ test_wgpu_offscreen_dynamic_library_loads_proc_table :: proc(t: ^testing.T) {
 
 	testing.expect_value(t, ok, true)
 	testing.expect_value(t, missing, "")
+
+	instance := loaded.procs.create_instance((^WGPU_Instance_Descriptor)(nil))
+	testing.expect_value(t, instance, WGPU_Instance(rawptr(uintptr(0x200A))))
+
+	adapter_future := loaded.procs.instance_request_adapter(WGPU_Instance(nil), (^WGPU_Request_Adapter_Options)(nil), wgpu_request_adapter_callback_info(wgpu_test_request_adapter_callback))
+	testing.expect_value(t, adapter_future, WGPU_Future{id = 0x200B})
+
+	device_future := loaded.procs.adapter_request_device(WGPU_Adapter(nil), (^WGPU_Device_Descriptor)(nil), wgpu_request_device_callback_info(wgpu_test_request_device_callback))
+	testing.expect_value(t, device_future, WGPU_Future{id = 0x200C})
+
+	queue := loaded.procs.device_get_queue(WGPU_Device(nil))
+	testing.expect_value(t, queue, WGPU_Queue(rawptr(uintptr(0x200D))))
 
 	texture := loaded.procs.device_create_texture(WGPU_Device(nil), (^WGPU_Texture_Descriptor)(nil))
 	testing.expect_value(t, texture, WGPU_Texture(rawptr(uintptr(0x2001))))
@@ -252,6 +327,22 @@ wgpu_test_buffer_map_callback :: proc "c" (status: WGPU_Map_Async_Status, messag
 	_ = userdata2
 }
 
+wgpu_test_request_adapter_callback :: proc "c" (status: WGPU_Request_Adapter_Status, adapter: WGPU_Adapter, message: WGPU_String_View, userdata1, userdata2: rawptr) {
+	_ = status
+	_ = adapter
+	_ = message
+	_ = userdata1
+	_ = userdata2
+}
+
+wgpu_test_request_device_callback :: proc "c" (status: WGPU_Request_Device_Status, device: WGPU_Device, message: WGPU_String_View, userdata1, userdata2: rawptr) {
+	_ = status
+	_ = device
+	_ = message
+	_ = userdata1
+	_ = userdata2
+}
+
 FAKE_WGPU_DYNAMIC_LIBRARY_SOURCE :: `package fake_wgpu
 
 import "core:c"
@@ -271,6 +362,50 @@ WGPU_Buffer_Map_Callback_Info :: struct #align(align_of(rawptr)) {
 	callback:      rawptr,
 	userdata1:     rawptr,
 	userdata2:     rawptr,
+}
+
+WGPU_Request_Adapter_Callback_Info :: struct #align(align_of(rawptr)) {
+	next_in_chain: rawptr,
+	mode:          u32,
+	callback:      rawptr,
+	userdata1:     rawptr,
+	userdata2:     rawptr,
+}
+
+WGPU_Request_Device_Callback_Info :: struct #align(align_of(rawptr)) {
+	next_in_chain: rawptr,
+	mode:          u32,
+	callback:      rawptr,
+	userdata1:     rawptr,
+	userdata2:     rawptr,
+}
+
+@(export)
+wgpuCreateInstance :: proc "c" (descriptor: rawptr) -> rawptr {
+	_ = descriptor
+	return rawptr(uintptr(0x200A))
+}
+
+@(export)
+wgpuInstanceRequestAdapter :: proc "c" (instance, options: rawptr, callback_info: WGPU_Request_Adapter_Callback_Info) -> WGPU_Future {
+	_ = instance
+	_ = options
+	_ = callback_info
+	return WGPU_Future{id = 0x200B}
+}
+
+@(export)
+wgpuAdapterRequestDevice :: proc "c" (adapter, descriptor: rawptr, callback_info: WGPU_Request_Device_Callback_Info) -> WGPU_Future {
+	_ = adapter
+	_ = descriptor
+	_ = callback_info
+	return WGPU_Future{id = 0x200C}
+}
+
+@(export)
+wgpuDeviceGetQueue :: proc "c" (device: rawptr) -> rawptr {
+	_ = device
+	return rawptr(uintptr(0x200D))
 }
 
 @(export)
@@ -375,6 +510,26 @@ wgpuCommandEncoderRelease :: proc "c" (encoder: rawptr) {
 wgpuCommandBufferRelease :: proc "c" (command_buffer: rawptr) {
 	_ = command_buffer
 }
+
+@(export)
+wgpuInstanceRelease :: proc "c" (instance: rawptr) {
+	_ = instance
+}
+
+@(export)
+wgpuAdapterRelease :: proc "c" (adapter: rawptr) {
+	_ = adapter
+}
+
+@(export)
+wgpuDeviceRelease :: proc "c" (device: rawptr) {
+	_ = device
+}
+
+@(export)
+wgpuQueueRelease :: proc "c" (queue: rawptr) {
+	_ = queue
+}
 `
 
 FAKE_WGPU_MISSING_SYMBOL_DYNAMIC_LIBRARY_SOURCE :: `package fake_wgpu
@@ -391,6 +546,50 @@ WGPU_Buffer_Map_Callback_Info :: struct #align(align_of(rawptr)) {
 	callback:      rawptr,
 	userdata1:     rawptr,
 	userdata2:     rawptr,
+}
+
+WGPU_Request_Adapter_Callback_Info :: struct #align(align_of(rawptr)) {
+	next_in_chain: rawptr,
+	mode:          u32,
+	callback:      rawptr,
+	userdata1:     rawptr,
+	userdata2:     rawptr,
+}
+
+WGPU_Request_Device_Callback_Info :: struct #align(align_of(rawptr)) {
+	next_in_chain: rawptr,
+	mode:          u32,
+	callback:      rawptr,
+	userdata1:     rawptr,
+	userdata2:     rawptr,
+}
+
+@(export)
+wgpuCreateInstance :: proc "c" (descriptor: rawptr) -> rawptr {
+	_ = descriptor
+	return rawptr(uintptr(0x300A))
+}
+
+@(export)
+wgpuInstanceRequestAdapter :: proc "c" (instance, options: rawptr, callback_info: WGPU_Request_Adapter_Callback_Info) -> WGPU_Future {
+	_ = instance
+	_ = options
+	_ = callback_info
+	return WGPU_Future{id = 0x300B}
+}
+
+@(export)
+wgpuAdapterRequestDevice :: proc "c" (adapter, descriptor: rawptr, callback_info: WGPU_Request_Device_Callback_Info) -> WGPU_Future {
+	_ = adapter
+	_ = descriptor
+	_ = callback_info
+	return WGPU_Future{id = 0x300C}
+}
+
+@(export)
+wgpuDeviceGetQueue :: proc "c" (device: rawptr) -> rawptr {
+	_ = device
+	return rawptr(uintptr(0x300D))
 }
 
 @(export)
@@ -488,6 +687,26 @@ wgpuCommandEncoderRelease :: proc "c" (encoder: rawptr) {
 wgpuCommandBufferRelease :: proc "c" (command_buffer: rawptr) {
 	_ = command_buffer
 }
+
+@(export)
+wgpuInstanceRelease :: proc "c" (instance: rawptr) {
+	_ = instance
+}
+
+@(export)
+wgpuAdapterRelease :: proc "c" (adapter: rawptr) {
+	_ = adapter
+}
+
+@(export)
+wgpuDeviceRelease :: proc "c" (device: rawptr) {
+	_ = device
+}
+
+@(export)
+wgpuQueueRelease :: proc "c" (queue: rawptr) {
+	_ = queue
+}
 `
 
 WGPU_Test_Resolver_Context :: struct {
@@ -504,6 +723,14 @@ wgpu_test_symbol_resolver :: proc(name: string, user_data: rawptr) -> rawptr {
 		return nil
 	}
 	switch name {
+	case WGPU_SYMBOL_CREATE_INSTANCE:
+		return rawptr(wgpu_test_create_instance)
+	case WGPU_SYMBOL_INSTANCE_REQUEST_ADAPTER:
+		return rawptr(wgpu_test_instance_request_adapter)
+	case WGPU_SYMBOL_ADAPTER_REQUEST_DEVICE:
+		return rawptr(wgpu_test_adapter_request_device)
+	case WGPU_SYMBOL_DEVICE_GET_QUEUE:
+		return rawptr(wgpu_test_device_get_queue)
 	case WGPU_SYMBOL_DEVICE_CREATE_TEXTURE:
 		return rawptr(wgpu_test_device_create_texture)
 	case WGPU_SYMBOL_DEVICE_CREATE_BUFFER:
@@ -536,8 +763,40 @@ wgpu_test_symbol_resolver :: proc(name: string, user_data: rawptr) -> rawptr {
 		return rawptr(wgpu_test_command_encoder_release)
 	case WGPU_SYMBOL_COMMAND_BUFFER_RELEASE:
 		return rawptr(wgpu_test_command_buffer_release)
+	case WGPU_SYMBOL_INSTANCE_RELEASE:
+		return rawptr(wgpu_test_instance_release)
+	case WGPU_SYMBOL_ADAPTER_RELEASE:
+		return rawptr(wgpu_test_adapter_release)
+	case WGPU_SYMBOL_DEVICE_RELEASE:
+		return rawptr(wgpu_test_device_release)
+	case WGPU_SYMBOL_QUEUE_RELEASE:
+		return rawptr(wgpu_test_queue_release)
 	}
 	return nil
+}
+
+wgpu_test_create_instance :: proc "c" (descriptor: ^WGPU_Instance_Descriptor) -> WGPU_Instance {
+	_ = descriptor
+	return WGPU_Instance(rawptr(uintptr(0x100A)))
+}
+
+wgpu_test_instance_request_adapter :: proc "c" (instance: WGPU_Instance, options: ^WGPU_Request_Adapter_Options, callback_info: WGPU_Request_Adapter_Callback_Info) -> WGPU_Future {
+	_ = instance
+	_ = options
+	_ = callback_info
+	return WGPU_Future{id = 0x100B}
+}
+
+wgpu_test_adapter_request_device :: proc "c" (adapter: WGPU_Adapter, descriptor: ^WGPU_Device_Descriptor, callback_info: WGPU_Request_Device_Callback_Info) -> WGPU_Future {
+	_ = adapter
+	_ = descriptor
+	_ = callback_info
+	return WGPU_Future{id = 0x100C}
+}
+
+wgpu_test_device_get_queue :: proc "c" (device: WGPU_Device) -> WGPU_Queue {
+	_ = device
+	return WGPU_Queue(rawptr(uintptr(0x100D)))
 }
 
 wgpu_test_device_create_texture :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Texture_Descriptor) -> WGPU_Texture {
@@ -625,6 +884,22 @@ wgpu_test_command_encoder_release :: proc "c" (encoder: WGPU_Command_Encoder) {
 
 wgpu_test_command_buffer_release :: proc "c" (command_buffer: WGPU_Command_Buffer) {
 	_ = command_buffer
+}
+
+wgpu_test_instance_release :: proc "c" (instance: WGPU_Instance) {
+	_ = instance
+}
+
+wgpu_test_adapter_release :: proc "c" (adapter: WGPU_Adapter) {
+	_ = adapter
+}
+
+wgpu_test_device_release :: proc "c" (device: WGPU_Device) {
+	_ = device
+}
+
+wgpu_test_queue_release :: proc "c" (queue: WGPU_Queue) {
+	_ = queue
 }
 
 @(test)
