@@ -163,11 +163,13 @@ route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: ^Runtime
 				   (state.text_input_component != component_id || state.text_input_field != field_name || state.text_input_lane != lane) {
 					commit_editor_test_text_input(world, state)
 				}
-				state.selected_property_component = component_id
-				state.selected_property_field = field_name
-				state.selected_property_lane = lane
-				state.has_selected_property = true
-				focus_editor_test_text_input(world^, state, component_id, field_name, lane)
+				if !apply_editor_test_typed_control_click(world, state, component_id, field_name, lane) {
+					state.selected_property_component = component_id
+					state.selected_property_field = field_name
+					state.selected_property_lane = lane
+					state.has_selected_property = true
+					focus_editor_test_text_input(world^, state, component_id, field_name, lane)
+				}
 				state.captured_pointer = true
 				consumed = true
 			} else if !inside_game {
@@ -264,6 +266,69 @@ apply_editor_test_keyboard_edits :: proc(state: ^Editor_Test_Input_State, world:
 		return true
 	}
 	return consumed
+}
+
+apply_editor_test_typed_control_click :: proc(
+	world: ^Runtime_World,
+	state: ^Editor_Test_Input_State,
+	component_id, field_name: string,
+	lane: int,
+) -> bool {
+	if !state.has_selected_entity {
+		return false
+	}
+	old_value, old_err := runtime_world_get_component_field_value(world^, state.selected_entity, component_id, field_name)
+	if old_err != .None {
+		return false
+	}
+	new_value, typed_ok := next_editor_test_typed_control_value(component_id, field_name, old_value)
+	if !typed_ok {
+		return false
+	}
+	set_err := runtime_world_set_component_field_value(world, state.selected_entity, component_id, field_name, new_value)
+	if set_err != .None {
+		return false
+	}
+	clear_editor_test_text_input(state)
+	state.selected_property_component = component_id
+	state.selected_property_field = field_name
+	state.selected_property_lane = clamp_int(lane, 0, 2)
+	state.has_selected_property = true
+	return true
+}
+
+next_editor_test_typed_control_value :: proc(component_id, field_name: string, value: Runtime_Component_Value) -> (Runtime_Component_Value, bool) {
+	switch value.value_type {
+	case .Boolean:
+		return runtime_component_value_boolean(!value.boolean), true
+	case .String:
+		if next, ok := editor_test_primitive_selector_next_value(component_id, field_name, value.string_value); ok {
+			return runtime_component_value_string(next), true
+		}
+	case .Int, .Float, .Vec3:
+	}
+	return Runtime_Component_Value{}, false
+}
+
+editor_test_primitive_selector_next_value :: proc(component_id, field_name, value: string) -> (string, bool) {
+	if !editor_test_field_is_primitive_selector(component_id, field_name) {
+		return "", false
+	}
+	switch value {
+	case "box":
+		return "plane", true
+	case "plane":
+		return "uv_sphere", true
+	case "uv_sphere":
+		return "ico_sphere", true
+	case "ico_sphere":
+		return "box", true
+	}
+	return "", false
+}
+
+editor_test_field_is_primitive_selector :: proc(component_id, field_name: string) -> bool {
+	return component_id == GEOMETRY_PRIMITIVE_COMPONENT_ID && field_name == "primitive"
 }
 
 focus_editor_test_text_input :: proc(world: Runtime_World, state: ^Editor_Test_Input_State, component_id, field_name: string, lane: int) -> bool {
