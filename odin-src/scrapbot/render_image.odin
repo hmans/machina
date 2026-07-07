@@ -71,6 +71,9 @@ EDITOR_CHROME_BOTTOM_COLOR :: [3]u8{30, 34, 42}
 EDITOR_CHROME_RULE_COLOR :: [3]u8{82, 92, 108}
 EDITOR_CHROME_VIEWPORT_COLOR :: [3]u8{87, 169, 216}
 EDITOR_CHROME_SELECTION_COLOR :: [3]u8{240, 160, 76}
+EDITOR_CHROME_INSPECTOR_CARD_COLOR :: [3]u8{54, 61, 73}
+EDITOR_CHROME_INSPECTOR_CARD_HEADER_COLOR :: [3]u8{68, 77, 92}
+EDITOR_CHROME_INSPECTOR_FIELD_COLOR :: [3]u8{36, 42, 52}
 
 render_write_scene_image :: proc(world: Runtime_World, options: Render_Options, verify_output: bool) -> (Render_Image_Verification, Render_Image_Error) {
 	format, format_ok := render_image_format_from_path(options.output_path)
@@ -309,7 +312,7 @@ render_image_from_scene :: proc(world: Runtime_World, options: Render_Options) -
 	render_draw_scene_renderables(&image, world)
 	render_draw_scene_ui(&image, world)
 	if options.editor {
-		render_draw_editor_chrome(&image, options)
+		render_draw_editor_chrome(&image, world, options)
 	}
 	return image, true
 }
@@ -373,7 +376,7 @@ render_draw_scene_ui :: proc(image: ^Render_Image, world: Runtime_World) {
 	}
 }
 
-render_draw_editor_chrome :: proc(image: ^Render_Image, options: Render_Options) {
+render_draw_editor_chrome :: proc(image: ^Render_Image, world: Runtime_World, options: Render_Options) {
 	if image.width <= 0 || image.height <= 0 {
 		return
 	}
@@ -407,6 +410,47 @@ render_draw_editor_chrome :: proc(image: ^Render_Image, options: Render_Options)
 		accent_width := max(4, right_width - 24)
 		accent_height := min(max(8, body_height / 18), body_height - 28)
 		render_fill_rect(image, accent_x, accent_y, accent_width, accent_height, EDITOR_CHROME_SELECTION_COLOR)
+		render_draw_editor_inspector_cards(image, world, options.selected_entity_id, image.width - right_width, body_y, right_width, body_height)
+	}
+}
+
+render_draw_editor_inspector_cards :: proc(image: ^Render_Image, world: Runtime_World, selected_entity_id: string, right_x, body_y, right_width, body_height: int) {
+	selected, selected_ok := runtime_world_find_entity_by_id(world, selected_entity_id)
+	if !selected_ok {
+		return
+	}
+	selected_index, selected_err := runtime_world_entity_index(world, selected)
+	if selected_err != .None {
+		return
+	}
+	card_x := right_x + 12
+	card_y := body_y + 36
+	card_width := max(4, right_width - 24)
+	clip_bottom := body_y + body_height - 8
+	for table in world.component_tables {
+		if selected_index >= len(table.rows_by_entity) || table.rows_by_entity[selected_index] < 0 {
+			continue
+		}
+		field_count := len(table.columns)
+		card_height := 24 + max(1, field_count) * 8
+		if card_y >= clip_bottom {
+			break
+		}
+		if card_y + card_height > clip_bottom {
+			card_height = max(4, clip_bottom - card_y)
+		}
+		render_fill_rect(image, card_x, card_y, card_width, card_height, EDITOR_CHROME_INSPECTOR_CARD_COLOR)
+		render_stroke_rect(image, card_x, card_y, card_width, card_height, EDITOR_CHROME_RULE_COLOR)
+		render_fill_rect(image, card_x + 2, card_y + 2, max(1, card_width - 4), min(10, max(1, card_height - 4)), EDITOR_CHROME_INSPECTOR_CARD_HEADER_COLOR)
+		field_y := card_y + 16
+		for _ in table.columns {
+			if field_y + 5 >= card_y + card_height - 2 {
+				break
+			}
+			render_fill_rect(image, card_x + 6, field_y, max(1, card_width - 12), 5, EDITOR_CHROME_INSPECTOR_FIELD_COLOR)
+			field_y += 8
+		}
+		card_y += card_height + 4
 	}
 }
 

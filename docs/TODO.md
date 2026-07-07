@@ -150,6 +150,7 @@
 - [x] Port first-pass Odin software offscreen PNG/BMP image output and render-test pixel verification.
 - [x] Port first-pass Odin visual-test golden update/comparison, tolerance checks, and render artifact metadata sidecars.
 - [x] Port first-pass Odin software editor chrome pixels for offscreen render/visual artifacts.
+- [x] Add first-pass Odin software render pixels for selected inspector component cards.
 - [ ] Complete full editor window-loop Odin input, tool chrome, and replacement of the Zig editor path.
 - [ ] Remove Zig build/test/dependency surfaces after Odin parity is verified.
 - [x] Add retained scroll-view/vgroup routing for Odin inspector scrolling.

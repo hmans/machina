@@ -241,12 +241,17 @@ sdl_run_live_project_loop :: proc(
 			return result, Simulation_Run_Result{}, SDL_SOFTWARE_INVALID_SIZE_ERROR, false
 		}
 
+		selected_entity_id := ""
+		if selected_id, selected_ok := editor_test_selected_entity_id(editor_state, project.check.scene.world); selected_ok {
+			selected_entity_id = selected_id
+		}
 		image, image_ok := render_image_from_scene(project.check.scene.world, Render_Options{
 			target_path = project.check.project.default_scene,
 			width = size.pixel_width,
 			height = size.pixel_height,
 			pixel_scale = DEFAULT_RENDER_PIXEL_SCALE,
 			editor = editor,
+			selected_entity_id = selected_entity_id,
 			backend = .Software,
 		})
 		if !image_ok {

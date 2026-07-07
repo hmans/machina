@@ -2175,6 +2175,8 @@ test_run_render_command_writes_editor_chrome_pixels :: proc(t: ^testing.T) {
 	expect_render_pixel(t, image, 8, 40, EDITOR_CHROME_PANEL_COLOR)
 	expect_render_pixel(t, image, 236, 38, EDITOR_CHROME_SELECTION_COLOR)
 	expect_render_pixel(t, image, 72, 24, EDITOR_CHROME_VIEWPORT_COLOR)
+	expect_render_pixel(t, image, 238, 62, EDITOR_CHROME_INSPECTOR_CARD_HEADER_COLOR)
+	expect_render_pixel(t, image, 244, 78, EDITOR_CHROME_INSPECTOR_FIELD_COLOR)
 }
 
 @(test)
