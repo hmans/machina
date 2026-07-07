@@ -617,10 +617,10 @@ fn extractEditorEntityListInto(
     const entity_count = editorInspectableEntityCount(scene_world);
     const header_text = std.fmt.allocPrint(allocator, "ENTITIES {d}", .{entity_count}) catch return RenderError.OutOfMemory;
     defer allocator.free(header_text);
-    try extractEditorText(world, "scrapbot.editor.entities.header", "Editor Entities Header", editorPanelTextPosition(panel, editorSystemHeaderYOffset()), header_text, editor_entity_text_size, editor_palette.text_muted);
+    _ = try extractEditorText(world, "scrapbot.editor.entities.header", "Editor Entities Header", editorPanelTextPosition(panel, editorSystemHeaderYOffset()), header_text, editor_entity_text_size, editor_palette.text_muted);
 
     if (entity_count == 0) {
-        try extractEditorText(world, "scrapbot.editor.entities.empty", "Editor Entities Empty", editorPanelTextPosition(panel, editorSystemRowsYOffset()), "NO ENTITIES", editor_entity_text_size, editor_palette.text_dim);
+        _ = try extractEditorText(world, "scrapbot.editor.entities.empty", "Editor Entities Empty", editorPanelTextPosition(panel, editorSystemRowsYOffset()), "NO ENTITIES", editor_entity_text_size, editor_palette.text_dim);
         return;
     }
 
@@ -753,19 +753,19 @@ fn extractEditorComponentInspectorInto(
         .height = panel_height,
     }, editor_palette.panel, 0.0);
 
-    try extractEditorText(world, "scrapbot.editor.inspector.title", "Editor Inspector Title", .{
+    _ = try extractEditorText(world, "scrapbot.editor.inspector.title", "Editor Inspector Title", .{
         panel_x + editor_panel_padding_x,
         panel_y + editor_panel_padding_y,
         0.0,
     }, "COMPONENTS", editor_inspector_text_size, editor_palette.text);
 
     const selected = input.editor.selected_entity orelse {
-        try extractEditorText(world, "scrapbot.editor.inspector.empty", "Editor Inspector Empty", .{
+        _ = try extractEditorText(world, "scrapbot.editor.inspector.empty", "Editor Inspector Empty", .{
             panel_x + editor_panel_padding_x,
             panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.0,
             0.0,
         }, "NO ENTITY SELECTED", editor_inspector_text_size, editor_palette.text);
-        try extractEditorText(world, "scrapbot.editor.inspector.empty.hint", "Editor Inspector Empty Hint", .{
+        _ = try extractEditorText(world, "scrapbot.editor.inspector.empty.hint", "Editor Inspector Empty Hint", .{
             panel_x + editor_panel_padding_x,
             panel_y + editor_panel_padding_y + editor_inspector_line_stride * 3.0,
             0.0,
@@ -774,7 +774,7 @@ fn extractEditorComponentInspectorInto(
     };
 
     const entity = scene_world.entity(selected) catch {
-        try extractEditorText(world, "scrapbot.editor.inspector.unavailable", "Editor Inspector Unavailable", .{
+        _ = try extractEditorText(world, "scrapbot.editor.inspector.unavailable", "Editor Inspector Unavailable", .{
             panel_x + editor_panel_padding_x,
             panel_y + editor_panel_padding_y + editor_inspector_line_stride * 2.0,
             0.0,
@@ -784,7 +784,7 @@ fn extractEditorComponentInspectorInto(
 
     const entity_header = std.fmt.allocPrint(allocator, "{s}  {s}", .{ entity.name, entity.id }) catch return RenderError.OutOfMemory;
     defer allocator.free(entity_header);
-    try extractEditorText(world, "scrapbot.editor.inspector.entity", "Editor Inspector Entity", .{
+    _ = try extractEditorText(world, "scrapbot.editor.inspector.entity", "Editor Inspector Entity", .{
         panel_x + editor_panel_padding_x,
         panel_y + editor_panel_padding_y + editor_inspector_line_stride,
         0.0,
@@ -895,7 +895,7 @@ fn extractEditorText(
     value: []const u8,
     size: f32,
     color: [3]f32,
-) RenderError!void {
+) RenderError!runtime.EntityHandle {
     const entity = world.createEngineTransientEntity(id, name) catch |err| return mapWorldError(err);
     world.setUiText(entity, .{
         .position = position,
@@ -903,6 +903,7 @@ fn extractEditorText(
         .color = color,
         .value = value,
     }) catch |err| return mapWorldError(err);
+    return entity;
 }
 
 fn extractEditorPanel(
@@ -933,8 +934,7 @@ fn extractEditorChildText(
     size: f32,
     color: [3]f32,
 ) RenderError!runtime.EntityHandle {
-    try extractEditorText(world, id, name, position, value, size, color);
-    const entity = world.findEntityById(id) orelse return RenderError.InvalidScene;
+    const entity = try extractEditorText(world, id, name, position, value, size, color);
     world.setUiLayoutItem(entity, .{ .parent = parent }) catch |err| return mapWorldError(err);
     return entity;
 }
@@ -1049,9 +1049,11 @@ fn extractEditorPropertyRow(
     var label_id_buffer: [192]u8 = undefined;
     const label_id = try formatEditorId(&label_id_buffer, "scrapbot.editor.inspector.component.{d}.field.{d}.label", .{ spec.component_index, spec.field_index });
 
-    const label_rect = ui_layout.resolvedItemRect(world, label_cell) catch |err| return mapLayoutError(err);
-    const value_rect = ui_layout.resolvedItemRect(world, value_cell) catch |err| return mapLayoutError(err);
-    const label_max_width = @max(label_rect.size[0], 1.0);
+    const row_width = @max(spec.card_width - editor_inspector_card_padding_x * 2.0, 1.0);
+    const row_inner_width = @max(row_width - editor_inspector_field_column_gap, 0.0);
+    const label_column_width = row_inner_width * 0.5;
+    const value_column_width = row_inner_width - label_column_width;
+    const label_max_width = @max(label_column_width, 1.0);
     const label_text = fitEditorTextToWidth(allocator, spec.field_name, editor_inspector_text_size, label_max_width) catch return RenderError.OutOfMemory;
     defer allocator.free(label_text);
 
@@ -1063,14 +1065,14 @@ fn extractEditorPropertyRow(
 
     var value_spec = spec;
     value_spec.parent_id = value_cell_id;
-    value_spec.card_width = value_rect.size[0];
+    value_spec.card_width = value_column_width;
     value_spec.field_y = -editor_inspector_field_control_offset_y + editor_inspector_input_cell_padding;
 
     switch (spec.value) {
         .vec3 => |payload| {
             var value_row_id_buffer: [192]u8 = undefined;
             const value_row_id = try formatEditorId(&value_row_id_buffer, "scrapbot.editor.inspector.component.{d}.field.{d}.value_row", .{ spec.component_index, spec.field_index });
-            const padded_value_width = @max(value_rect.size[0] - editor_inspector_input_cell_padding * 2.0, 1.0);
+            const padded_value_width = @max(value_column_width - editor_inspector_input_cell_padding * 2.0, 1.0);
             const value_row = world.createEngineTransientEntity(value_row_id, "Editor Property Vec3 Value Row") catch |err| return mapWorldError(err);
             world.setUiHGroup(value_row, .{
                 .position = .{ editor_inspector_input_cell_padding, 0.0, 0.0 },
@@ -1128,7 +1130,7 @@ fn extractEditorPropertyRow(
         .boolean => |payload| {
             try extractEditorBooleanToggle(world, value_spec, .{
                 .x = editor_inspector_input_cell_padding,
-                .width = @min(editor_inspector_toggle_width, @max(value_rect.size[0] - editor_inspector_input_cell_padding * 2.0, 1.0)),
+                .width = @min(editor_inspector_toggle_width, @max(value_column_width - editor_inspector_input_cell_padding * 2.0, 1.0)),
                 .value = payload,
             });
         },
@@ -1136,7 +1138,7 @@ fn extractEditorPropertyRow(
             if (editorFieldIsPrimitiveSelector(spec.component_id, spec.field_name)) {
                 try extractEditorPrimitiveSelector(allocator, world, value_spec, .{
                     .x = editor_inspector_input_cell_padding,
-                    .width = @max(value_rect.size[0] - editor_inspector_input_cell_padding * 2.0, 1.0),
+                    .width = @max(value_column_width - editor_inspector_input_cell_padding * 2.0, 1.0),
                     .value = payload,
                 });
             } else {
@@ -1149,7 +1151,7 @@ fn extractEditorPropertyRow(
                 try extractEditorPropertyInputBox(allocator, world, value_spec, .{
                     .lane = null,
                     .x = editor_inspector_input_cell_padding,
-                    .width = @max(value_rect.size[0] - editor_inspector_input_cell_padding * 2.0, 1.0),
+                    .width = @max(value_column_width - editor_inspector_input_cell_padding * 2.0, 1.0),
                     .text = value_text,
                     .focused = is_focused,
                     .cursor = if (is_focused) spec.text_input.cursor else value_text.len,
@@ -1167,7 +1169,7 @@ fn extractEditorPropertyRow(
             try extractEditorPropertyInputBox(allocator, world, value_spec, .{
                 .lane = null,
                 .x = editor_inspector_input_cell_padding,
-                .width = @max(value_rect.size[0] - editor_inspector_input_cell_padding * 2.0, 1.0),
+                .width = @max(value_column_width - editor_inspector_input_cell_padding * 2.0, 1.0),
                 .text = value_text,
                 .focused = is_focused,
                 .cursor = if (is_focused) spec.text_input.cursor else value_text.len,
@@ -1202,7 +1204,7 @@ fn extractEditorVec3LaneLabel(
 ) RenderError!void {
     var label_id_buffer: [192]u8 = undefined;
     const label_id = try formatEditorId(&label_id_buffer, "scrapbot.editor.inspector.component.{d}.field.{d}.lane_label.{d}", .{ row.component_index, row.field_index, label.lane });
-    const text = try extractEditorChildText(world, label_id, "Editor Property Vec3 Lane Label", row.parent_id, .{
+    const text = try extractEditorText(world, label_id, "Editor Property Vec3 Lane Label", .{
         label.x,
         row.field_y,
         0.0,
@@ -1254,7 +1256,7 @@ fn extractEditorBooleanToggle(
     const label = if (toggle.value) "ON" else "OFF";
     const label_width = editorTextWidth(label, editor_inspector_text_size);
     const label_x = @max((toggle.width - label_width) * 0.5, editor_inspector_input_text_offset_x);
-    const text = try extractEditorChildText(world, label_id, "Editor Property Boolean Toggle Label", toggle_id, .{
+    const text = try extractEditorText(world, label_id, "Editor Property Boolean Toggle Label", .{
         label_x,
         editor_inspector_input_text_offset_y,
         0.0,
@@ -1306,7 +1308,7 @@ fn extractEditorPrimitiveSelector(
     defer allocator.free(label);
     const fitted = fitEditorTextToWidth(allocator, label, editor_inspector_text_size, @max(selector.width - editor_inspector_input_text_offset_x * 2.0, 1.0)) catch return RenderError.OutOfMemory;
     defer allocator.free(fitted);
-    const text = try extractEditorChildText(world, value_id, "Editor Property Primitive Selector Value", selector_id, .{
+    const text = try extractEditorText(world, value_id, "Editor Property Primitive Selector Value", .{
         editor_inspector_input_text_offset_x,
         editor_inspector_input_text_offset_y,
         0.0,
@@ -1425,7 +1427,7 @@ fn extractEditorPropertyInputBox(
     const text_max_width = @max(input.width - editor_inspector_input_text_offset_x * 2.0, 1.0);
     const fitted_text = fitEditorTextToWidth(allocator, input.text, editor_inspector_text_size, text_max_width) catch return RenderError.OutOfMemory;
     defer allocator.free(fitted_text);
-    const text_entity = try extractEditorChildText(world, value_id, "Editor Property Text Input Value", input_id, .{
+    const text_entity = try extractEditorText(world, value_id, "Editor Property Text Input Value", .{
         editor_inspector_input_text_offset_x,
         editor_inspector_input_text_offset_y,
         0.0,
