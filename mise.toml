@@ -2,7 +2,7 @@
 node = "24"
 pnpm = "10"
 zig = "latest"
-odin = "latest"
+odin = "dev-2026-06"
 
 [tasks.build]
 description = "Build the scrapbot CLI optimized for interactive use"
