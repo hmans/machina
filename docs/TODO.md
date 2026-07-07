@@ -155,6 +155,7 @@
 - [ ] Remove Zig build/test/dependency surfaces after Odin parity is verified.
 - [x] Add retained scroll-view/vgroup routing for Odin inspector scrolling.
 - [x] Add visual scroll support to inspector component vgroups.
+- [x] Add first-pass Odin software render pixels for typed inspector controls.
 - [ ] Add typed inspector controls for floats, ints, strings, and enums.
 - [x] Add first-pass editor add/remove component replay controls.
 - [x] Add visible editor chrome controls to add and remove components on the selected entity.

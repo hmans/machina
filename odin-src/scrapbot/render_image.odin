@@ -77,6 +77,14 @@ EDITOR_CHROME_BUTTON_DESTRUCTIVE_COLOR :: [3]u8{220, 112, 104}
 EDITOR_CHROME_INSPECTOR_CARD_COLOR :: [3]u8{54, 61, 73}
 EDITOR_CHROME_INSPECTOR_CARD_HEADER_COLOR :: [3]u8{68, 77, 92}
 EDITOR_CHROME_INSPECTOR_FIELD_COLOR :: [3]u8{36, 42, 52}
+EDITOR_CHROME_INSPECTOR_SCALAR_CONTROL_COLOR :: [3]u8{99, 121, 154}
+EDITOR_CHROME_INSPECTOR_STRING_CONTROL_COLOR :: [3]u8{128, 112, 174}
+EDITOR_CHROME_INSPECTOR_BOOL_ON_COLOR :: [3]u8{149, 204, 116}
+EDITOR_CHROME_INSPECTOR_BOOL_OFF_COLOR :: [3]u8{220, 112, 104}
+EDITOR_CHROME_INSPECTOR_TOGGLE_KNOB_COLOR :: [3]u8{232, 238, 244}
+EDITOR_CHROME_INSPECTOR_VEC3_X_COLOR :: [3]u8{220, 112, 104}
+EDITOR_CHROME_INSPECTOR_VEC3_Y_COLOR :: [3]u8{149, 204, 116}
+EDITOR_CHROME_INSPECTOR_VEC3_Z_COLOR :: [3]u8{87, 169, 216}
 
 render_write_scene_image :: proc(world: Runtime_World, options: Render_Options, verify_output: bool) -> (Render_Image_Verification, Render_Image_Error) {
 	format, format_ok := render_image_format_from_path(options.output_path)
@@ -503,7 +511,7 @@ render_draw_editor_inspector_cards :: proc(image: ^Render_Image, world: Runtime_
 				}
 			}
 			field_y := card_y + 16
-			for _ in table.columns {
+			for column in table.columns {
 				if field_y + 5 >= card_y + card_height - 2 {
 					break
 				}
@@ -512,12 +520,48 @@ render_draw_editor_inspector_cards :: proc(image: ^Render_Image, world: Runtime_
 					clipped_height := min(5, clip_bottom - clipped_y)
 					if clipped_height > 0 {
 						render_fill_rect(image, card_x + 6, clipped_y, max(1, card_width - 12), clipped_height, EDITOR_CHROME_INSPECTOR_FIELD_COLOR)
+						value, value_err := runtime_world_get_component_field_value(world, selected, table.id, column.name)
+						if value_err == .None && clipped_height >= 3 {
+							render_draw_editor_inspector_typed_control(image, card_x, card_width, clipped_y, clipped_height, value)
+						}
 					}
 				}
 				field_y += 8
 			}
 		}
 		card_y += card_height + 4
+	}
+}
+
+render_draw_editor_inspector_typed_control :: proc(image: ^Render_Image, card_x, card_width, y, height: int, value: Runtime_Component_Value) {
+	control_y := y
+	control_height := min(height, 5)
+	switch value.value_type {
+	case .Boolean:
+		control_width := min(18, max(8, card_width / 4))
+		control_x := card_x + card_width - control_width - 8
+		color := value.boolean ? EDITOR_CHROME_INSPECTOR_BOOL_ON_COLOR : EDITOR_CHROME_INSPECTOR_BOOL_OFF_COLOR
+		render_fill_rect(image, control_x, control_y, control_width, control_height, color)
+		if control_width > 8 {
+			knob_x := value.boolean ? control_x + control_width - 5 : control_x + 2
+			render_fill_rect(image, knob_x, control_y + 1, 3, max(1, control_height - 2), EDITOR_CHROME_INSPECTOR_TOGGLE_KNOB_COLOR)
+		}
+	case .Int, .Float:
+		control_width := min(26, max(10, card_width / 3))
+		control_x := card_x + card_width - control_width - 8
+		render_fill_rect(image, control_x, control_y, control_width, control_height, EDITOR_CHROME_INSPECTOR_SCALAR_CONTROL_COLOR)
+	case .String:
+		control_width := min(26, max(10, card_width / 3))
+		control_x := card_x + card_width - control_width - 8
+		render_fill_rect(image, control_x, control_y, control_width, control_height, EDITOR_CHROME_INSPECTOR_STRING_CONTROL_COLOR)
+	case .Vec3:
+		lane_width := min(8, max(3, (card_width - 20) / 6))
+		gap := 2
+		total_width := lane_width * 3 + gap * 2
+		control_x := card_x + card_width - total_width - 8
+		render_fill_rect(image, control_x, control_y, lane_width, control_height, EDITOR_CHROME_INSPECTOR_VEC3_X_COLOR)
+		render_fill_rect(image, control_x + lane_width + gap, control_y, lane_width, control_height, EDITOR_CHROME_INSPECTOR_VEC3_Y_COLOR)
+		render_fill_rect(image, control_x + (lane_width + gap) * 2, control_y, lane_width, control_height, EDITOR_CHROME_INSPECTOR_VEC3_Z_COLOR)
 	}
 }
 

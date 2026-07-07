@@ -2455,6 +2455,76 @@ test_run_render_command_applies_editor_inspector_scroll_pixels :: proc(t: ^testi
 }
 
 @(test)
+test_run_render_command_writes_typed_inspector_control_pixels :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-render-editor-typed-inspector-controls")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "CLI Render Editor Typed Inspector Controls"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local Controls = ecs.component("controls", {
+  fields = ecs.fields({
+    enabled = "boolean",
+    count = "int",
+    speed = "float",
+    label = "string",
+    tint = "vec3",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Typed Inspector Controls"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.controls]
+enabled = true
+count = 2
+speed = 1.5
+label = "alpha"
+tint = [1.0, 0.5, 0.25]
+`)
+	output_path := project_relative_path(root, "typed-inspector-render.png")
+	defer delete(output_path)
+
+	exit_code := run_with_output(
+		[]string{
+			"scrapbot",
+			"render",
+			"--editor",
+			"--select",
+			"target",
+			"--width",
+			"320",
+			"--height",
+			"240",
+			root,
+			output_path,
+		},
+		false,
+	)
+	testing.expect_value(t, exit_code, 0)
+
+	image, image_err := render_load_rgb_image(output_path)
+	if image_err != .None {
+		testing.fail_now(t, "failed to load rendered editor image")
+	}
+	defer render_image_free(&image)
+	expect_render_pixel(t, image, 284, 78, EDITOR_CHROME_INSPECTOR_BOOL_ON_COLOR)
+	expect_render_pixel(t, image, 296, 78, EDITOR_CHROME_INSPECTOR_TOGGLE_KNOB_COLOR)
+	expect_render_pixel(t, image, 278, 86, EDITOR_CHROME_INSPECTOR_SCALAR_CONTROL_COLOR)
+	expect_render_pixel(t, image, 278, 94, EDITOR_CHROME_INSPECTOR_SCALAR_CONTROL_COLOR)
+	expect_render_pixel(t, image, 278, 102, EDITOR_CHROME_INSPECTOR_STRING_CONTROL_COLOR)
+	expect_render_pixel(t, image, 274, 110, EDITOR_CHROME_INSPECTOR_VEC3_X_COLOR)
+	expect_render_pixel(t, image, 284, 110, EDITOR_CHROME_INSPECTOR_VEC3_Y_COLOR)
+	expect_render_pixel(t, image, 294, 110, EDITOR_CHROME_INSPECTOR_VEC3_Z_COLOR)
+}
+
+@(test)
 test_run_render_command_updates_only_extra_frames :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-render-extra-frame-updates")
 	defer os.remove_all(root)
