@@ -97,6 +97,18 @@ test_sdl_input_maps_keyboard_state_and_editor_shortcuts :: proc(t: ^testing.T) {
 	input = sdl_input_begin_frame(state, Sdl_Window_Size{width = 100, height = 100, pixel_width = 100, pixel_height = 100}, false)
 	sdl_input_apply_key(&state, &input, .BACKSPACE, true, false)
 	testing.expect_value(t, input.keyboard.editor_backspace_pressed, true)
+
+	input = sdl_input_begin_frame(state, Sdl_Window_Size{width = 100, height = 100, pixel_width = 100, pixel_height = 100}, false)
+	sdl_input_apply_key(&state, &input, .LSHIFT, true, false)
+	sdl_input_apply_key(&state, &input, .LEFT, true, true)
+	testing.expect_value(t, input.keyboard.shift_down, true)
+	testing.expect_value(t, input.keyboard.editor_left_pressed, true)
+	sdl_input_apply_key(&state, &input, .RIGHT, true, true)
+	testing.expect_value(t, input.keyboard.editor_right_pressed, true)
+	sdl_input_apply_key(&state, &input, .HOME, true, false)
+	testing.expect_value(t, input.keyboard.editor_home_pressed, true)
+	sdl_input_apply_key(&state, &input, .END, true, false)
+	testing.expect_value(t, input.keyboard.editor_end_pressed, true)
 }
 
 @(test)

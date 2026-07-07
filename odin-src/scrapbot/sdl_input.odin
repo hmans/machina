@@ -163,6 +163,14 @@ sdl_input_apply_key :: proc(state: ^Sdl_Input_State, input: ^Frame_Input, scanco
 		state.move_down = down
 	case .RETURN:
 		input.keyboard.editor_enter_pressed = down && !repeat
+	case .LEFT:
+		input.keyboard.editor_left_pressed = down
+	case .RIGHT:
+		input.keyboard.editor_right_pressed = down
+	case .HOME:
+		input.keyboard.editor_home_pressed = down
+	case .END:
+		input.keyboard.editor_end_pressed = down
 	case .BACKSPACE:
 		input.keyboard.editor_backspace_pressed = down && !repeat
 	case .DELETE:

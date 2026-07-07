@@ -39,6 +39,10 @@ Frame_Input_Keyboard :: struct {
 	move_down:             bool,
 	editor_toggle_pressed: bool,
 	editor_enter_pressed:  bool,
+	editor_left_pressed:   bool,
+	editor_right_pressed:  bool,
+	editor_home_pressed:   bool,
+	editor_end_pressed:    bool,
 	editor_backspace_pressed: bool,
 	editor_delete_pressed: bool,
 	editor_select_all_pressed: bool,
@@ -247,6 +251,34 @@ apply_editor_test_keyboard_edits :: proc(state: ^Editor_Test_Input_State, world:
 	consumed := false
 	if input.keyboard.editor_select_all_pressed {
 		select_all_editor_test_text_input(state)
+		consumed = true
+	}
+	if input.keyboard.editor_home_pressed {
+		editor_test_text_input_move_cursor(state, 0, input.keyboard.shift_down)
+		consumed = true
+	}
+	if input.keyboard.editor_end_pressed {
+		editor_test_text_input_move_cursor(state, state.text_input_len, input.keyboard.shift_down)
+		consumed = true
+	}
+	if input.keyboard.editor_left_pressed {
+		next_cursor := state.text_input_cursor
+		if !input.keyboard.shift_down && editor_test_text_input_has_selection(state^) {
+			next_cursor = min_int(state.text_input_cursor, state.text_input_selection_anchor)
+		} else {
+			next_cursor = max_int(state.text_input_cursor - 1, 0)
+		}
+		editor_test_text_input_move_cursor(state, next_cursor, input.keyboard.shift_down)
+		consumed = true
+	}
+	if input.keyboard.editor_right_pressed {
+		next_cursor := state.text_input_cursor
+		if !input.keyboard.shift_down && editor_test_text_input_has_selection(state^) {
+			next_cursor = max_int(state.text_input_cursor, state.text_input_selection_anchor)
+		} else {
+			next_cursor = min_int(state.text_input_cursor + 1, state.text_input_len)
+		}
+		editor_test_text_input_move_cursor(state, next_cursor, input.keyboard.shift_down)
 		consumed = true
 	}
 	if input.keyboard.editor_backspace_pressed {
@@ -466,6 +498,14 @@ editor_test_parse_input_value :: proc(current: Runtime_Component_Value, text: st
 select_all_editor_test_text_input :: proc(state: ^Editor_Test_Input_State) {
 	state.text_input_selection_anchor = 0
 	state.text_input_cursor = state.text_input_len
+}
+
+editor_test_text_input_move_cursor :: proc(state: ^Editor_Test_Input_State, cursor: int, select_range: bool) {
+	next := clamp_int(cursor, 0, state.text_input_len)
+	state.text_input_cursor = next
+	if !select_range {
+		state.text_input_selection_anchor = next
+	}
 }
 
 editor_test_text_input_backspace :: proc(state: ^Editor_Test_Input_State) {

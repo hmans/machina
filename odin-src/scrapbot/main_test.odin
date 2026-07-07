@@ -825,6 +825,105 @@ equals_float = 7.5
 }
 
 @(test)
+test_run_test_command_replays_editor_inspector_text_caret_selection :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-inspector-text-caret-selection")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Inspector Text Caret Selection Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local C0 = ecs.component("c0", {
+  fields = ecs.fields({
+    label = "string",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Inspector Text Caret Selection Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.c0]
+label = "alpha-beta"
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 8
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [900.0, 250.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 3
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_home_pressed = true
+
+[[input.frame]]
+frame = 4
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_right_pressed = true
+
+[[input.frame]]
+frame = 5
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_right_pressed = true
+
+[[input.frame]]
+frame = 6
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_left_pressed = true
+
+[[input.frame]]
+frame = 7
+editor_visible = true
+viewport = [1280.0, 720.0]
+shift_down = true
+editor_end_pressed = true
+
+[[input.frame]]
+frame = 8
+editor_visible = true
+viewport = [1280.0, 720.0]
+text_input = "mega"
+editor_enter_pressed = true
+
+[[expect.editor]]
+selected_entity = "target"
+selected_component = "c0"
+selected_field = "label"
+
+[[expect.field]]
+entity = "target"
+component = "c0"
+field = "label"
+equals_string = "amega"
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_run_test_command_replays_editor_inspector_vec3_lane_text_edit :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-test-editor-inspector-vec3-lane-text-edit")
 	defer os.remove_all(root)

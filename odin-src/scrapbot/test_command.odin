@@ -1013,6 +1013,34 @@ parse_test_manifest_input_key :: proc(input: ^Test_Manifest_Input_State, key, va
 		}
 		input.input.keyboard.editor_enter_pressed = parsed
 		return true
+	case "editor_left_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_left_pressed = parsed
+		return true
+	case "editor_right_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_right_pressed = parsed
+		return true
+	case "editor_home_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_home_pressed = parsed
+		return true
+	case "editor_end_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_end_pressed = parsed
+		return true
 	case "editor_backspace_pressed":
 		parsed, ok := parse_test_manifest_bool(value)
 		if !ok {
