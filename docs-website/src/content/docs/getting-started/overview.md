@@ -10,23 +10,23 @@ That goal shapes the whole stack:
 - Projects live in ordinary directories.
 - Project manifests and scenes are TOML files.
 - Gameplay scripts are Luau files.
-- Optional native hot paths live in project-local Zig modules.
+- Optional native hot paths live in project-local Odin modules.
 - The runtime stores entities and components in typed ECS storage.
 - Rendering, UI, and editor overlays use the same ECS runtime model as gameplay.
 - Headless commands validate, step, test, benchmark, and render projects without opening a window.
 
 ## Current Engine Shape
 
-Scrapbot is implemented in Zig and exposes one `scrapbot` CLI binary.
+Scrapbot is migrating from Zig to Odin and exposes one `scrapbot` CLI binary.
 
 The current runtime supports:
 
-- Project manifests with default scenes, script lists, and optional native Zig modules.
+- Project manifests with default scenes, script lists, and optional native Odin modules.
 - Text-authored scenes with entity records and component tables.
 - Luau component and system registration.
 - Typed Luau component handles and query objects.
-- Deferred entity lifecycle commands from Luau and Zig systems.
-- Project-local native Zig systems loaded during development.
+- Deferred entity lifecycle commands from Luau and native Odin systems.
+- Project-local native Odin systems loaded during development.
 - Scene-driven rendering through `wgpu-native`.
 - Built-in primitives, materials, cameras, directional lights, shadows, and batching.
 - Retained ECS UI primitives and an engine-owned editor/debug overlay.
@@ -96,5 +96,5 @@ This makes projects easier for humans, tools, and coding agents to inspect and c
 - New to Scrapbot: start with [Quickstart](/getting-started/quickstart/).
 - Want to understand the runtime: read [ECS Runtime](/concepts/ecs/).
 - Writing gameplay: read [Luau Systems](/scripting/luau/).
-- Working on performance: read [Queries and Views](/scripting/queries-and-views/) and [Project-Local Zig](/scripting/native-zig/).
+- Working on performance: read [Queries and Views](/scripting/queries-and-views/) and [Project-Local Odin](/scripting/native-odin/).
 - Verifying behavior: read [Testing and Verification](/workflow/testing/).

@@ -10,7 +10,7 @@ During `scrapbot run`, Scrapbot tracks:
 - Project metadata.
 - The active scene file.
 - Project-listed Luau script files.
-- The optional project-local native Zig source file.
+- The optional project-local native Odin source file.
 
 Valid edits swap into the running renderer. Invalid edits keep the last-known-good project and scene active.
 
@@ -21,7 +21,7 @@ Valid edits swap into the running renderer. Invalid edits keep the last-known-go
 | `project.toml` | Reloads project metadata and may switch default scene/scripts/native source. |
 | Scene TOML | Revalidates and swaps scene data on success. |
 | Luau scripts | Rebuilds script declarations and systems. |
-| Native Zig source | Rebuilds dynamic library, reloads registrations, rebuilds schedule, then validates scene. |
+| Native Odin source | Rebuilds dynamic library, reloads registrations, rebuilds schedule, then validates scene. |
 
 ## Last-Known-Good Behavior
 

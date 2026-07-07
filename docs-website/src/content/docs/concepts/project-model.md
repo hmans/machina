@@ -5,14 +5,14 @@ description: How Scrapbot projects, scenes, scripts, native modules, and generat
 
 A Scrapbot project is a directory with a `project.toml` manifest.
 
-The manifest names the project, points at the default scene, and may list scripts or declare one project-local native Zig module:
+The manifest names the project, points at the default scene, and may list scripts or declare one project-local native Odin module:
 
 ```toml
 name = "Showcase"
 version = 1
 default_scene = "scenes/main.scene.toml"
 scripts = ["scripts/gameplay.luau"]
-native = "native/game.zig"
+native = "native/game.odin"
 ```
 
 ## Directory Shape
@@ -29,7 +29,7 @@ project/
   scripts/
     gameplay.luau
   native/
-    game.zig
+    game.odin
 ```
 
 Only the manifest and scene are required. `assets/.gitkeep` preserves the conventional asset directory in newly initialized projects. Scripts and native modules are optional.
@@ -43,7 +43,7 @@ Scrapbot keeps core project state text-based:
 - Project manifests are TOML.
 - Scenes are TOML.
 - Gameplay scripts are Luau.
-- Native systems are Zig source files.
+- Native systems are Odin source files.
 - Generated caches live under `.scrapbot/` and should not be committed.
 
 Assets can still be binary. The text-first rule applies to authored project structure and runtime data, not to images, audio, or future imported assets.
@@ -90,5 +90,5 @@ Packaged projects may contain a generated `native_artifact` path in `project.tom
 That cache is an implementation detail of the development loop:
 
 - Do not commit generated `.scrapbot/` directories.
-- Keep native source in the project, usually `native/game.zig`.
+- Keep native source in the project, usually `native/game.odin`.
 - Future shipping builds are expected to statically link the same registration source on targets that cannot load dynamic code.

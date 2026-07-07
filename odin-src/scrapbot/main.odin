@@ -1167,7 +1167,7 @@ print_step_result :: proc(result: Project_Check_Result, options: Simulation_Opti
 		fmt.printf("Frames: %d/%d, dt: %g\n", completed_frames, options.frames, options.delta_seconds)
 		fmt.printf("Entities: %d, components: %d, renderable cubes: %d\n", result.scene.entity_count, result.scene.component_instance_count, result.scene.renderable_cube_count)
 		fmt.printf("Update batches: %d, systems: %d\n", runtime_system_schedule_batch_count(result.update_schedule), runtime_system_schedule_system_count(result.update_schedule))
-		fmt.println("Execution: Odin Luau systems")
+		fmt.println("Execution: Odin scheduled systems")
 	case .JSON:
 		fmt.print(`{"ok":true,"project":`)
 		fmt.print(`{"name":"`)
@@ -1183,7 +1183,7 @@ print_step_result :: proc(result: Project_Check_Result, options: Simulation_Opti
 		fmt.print(`}`)
 		fmt.print(`,"schedule":`)
 		print_schedule_summary_json(result)
-		fmt.println(`,"execution":"odin_luau_systems"}`)
+		fmt.println(`,"execution":"odin_scheduled_systems"}`)
 	}
 }
 
@@ -1204,7 +1204,7 @@ print_bench_result :: proc(result: Project_Check_Result, options: Simulation_Opt
 		fmt.printf("Update: %g ms total, %g ms/frame\n", update_ms, ms_per_frame)
 		fmt.printf("Entities: %d, components: %d, renderable cubes: %d\n", result.scene.entity_count, result.scene.component_instance_count, result.scene.renderable_cube_count)
 		fmt.printf("Update batches: %d, systems: %d\n", runtime_system_schedule_batch_count(result.update_schedule), runtime_system_schedule_system_count(result.update_schedule))
-		fmt.println("Execution: Odin Luau systems")
+		fmt.println("Execution: Odin scheduled systems")
 		print_render_extract_text(result)
 		fmt.printf("Renderer backend: %s\n", bench_renderer_backend_label())
 	case .JSON:
@@ -1224,7 +1224,7 @@ print_bench_result :: proc(result: Project_Check_Result, options: Simulation_Opt
 		print_schedule_summary_json(result)
 		fmt.print(`,"render_stats":`)
 		print_render_extract_json(result)
-		fmt.print(`,"execution":"odin_luau_systems","renderer_backend":"`)
+		fmt.print(`,"execution":"odin_scheduled_systems","renderer_backend":"`)
 		json_print(bench_renderer_backend_json_label(), false)
 		fmt.println(`"}`)
 	}

@@ -1,8 +1,8 @@
 # Native Motion
 
-This example uses a project-local Zig module at `native/game.zig`.
+This example uses a project-local Odin module at `native/game.odin`.
 
-- Zig registers the `motion` component.
+- Odin registers the `motion` component.
 - Luau registers the `boost` component.
 - The native `native_move` system reads both and writes `scrapbot.transform`.
 - Motion is computed from bounded sine/cosine curves, so the objects stay in frame while testing native hot reload.

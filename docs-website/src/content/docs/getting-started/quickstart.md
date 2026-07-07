@@ -168,4 +168,4 @@ The full suite includes Zig tests, project-shaped gameplay tests, a benchmark sm
 - `examples/showcase/`: text-authored renderables, scripted animation, camera, and lighting.
 - `examples/spawn_swarm/`: larger script-spawned scene with batching and editor profiling.
 - `examples/ui_gallery/`: retained ECS UI primitives and layout controls.
-- `examples/native_motion/`: project-local Zig native module.
+- `examples/native_motion/`: project-local Odin native module.

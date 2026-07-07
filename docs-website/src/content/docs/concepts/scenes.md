@@ -60,7 +60,7 @@ Scene component ids and fields must validate against the active component regist
 The registry includes:
 
 - Built-in engine components.
-- Components registered by the optional native Zig module.
+- Components registered by the optional native Odin module.
 - Components registered by Luau scripts.
 
 Run validation with:

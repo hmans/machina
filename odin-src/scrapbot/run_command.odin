@@ -324,7 +324,7 @@ print_run_result :: proc(
 	}
 	print_render_extract_text(result)
 	if options.max_frames > 0 || window_result.window_opened {
-		fmt.println("Execution: Odin Luau systems")
+		fmt.println("Execution: Odin scheduled systems")
 	} else {
 		fmt.println("Execution: pending unbounded Odin window loop")
 	}

@@ -88,7 +88,7 @@ Structural mutations are intentionally staged:
 - Queued commands flush only after the active system returns successfully.
 - Same-callback queries should not expect queued component changes to be visible.
 
-This rule applies to both Luau systems and native Zig systems.
+This rule applies to both Luau systems and native Odin systems.
 
 ## Engine Internals Use the Same ECS
 

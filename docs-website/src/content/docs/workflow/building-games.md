@@ -89,7 +89,7 @@ The launcher prepends the bundle's `lib` and `bin` directories to `PATH` before 
 
 The generated `native_artifact` manifest path uses forward slashes because it is project metadata, not a Windows filesystem path.
 
-## Native Zig Projects
+## Native Odin Projects
 
 Projects with `native = "..."` are built into a packaged dynamic library artifact during `scrapbot build`.
 

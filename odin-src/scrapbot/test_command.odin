@@ -1971,7 +1971,7 @@ print_test_command_result :: proc(result: Test_Command_Result, format: Check_Out
 		} else {
 			fmt.print(`false`)
 		}
-		fmt.print(`,"execution":"odin_luau_systems","tests":[`)
+		fmt.print(`,"execution":"odin_scheduled_systems","tests":[`)
 		for case_result, index in result.cases {
 			if index > 0 {
 				fmt.print(`,`)

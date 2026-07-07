@@ -168,7 +168,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [ ] Luau type definitions
   - [ ] Editor scripting
 - Native
-  - [x] Native Zig modules
+  - [x] Migration-era Native Zig module compatibility
   - [x] Native Odin component/system declaration scanning
   - [x] Native Odin pending-execution diagnostics
   - [x] Native Odin set-field execution slice
@@ -180,8 +180,8 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Native Odin development source build/load slice
   - [x] Native Odin module execution
   - [x] Native Odin live reload transaction slice
+  - [x] Native Odin example fixtures
   - [x] Native hot reload
-  - [ ] Native extension examples
   - [ ] Static native packaging
 - Developer Experience
   - [x] Script/native diagnostics

@@ -44,8 +44,9 @@
 - [x] Odin offscreen render artifacts can include first-pass software editor chrome pixels for `--editor` and selected-entity overlays.
 - [x] Odin `check` can statically register project-local native Odin component and system declarations from `native = "native/game.odin"`.
 - [x] Odin runtime reports a structured runtime diagnostic when scheduled Odin-native systems reach the pending execution boundary.
+- [x] `examples/native_motion/`, `tests/projects/native_motion/`, and `tests/projects/native_lifecycle/` now use project-local Odin native modules.
 - [x] Shared ECS runtime with generation-aware entities, component tables, system schedules, and script/native access.
-- [x] Live reload for project metadata, scenes, scripts, and project-local native Zig modules.
+- [x] Live reload for project metadata, scenes, scripts, and project-local native modules.
 - [x] WebGPU renderer with headful SDL windows, offscreen render verification, batching, shadows, and postprocess settings.
 - [x] Built-in primitive geometry, surface materials, camera, light, and shadow components.
 - [x] Engine-owned ECS UI primitives, editor shell, playback controls, system profiler, entity picking, translate gizmo, and component inspector.
@@ -164,7 +165,7 @@
 - [x] Add visible editor chrome controls to add and remove components on the selected entity.
 - [x] Add first-pass editor spawn and despawn replay/SDL controls.
 - [x] Add visible editor chrome controls to spawn and despawn entities.
-- [ ] Persist inspector edits back to text scene files.
+- [x] Persist first-pass inspector field edits back to text scene files.
 - [x] Add first-pass validation diagnostics for failed inspector edits.
 - [x] Add first-pass inspector text copy, paste, selected-header copy, and clipboard support.
 - [x] Add visual tests for inspector editing widgets.
@@ -216,7 +217,7 @@
 - [ ] Add Luau type definitions for new editor and UI APIs.
 - [ ] Add richer script reload diagnostics in the editor UI.
 - [ ] Add static-link packaging for project-native modules after the Odin native-module contract is designed.
-- [ ] Add project-native examples for custom components and systems.
+- [x] Add project-native Odin examples for custom components and systems.
 - [ ] Add native API helpers for additional field types.
 - [ ] Decide how script and native package namespaces are distributed.
 - [ ] Document Luau performance guidance with measured examples.
@@ -253,7 +254,7 @@
 - [ ] Add headful smoke coverage for editor selection and gizmo paths.
 - [ ] Add screenshot assertions for editor layout regressions.
 - [ ] Add benchmark thresholds or trend reporting.
-- [ ] Add tests for scene edit persistence once implemented.
+- [x] Add tests for first-pass scene edit persistence.
 - [ ] Add fuzz-style tests for component reflection and field parsing.
 - [ ] Add fixture coverage for invalid native extension reloads.
 - [ ] Add docs checks to the default validation workflow.
