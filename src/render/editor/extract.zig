@@ -369,7 +369,7 @@ pub fn extractDebugOverlayInto(
     scene_world: *const runtime.World,
 ) RenderError!void {
     try extractEditorShellInto(allocator, world, input);
-    try extractEditorTopBarInto(allocator, world, input);
+    try extractEditorTopBarInto(world, input);
     try extractEditorBottomBarInto(allocator, world, input);
 
     const has_profiles = input.system_profiles.len > 0;
@@ -392,8 +392,8 @@ pub fn extractDebugOverlayInto(
         return;
     }
 
-    const header_text = formatSystemProfileHeader(allocator, input.system_profiles) catch return RenderError.OutOfMemory;
-    defer allocator.free(header_text);
+    var header_text_buffer: [32]u8 = undefined;
+    const header_text = formatSystemProfileHeader(&header_text_buffer, input.system_profiles);
     const header = world.createEngineTransientEntity("scrapbot.editor.debug.systems.header", "Editor Debug Systems Header") catch |err| return mapWorldError(err);
     world.setUiText(header, .{
         .position = editorPanelTextPosition(panel, editorSystemHeaderY(input) - panel.y),
@@ -430,8 +430,8 @@ pub fn extractDebugOverlayInto(
 
     for (input.system_profiles, 0..) |profile, profile_index| {
         const row_y = editor_system_card_padding_y + @as(f32, @floatFromInt(profile_index)) * editor_system_row_stride;
-        const duration_text = formatSystemProfileDuration(allocator, profile) catch return RenderError.OutOfMemory;
-        defer allocator.free(duration_text);
+        var duration_text_buffer: [16]u8 = undefined;
+        const duration_text = formatSystemProfileDuration(&duration_text_buffer, profile);
         const duration_width = editorTextWidth(duration_text, editor_system_text_size);
         const duration_x = @max(row_width - editor_system_row_duration_padding_x - duration_width, editor_system_row_label_padding_x);
         const label_max_width = @max(duration_x - editor_system_row_label_padding_x - editor_system_field_column_gap, 1.0);
@@ -460,7 +460,7 @@ pub fn extractDebugOverlayInto(
     try extractEditorComponentInspectorInto(allocator, world, scene_world, input);
 }
 
-pub fn extractEditorTopBarInto(allocator: std.mem.Allocator, world: *runtime.World, input: FrameInput) RenderError!void {
+pub fn extractEditorTopBarInto(world: *runtime.World, input: FrameInput) RenderError!void {
     const top = editorTopBarRect(input);
     const title = world.createEngineTransientEntity("scrapbot.editor.top.title", "Editor Top Title") catch |err| return mapWorldError(err);
     world.setUiText(title, .{
@@ -470,8 +470,8 @@ pub fn extractEditorTopBarInto(allocator: std.mem.Allocator, world: *runtime.Wor
         .value = "SCRAPBOT",
     }) catch |err| return mapWorldError(err);
 
-    const fps_text = formatFpsLabel(allocator, input.fps) catch return RenderError.OutOfMemory;
-    defer allocator.free(fps_text);
+    var fps_text_buffer: [16]u8 = undefined;
+    const fps_text = formatFpsLabel(&fps_text_buffer, input.fps);
     const fps = world.createEngineTransientEntity("scrapbot.editor.debug.fps", "Editor Debug FPS") catch |err| return mapWorldError(err);
     world.setUiText(fps, .{
         .position = .{ editor_top_fps_x, top.y + editor_bar_text_offset_y, 0.0 },

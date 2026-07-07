@@ -1145,6 +1145,7 @@ pub const World = struct {
     transient_clear_new_index_by_old: std.ArrayList(?u32) = .empty,
     transient_clear_keep_rows: std.ArrayList(bool) = .empty,
     silent_structural_generation: u64 = 1,
+    engine_transient_mark: u64 = 1,
     query_plan_generation: u64 = 1,
     revision: u64 = 1,
     next_entity_generation: u32 = 1,
@@ -1214,6 +1215,28 @@ pub const World = struct {
         self.structural_events.clearRetainingCapacity();
     }
 
+    pub fn beginEngineTransientFrame(self: *World) void {
+        self.engine_transient_mark +%= 1;
+        if (self.engine_transient_mark == 0) {
+            self.engine_transient_mark = 1;
+        }
+    }
+
+    pub fn clearUnusedEngineTransientEntities(self: *World) WorldError!void {
+        var index: usize = 0;
+        while (index < self.entities.items.len) {
+            const stored_entity = self.entities.items[index];
+            if (stored_entity.provenance == .engine_transient and stored_entity.engine_transient_mark != self.engine_transient_mark) {
+                _ = try self.removeEntity(.{
+                    .index = @intCast(index),
+                    .generation = stored_entity.generation,
+                });
+                continue;
+            }
+            index += 1;
+        }
+    }
+
     pub fn createEntity(self: *World, id: []const u8, name: []const u8) !EntityHandle {
         return self.createEntityWithOptions(id, name, .{});
     }
@@ -1223,6 +1246,14 @@ pub const World = struct {
     }
 
     pub fn createEngineTransientEntity(self: *World, id: []const u8, name: []const u8) !EntityHandle {
+        if (self.findEntityById(id)) |existing| {
+            const index = try self.componentIndex(existing);
+            if (self.entities.items[index].provenance != .engine_transient) {
+                return WorldError.DuplicateEntityId;
+            }
+            self.entities.items[index].engine_transient_mark = self.engine_transient_mark;
+            return existing;
+        }
         return self.createEntityWithOptions(id, name, .{
             .provenance = .engine_transient,
             .emit_structural_events = false,
@@ -1252,6 +1283,7 @@ pub const World = struct {
             .name = owned_name,
             .generation = generation,
             .provenance = options.provenance,
+            .engine_transient_mark = if (options.provenance == .engine_transient) self.engine_transient_mark else 0,
         });
         errdefer _ = self.entities.pop();
 
@@ -1701,13 +1733,15 @@ pub const World = struct {
         const emit_structural_event = emit_requested and self.entities.items[index].provenance != .engine_transient;
         const table_index = try self.ensureComponentTable(component_id, fields);
         const table = &self.component_tables.items[table_index];
+        var changed = false;
         if (table.rows_by_entity.items[index]) |row| {
-            try self.updateComponentRow(table, row, fields);
+            changed = try self.updateComponentRow(table, row, fields);
         } else {
             if (emit_structural_event) {
                 try self.reserveStructuralEvents(1);
             }
             try self.appendComponentRow(table, handle, index, fields);
+            changed = true;
             if (emit_structural_event) {
                 self.appendStructuralEventAssumeCapacity(.{
                     .kind = .component_added,
@@ -1718,7 +1752,9 @@ pub const World = struct {
                 self.bumpSilentStructuralGeneration();
             }
         }
-        self.bumpRevision();
+        if (changed) {
+            self.bumpRevision();
+        }
     }
 
     pub fn removeComponent(self: *World, handle: EntityHandle, component_id: []const u8) WorldError!bool {
@@ -2415,6 +2451,9 @@ pub const World = struct {
         }
         const row = table.rows_by_entity.items[index] orelse return WorldError.UnknownComponent;
         const column = findMutableColumn(table, field_name) orelse return WorldError.UnknownField;
+        if (componentValuesEqual(column.values.valueAt(row), value)) {
+            return;
+        }
         try column.values.setCopy(self.allocator, row, value);
         table.bumpMutationGeneration();
         self.bumpRevision();
@@ -2425,6 +2464,9 @@ pub const World = struct {
         const table = try self.mutableComponentTableAt(resolved.table_index);
         const row = resolvedRowForEntity(table.*, .{ .index = @intCast(index) }, resolved.row_index) orelse return WorldError.UnknownComponent;
         const column = findMutableColumn(table, field_name) orelse return WorldError.UnknownField;
+        if (componentValuesEqual(column.values.valueAt(row), value)) {
+            return;
+        }
         try column.values.setCopy(self.allocator, row, value);
         table.bumpMutationGeneration();
         self.bumpRevision();
@@ -2556,15 +2598,48 @@ pub const World = struct {
         table.bumpMutationGeneration();
     }
 
-    fn updateComponentRow(self: *World, table: *ComponentTable, row: usize, fields: []const ComponentFieldValue) WorldError!void {
+    fn updateComponentRow(self: *World, table: *ComponentTable, row: usize, fields: []const ComponentFieldValue) WorldError!bool {
         try validateComponentTableFields(table.*, fields);
+        var changed = false;
         for (table.columns) |*column| {
             const field = findFieldValue(fields, column.name) orelse return WorldError.UnknownField;
+            if (componentValuesEqual(column.values.valueAt(row), field.value)) {
+                continue;
+            }
             try column.values.setCopy(self.allocator, row, field.value);
+            changed = true;
         }
-        table.bumpMutationGeneration();
+        if (changed) {
+            table.bumpMutationGeneration();
+        }
+        return changed;
     }
 };
+
+fn componentValuesEqual(left: ComponentValue, right: ComponentValue) bool {
+    return switch (left) {
+        .boolean => |value| switch (right) {
+            .boolean => |other| value == other,
+            else => false,
+        },
+        .int => |value| switch (right) {
+            .int => |other| value == other,
+            else => false,
+        },
+        .float => |value| switch (right) {
+            .float => |other| value == other,
+            else => false,
+        },
+        .vec3 => |value| switch (right) {
+            .vec3 => |other| value[0] == other[0] and value[1] == other[1] and value[2] == other[2],
+            else => false,
+        },
+        .string => |value| switch (right) {
+            .string => |other| std.mem.eql(u8, value, other),
+            else => false,
+        },
+    };
+}
 
 fn findFieldValue(fields: []const ComponentFieldValue, field_name: []const u8) ?ComponentFieldValue {
     for (fields) |field| {

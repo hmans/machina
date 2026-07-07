@@ -249,7 +249,7 @@ pub const RenderEcsState = struct {
         self.world = scene.world;
         self.scratch_renderables.clearRetainingCapacity();
         self.ui_draw_queued = false;
-        try self.clearFrameState(scene.world);
+        try self.beginFrameState(scene.world);
         errdefer self.clearFrameState(scene.world) catch {};
 
         setRenderFrameInput(scene.world, input) catch |err| {
@@ -281,10 +281,23 @@ pub const RenderEcsState = struct {
         }
 
         std.mem.swap(std.ArrayList(runtime.RenderableMesh), &self.extracted_renderables, &self.scratch_renderables);
+        try self.finishFrameState(scene.world);
     }
 
     pub fn extractedRenderableMeshes(self: *const RenderEcsState) []const runtime.RenderableMesh {
         return self.extracted_renderables.items;
+    }
+
+    pub fn beginFrameState(self: *RenderEcsState, world: *runtime.World) RenderError!void {
+        _ = self;
+        world.beginEngineTransientFrame();
+        world.removeAllComponentsSilently(render_draw_batch_component_id) catch |err| return mapWorldError(err);
+        world.removeAllComponentsSilently(render_draw_ui_component_id) catch |err| return mapWorldError(err);
+    }
+
+    pub fn finishFrameState(self: *RenderEcsState, world: *runtime.World) RenderError!void {
+        _ = self;
+        world.clearUnusedEngineTransientEntities() catch |err| return mapWorldError(err);
     }
 
     pub fn clearFrameState(self: *RenderEcsState, world: *runtime.World) RenderError!void {

@@ -50,7 +50,7 @@ pub const UiProgressBar = struct {
 };
 
 pub fn writeFrameInput(world: *runtime.World, input: FrameInput) runtime.WorldError!void {
-    const entity = world.findEntityById(runtime.input_entity_id) orelse try world.createEngineTransientEntity(runtime.input_entity_id, "Input Frame");
+    const entity = try world.createEngineTransientEntity(runtime.input_entity_id, "Input Frame");
     try world.setInputPointer(entity, .{
         .position = .{ input.pointer.position[0], input.pointer.position[1], 0.0 },
         .delta = .{ input.pointer.delta[0], input.pointer.delta[1], 0.0 },

@@ -181,6 +181,37 @@ test "engine transient mutations do not write structural events" {
     try std.testing.expectError(WorldError.InvalidEntity, world.entity(transient));
 }
 
+test "engine transient entities upsert and sweep by retained frame mark" {
+    var world = World.init(std.testing.allocator);
+    defer world.deinit();
+
+    world.beginEngineTransientFrame();
+    const first = try world.createEngineTransientEntity("retained", "Retained");
+    try world.setUiRect(first, .{ .position = .{ 1.0, 0.0, 0.0 } });
+    const second = try world.createEngineTransientEntity("retained", "Retained Again");
+    try std.testing.expectEqual(first, second);
+    try std.testing.expectEqual(@as(usize, 1), world.entityCount());
+    try std.testing.expectEqual(@as(usize, 1), world.componentInstanceCountFor(ui_rect_component_id));
+    try world.clearUnusedEngineTransientEntities();
+    try std.testing.expect(world.findEntityById("retained") != null);
+
+    world.beginEngineTransientFrame();
+    const retained = try world.createEngineTransientEntity("retained", "Retained");
+    try std.testing.expectEqual(first.index, retained.index);
+    const stale = try world.createEngineTransientEntity("stale", "Stale");
+    try world.setUiText(stale, .{ .value = "stale" });
+    try world.clearUnusedEngineTransientEntities();
+    try std.testing.expect(world.findEntityById("retained") != null);
+    try std.testing.expect(world.findEntityById("stale") != null);
+
+    world.beginEngineTransientFrame();
+    _ = try world.createEngineTransientEntity("retained", "Retained");
+    try world.clearUnusedEngineTransientEntities();
+    try std.testing.expect(world.findEntityById("retained") != null);
+    try std.testing.expect(world.findEntityById("stale") == null);
+    try std.testing.expectEqual(@as(usize, 0), world.componentInstanceCountFor(ui_text_component_id));
+}
+
 test "world exposes component field names for inspection" {
     var world = World.init(std.testing.allocator);
     defer world.deinit();
@@ -212,6 +243,8 @@ test "component mutation generation tracks table row and field changes" {
     try world.setUiRect(panel, .{ .position = .{ 1.0, 0.0, 0.0 } });
     const after_add = world.componentMutationGeneration(ui_rect_component_id);
     try std.testing.expect(after_add != 0);
+    try world.setUiRect(panel, .{ .position = .{ 1.0, 0.0, 0.0 } });
+    try std.testing.expectEqual(after_add, world.componentMutationGeneration(ui_rect_component_id));
 
     const input = try world.createEngineTransientEntity(input_entity_id, "Input Frame");
     try world.setInputFrame(input, .{ .viewport = .{ 640.0, 480.0, 0.0 } });

@@ -1,7 +1,7 @@
 # FDR-009: Entity Component Runtime
 
 **Status:** Active
-**Last reviewed:** 2026-07-06
+**Last reviewed:** 2026-07-07
 
 ## Overview
 
@@ -74,7 +74,7 @@ The entity component runtime is the shared low-level model for game state. It gi
 
 ### 6. Keep scene render data in the authoritative world
 
-**Decision:** Engine subsystems may create separate worlds for isolated non-scene data, but render-facing scene data and frame-local editor/UI overlay entities live in the project world. Overlay entities use engine-transient provenance and are cleared after render submission.
+**Decision:** Engine subsystems may create separate worlds for isolated non-scene data, but render-facing scene data and frame-local editor/UI overlay entities live in the project world. Overlay entities use engine-transient provenance, are reused by stable id across frames, and are swept when an extraction no longer touches them.
 **Why:** The scene world should be the single authority for authored, runtime-spawned, and frame-local render-facing entities. This follows ADR-022 while preserving ADR-013's rule that any internal worlds use the shared runtime implementation.
 **Tradeoff:** Native/backend-only values still need an explicit storage design before they can live fully inside ECS.
 

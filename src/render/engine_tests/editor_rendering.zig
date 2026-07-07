@@ -70,6 +70,7 @@ const resolveUiTextPosition = render_ui.resolveUiTextPosition;
 const routeEditorSplitterAt = render.routeEditorSplitterAt;
 const setRenderUiButtonState = render_ui.setRenderUiButtonState;
 const buildUiVertices = render_ui.buildUiVertices;
+const UiVertexCache = render_ui.UiVertexCache;
 const setRenderUiClip = render_ui.setRenderUiClip;
 const screenToClipY = render_ui.screenToClipY;
 const uiLayoutItemSize = render_ui.uiLayoutItemSize;
@@ -1319,6 +1320,36 @@ test "editor profile input combines project and engine system rows" {
     try std.testing.expectEqualStrings("game.update", combined[0].id);
     try std.testing.expectEqualStrings(render_extract_system_id, combined[1].id);
     try std.testing.expectEqual(runtime.SystemPhase.render, combined[1].phase);
+}
+
+test "stable editor extraction retains UI entities and lets prepare UI skip rebuilds" {
+    var scene_world = runtime.World.init(std.testing.allocator);
+    defer scene_world.deinit();
+
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+    const input = FrameInput{
+        .ui_visible = false,
+        .debug_overlay_visible = true,
+        .fps = 60.0,
+        .viewport_width = 1280.0,
+        .viewport_height = 720.0,
+    };
+
+    try state.extractSceneWithInput(.{ .world = &scene_world }, input);
+    const first_entity_count = state.world.entityCount();
+    const first_text_generation = state.world.componentMutationGeneration(runtime.ui_text_component_id);
+    const first_rect_generation = state.world.componentMutationGeneration(runtime.ui_rect_component_id);
+
+    var cache = try UiVertexCache.init(std.testing.allocator);
+    defer cache.deinit();
+    try std.testing.expect(try cache.refresh(state.world, 1280, 720));
+
+    try state.extractSceneWithInput(.{ .world = &scene_world }, input);
+    try std.testing.expectEqual(first_entity_count, state.world.entityCount());
+    try std.testing.expectEqual(first_text_generation, state.world.componentMutationGeneration(runtime.ui_text_component_id));
+    try std.testing.expectEqual(first_rect_generation, state.world.componentMutationGeneration(runtime.ui_rect_component_id));
+    try std.testing.expect(!try cache.refresh(state.world, 1280, 720));
 }
 
 test "editor profile display snapshots are copied and throttled" {
