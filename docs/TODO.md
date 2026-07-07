@@ -34,6 +34,7 @@
 - [x] Odin WebGPU render and run surfaces can draw first-pass editor chrome overlays for `--editor`.
 - [x] Odin `run` can drive bounded and unbounded visible software runs through an SDL event loop and the shared live-project frame tick.
 - [x] Odin visible software window-loop reloads emit live reload diagnostics while suppressing duplicate final-summary events.
+- [x] Odin visible software runs can present software-rendered scene and first-pass editor chrome pixels through an SDL texture.
 - [x] Odin render extraction can count renderables, batches, cameras, lights, and UI draw primitives.
 - [x] Odin `render` and `render-test` can validate projects, run bounded frame simulation, check selected entities, and report pending backend render stats.
 - [x] Odin `visual-test` can validate projects, expected/actual paths, selected entities, bounded frame simulation, golden update, image comparison, tolerance checks, and metadata sidecars against first-pass software render artifacts.

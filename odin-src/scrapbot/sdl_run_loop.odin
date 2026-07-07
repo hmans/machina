@@ -1,10 +1,18 @@
 package main
 
+import "core:c"
 import sdl3 "vendor:sdl3"
 
 SDL_RUN_LOOP_FIXED_DELTA_SECONDS :: f32(1.0 / 60.0)
 SDL_RUN_LOOP_MAX_DELTA_SECONDS :: f32(0.1)
 SDL_RUN_LOOP_IDLE_DELAY_MS :: sdl3.Uint32(1)
+SDL_SOFTWARE_RENDERER_CREATE_ERROR :: "SDL renderer creation failed"
+SDL_SOFTWARE_TEXTURE_CREATE_ERROR :: "SDL texture creation failed"
+SDL_SOFTWARE_TEXTURE_UPDATE_ERROR :: "SDL texture update failed"
+SDL_SOFTWARE_RENDER_CLEAR_ERROR :: "SDL render clear failed"
+SDL_SOFTWARE_RENDER_TEXTURE_ERROR :: "SDL render texture failed"
+SDL_SOFTWARE_RENDER_PRESENT_ERROR :: "SDL render present failed"
+SDL_SOFTWARE_INVALID_SIZE_ERROR :: "SDL window has invalid pixel size"
 
 Sdl_Run_Loop_Result :: struct {
 	completed_frames:          int,
@@ -19,6 +27,13 @@ Sdl_Run_Loop_Result :: struct {
 	surface_width:             int,
 	surface_height:            int,
 	renderable_count:          int,
+}
+
+Sdl_Software_Presenter :: struct {
+	renderer: ^sdl3.Renderer,
+	texture: ^sdl3.Texture,
+	width:    int,
+	height:   int,
 }
 
 sdl_run_loop_event_requests_quit :: proc(event: sdl3.Event) -> bool {
@@ -53,10 +68,78 @@ sdl_run_loop_delta_seconds :: proc(previous_ticks_ns, current_ticks_ns: sdl3.Uin
 	return delta
 }
 
+sdl_software_presenter_init :: proc(window: ^sdl3.Window) -> (Sdl_Software_Presenter, string, bool) {
+	renderer := sdl3.CreateRenderer(window, cstring(nil))
+	if renderer == nil {
+		return Sdl_Software_Presenter{}, SDL_SOFTWARE_RENDERER_CREATE_ERROR, false
+	}
+	return Sdl_Software_Presenter{renderer = renderer}, "", true
+}
+
+sdl_software_presenter_deinit :: proc(presenter: ^Sdl_Software_Presenter) {
+	if presenter.texture != nil {
+		sdl3.DestroyTexture(presenter.texture)
+	}
+	if presenter.renderer != nil {
+		sdl3.DestroyRenderer(presenter.renderer)
+	}
+	presenter^ = Sdl_Software_Presenter{}
+}
+
+sdl_software_presenter_ensure_texture :: proc(presenter: ^Sdl_Software_Presenter, width, height: int) -> (string, bool) {
+	if presenter.texture != nil && presenter.width == width && presenter.height == height {
+		return "", true
+	}
+	if presenter.texture != nil {
+		sdl3.DestroyTexture(presenter.texture)
+		presenter.texture = nil
+	}
+	texture := sdl3.CreateTexture(
+		presenter.renderer,
+		.RGB24,
+		.STREAMING,
+		c.int(width),
+		c.int(height),
+	)
+	if texture == nil {
+		presenter.width = 0
+		presenter.height = 0
+		return SDL_SOFTWARE_TEXTURE_CREATE_ERROR, false
+	}
+	presenter.texture = texture
+	presenter.width = width
+	presenter.height = height
+	return "", true
+}
+
+sdl_software_present_image :: proc(presenter: ^Sdl_Software_Presenter, image: Render_Image) -> (string, bool) {
+	if image.width <= 0 || image.height <= 0 || len(image.rgb) < image.width * image.height * 3 {
+		return SDL_SOFTWARE_TEXTURE_UPDATE_ERROR, false
+	}
+	texture_error, texture_ok := sdl_software_presenter_ensure_texture(presenter, image.width, image.height)
+	if !texture_ok {
+		return texture_error, false
+	}
+	if !sdl3.UpdateTexture(presenter.texture, nil, raw_data(image.rgb), c.int(image.width * 3)) {
+		return SDL_SOFTWARE_TEXTURE_UPDATE_ERROR, false
+	}
+	if !sdl3.RenderClear(presenter.renderer) {
+		return SDL_SOFTWARE_RENDER_CLEAR_ERROR, false
+	}
+	if !sdl3.RenderTexture(presenter.renderer, presenter.texture, nil, nil) {
+		return SDL_SOFTWARE_RENDER_TEXTURE_ERROR, false
+	}
+	if !sdl3.RenderPresent(presenter.renderer) {
+		return SDL_SOFTWARE_RENDER_PRESENT_ERROR, false
+	}
+	return "", true
+}
+
 sdl_run_live_project_loop :: proc(
 	project: ^Live_Project,
 	max_frames: int,
 	hidden: bool,
+	editor: bool,
 	emit_live_reload_output: bool,
 	report: ^Live_Project_Run_Report,
 ) -> (Sdl_Run_Loop_Result, Simulation_Run_Result, string, bool) {
@@ -76,6 +159,12 @@ sdl_run_live_project_loop :: proc(
 	if size_err != .None {
 		return Sdl_Run_Loop_Result{}, Simulation_Run_Result{}, sdl_window_error_message(size_err), false
 	}
+
+	presenter, presenter_error, presenter_ok := sdl_software_presenter_init(window.window)
+	if !presenter_ok {
+		return Sdl_Run_Loop_Result{}, Simulation_Run_Result{}, presenter_error, false
+	}
+	defer sdl_software_presenter_deinit(&presenter)
 
 	result := Sdl_Run_Loop_Result{
 		window_opened = true,
@@ -104,6 +193,47 @@ sdl_run_live_project_loop :: proc(
 		if emit_live_reload_output && report != nil {
 			result.live_reload_events_printed = print_run_reload_events_since(report^, result.live_reload_events_printed)
 		}
+
+		size, size_err = sdl_window_get_size(window.window)
+		if size_err != .None {
+			result.completed_frames = completed_frames
+			return result, Simulation_Run_Result{}, sdl_window_error_message(size_err), false
+		}
+		result.window_width = size.width
+		result.window_height = size.height
+		result.pixel_width = size.pixel_width
+		result.pixel_height = size.pixel_height
+		if size.pixel_width <= 0 || size.pixel_height <= 0 {
+			result.completed_frames = completed_frames
+			return result, Simulation_Run_Result{}, SDL_SOFTWARE_INVALID_SIZE_ERROR, false
+		}
+
+		image, image_ok := render_image_from_scene(project.check.scene.world, Render_Options{
+			target_path = project.check.project.default_scene,
+			width = size.pixel_width,
+			height = size.pixel_height,
+			pixel_scale = DEFAULT_RENDER_PIXEL_SCALE,
+			editor = editor,
+			backend = .Software,
+		})
+		if !image_ok {
+			result.completed_frames = completed_frames
+			return result, Simulation_Run_Result{}, render_image_error_message(.Out_Of_Memory), false
+		}
+		present_error, present_ok := sdl_software_present_image(&presenter, image)
+		render_image_free(&image)
+		if !present_ok {
+			result.completed_frames = completed_frames
+			return result, Simulation_Run_Result{}, present_error, false
+		}
+		result.presented = true
+		result.surface_width = size.pixel_width
+		result.surface_height = size.pixel_height
+		extract, extract_err := render_extract_scene(project.check.scene.world)
+		if extract_err == .None {
+			result.renderable_count = extract.renderables + extract.ui_rects + extract.ui_texts
+		}
+
 		if max_frames == 0 {
 			sdl3.Delay(SDL_RUN_LOOP_IDLE_DELAY_MS)
 		}

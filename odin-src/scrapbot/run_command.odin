@@ -289,6 +289,8 @@ print_run_result :: proc(
 	} else if window_result.window_opened {
 		if options.backend == .WebGPU && window_result.presented {
 			fmt.printf("Window: visible SDL WebGPU loop %dx%d (%dx%d pixels)\n", window_result.window_width, window_result.window_height, window_result.pixel_width, window_result.pixel_height)
+		} else if options.backend == .Software && window_result.presented {
+			fmt.printf("Window: visible SDL software loop %dx%d (%dx%d pixels)\n", window_result.window_width, window_result.window_height, window_result.pixel_width, window_result.pixel_height)
 		} else {
 			fmt.printf("Window: visible SDL loop %dx%d (%dx%d pixels), presentation pending\n", window_result.window_width, window_result.window_height, window_result.pixel_width, window_result.pixel_height)
 		}
@@ -296,8 +298,12 @@ print_run_result :: proc(
 		fmt.println("Window: visible presentation pending Odin renderer")
 	}
 	if options.editor {
-		if options.backend == .WebGPU && render_result.presented {
-			fmt.println("Editor: first-pass WebGPU chrome overlay")
+		if render_result.presented {
+			if options.backend == .WebGPU {
+				fmt.println("Editor: first-pass WebGPU chrome overlay")
+			} else {
+				fmt.println("Editor: first-pass software chrome overlay")
+			}
 		} else {
 			fmt.println("Editor: requested, pending Odin editor shell")
 		}
