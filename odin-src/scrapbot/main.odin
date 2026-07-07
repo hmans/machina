@@ -232,6 +232,7 @@ run_wgpu_surface_check :: proc(args: []string, emit_output: bool) -> int {
 	defer delete(path)
 
 	loaded, missing, loaded_ok := wgpu_load_offscreen_library(path)
+	defer wgpu_unload_offscreen_library(&loaded)
 	if !loaded_ok {
 		if emit_output {
 			fmt.eprintf("wgpu-native library failed to load: %s\n", missing)
@@ -239,8 +240,6 @@ run_wgpu_surface_check :: proc(args: []string, emit_output: bool) -> int {
 		}
 		return 1
 	}
-	// Keep the backend library resident after presenting a native surface; some
-	// Linux WebGPU/Xlib stacks retain process-lifetime shutdown hooks.
 
 	init_err := sdl_video_init()
 	if init_err != .None {
@@ -249,10 +248,7 @@ run_wgpu_surface_check :: proc(args: []string, emit_output: bool) -> int {
 		}
 		return 1
 	}
-	// Linux/Xlib WebGPU surfaces can crash during SDL teardown under Xvfb.
-	when ODIN_OS != .Linux {
-		defer sdl_video_quit()
-	}
+	defer sdl_video_quit()
 
 	window, window_err := sdl_window_create(sdl_window_default_options(hidden))
 	if window_err != .None {
@@ -261,9 +257,7 @@ run_wgpu_surface_check :: proc(args: []string, emit_output: bool) -> int {
 		}
 		return 1
 	}
-	when ODIN_OS != .Linux {
-		defer sdl_window_destroy(&window)
-	}
+	defer sdl_window_destroy(&window)
 
 	size, size_err := sdl_window_get_size(window.window)
 	if size_err != .None {
