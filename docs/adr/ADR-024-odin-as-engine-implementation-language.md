@@ -1,4 +1,4 @@
-# ADR-023: Odin as the Engine Implementation Language
+# ADR-024: Odin as the Engine Implementation Language
 
 **Date:** 2026-07-06
 
