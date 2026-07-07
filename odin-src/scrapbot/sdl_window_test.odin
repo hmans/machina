@@ -30,6 +30,21 @@ test_sdl_run_loop_event_requests_quit_for_process_and_window_close :: proc(t: ^t
 }
 
 @(test)
+test_sdl_run_loop_frame_limit_only_stops_bounded_runs :: proc(t: ^testing.T) {
+	testing.expect_value(t, sdl_run_loop_frame_limit_reached(0, 0), false)
+	testing.expect_value(t, sdl_run_loop_frame_limit_reached(100, 0), false)
+	testing.expect_value(t, sdl_run_loop_frame_limit_reached(1, 2), false)
+	testing.expect_value(t, sdl_run_loop_frame_limit_reached(2, 2), true)
+}
+
+@(test)
+test_sdl_run_loop_delta_seconds_is_measured_and_clamped :: proc(t: ^testing.T) {
+	testing.expect_value(t, sdl_run_loop_delta_seconds(1_000, 1_000), SDL_RUN_LOOP_FIXED_DELTA_SECONDS)
+	testing.expect_value(t, sdl_run_loop_delta_seconds(0, sdl3.NS_PER_MS * 16), f32(0.016))
+	testing.expect_value(t, sdl_run_loop_delta_seconds(0, sdl3.NS_PER_SECOND), SDL_RUN_LOOP_MAX_DELTA_SECONDS)
+}
+
+@(test)
 test_sdl_wgpu_surface_descriptor_bundles_own_source_storage :: proc(t: ^testing.T) {
 	label := wgpu_string_view_from_string("test")
 

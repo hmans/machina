@@ -270,7 +270,7 @@ parse_run_options :: proc(args: []string, emit_output: bool) -> (Run_Options, bo
 }
 
 run_options_use_sdl_window_loop :: proc(options: Run_Options) -> bool {
-	return options.max_frames > 0 && !options.hidden && options.backend == .Software
+	return !options.hidden && options.backend == .Software
 }
 
 print_run_result :: proc(
@@ -295,6 +295,8 @@ print_run_result :: proc(
 	}
 	if options.max_frames > 0 {
 		fmt.printf("Frames: %d/%d\n", completed_frames, options.max_frames)
+	} else if window_result.window_opened {
+		fmt.printf("Frames: %d before window exit\n", completed_frames)
 	} else {
 		fmt.println("Frames: unbounded window loop pending Odin renderer")
 	}
@@ -309,7 +311,7 @@ print_run_result :: proc(
 		fmt.println("Editor: requested, pending Odin editor shell")
 	}
 	print_render_extract_text(result)
-	if options.max_frames > 0 {
+	if options.max_frames > 0 || window_result.window_opened {
 		fmt.println("Execution: Odin Luau systems")
 	} else {
 		fmt.println("Execution: pending unbounded Odin window loop")

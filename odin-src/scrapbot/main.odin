@@ -590,21 +590,28 @@ run_project :: proc(args: []string, emit_output: bool) -> int {
 	run_report := Live_Project_Run_Report{}
 	defer live_project_run_report_free(&run_report)
 	window_result := Sdl_Run_Loop_Result{}
-	if options.max_frames > 0 {
+	if run_options_use_sdl_window_loop(options) {
 		simulation := Simulation_Run_Result{}
-		if run_options_use_sdl_window_loop(options) {
-			window_error: string
-			window_ok: bool
-			window_result, simulation, window_error, window_ok = sdl_run_live_project_frames(&live, options.max_frames, 1.0 / 60.0, false, &run_report)
-			if !window_ok {
-				if emit_output {
-					fmt.eprintf("run window loop failed: %s\n", window_error)
-				}
-				return 1
+		window_error: string
+		window_ok: bool
+		window_result, simulation, window_error, window_ok = sdl_run_live_project_loop(&live, options.max_frames, false, &run_report)
+		if !window_ok {
+			if emit_output {
+				fmt.eprintf("run window loop failed: %s\n", window_error)
 			}
-		} else {
-			simulation = live_project_run_frames_with_report(&live, options.max_frames, 1.0 / 60.0, nil, nil, &run_report)
+			return 1
 		}
+		if !simulation.ok {
+			live.check.diagnostic = simulation.diagnostic
+			live.check.err = .Invalid_Script
+			if emit_output {
+				print_project_check_error(live.check, options.target_path, .Text)
+			}
+			return 1
+		}
+		completed_frames = simulation.completed_frames
+	} else if options.max_frames > 0 {
+		simulation := live_project_run_frames_with_report(&live, options.max_frames, SDL_RUN_LOOP_FIXED_DELTA_SECONDS, nil, nil, &run_report)
 		if !simulation.ok {
 			live.check.diagnostic = simulation.diagnostic
 			live.check.err = .Invalid_Script

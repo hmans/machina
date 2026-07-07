@@ -87,6 +87,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Odin hidden WebGPU surface presentation smoke slice
   - [x] Odin bounded hidden run WebGPU surface presentation slice
   - [x] Odin bounded visible software run SDL loop slice
+  - [x] Odin unbounded visible software run SDL loop slice
   - [x] Odin native declaration registration slice
   - [x] Odin native execution boundary diagnostics slice
   - [ ] Odin CLI feature parity

@@ -2,6 +2,10 @@ package main
 
 import sdl3 "vendor:sdl3"
 
+SDL_RUN_LOOP_FIXED_DELTA_SECONDS :: f32(1.0 / 60.0)
+SDL_RUN_LOOP_MAX_DELTA_SECONDS :: f32(0.1)
+SDL_RUN_LOOP_IDLE_DELAY_MS :: sdl3.Uint32(1)
+
 Sdl_Run_Loop_Result :: struct {
 	completed_frames: int,
 	window_opened:    bool,
@@ -26,10 +30,27 @@ sdl_run_loop_pump_events :: proc() -> bool {
 	return false
 }
 
-sdl_run_live_project_frames :: proc(
+sdl_run_loop_frame_limit_reached :: proc(completed_frames, max_frames: int) -> bool {
+	return max_frames > 0 && completed_frames >= max_frames
+}
+
+sdl_run_loop_delta_seconds :: proc(previous_ticks_ns, current_ticks_ns: sdl3.Uint64) -> f32 {
+	if current_ticks_ns <= previous_ticks_ns {
+		return SDL_RUN_LOOP_FIXED_DELTA_SECONDS
+	}
+	delta := f32(f64(current_ticks_ns - previous_ticks_ns) / f64(sdl3.NS_PER_SECOND))
+	if delta > SDL_RUN_LOOP_MAX_DELTA_SECONDS {
+		return SDL_RUN_LOOP_MAX_DELTA_SECONDS
+	}
+	if delta <= 0 {
+		return SDL_RUN_LOOP_FIXED_DELTA_SECONDS
+	}
+	return delta
+}
+
+sdl_run_live_project_loop :: proc(
 	project: ^Live_Project,
-	frames: int,
-	delta_seconds: f32,
+	max_frames: int,
 	hidden: bool,
 	report: ^Live_Project_Run_Report,
 ) -> (Sdl_Run_Loop_Result, Simulation_Run_Result, string, bool) {
@@ -59,17 +80,24 @@ sdl_run_live_project_frames :: proc(
 	}
 
 	completed_frames := 0
-	for completed_frames < frames {
+	previous_ticks_ns := sdl3.GetTicksNS()
+	for !sdl_run_loop_frame_limit_reached(completed_frames, max_frames) {
 		if sdl_run_loop_pump_events() {
 			result.quit_requested = true
 			break
 		}
+		current_ticks_ns := sdl3.GetTicksNS()
+		delta_seconds := sdl_run_loop_delta_seconds(previous_ticks_ns, current_ticks_ns)
+		previous_ticks_ns = current_ticks_ns
 		frame := live_project_run_frame_with_report(project, delta_seconds, completed_frames, report)
 		if !frame.ok {
 			result.completed_frames = frame.completed_frames
 			return result, frame, "", true
 		}
 		completed_frames = frame.completed_frames
+		if max_frames == 0 {
+			sdl3.Delay(SDL_RUN_LOOP_IDLE_DELAY_MS)
+		}
 	}
 	result.completed_frames = completed_frames
 	return result, Simulation_Run_Result{ok = true, completed_frames = completed_frames}, "", true
