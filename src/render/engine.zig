@@ -1481,9 +1481,6 @@ const MeshDemo = struct {
         defer if (maybe_plan) |*plan| {
             plan.deinit();
         };
-        defer self.render_state.clearFrameState(context.frame.scene.world) catch |err| {
-            std.log.err("render frame cleanup failed: {s}", .{@errorName(err)});
-        };
 
         var profiled_context = context;
         profiled_context.frame.input.system_profiles = try self.render_state.combineSystemProfileSnapshots(context.frame.input.system_profiles);
