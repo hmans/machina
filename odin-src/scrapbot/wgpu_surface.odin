@@ -49,7 +49,11 @@ wgpu_present_surface_scene_with_world :: proc(
 	}
 
 	vertices: [dynamic]WGPU_Scene_Vertex
-	defer delete(vertices)
+	defer {
+		if vertices != nil {
+			delete(vertices)
+		}
+	}
 	if draw_world {
 		wgpu_collect_scene_vertices(&vertices, world, int(width), int(height))
 	}
@@ -118,9 +122,9 @@ wgpu_present_surface_scene_with_world :: proc(
 	}
 	defer procs.texture_view_release(texture_view)
 
-	shader_module: WGPU_Shader_Module
-	pipeline_layout: WGPU_Pipeline_Layout
-	render_pipeline: WGPU_Render_Pipeline
+	shader_module := WGPU_Shader_Module(nil)
+	pipeline_layout := WGPU_Pipeline_Layout(nil)
+	render_pipeline := WGPU_Render_Pipeline(nil)
 	defer wgpu_release_scene_pipeline_resources(procs, &shader_module, &pipeline_layout, &render_pipeline)
 	if len(vertices) > 0 {
 		shader_code := wgpu_scene_rect_wgsl(vertices[:])
