@@ -589,6 +589,52 @@ entity_count = 3
 }
 
 @(test)
+test_run_test_command_routes_editor_spawn_button :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-spawn-button")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Spawn Button Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Spawn Button Test"
+version = 1
+
+[[entities]]
+id = "base"
+name = "Base"
+
+[entities.components.flag]
+value = 1
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 1
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [210.0, 442.0]
+primary_pressed = true
+primary_down = true
+
+[[expect.editor]]
+selected_entity = "editor-spawn-1"
+entity_count = 3
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_run_test_command_replays_editor_entity_despawn :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-test-editor-entity-despawn")
 	defer os.remove_all(root)
@@ -630,6 +676,59 @@ frame = 2
 editor_visible = true
 viewport = [1280.0, 720.0]
 editor_despawn_pressed = true
+
+[[expect.editor]]
+entity_count = 1
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_run_test_command_routes_editor_despawn_button :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-despawn-button")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Despawn Button Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Despawn Button Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.flag]
+value = 1
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 2
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [254.0, 442.0]
+primary_pressed = true
+primary_down = true
 
 [[expect.editor]]
 entity_count = 1
@@ -2173,6 +2272,9 @@ test_run_render_command_writes_editor_chrome_pixels :: proc(t: ^testing.T) {
 	defer render_image_free(&image)
 	expect_render_pixel(t, image, 4, 4, EDITOR_CHROME_TOP_COLOR)
 	expect_render_pixel(t, image, 8, 40, EDITOR_CHROME_PANEL_COLOR)
+	expect_render_pixel(t, image, 26, 34, EDITOR_CHROME_BUTTON_COLOR)
+	expect_render_pixel(t, image, 32, 40, EDITOR_CHROME_BUTTON_ACCENT_COLOR)
+	expect_render_pixel(t, image, 51, 40, EDITOR_CHROME_BUTTON_DESTRUCTIVE_COLOR)
 	expect_render_pixel(t, image, 236, 38, EDITOR_CHROME_SELECTION_COLOR)
 	expect_render_pixel(t, image, 72, 24, EDITOR_CHROME_VIEWPORT_COLOR)
 	expect_render_pixel(t, image, 238, 62, EDITOR_CHROME_INSPECTOR_CARD_HEADER_COLOR)

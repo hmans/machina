@@ -176,6 +176,16 @@ route_editor_test_input :: proc(state: ^Editor_Test_Input_State, registry: Runti
 				state.step_once = true
 				state.captured_pointer = true
 				consumed = true
+			} else if editor_pointer_in_spawn_entity_button(input^) {
+				commit_editor_test_text_input(world, state)
+				spawn_editor_test_entity(world, state)
+				state.captured_pointer = true
+				consumed = true
+			} else if editor_pointer_in_despawn_entity_button(input^) {
+				commit_editor_test_text_input(world, state)
+				despawn_editor_test_selected_entity(world, state)
+				state.captured_pointer = true
+				consumed = true
 			} else if splitter, splitter_ok := editor_splitter_at_pointer(state^, input^); splitter_ok {
 				state.dragging_splitter = splitter
 				state.captured_pointer = true
@@ -1505,12 +1515,36 @@ editor_pointer_in_step_button :: proc(input: Frame_Input) -> bool {
 	return editor_pointer_in_rect(input, play_x + play_width + UI_EDITOR_CONTROL_BUTTON_GAP, play_y, play_width, play_height)
 }
 
+editor_pointer_in_spawn_entity_button :: proc(input: Frame_Input) -> bool {
+	x, y, width, height := editor_entity_spawn_button_rect(input.viewport_width, input.viewport_height)
+	return editor_pointer_in_rect(input, x, y, width, height)
+}
+
+editor_pointer_in_despawn_entity_button :: proc(input: Frame_Input) -> bool {
+	x, y, width, height := editor_entity_despawn_button_rect(input.viewport_width, input.viewport_height)
+	return editor_pointer_in_rect(input, x, y, width, height)
+}
+
 editor_play_button_rect :: proc(window_width: f32) -> (x, y, width, height: f32) {
 	body_width := max_f32(window_width, 1)
 	return max_f32(body_width - UI_EDITOR_PANEL_PADDING_X - UI_EDITOR_CONTROL_BUTTON_WIDTH * 2 - UI_EDITOR_CONTROL_BUTTON_GAP, UI_EDITOR_PANEL_PADDING_X),
 	       (UI_EDITOR_TOP_BAR_HEIGHT - UI_EDITOR_CONTROL_BUTTON_HEIGHT) * 0.5,
 	       UI_EDITOR_CONTROL_BUTTON_WIDTH,
 	       UI_EDITOR_CONTROL_BUTTON_HEIGHT
+}
+
+editor_entity_spawn_button_rect :: proc(window_width, window_height: f32) -> (x, y, width, height: f32) {
+	panel_x, panel_y, panel_width, _ := editor_entity_panel_rect(window_width, window_height)
+	width = 44.0
+	height = 28.0
+	x = panel_x + max_f32(panel_width - UI_EDITOR_PANEL_PADDING_X - width * 2.0 - 8.0, UI_EDITOR_PANEL_PADDING_X)
+	y = panel_y + max_f32((editor_system_rows_y_offset() - height) * 0.5, 4.0)
+	return
+}
+
+editor_entity_despawn_button_rect :: proc(window_width, window_height: f32) -> (x, y, width, height: f32) {
+	spawn_x, spawn_y, spawn_width, spawn_height := editor_entity_spawn_button_rect(window_width, window_height)
+	return spawn_x + spawn_width + 8.0, spawn_y, spawn_width, spawn_height
 }
 
 editor_entity_at_pointer :: proc(world: Runtime_World, state: Editor_Test_Input_State, input: Frame_Input) -> (Entity_Handle, bool) {
