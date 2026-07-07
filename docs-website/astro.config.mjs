@@ -30,7 +30,7 @@ export default defineConfig({
                   items: [
                       { label: 'Luau Systems', slug: 'scripting/luau' },
                       { label: 'Queries and Views', slug: 'scripting/queries-and-views' },
-                      { label: 'Project-Local Zig', slug: 'scripting/native-zig' },
+                      { label: 'Project-Local Odin', slug: 'scripting/native-odin' },
                   ],
               },
               {

@@ -1,0 +1,825 @@
+package main
+
+import odin_runtime "base:runtime"
+import "core:dynlib"
+import "core:strings"
+
+Native_ABI_Field_Type :: enum {
+	Boolean,
+	Bool,
+	Int,
+	Float,
+	String,
+	Vec3,
+}
+
+Native_ABI_System_Phase :: enum {
+	Startup,
+	Update,
+	Fixed_Update,
+	Render,
+}
+
+Native_ABI_Entity :: struct {
+	index:      u32,
+	generation: u32,
+}
+
+Native_ABI_Vec3 :: struct {
+	x: f32,
+	y: f32,
+	z: f32,
+}
+
+Native_ABI_Field_Value :: struct {
+	name:          string,
+	field_type:    Native_ABI_Field_Type,
+	boolean_value: bool,
+	int_value:     int,
+	float_value:   f32,
+	vec3_value:    Native_ABI_Vec3,
+	string_value:  string,
+}
+
+Native_ABI_Component_Field :: struct {
+	name:       string,
+	field_type: Native_ABI_Field_Type,
+}
+
+Native_ABI_Component_Registration :: struct {
+	id:      string,
+	version: int,
+	fields:  []Native_ABI_Component_Field,
+}
+
+Native_ABI_System_Context :: struct {
+	host_context:  rawptr,
+	api:           ^Native_ABI_System_Api,
+	delta_seconds: f32,
+	system_id:     string,
+}
+
+Native_ABI_System_Run_Proc :: proc "c" (ctx: ^Native_ABI_System_Context) -> bool
+
+Native_ABI_System_Registration :: struct {
+	id:     string,
+	phase:  Native_ABI_System_Phase,
+	reads:  []string,
+	writes: []string,
+	before: []string,
+	after:  []string,
+	run:    Native_ABI_System_Run_Proc,
+}
+
+Native_ABI_Register_Component_Proc :: proc "c" (ctx: rawptr, registration: ^Native_ABI_Component_Registration) -> bool
+Native_ABI_Register_System_Proc :: proc "c" (ctx: rawptr, registration: ^Native_ABI_System_Registration) -> bool
+
+Native_ABI_Register_Api :: struct {
+	user_context:       rawptr,
+	register_component: Native_ABI_Register_Component_Proc,
+	register_system:    Native_ABI_Register_System_Proc,
+}
+
+Native_ABI_Register_Proc :: proc "c" (api: ^Native_ABI_Register_Api) -> bool
+
+Native_ABI_Query_Next_Proc :: proc "c" (ctx: rawptr, component_ids: []string, cursor: ^int, out_entity: ^Native_ABI_Entity) -> bool
+Native_ABI_Get_Int_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^int) -> bool
+Native_ABI_Set_Int_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: int) -> bool
+Native_ABI_Get_Float_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^f32) -> bool
+Native_ABI_Set_Float_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: f32) -> bool
+Native_ABI_Get_Bool_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^bool) -> bool
+Native_ABI_Set_Bool_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: bool) -> bool
+Native_ABI_Get_Vec3_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^Native_ABI_Vec3) -> bool
+Native_ABI_Set_Vec3_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: Native_ABI_Vec3) -> bool
+Native_ABI_Get_String_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^string) -> bool
+Native_ABI_Set_String_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: string) -> bool
+Native_ABI_Spawn_Entity_Proc :: proc "c" (ctx: rawptr, id, name: string, out_entity: ^Native_ABI_Entity) -> bool
+Native_ABI_Despawn_Entity_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity) -> bool
+Native_ABI_Add_Component_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id: string, fields: []Native_ABI_Field_Value) -> bool
+Native_ABI_Remove_Component_Proc :: proc "c" (ctx: rawptr, entity: Native_ABI_Entity, component_id: string) -> bool
+
+Native_ABI_System_Api :: struct {
+	query_next:       Native_ABI_Query_Next_Proc,
+	get_int:          Native_ABI_Get_Int_Proc,
+	set_int:          Native_ABI_Set_Int_Proc,
+	get_float:        Native_ABI_Get_Float_Proc,
+	set_float:        Native_ABI_Set_Float_Proc,
+	get_bool:         Native_ABI_Get_Bool_Proc,
+	set_bool:         Native_ABI_Set_Bool_Proc,
+	get_vec3:         Native_ABI_Get_Vec3_Proc,
+	set_vec3:         Native_ABI_Set_Vec3_Proc,
+	get_string:       Native_ABI_Get_String_Proc,
+	set_string:       Native_ABI_Set_String_Proc,
+	spawn_entity:     Native_ABI_Spawn_Entity_Proc,
+	despawn_entity:   Native_ABI_Despawn_Entity_Proc,
+	add_component:    Native_ABI_Add_Component_Proc,
+	remove_component: Native_ABI_Remove_Component_Proc,
+}
+
+Native_Loaded_Module :: struct {
+	path:   string,
+	handle: dynlib.Library,
+}
+
+Native_Loaded_System :: struct {
+	system_id:  string,
+	runner_ref: u32,
+	run:        Native_ABI_System_Run_Proc,
+	path:       string,
+	line:       int,
+}
+
+Native_Module_Load_Context :: struct {
+	registry:        ^Runtime_Component_Registry,
+	program:         ^Script_Program,
+	path:            string,
+	next_runner_ref: u32,
+	odin_context:    odin_runtime.Context,
+	error_message:   string,
+}
+
+Native_Runtime_Context :: struct {
+	program:  ^Script_Program,
+	registry: ^Runtime_Component_Registry,
+	world:    ^Runtime_World,
+	system:   Runtime_Scheduled_System,
+}
+
+script_program_load_native_artifact :: proc(
+	program: ^Script_Program,
+	registry: ^Runtime_Component_Registry,
+	file_system_path, diagnostic_path: string,
+) -> Project_Error {
+	err, diagnostic := script_program_load_native_artifact_diagnostic(program, registry, file_system_path, diagnostic_path)
+	script_diagnostic_free(&diagnostic)
+	return err
+}
+
+script_program_load_native_artifact_diagnostic :: proc(
+	program: ^Script_Program,
+	registry: ^Runtime_Component_Registry,
+	file_system_path, diagnostic_path: string,
+) -> (Project_Error, Script_Diagnostic) {
+	library, library_ok := dynlib.load_library(file_system_path)
+	if !library_ok {
+		return .Invalid_Native_Artifact, script_native_diagnostic(.Native_Load, diagnostic_path, "failed to load native artifact")
+	}
+	keep_library := false
+	defer {
+		if !keep_library {
+			dynlib.unload_library(library)
+		}
+	}
+
+	symbol, symbol_ok := dynlib.symbol_address(library, "scrapbot_register")
+	if !symbol_ok || symbol == nil {
+		return .Invalid_Native_Artifact, script_native_diagnostic(.Native_Load, diagnostic_path, "native artifact is missing scrapbot_register")
+	}
+	register := cast(Native_ABI_Register_Proc)symbol
+
+	load_context := Native_Module_Load_Context{
+		registry = registry,
+		program = program,
+		path = diagnostic_path,
+		next_runner_ref = native_next_runner_ref(program^),
+		odin_context = program.odin_context,
+	}
+	api := Native_ABI_Register_Api{
+		user_context = rawptr(&load_context),
+		register_component = native_register_component_callback,
+		register_system = native_register_system_callback,
+	}
+	if !register(&api) {
+		message := "native registration callback failed"
+		if load_context.error_message != "" {
+			message = load_context.error_message
+		}
+		diagnostic := script_native_diagnostic(.Native_Registration, diagnostic_path, message)
+		if load_context.error_message != "" {
+			delete(load_context.error_message)
+		}
+		return .Invalid_Native_Artifact, diagnostic
+	}
+	if load_context.error_message != "" {
+		diagnostic := script_native_diagnostic(.Native_Registration, diagnostic_path, load_context.error_message)
+		delete(load_context.error_message)
+		return .Invalid_Native_Artifact, diagnostic
+	}
+
+	owned_path, path_err := strings.clone(diagnostic_path)
+	if path_err != nil {
+		return .Invalid_Native_Artifact, script_native_diagnostic(.Native_Load, diagnostic_path, "failed to store native artifact path")
+	}
+	append(&program.native_modules, Native_Loaded_Module{
+		path = owned_path,
+		handle = library,
+	})
+	keep_library = true
+	return .None, Script_Diagnostic{}
+}
+
+native_run_loaded_system :: proc(
+	program: ^Script_Program,
+	registry: ^Runtime_Component_Registry,
+	world: ^Runtime_World,
+	system: Runtime_Scheduled_System,
+	loaded_system: Native_Loaded_System,
+	delta_seconds: f32,
+) -> Script_Run_Result {
+	context_storage := Native_Runtime_Context{
+		program = program,
+		registry = registry,
+		world = world,
+		system = system,
+	}
+	system_context := Native_ABI_System_Context{
+		host_context = rawptr(&context_storage),
+		api = &NATIVE_SYSTEM_API,
+		delta_seconds = delta_seconds,
+		system_id = system.id,
+	}
+
+	script_program_clear_host_error(program)
+	program.active_registry = registry
+	program.active_system = system
+	program.has_active_system = true
+	ok := loaded_system.run(&system_context)
+	program.has_active_system = false
+	program.active_registry = nil
+	if !ok {
+		runtime_deferred_discard(&program.deferred, world)
+		message := "native Odin system failed"
+		if program.has_host_error {
+			message = string(program.host_error_storage[:program.host_error_len])
+		}
+		diagnostic := script_runtime_diagnostic(loaded_system.path, system.id, loaded_system.line, message)
+		script_program_clear_host_error(program)
+		return Script_Run_Result{ok = false, diagnostic = diagnostic}
+	}
+	flush_err := runtime_deferred_flush(&program.deferred, world, registry^)
+	if flush_err != .None {
+		message := runtime_error_label(flush_err)
+		diagnostic := script_runtime_diagnostic(loaded_system.path, system.id, loaded_system.line, message)
+		script_program_clear_host_error(program)
+		return Script_Run_Result{ok = false, diagnostic = diagnostic}
+	}
+	script_program_clear_host_error(program)
+	return Script_Run_Result{ok = true}
+}
+
+native_find_loaded_system :: proc(program: Script_Program, system: Runtime_Scheduled_System) -> (Native_Loaded_System, bool) {
+	for loaded in program.native_loaded_systems {
+		if (system.runner.ref != 0 && loaded.runner_ref == system.runner.ref) || loaded.system_id == system.id {
+			return loaded, true
+		}
+	}
+	return {}, false
+}
+
+native_loaded_modules_free :: proc(modules: []Native_Loaded_Module) {
+	for module in modules {
+		if module.handle != nil {
+			dynlib.unload_library(module.handle)
+		}
+		if module.path != "" {
+			delete(module.path)
+		}
+	}
+}
+
+native_loaded_systems_free :: proc(systems: []Native_Loaded_System) {
+	for system in systems {
+		if system.system_id != "" {
+			delete(system.system_id)
+		}
+		if system.path != "" {
+			delete(system.path)
+		}
+	}
+}
+
+native_next_runner_ref :: proc(program: Script_Program) -> u32 {
+	ref := u32(len(program.native_loaded_systems) + len(program.native_operations) + 1)
+	if ref == 0 {
+		return 1
+	}
+	return ref
+}
+
+native_register_component_callback :: proc "c" (raw_context: rawptr, registration: ^Native_ABI_Component_Registration) -> bool {
+	load_context := cast(^Native_Module_Load_Context)raw_context
+	if load_context == nil || registration == nil {
+		return false
+	}
+	context = load_context.odin_context
+
+	fields := make([]Runtime_Component_Field_Definition, len(registration.fields))
+	if fields == nil && len(registration.fields) > 0 {
+		native_load_set_error(load_context, "failed to allocate native component fields")
+		return false
+	}
+	defer if fields != nil do delete(fields)
+	for field, index in registration.fields {
+		value_type, type_ok := native_abi_field_type_to_runtime(field.field_type)
+		if !type_ok {
+			native_load_set_error(load_context, "native component field has unsupported type")
+			return false
+		}
+		fields[index] = Runtime_Component_Field_Definition{name = field.name, value_type = value_type}
+	}
+
+	version := registration.version
+	if version == 0 {
+		version = 1
+	}
+	err := runtime_register_project_component(load_context.registry, Runtime_Component_Definition{
+		id = registration.id,
+		version = version,
+		fields = fields,
+	})
+	if err != .None {
+		native_load_set_error(load_context, runtime_error_label(err))
+		return false
+	}
+	return true
+}
+
+native_register_system_callback :: proc "c" (raw_context: rawptr, registration: ^Native_ABI_System_Registration) -> bool {
+	load_context := cast(^Native_Module_Load_Context)raw_context
+	if load_context == nil || registration == nil {
+		return false
+	}
+	context = load_context.odin_context
+	if registration.run == nil {
+		native_load_set_error(load_context, "native system registration is missing a run callback")
+		return false
+	}
+	phase, phase_ok := native_abi_phase_to_runtime(registration.phase)
+	if !phase_ok {
+		native_load_set_error(load_context, "native system phase is not supported")
+		return false
+	}
+
+	runner_ref := load_context.next_runner_ref
+	if runner_ref == 0 {
+		runner_ref = 1
+	}
+	err := runtime_register_project_system(load_context.registry, Runtime_System_Definition{
+		id = registration.id,
+		phase = phase,
+		reads = registration.reads,
+		writes = registration.writes,
+		before = registration.before,
+		after = registration.after,
+		runner = Runtime_System_Runner{kind = .Native, ref = runner_ref},
+	})
+	if err != .None {
+		native_load_set_error(load_context, runtime_error_label(err))
+		return false
+	}
+
+	owned_id, id_err := strings.clone(registration.id)
+	if id_err != nil {
+		native_load_set_error(load_context, "failed to store native system id")
+		return false
+	}
+	owned_path, path_err := strings.clone(load_context.path)
+	if path_err != nil {
+		delete(owned_id)
+		native_load_set_error(load_context, "failed to store native system path")
+		return false
+	}
+	append(&load_context.program.native_loaded_systems, Native_Loaded_System{
+		system_id = owned_id,
+		runner_ref = runner_ref,
+		run = registration.run,
+		path = owned_path,
+		line = 0,
+	})
+	load_context.next_runner_ref = runner_ref + 1
+	return true
+}
+
+native_load_set_error :: proc(load_context: ^Native_Module_Load_Context, message: string) {
+	if load_context.error_message != "" {
+		delete(load_context.error_message)
+	}
+	owned, err := strings.clone(message)
+	if err != nil {
+		load_context.error_message = ""
+		return
+	}
+	load_context.error_message = owned
+}
+
+native_abi_field_type_to_runtime :: proc(value: Native_ABI_Field_Type) -> (Runtime_Field_Type, bool) {
+	switch value {
+	case .Boolean, .Bool:
+		return .Boolean, true
+	case .Int:
+		return .Int, true
+	case .Float:
+		return .Float, true
+	case .String:
+		return .String, true
+	case .Vec3:
+		return .Vec3, true
+	}
+	return .Boolean, false
+}
+
+native_abi_phase_to_runtime :: proc(value: Native_ABI_System_Phase) -> (Runtime_System_Phase, bool) {
+	switch value {
+	case .Startup:
+		return .Startup, true
+	case .Update:
+		return .Update, true
+	case .Fixed_Update:
+		return .Fixed_Update, true
+	case .Render:
+		return .Render, true
+	}
+	return .Update, false
+}
+
+native_abi_entity_to_runtime :: proc(entity: Native_ABI_Entity) -> Entity_Handle {
+	return Entity_Handle{index = entity.index, generation = entity.generation}
+}
+
+native_runtime_entity_to_abi :: proc(entity: Entity_Handle) -> Native_ABI_Entity {
+	return Native_ABI_Entity{index = entity.index, generation = entity.generation}
+}
+
+NATIVE_SYSTEM_API: Native_ABI_System_Api = Native_ABI_System_Api{
+	query_next = native_host_query_next,
+	get_int = native_host_get_int,
+	set_int = native_host_set_int,
+	get_float = native_host_get_float,
+	set_float = native_host_set_float,
+	get_bool = native_host_get_bool,
+	set_bool = native_host_set_bool,
+	get_vec3 = native_host_get_vec3,
+	set_vec3 = native_host_set_vec3,
+	get_string = native_host_get_string,
+	set_string = native_host_set_string,
+	spawn_entity = native_host_spawn_entity,
+	despawn_entity = native_host_despawn_entity,
+	add_component = native_host_add_component,
+	remove_component = native_host_remove_component,
+}
+
+native_host_context :: proc(raw_context: rawptr) -> ^Native_Runtime_Context {
+	return cast(^Native_Runtime_Context)raw_context
+}
+
+native_host_query_next :: proc "c" (raw_context: rawptr, component_ids: []string, cursor: ^int, out_entity: ^Native_ABI_Entity) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil || cursor == nil || out_entity == nil {
+		return false
+	}
+	context = host.program.odin_context
+	for component_id in component_ids {
+		if !script_program_active_system_allows_read(host.program, component_id) {
+			script_program_set_host_errorf(host.program, "native system tried to query undeclared component '%s'", component_id)
+			return false
+		}
+	}
+	entity, found := runtime_world_query_next(host.world^, component_ids, cursor)
+	if !found {
+		return false
+	}
+	out_entity^ = native_runtime_entity_to_abi(entity)
+	return true
+}
+
+native_host_get_int :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^int) -> bool {
+	if out_value == nil {
+		return false
+	}
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	value, ok := native_host_get_field(raw_context, entity, component_id, field_name, .Int)
+	if !ok {
+		return false
+	}
+	out_value^ = value.int_value
+	return true
+}
+
+native_host_set_int :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: int) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	return native_host_set_field(raw_context, entity, component_id, field_name, runtime_component_value_int(value))
+}
+
+native_host_get_float :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^f32) -> bool {
+	if out_value == nil {
+		return false
+	}
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	value, ok := native_host_get_field(raw_context, entity, component_id, field_name, .Float)
+	if !ok {
+		return false
+	}
+	out_value^ = value.float
+	return true
+}
+
+native_host_set_float :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: f32) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	return native_host_set_field(raw_context, entity, component_id, field_name, runtime_component_value_float(value))
+}
+
+native_host_get_bool :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^bool) -> bool {
+	if out_value == nil {
+		return false
+	}
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	value, ok := native_host_get_field(raw_context, entity, component_id, field_name, .Boolean)
+	if !ok {
+		return false
+	}
+	out_value^ = value.boolean
+	return true
+}
+
+native_host_set_bool :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: bool) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	return native_host_set_field(raw_context, entity, component_id, field_name, runtime_component_value_boolean(value))
+}
+
+native_host_get_vec3 :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^Native_ABI_Vec3) -> bool {
+	if out_value == nil {
+		return false
+	}
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	value, ok := native_host_get_field(raw_context, entity, component_id, field_name, .Vec3)
+	if !ok {
+		return false
+	}
+	out_value^ = native_runtime_vec3_to_abi(value.vec3)
+	return true
+}
+
+native_host_set_vec3 :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: Native_ABI_Vec3) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	return native_host_set_field(raw_context, entity, component_id, field_name, runtime_component_value_vec3(native_abi_vec3_to_runtime(value)))
+}
+
+native_host_get_string :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, out_value: ^string) -> bool {
+	if out_value == nil {
+		return false
+	}
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	value, ok := native_host_get_field(raw_context, entity, component_id, field_name, .String)
+	if !ok {
+		return false
+	}
+	out_value^ = value.string_value
+	return true
+}
+
+native_host_set_string :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: string) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	return native_host_set_field(raw_context, entity, component_id, field_name, runtime_component_value_string(value))
+}
+
+native_host_spawn_entity :: proc "c" (raw_context: rawptr, id, name: string, out_entity: ^Native_ABI_Entity) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil || out_entity == nil || id == "" {
+		return false
+	}
+	context = host.program.odin_context
+	entity_name := name
+	if entity_name == "" {
+		entity_name = id
+	}
+	entity, entity_err := runtime_world_create_entity(host.world, id, entity_name)
+	if entity_err != .None {
+		script_program_set_host_error(host.program, runtime_error_label(entity_err))
+		return false
+	}
+	record_err := runtime_deferred_record_immediate_spawn(&host.program.deferred, entity)
+	if record_err != .None {
+		_ = runtime_world_remove_entity(host.world, entity)
+		script_program_set_host_error(host.program, runtime_error_label(record_err))
+		return false
+	}
+	out_entity^ = native_runtime_entity_to_abi(entity)
+	return true
+}
+
+native_host_despawn_entity :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	system, system_ok := runtime_scheduled_system_definition(host.registry^, host.system)
+	if !system_ok {
+		script_program_set_host_error(host.program, "native system definition was not found")
+		return false
+	}
+	err := runtime_deferred_queue_despawn_entity(&host.program.deferred, host.world^, system^, native_abi_entity_to_runtime(entity))
+	if err != .None {
+		script_program_set_host_error(host.program, runtime_error_label(err))
+		return false
+	}
+	return true
+}
+
+native_host_add_component :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id: string, fields: []Native_ABI_Field_Value) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil || component_id == "" {
+		return false
+	}
+	context = host.program.odin_context
+	system, system_ok := runtime_scheduled_system_definition(host.registry^, host.system)
+	if !system_ok {
+		script_program_set_host_error(host.program, "native system definition was not found")
+		return false
+	}
+	runtime_fields, fields_ok := native_abi_fields_to_runtime(host, component_id, fields)
+	if !fields_ok {
+		return false
+	}
+	defer runtime_component_field_values_free(runtime_fields)
+	defer if runtime_fields != nil do delete(runtime_fields)
+
+	err := runtime_deferred_queue_add_component(&host.program.deferred, system^, native_abi_entity_to_runtime(entity), component_id, runtime_fields)
+	if err != .None {
+		script_program_set_host_error(host.program, runtime_error_label(err))
+		return false
+	}
+	return true
+}
+
+native_host_remove_component :: proc "c" (raw_context: rawptr, entity: Native_ABI_Entity, component_id: string) -> bool {
+	host := cast(^Native_Runtime_Context)raw_context
+	if host == nil || component_id == "" {
+		return false
+	}
+	context = host.program.odin_context
+	system, system_ok := runtime_scheduled_system_definition(host.registry^, host.system)
+	if !system_ok {
+		script_program_set_host_error(host.program, "native system definition was not found")
+		return false
+	}
+	err := runtime_deferred_queue_remove_component(&host.program.deferred, system^, native_abi_entity_to_runtime(entity), component_id)
+	if err != .None {
+		script_program_set_host_error(host.program, runtime_error_label(err))
+		return false
+	}
+	return true
+}
+
+native_host_get_field :: proc(raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, expected_type: Runtime_Field_Type) -> (Runtime_Component_Value, bool) {
+	host := native_host_context(raw_context)
+	if host == nil {
+		return Runtime_Component_Value{}, false
+	}
+	context = host.program.odin_context
+	if !script_program_active_system_allows_read(host.program, component_id) {
+		script_program_set_host_errorf(host.program, "native system tried to read undeclared component '%s'", component_id)
+		return Runtime_Component_Value{}, false
+	}
+	value, err := runtime_world_get_component_field_value(host.world^, native_abi_entity_to_runtime(entity), component_id, field_name)
+	if err != .None {
+		script_program_set_host_error(host.program, runtime_error_label(err))
+		return Runtime_Component_Value{}, false
+	}
+	if value.value_type != expected_type {
+		script_program_set_host_error(host.program, "native system field type mismatch")
+		return Runtime_Component_Value{}, false
+	}
+	return value, true
+}
+
+native_host_set_field :: proc(raw_context: rawptr, entity: Native_ABI_Entity, component_id, field_name: string, value: Runtime_Component_Value) -> bool {
+	host := native_host_context(raw_context)
+	if host == nil {
+		return false
+	}
+	context = host.program.odin_context
+	if !script_program_active_system_allows_write(host.program, component_id) {
+		script_program_set_host_errorf(host.program, "native system tried to write undeclared component '%s'", component_id)
+		return false
+	}
+	err := runtime_world_set_component_field_value(host.world, native_abi_entity_to_runtime(entity), component_id, field_name, value)
+	if err != .None {
+		script_program_set_host_error(host.program, runtime_error_label(err))
+		return false
+	}
+	return true
+}
+
+native_abi_fields_to_runtime :: proc(host: ^Native_Runtime_Context, component_id: string, fields: []Native_ABI_Field_Value) -> ([]Runtime_Component_Field_Value, bool) {
+	definition, definition_found := runtime_find_component(host.registry^, component_id)
+	if !definition_found {
+		script_program_set_host_error(host.program, "native system tried to add an unknown component")
+		return nil, false
+	}
+	runtime_fields := make([]Runtime_Component_Field_Value, len(fields))
+	if runtime_fields == nil && len(fields) > 0 {
+		script_program_set_host_error(host.program, "failed to allocate native component fields")
+		return nil, false
+	}
+	copied_count := 0
+	for field, index in fields {
+		field_definition, field_found := runtime_component_definition_find_field(definition^, field.name)
+		if !field_found {
+			runtime_component_field_values_free(runtime_fields[:copied_count])
+			delete(runtime_fields)
+			script_program_set_host_error(host.program, "native system tried to add an unknown field")
+			return nil, false
+		}
+		value, value_ok := native_abi_field_value_to_runtime(field, field_definition.value_type)
+		if !value_ok {
+			runtime_component_field_values_free(runtime_fields[:copied_count])
+			delete(runtime_fields)
+			script_program_set_host_error(host.program, "native system field value type mismatch")
+			return nil, false
+		}
+		owned_name, name_err := strings.clone(field.name)
+		if name_err != nil {
+			runtime_component_value_free(value)
+			runtime_component_field_values_free(runtime_fields[:copied_count])
+			delete(runtime_fields)
+			script_program_set_host_error(host.program, "failed to allocate native component field name")
+			return nil, false
+		}
+		runtime_fields[index] = Runtime_Component_Field_Value{name = owned_name, value = value}
+		copied_count += 1
+	}
+	return runtime_fields, true
+}
+
+native_abi_field_value_to_runtime :: proc(field: Native_ABI_Field_Value, expected_type: Runtime_Field_Type) -> (Runtime_Component_Value, bool) {
+	declared_type, declared_ok := native_abi_field_type_to_runtime(field.field_type)
+	if !declared_ok || declared_type != expected_type {
+		return Runtime_Component_Value{}, false
+	}
+	switch expected_type {
+	case .Boolean:
+		return runtime_component_value_boolean(field.boolean_value), true
+	case .Int:
+		return runtime_component_value_int(field.int_value), true
+	case .Float:
+		return runtime_component_value_float(field.float_value), true
+	case .Vec3:
+		return runtime_component_value_vec3(native_abi_vec3_to_runtime(field.vec3_value)), true
+	case .String:
+		owned, err := strings.clone(field.string_value)
+		if err != nil {
+			return Runtime_Component_Value{}, false
+		}
+		return runtime_component_value_string(owned), true
+	}
+	return Runtime_Component_Value{}, false
+}
+
+native_abi_vec3_to_runtime :: proc(value: Native_ABI_Vec3) -> [3]f32 {
+	return [3]f32{value.x, value.y, value.z}
+}
+
+native_runtime_vec3_to_abi :: proc(value: [3]f32) -> Native_ABI_Vec3 {
+	return Native_ABI_Vec3{x = value[0], y = value[1], z = value[2]}
+}

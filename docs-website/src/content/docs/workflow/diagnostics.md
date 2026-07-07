@@ -19,7 +19,7 @@ Diagnostics try to identify:
 | Stage | Meaning |
 | --- | --- |
 | `load` | Luau source failed to load. |
-| `native_build` | Project-local Zig source failed to compile. |
+| `native_build` | Project-local Odin source failed to compile. |
 | `native_load` | Native dynamic library failed to open or export `scrapbot_register`. |
 | `native_registration` | Native component/system registration failed. |
 | `registration` | Script declarations failed to register. |

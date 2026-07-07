@@ -3,3 +3,4 @@
 .zig-cache/
 zig-pkg/
 zig-out/
+odin-out/

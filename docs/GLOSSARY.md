@@ -4,7 +4,7 @@ This glossary defines recurring Scrapbot terms in the project's context. It is a
 
 ## Project Model
 
-**Scrapbot** - A text-first game engine implemented in Zig, with project-local Luau and optional Zig native modules for gameplay behavior. See [ADR-001](adr/ADR-001-agent-native-text-first-project-model.md), [ADR-002](adr/ADR-002-zig-as-engine-implementation-language.md), and [ADR-006](adr/ADR-006-embeddable-scripting-language-for-game-logic.md).
+**Scrapbot** - A text-first game engine migrating from Zig to Odin, with project-local Luau and optional native modules for gameplay behavior. See [ADR-001](adr/ADR-001-agent-native-text-first-project-model.md), [ADR-024](adr/ADR-024-odin-as-engine-implementation-language.md), and [ADR-006](adr/ADR-006-embeddable-scripting-language-for-game-logic.md).
 
 **Text-first project model** - The rule that engine-authored project state lives in inspectable, reviewable text files while binary files are limited to source assets, generated artifacts, vendored dependencies, and build outputs. See [ADR-001](adr/ADR-001-agent-native-text-first-project-model.md).
 
@@ -82,9 +82,9 @@ This glossary defines recurring Scrapbot terms in the project's context. It is a
 
 **`ecs.fields(...)`** - The preferred Luau component field-schema declaration form, used by runtime validation and editor payload type inference. See [ADR-012](adr/ADR-012-luau-type-functions-for-ecs-editor-types.md).
 
-**Project-local native module** - A project-owned Zig source file declared with `native = "native/game.zig"` and loaded through Scrapbot's native host boundary during development. See [ADR-019](adr/ADR-019-project-local-native-zig-modules.md).
+**Project-local native module** - A project-owned native source file loaded through Scrapbot's native host boundary during development. Odin native modules use `native = "native/game.odin"` and import the generated `scrapbot:scrapbot_native` facade. The Odin path rejects project-local Zig native source, but it can validate, build, load, run query/typed-field/deferred-structural callbacks, and perform first-pass last-known-good native reload transactions during bounded runs and visible software/WebGPU SDL window loops. See [ADR-019](adr/ADR-019-project-local-native-zig-modules.md) and [ADR-024](adr/ADR-024-odin-as-engine-implementation-language.md).
 
-**`scrapbot_native`** - The generated Zig API module imported by project-local native code to register components/systems and use access-checked host callbacks. See [ADR-019](adr/ADR-019-project-local-native-zig-modules.md).
+**`scrapbot_native`** - The generated native API module imported by project-local native code to register components/systems and use access-checked host callbacks. The Zig engine generates a Zig module; the Odin migration now generates an Odin facade imported as `scrapbot "scrapbot:scrapbot_native"` for development-time source builds, packaged artifact builds, typed field callbacks, and deferred structural callbacks. See [ADR-019](adr/ADR-019-project-local-native-zig-modules.md) and [ADR-024](adr/ADR-024-odin-as-engine-implementation-language.md).
 
 **Native extension** - An engine-linked Zig registration surface for native ECS components and systems, used before and alongside project-local native modules. See [ADR-018](adr/ADR-018-engine-linked-native-ecs-systems.md).
 
@@ -92,7 +92,7 @@ This glossary defines recurring Scrapbot terms in the project's context. It is a
 
 ## Live Reload and Diagnostics
 
-**Live reload** - Runtime detection, validation, and staged replacement of changed scene, script, and project-local native files without restarting the engine. See [ADR-009](adr/ADR-009-live-reload-as-a-core-runtime-capability.md) and [FDR-010](fdr/FDR-010-live-reload-for-scenes-and-scripts.md).
+**Live reload** - Runtime detection, validation, and staged replacement of changed project metadata, scene, script, and project-local native files without restarting the engine. During the Odin rewrite, bounded runs plus visible software and WebGPU SDL window loops can reload project metadata, the default scene, Luau script, and Odin native source with last-known-good behavior; full editor-shell diagnostics integration remains pending. See [ADR-009](adr/ADR-009-live-reload-as-a-core-runtime-capability.md) and [FDR-010](fdr/FDR-010-live-reload-for-scenes-and-scripts.md).
 
 **Last-known-good state** - The active valid runtime state preserved when a reload, script validation, native build, or registration step fails. See [ADR-009](adr/ADR-009-live-reload-as-a-core-runtime-capability.md) and [FDR-013](fdr/FDR-013-script-diagnostics.md).
 

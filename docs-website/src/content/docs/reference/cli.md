@@ -93,7 +93,7 @@ scrapbot build examples/native_motion --output zig-out/packages --name native-mo
 - `--force` replaces an existing Scrapbot-generated bundle.
 - `--format json` emits machine-readable build output.
 
-The bundle contains `bin/scrapbot`, a copied `project/` directory, a `run` launcher, and `scrapbot-build.json`. Project-local native Zig modules are compiled into a packaged `native_artifact`, so the bundled project does not need Zig installed to load native systems. When SDL3 is discoverable locally, it is copied into `lib/` and the launcher adds that directory to the platform library search path.
+The bundle contains `bin/scrapbot`, a copied `project/` directory, a `run` launcher, and `scrapbot-build.json`. Project-local native Odin modules are compiled into a packaged `native_artifact`, so the bundled project does not need Odin installed to load native systems. When SDL3 is discoverable locally, it is copied into `lib/` and the launcher adds that directory to the platform library search path.
 
 The first build format targets the current OS and architecture only. Cross-platform export, app signing, and fully static project-native executables are future packaging work.
 

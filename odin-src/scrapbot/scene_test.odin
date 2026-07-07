@@ -1,0 +1,568 @@
+package main
+
+import "core:os"
+import "core:strings"
+import "core:testing"
+
+@(test)
+test_check_project_reports_scene_summary :: proc(t: ^testing.T) {
+	root := make_test_project(t, "scene-summary")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_file(
+		t,
+		root,
+		"scenes/main.scene.toml",
+		`name = "Main"
+version = 1
+
+[[entities]]
+id = "cube-1"
+name = "Cube"
+
+[entities.components."scrapbot.render.cube"]
+color = [1.0, 0.0, 0.0]
+
+[[entities]]
+id = "empty-component"
+name = "Button"
+
+[entities.components."scrapbot.ui.button"]
+`,
+	)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	testing.expect_value(t, result.scene.name, "Main")
+	testing.expect_value(t, result.scene.entity_count, 2)
+	testing.expect_value(t, result.scene.component_instance_count, 2)
+	testing.expect_value(t, result.scene.renderable_cube_count, 1)
+	cube, cube_found := runtime_world_find_entity_by_id(result.scene.world, "cube-1")
+	testing.expect_value(t, cube_found, true)
+	cube_color, cube_color_err := runtime_world_get_component_field_value(result.scene.world, cube, "scrapbot.render.cube", "color")
+	testing.expect_value(t, cube_color_err, Runtime_Error.None)
+	testing.expect_value(t, cube_color.value_type, Runtime_Field_Type.Vec3)
+	testing.expect_value(t, cube_color.vec3, [3]f32{1.0, 0.0, 0.0})
+}
+
+@(test)
+test_check_project_rejects_duplicate_scene_entity_ids :: proc(t: ^testing.T) {
+	root := make_test_project(t, "duplicate-scene-entity")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_file(
+		t,
+		root,
+		"scenes/main.scene.toml",
+		`name = "Main"
+version = 1
+
+[[entities]]
+id = "dupe"
+name = "One"
+
+[entities.components."scrapbot.ui.button"]
+
+[[entities]]
+id = "dupe"
+name = "Two"
+
+[entities.components."scrapbot.ui.button"]
+`,
+	)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Duplicate_Scene_Entity_ID)
+}
+
+@(test)
+test_check_project_rejects_scene_without_entities :: proc(t: ^testing.T) {
+	root := make_test_project(t, "scene-without-entities")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_file(t, root, "scenes/main.scene.toml", "name = \"Main\"\nversion = 1\n")
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Missing_Scene_Content)
+}
+
+@(test)
+test_check_project_rejects_entity_without_component :: proc(t: ^testing.T) {
+	root := make_test_project(t, "entity-without-component")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_file(
+		t,
+		root,
+		"scenes/main.scene.toml",
+		`name = "Main"
+version = 1
+
+[[entities]]
+id = "empty"
+name = "Empty"
+`,
+	)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_unsupported_scene_version :: proc(t: ^testing.T) {
+	root := make_test_project(t, "unsupported-scene-version")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_file(t, root, "scenes/main.scene.toml", "name = \"Main\"\nversion = 99\n")
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Unsupported_Scene_Version)
+}
+
+@(test)
+test_check_project_rejects_unknown_engine_component :: proc(t: ^testing.T) {
+	root := make_test_project(t, "unknown-engine-component")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.render.unknown"]
+color = [1.0, 0.0, 0.0]
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_runtime_only_component :: proc(t: ^testing.T) {
+	root := make_test_project(t, "runtime-only-component")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.input.frame"]
+ui_visible = true
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_unknown_engine_component_field :: proc(t: ^testing.T) {
+	root := make_test_project(t, "unknown-engine-component-field")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.render.cube"]
+color = [1.0, 0.0, 0.0]
+opacity = 0.5
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_duplicate_engine_component_field :: proc(t: ^testing.T) {
+	root := make_test_project(t, "duplicate-engine-component-field")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.render.cube"]
+color = [1.0, 0.0, 0.0]
+color = [0.0, 1.0, 0.0]
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_merges_repeated_component_tables_on_entity :: proc(t: ^testing.T) {
+	root := make_test_project(t, "merged-component-tables")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_file(
+		t,
+		root,
+		"scenes/main.scene.toml",
+		`name = "Main"
+version = 1
+
+[[entities]]
+id = "entity"
+name = "Entity"
+
+[entities.components."scrapbot.transform"]
+position = [1.0, 2.0, 3.0]
+
+[entities.components."scrapbot.transform"]
+rotation = [0.0, 0.0, 0.0]
+scale = [1.0, 1.0, 1.0]
+`,
+	)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	testing.expect_value(t, result.scene.component_instance_count, 1)
+	entity, found := runtime_world_find_entity_by_id(result.scene.world, "entity")
+	testing.expect_value(t, found, true)
+	position, position_err := runtime_world_get_component_field_value(result.scene.world, entity, "scrapbot.transform", "position")
+	testing.expect_value(t, position_err, Runtime_Error.None)
+	testing.expect_value(t, position.value_type, Runtime_Field_Type.Vec3)
+	testing.expect_value(t, position.vec3, [3]f32{1.0, 2.0, 3.0})
+}
+
+@(test)
+test_check_project_rejects_duplicate_field_across_repeated_component_tables :: proc(t: ^testing.T) {
+	root := make_test_project(t, "duplicate-field-across-component-tables")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_file(
+		t,
+		root,
+		"scenes/main.scene.toml",
+		`name = "Main"
+version = 1
+
+[[entities]]
+id = "entity"
+name = "Entity"
+
+[entities.components."scrapbot.render.cube"]
+color = [1.0, 0.0, 0.0]
+
+[entities.components."scrapbot.render.cube"]
+color = [0.0, 1.0, 0.0]
+`,
+	)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_invalid_engine_component_field_type :: proc(t: ^testing.T) {
+	root := make_test_project(t, "invalid-engine-component-field-type")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.transform"]
+position = "nope"
+rotation = [0.0, 0.0, 0.0]
+scale = [1.0, 1.0, 1.0]
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_missing_required_engine_component_field :: proc(t: ^testing.T) {
+	root := make_test_project(t, "missing-required-engine-component-field")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.transform"]
+position = [0.0, 0.0, 0.0]
+rotation = [0.0, 0.0, 0.0]
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_missing_required_ui_component_field :: proc(t: ^testing.T) {
+	root := make_test_project(t, "missing-required-ui-component-field")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.ui.progress_bar"]
+value = 0.5
+max = 1.0
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_invalid_renderer_setting_value :: proc(t: ^testing.T) {
+	root := make_test_project(t, "invalid-renderer-setting-value")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.renderer"]
+tone_mapping = "cinematic"
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_negative_renderer_setting_value :: proc(t: ^testing.T) {
+	root := make_test_project(t, "negative-renderer-setting-value")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.renderer"]
+bloom_intensity = -1.0
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_rejects_multiple_renderer_singletons :: proc(t: ^testing.T) {
+	root := make_test_project(t, "multiple-renderer-singletons")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_file(
+		t,
+		root,
+		"scenes/main.scene.toml",
+		`name = "Main"
+version = 1
+
+[[entities]]
+id = "first"
+name = "First"
+
+[entities.components."scrapbot.renderer"]
+
+[[entities]]
+id = "second"
+name = "Second"
+
+[entities.components."scrapbot.renderer"]
+`,
+	)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_accepts_defaulted_engine_component_fields :: proc(t: ^testing.T) {
+	root := make_test_project(t, "defaulted-engine-component-fields")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components."scrapbot.ui.rect"]
+position = [0.0, 0.0, 0.0]
+size = [10.0, 10.0, 0.0]
+color = [1.0, 1.0, 1.0]
+
+[entities.components."scrapbot.renderer"]
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	testing.expect_value(t, result.scene.component_instance_count, 2)
+	entity, found := runtime_world_find_entity_by_id(result.scene.world, "entity")
+	testing.expect_value(t, found, true)
+	corner_radius, corner_radius_err := runtime_world_get_component_field_value(result.scene.world, entity, "scrapbot.ui.rect", "corner_radius")
+	testing.expect_value(t, corner_radius_err, Runtime_Error.None)
+	testing.expect_value(t, corner_radius.value_type, Runtime_Field_Type.Float)
+	testing.expect_value(t, corner_radius.float, f32(0.0))
+	tone_mapping, tone_mapping_err := runtime_world_get_component_field_value(result.scene.world, entity, "scrapbot.renderer", "tone_mapping")
+	testing.expect_value(t, tone_mapping_err, Runtime_Error.None)
+	testing.expect_value(t, tone_mapping.value_type, Runtime_Field_Type.String)
+	testing.expect_value(t, tone_mapping.string_value, "aces")
+}
+
+@(test)
+test_check_project_rejects_undeclared_project_local_component :: proc(t: ^testing.T) {
+	root := make_test_project(t, "undeclared-project-local-component")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	write_basic_scene_with_component(t, root, `[entities.components.health]
+current = 5.0
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_accepts_script_defined_scene_component_schema :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-defined-scene-component")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n")
+	write_file(t, root, "scripts/gameplay.luau", `--!strict
+
+local Health = ecs.component("health", {
+  fields = ecs.fields({
+    current = "f32",
+    max = "int",
+    alive = "boolean",
+    label = "string",
+    direction = "vec3",
+  }),
+})
+`)
+	write_basic_scene_with_component(t, root, `[entities.components.health]
+current = 5.0
+max = 10
+alive = true
+label = "ready"
+direction = [0.0, 1.0, 0.0]
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+	entity, found := runtime_world_find_entity_by_id(result.scene.world, "entity")
+	testing.expect_value(t, found, true)
+	health_current, health_current_err := runtime_world_get_component_field_value(result.scene.world, entity, "health", "current")
+	testing.expect_value(t, health_current_err, Runtime_Error.None)
+	testing.expect_value(t, health_current.value_type, Runtime_Field_Type.Float)
+	testing.expect_value(t, health_current.float, f32(5.0))
+	health_label, health_label_err := runtime_world_get_component_field_value(result.scene.world, entity, "health", "label")
+	testing.expect_value(t, health_label_err, Runtime_Error.None)
+	testing.expect_value(t, health_label.value_type, Runtime_Field_Type.String)
+	testing.expect_value(t, health_label.string_value, "ready")
+}
+
+@(test)
+test_check_project_rejects_script_defined_scene_component_field_mismatch :: proc(t: ^testing.T) {
+	root := make_test_project(t, "script-defined-scene-component-mismatch")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nscripts = [\"scripts/gameplay.luau\"]\n")
+	write_file(t, root, "scripts/gameplay.luau", `--!strict
+
+ecs.component("health", {
+  fields = ecs.fields({
+    current = "f32",
+  }),
+})
+`)
+	write_basic_scene_with_component(t, root, `[entities.components.health]
+current = "not a float"
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Scene)
+}
+
+@(test)
+test_check_project_accepts_native_defined_scene_component_schema :: proc(t: ^testing.T) {
+	root := make_test_project(t, "native-defined-scene-component")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative = \"native/game.odin\"\n")
+	write_file(t, root, "native/game.odin", `package game
+
+stats_fields := []scrapbot.Component_Field{
+    {name = "count", field_type = .Int},
+    {name = "enabled", field_type = .Boolean},
+    {name = "speed", field_type = .Float},
+    {name = "direction", field_type = .Vec3},
+    {name = "label", field_type = .String},
+}
+
+scrapbot_register :: proc(api: ^scrapbot.Register_Api) -> bool {
+    scrapbot.register_component(api, {
+        id = "native_stats",
+        fields = stats_fields[:],
+    })
+    return true
+}
+`)
+	write_basic_scene_with_component(t, root, `[entities.components.native_stats]
+count = 2
+enabled = true
+speed = 1.5
+direction = [1.0, 2.0, 3.0]
+label = "ready"
+`)
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+}
+
+@(test)
+test_check_project_rejects_zig_native_source_in_odin_engine :: proc(t: ^testing.T) {
+	root := make_test_project(t, "zig-native-source-rejected")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	write_file(t, root, PROJECT_FILE_NAME, "name = \"Game\"\nversion = 1\ndefault_scene = \"scenes/main.scene.toml\"\nnative = \"native/game.zig\"\n")
+	write_file(t, root, "native/game.zig", `const scrapbot = @import("scrapbot_native");`)
+	write_valid_scene_file(t, root, "scenes/main.scene.toml")
+
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.Invalid_Native)
+}
+
+write_basic_scene_with_component :: proc(t: ^testing.T, root, component_body: string) {
+	scene, concat_err := strings.concatenate([]string{`name = "Main"
+version = 1
+
+[[entities]]
+id = "entity"
+name = "Entity"
+
+`, component_body})
+	testing.expect_value(t, concat_err, nil)
+	defer delete(scene)
+	write_file(t, root, "scenes/main.scene.toml", scene)
+}

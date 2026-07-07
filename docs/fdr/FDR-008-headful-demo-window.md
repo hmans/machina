@@ -1,11 +1,13 @@
 # FDR-008: Headful Demo Window
 
 **Status:** Active
-**Last reviewed:** 2026-07-05
+**Last reviewed:** 2026-07-07
 
 ## Overview
 
 Headful demo rendering proves that Scrapbot can create a platform window, hand its native surface to WebGPU, configure a presentable surface, and draw visible frames through the same renderer foundation used by offscreen rendering.
+
+**Odin migration note:** The Odin `run` command can execute bounded hidden frame loops and, with `--backend wgpu`, write a final offscreen WebGPU frame artifact through the Odin `wgpu-native` path and present the final simulated scene through a hidden SDL WebGPU surface. Visible software `run` now creates an SDL window, pumps quit/close events, drives the shared live-project frame tick with measured and clamped delta time, exits bounded runs after `--frames`, exits unbounded runs on SDL quit/window close, presents software-rendered scene plus first-pass editor chrome and selected translate-gizmo pixels through an SDL texture, routes SDL pointer/keyboard/text input through the shared runtime input/editor model, applies Ctrl+Tab editor visibility toggles during the live loop, tracks first-pass fly-camera input state from right-mouse capture, pointer deltas, movement keys, and editor game-viewport ownership, passes that transient camera override into the software renderer, and uses the same override for visible editor translate-gizmo hit testing, hover-axis styling, Shift-based snapping, Alt-held or persistent local-space axes, dragging, and active-axis rendering. Visible WebGPU `run` creates a visible SDL window, ticks the shared live-project reload/update/input path, applies the same Ctrl+Tab editor visibility toggles, tracks and renders with the same fly-camera override, uses that override for visible editor translate-gizmo interaction, and presents scene-derived frames plus first-pass editor chrome, selected translate-gizmo axes, hover/active gizmo styling, persistent world/local mode chrome, Alt-held local-space orientation, and selected-inspector overlay vertices through a persistent Odin `wgpu-native` surface context until the frame limit or window close. Hidden WebGPU run surfaces can draw the same first-pass `--editor` overlay. The Odin SDL boundary can initialize video, create high-DPI windows, extract platform-native `wgpu-native` surface descriptors for Metal, Wayland/X11, or Win32, and present a single hidden clear frame through `scrapbot wgpu-surface-check`. Odin WebGPU smoke tasks stage the host `wgpu-native` runtime library into `odin-out/lib` directly instead of building the migration-era Zig engine to populate `zig-pkg`. Full editor-shell tool parity remains pending.
 
 ## Behavior
 
@@ -48,7 +50,7 @@ Headful demo rendering proves that Scrapbot can create a platform window, hand i
 
 **Decision:** Desktop windowing uses SDL3 to create a native platform window. Scrapbot creates the matching `wgpu-native` surface from SDL-provided native handles: Metal on macOS, Wayland/X11 on Linux, and Win32 HWND/HINSTANCE on Windows MSVC.
 **Why:** SDL3 gives Scrapbot a small C ABI windowing layer with cross-platform reach while keeping platform details behind the renderer boundary described in ADR-005.
-**Tradeoff:** The first portable slice expects SDL3 to be installed as a system dependency. Bundled runtime packaging remains future work.
+**Tradeoff:** The development-time run path still expects SDL3 to be installed as a system dependency. Host build bundles can copy discoverable SDL3 runtime libraries into the bundle, and first-pass macOS release archives bundle the SDL3 runtime dylib beside the Odin CLI. Deeper app relocation and installer-grade dependency management remain packaging work.
 
 ### 4. Keep the frame cap as a runtime option
 
@@ -82,8 +84,8 @@ Headful demo rendering proves that Scrapbot can create a platform window, hand i
 
 ### 8. Add a render-only fly camera for headful exploration
 
-**Decision:** The headful runner owns a fly-camera transform initialized from the current scene camera. While right mouse is held, pointer delta and semantic movement input update that transform; rendering receives it as a frame camera override.
-**Why:** Dense scenes such as `spawn_swarm` need interactive navigation before a full editor camera/tool mode exists. Keeping this as a render-only override gives immediate inspection value without changing project scene data or requiring a gameplay camera component model.
+**Decision:** The headful runner owns a fly-camera transform initialized from the current scene camera. While right mouse is held, pointer delta and semantic movement input update that transform; rendering and visible editor translate-gizmo input receive it as a frame camera override.
+**Why:** Dense scenes such as `spawn_swarm` need interactive navigation before a full editor camera/tool mode exists. Keeping this as a transient frame override gives immediate inspection value without changing project scene data or requiring a gameplay camera component model. Editor gizmos must use the same projected view as rendering so picking and dragging line up with what the user sees.
 **Tradeoff:** This is not yet an authored camera controller, action-mapping system, editor camera asset, or persisted editor session state. Scene reload resets the fly camera to the new scene camera.
 
 ## Related
@@ -95,4 +97,4 @@ Headful demo rendering proves that Scrapbot can create a platform window, hand i
 
 - Should `run` eventually select scenes and windows from project configuration instead of fixed defaults?
 - How should renderer failures be surfaced as structured diagnostics instead of coarse error names?
-- How should release packaging bundle SDL3 and any required runtime libraries per platform?
+- How should release packaging bundle required runtime libraries on Linux and Windows?

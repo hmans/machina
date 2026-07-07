@@ -18,7 +18,7 @@ The project directory runtime lets users and agents run the `scrapbot` binary in
 - Fresh projects contain a small scene with a renderer singleton, spinning cube, camera, and directional light using the current scene-authored components.
 - Fresh project manifests list `scripts/main.luau`, and the starter script declares a project-local `spin` component plus an update system that rotates matching entities.
 - Fresh default scenes include a preconfigured `scrapbot.renderer` HDR, color, and postprocess profile.
-- Fresh project manifests keep the optional native module line commented out and do not create native source files.
+- Fresh project manifests keep the optional native module line commented out as `native = "native/game.odin"` and do not create native source files.
 - `scrapbot init` does not overwrite an existing project; it fails if `project.toml` or the legacy `project.scrapbot.toml` already exists in the target directory.
 - Interactive and headless commands use the same project loading rules.
 - Commands that write files keep generated artifacts separate from authoritative source files.

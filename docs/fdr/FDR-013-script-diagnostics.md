@@ -1,7 +1,7 @@
 # FDR-013: Script and Native Diagnostics
 
 **Status:** Active
-**Last reviewed:** 2026-07-03
+**Last reviewed:** 2026-07-07
 
 ## Overview
 
@@ -11,16 +11,18 @@ Diagnostics report Luau, script-ECS, and project-native failures in a form that 
 
 - Project validation can report script diagnostics for invalid Luau source or invalid script ECS declarations.
 - Live script reload can report why a changed script failed while keeping the last known good script program active.
-- Project validation and live reload can report native build, native load, and native registration diagnostics for project-local Zig modules.
+- Project validation and live reload can report native build, native load, and native registration diagnostics for project-local Odin modules.
 - Runtime system failures can report the failing system id and source script path when available.
 - Runtime failures caused by denied or failed host ECS access report the system id plus the relevant component and field when available.
 - Diagnostics identify the failure stage as load, native_build, native_load, native_registration, registration, schedule, or runtime.
 - Diagnostics can include source positions. Syntax and runtime errors use Luau-reported line numbers when available; script ECS declarations use the line where the declaration function was called.
-- Diagnostics include a human-readable message from Luau, Zig build output, the engine validation layer, or the host ECS access bridge.
+- Diagnostics include a human-readable message from Luau, Odin native build output, the engine validation layer, or the host ECS access bridge.
 - Successful subsequent operations clear stale live diagnostics.
 - Command-line commands render diagnostics as text.
 - `scrapbot check` can render validation diagnostics as JSON for editor panels, automation, and agent workflows.
 - `scrapbot step` can render runtime system diagnostics as JSON alongside the final scene and simulation summaries.
+- `scrapbot test` includes project validation diagnostic stage, path, and message text in failed test-case output when validation fails before simulation starts.
+- During the Odin migration, the Odin `check` command loads scripts through the shared Luau C ABI bridge, imports component/system declarations, and can render structured load, registration, and schedule diagnostics. Odin `step`, `bench`, and `run` can execute Luau query/component-field systems, first-pass structural commands, direct entity vec3 methods, prepared query/resolved-row field access, bulk f32/vec3 query views, first-pass Odin-native set-field operations, and first-pass Odin-native lifecycle operations that spawn, add, remove, and despawn through deferred ECS mutation, and can report runtime diagnostics with active system, component field, and runtime error context for denied or failed host-bridge access. Odin bounded runs and visible software/WebGPU SDL window loops poll project, scene, script, and native source reloads between frames, report successful reload event categories, keep last-known-good behavior on failed reloads, emit visible window-loop reload events live without repeating them in the final summary, and route first-pass SDL editor pointer/keyboard/text input before update execution. Unsupported scheduled Odin-native systems currently report a structured runtime diagnostic at the pending execution boundary instead of being skipped by native-only projects. Full editor-shell diagnostics and richer Luau stack/range diagnostics still remain in the Zig implementation.
 
 ## Design Decisions
 
@@ -33,7 +35,7 @@ Diagnostics report Luau, script-ECS, and project-native failures in a form that 
 ### 2. Track failure stage explicitly
 
 **Decision:** Diagnostics include the stage where the failure occurred: load, native_build, native_load, native_registration, registration, schedule, or runtime.
-**Why:** "Invalid script" is too broad. Knowing the stage tells the user whether they broke Luau syntax, native Zig compilation/loading, ECS declarations, dependency scheduling, or executing system logic.
+**Why:** "Invalid script" is too broad. Knowing the stage tells the user whether they broke Luau syntax, native compilation/loading, ECS declarations, dependency scheduling, or executing system logic.
 **Tradeoff:** New script lifecycle stages must be added deliberately when the scripting pipeline grows.
 
 ### 3. Preserve last-known-good runtime state

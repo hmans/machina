@@ -1,6 +1,6 @@
 # Scrapbot Agent Guide
 
-Scrapbot is an experimental, text-first game engine written in Zig with embedded Luau for project-local scripting. This file is the authoritative home for rules agents must follow before changing code. ADRs, FDRs, and skills are further reading, not replacements for these rules.
+Scrapbot is an experimental, text-first game engine migrating from Zig to Odin, with embedded Luau for project-local scripting. This file is the authoritative home for rules agents must follow before changing code. ADRs, FDRs, and skills are further reading, not replacements for these rules.
 
 ## Project Goals
 
@@ -20,7 +20,7 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 
 ## Non-Negotiable Design Rules
 
-- The engine is implemented in Zig. Luau is for project-local game scripting only; do not implement engine features in Luau.
+- The target engine implementation language is Odin; the current Zig engine remains migration scaffolding until Odin reaches parity. Luau is for project-local game scripting only; do not implement engine features in Luau.
 - Implement behavior through reusable ECS components, systems, schedules, and shared runtime services. Do not add per-entity callbacks or hardcoded one-off entity logic that bypasses the ECS model.
 - Route runtime state through ECS worlds. Engine subsystems may own internal worlds and schedules, but they must use the shared runtime ECS implementation rather than a parallel ECS model.
 - Preserve component registry validation for scene data, script ECS declarations, native ECS declarations, and project-local component ids.
@@ -33,7 +33,7 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 ## Project and Scene Data
 
 - Keep project and scene data text-based, inspectable, and diffable.
-- Projects use `project.scrapbot.toml`, a default scene path, optional `scripts = [...]`, and at most one project-local native Zig module declared with `native = "native/game.zig"`.
+- Projects use `project.scrapbot.toml`, a default scene path, optional `scripts = [...]`, and at most one project-local native module. New project-local native examples should use Odin with `native = "native/game.odin"` and import `scrapbot "scrapbot:scrapbot_native"`.
 - Scenes are TOML files with root `name` and `version` fields plus `[[entities]]` records containing component tables.
 - Scene-authored component ids and fields must validate against the engine, script, and native component registry.
 - New scene-authored renderables should use `scrapbot.geometry.primitive` plus `scrapbot.material.surface`; treat `scrapbot.render.cube` as a legacy shortcut.
@@ -52,7 +52,7 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 - In hot Luau loops, cache component fields in locals before reusing them. Repeated field access crosses the host ECS bridge, and repeated vec3 field access allocates tables.
 - For large measured Luau loops, prefer explicit `Query:view(world)` bulk `f32`/`vec3` buffers over per-entity proxy access only when the buffer complexity is justified.
 - Measure Luau bridge hot-loop optimizations before keeping them. Query-local field-index caching has already regressed versus the simpler resolved-row path in `spawn_swarm`.
-- Project-local native Zig code imports `scrapbot_native`, exports `scrapbot_register(api)`, and uses the access-checked host API. Do not expose or depend on raw `runtime.World` from project native modules.
+- Project-local native code must use the access-checked host API. Odin modules import `scrapbot "scrapbot:scrapbot_native"` and export `scrapbot_register(api)`; the Odin engine rejects project-local `native = "native/game.zig"` source. Do not expose or depend on raw runtime world internals from project native modules.
 - Native systems and components must use the same component registry, scheduler, profiling path, and deferred mutation semantics as Luau systems.
 
 ## UI, Input, and Editor Rules
@@ -92,23 +92,24 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 - Update FDRs when changing feature behavior, command behavior, scene schema, validation semantics, diagnostics, examples that define supported behavior, or user-visible workflows.
 - Update `docs/fdr/INDEX.md` and `docs/adr/INDEX.md` when adding records.
 - Keep `scrapbot check --format=json` useful for editor and agent workflows. Add fields compatibly; do not remove or rename existing successful-output metadata without an explicit compatibility decision.
-- Runtime script host API failures should report the active system plus relevant component/field context. Avoid generic bridge errors when Zig can identify the denied access or failed mutation.
+- Runtime script host API failures should report the active system plus relevant component/field context. Avoid generic bridge errors when the host can identify the denied access or failed mutation.
 
 ## Verification Rules
 
 - Use `scrapbot test` for automated gameplay and UI input replay fixture coverage.
 - Use `scrapbot step` for narrow deterministic script/ECS debugging and runtime diagnostic checks.
 - Use `scrapbot bench` for headless performance smoke coverage; keep renderable and render-batch counts useful enough to catch batching regressions.
-- Use `mise build` for normal optimized builds.
-- Use `mise build-debug` or `zig build test` when Debug safety checks matter.
-- Do not run `zig build test` and `mise test` concurrently. The current tests use shared fixed temp project paths, so parallel invocations can collide and produce misleading filesystem failures.
+- Use `mise build` for the default Odin CLI build.
+- Use `mise test` for the default Odin test suite.
+- Use `mise build-zig`, `mise build-debug-zig`, `mise test-zig`, or `mise visual-test-zig` only when checking migration-era Zig compatibility.
+- Do not run `mise test-zig` and `mise test` concurrently. The current tests use shared fixed temp project paths, so parallel invocations can collide and produce misleading filesystem failures.
 - For rendering, shader, scene-driven render data, or visual expectation changes, use `.agents/skills/scrapbot-render-verification`.
 - For script diagnostics, Luau bridge error reporting, `scrapbot check` output, script reload/runtime failure handling, or editor/agent diagnostic surfaces, use `.agents/skills/scrapbot-script-diagnostics`.
 - For editor layout changes, prefer engine-generated offscreen artifacts with `scrapbot render --editor`; use `--select <entity-id>` when selected-entity inspector state matters.
 - When a render example depends on startup-spawned content, run startup before offscreen verification and keep the example covered by `mise test`.
 - Do not run visible `scrapbot run` smoke tests by default. Prefer headless commands, offscreen render verification, and hidden bounded surface smoke tests such as `mise scrapbot run examples/minimal --hidden --frames 2`; ask the user before launching a visible Scrapbot window unless they explicitly requested one.
 - For `scrapbot run` window-loop, surface, or live-reload changes, run a bounded hidden surface smoke test such as `mise scrapbot run examples/minimal --hidden --frames 2`; use a visible headful run only when hidden presentation is insufficient.
-- For editor input bugs, add deterministic frame-replay coverage in Zig tests before relying on manual headful checks.
+- For editor input bugs, add deterministic frame-replay coverage in Odin tests before relying on manual headful checks.
 - When investigating performance, compare optimized and Debug builds, and separate headless update cost from headful render/presentation cost before changing engine architecture.
 
 ## Project Map
@@ -128,7 +129,7 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 - WGSL shaders embedded into the binary: `src/shaders/`
 - Canonical smoke-test project: `examples/minimal/`
 - Retained UI primitive gallery: `examples/ui_gallery/`
-- Project-local native Zig module example: `examples/native_motion/`
+- Project-local native Odin module example: `examples/native_motion/`
 - Automated game-shaped fixtures: `tests/projects/`
 
 ## Further Reading

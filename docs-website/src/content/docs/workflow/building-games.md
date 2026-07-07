@@ -18,7 +18,7 @@ mise build
 Then build a game project:
 
 ```sh
-zig-out/bin/scrapbot build examples/minimal
+odin-out/scrapbot build examples/minimal
 ```
 
 The default output root is `build` inside the project directory. The default bundle name uses the project name plus the host platform, such as `minimal-aarch64-macos`.
@@ -26,7 +26,7 @@ The default output root is `build` inside the project directory. The default bun
 Use `--output` and `--name` when you want predictable distribution paths:
 
 ```sh
-zig-out/bin/scrapbot build examples/minimal --output dist --name minimal-macos --force
+odin-out/scrapbot build examples/minimal --output dist --name minimal-macos --force
 ```
 
 The bundle contains:
@@ -42,7 +42,7 @@ The bundle contains:
 Build on macOS:
 
 ```sh
-zig-out/bin/scrapbot build path/to/game --output dist --name game-macos --force
+odin-out/scrapbot build path/to/game --output dist --name game-macos --force
 ```
 
 Run the bundle:
@@ -60,7 +60,7 @@ Codesigning, notarization, and `.app` bundle generation are not part of the firs
 Build on Linux:
 
 ```sh
-zig-out/bin/scrapbot build path/to/game --output dist --name game-linux --force
+odin-out/scrapbot build path/to/game --output dist --name game-linux --force
 ```
 
 Run the bundle:
@@ -76,7 +76,7 @@ The launcher adds `lib/` to `LD_LIBRARY_PATH` before starting `bin/scrapbot`. If
 Build on Windows from a Scrapbot CLI built for Windows:
 
 ```powershell
-zig-out\bin\scrapbot.exe build path\to\game --output dist --name game-windows --force
+odin-out\scrapbot.exe build path\to\game --output dist --name game-windows --force
 ```
 
 Run the bundle:
@@ -89,7 +89,7 @@ The launcher prepends the bundle's `lib` and `bin` directories to `PATH` before 
 
 The generated `native_artifact` manifest path uses forward slashes because it is project metadata, not a Windows filesystem path.
 
-## Native Zig Projects
+## Native Odin Projects
 
 Projects with `native = "..."` are built into a packaged dynamic library artifact during `scrapbot build`.
 
