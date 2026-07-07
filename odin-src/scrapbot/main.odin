@@ -77,6 +77,9 @@ run_with_output :: proc(args: []string, emit_output: bool) -> int {
 	if command == "visual-test" {
 		return run_visual_test(args[2:], emit_output)
 	}
+	if command == "sdl-window-check" {
+		return run_sdl_window_check(args[2:], emit_output)
+	}
 	if command == "wgpu-check" {
 		return run_wgpu_check(args[2:], emit_output)
 	}
@@ -112,6 +115,7 @@ Usage:
   scrapbot render [--backend software|wgpu] [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [path] [output.png]
   scrapbot render-test [--backend software|wgpu] [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [path] [output.png]
   scrapbot visual-test [--backend software|wgpu] [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [--update] <path> <expected.png> [actual.png]
+  scrapbot sdl-window-check [--hidden|--visible]
   scrapbot wgpu-check [root]
   scrapbot wgpu-render-test [root] [output.png]
   scrapbot build [path] [--output DIR] [--name NAME] [--force] [--format text|json]
@@ -122,6 +126,67 @@ Odin migration status:
   Luau execution, native module execution, retained scene UI/editor input replay, software render/visual output,
   WebGPU offscreen run/render output, image comparison, and first-pass offscreen editor chrome are partially ported;
   WebGPU presentation, unbounded window-loop reload diagnostics, and the full editor shell are still being ported.`)
+}
+
+run_sdl_window_check :: proc(args: []string, emit_output: bool) -> int {
+	hidden := true
+	for arg in args {
+		switch arg {
+		case "--hidden":
+			hidden = true
+		case "--visible":
+			hidden = false
+		case:
+			if emit_output {
+				fmt.eprintf("unknown argument: %s\n", arg)
+			}
+			return 1
+		}
+	}
+
+	init_err := sdl_video_init()
+	if init_err != .None {
+		if emit_output {
+			fmt.eprintf("SDL window check failed: %s\n", sdl_window_error_message(init_err))
+		}
+		return 1
+	}
+	defer sdl_video_quit()
+
+	window, window_err := sdl_window_create(sdl_window_default_options(hidden))
+	defer sdl_window_destroy(&window)
+	if window_err != .None {
+		if emit_output {
+			fmt.eprintf("SDL window check failed: %s\n", sdl_window_error_message(window_err))
+		}
+		return 1
+	}
+
+	size, size_err := sdl_window_get_size(window.window)
+	if size_err != .None {
+		if emit_output {
+			fmt.eprintf("SDL window size check failed: %s\n", sdl_window_error_message(size_err))
+		}
+		return 1
+	}
+
+	surface_descriptor := Sdl_WGPU_Surface_Descriptor{}
+	surface_err := sdl_window_init_surface_descriptor(&surface_descriptor, window.window)
+	defer sdl_wgpu_surface_descriptor_deinit(&surface_descriptor)
+	if surface_err != .None {
+		if emit_output {
+			fmt.eprintf("SDL surface check failed: %s\n", sdl_window_error_message(surface_err))
+		}
+		return 1
+	}
+
+	if emit_output {
+		fmt.printf("SDL window OK: %s\n", hidden ? "hidden" : "visible")
+		fmt.printf("Window size: %dx%d\n", size.width, size.height)
+		fmt.printf("Pixel size: %dx%d\n", size.pixel_width, size.pixel_height)
+		fmt.printf("Surface source: %s\n", sdl_surface_source_kind_label(surface_descriptor.kind))
+	}
+	return 0
 }
 
 run_wgpu_check :: proc(args: []string, emit_output: bool) -> int {

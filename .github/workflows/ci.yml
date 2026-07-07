@@ -13,14 +13,19 @@ concurrency:
 jobs:
   odin-smoke:
     runs-on: ubuntu-latest
+    container: ubuntu:25.10
     steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates git curl xz-utils zstd build-essential libsdl3-dev xvfb
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v4
         with:
           install_args: odin
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and test Odin scaffold
-        run: mise odin-smoke && mise test-odin
+        run: mise odin-smoke && mise test-odin && xvfb-run -a mise odin-sdl-smoke
 
   macos:
     runs-on: macos-latest
