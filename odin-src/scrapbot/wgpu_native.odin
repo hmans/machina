@@ -928,7 +928,12 @@ WGPU_Symbol_Resolver :: proc(name: string, user_data: rawptr) -> rawptr
 WGPU_OFFSCREEN_LIBRARY_LOAD_ERROR :: "load_library"
 WGPU_OFFSCREEN_LIBRARY_NOT_FOUND :: "library_not_found"
 WGPU_OFFSCREEN_INSTANCE_CREATE_ERROR :: "create_instance"
+WGPU_OFFSCREEN_ADAPTER_REQUEST_ERROR :: "request_adapter"
+WGPU_OFFSCREEN_DEVICE_REQUEST_ERROR :: "request_device"
+WGPU_OFFSCREEN_QUEUE_GET_ERROR :: "get_queue"
+WGPU_OFFSCREEN_REQUEST_TIMEOUT_ERROR :: "request_timeout"
 WGPU_OFFSCREEN_LIBRARY_ENV :: "SCRAPBOT_WGPU_NATIVE_LIBRARY"
+WGPU_OFFSCREEN_REQUEST_POLL_LIMIT :: 2048
 
 WGPU_SYMBOL_DEVICE_CREATE_TEXTURE :: "wgpuDeviceCreateTexture"
 WGPU_SYMBOL_DEVICE_CREATE_BUFFER :: "wgpuDeviceCreateBuffer"
@@ -1055,6 +1060,18 @@ WGPU_Offscreen_Dynamic_Library :: struct {
 
 WGPU_Dynlib_Resolver_Context :: struct {
 	library: dynlib.Library,
+}
+
+WGPU_Adapter_Request_State :: struct {
+	complete: bool,
+	status:   WGPU_Request_Adapter_Status,
+	adapter:  WGPU_Adapter,
+}
+
+WGPU_Device_Request_State :: struct {
+	complete: bool,
+	status:   WGPU_Request_Device_Status,
+	device:   WGPU_Device,
 }
 
 wgpu_string_view_null :: proc() -> WGPU_String_View {
@@ -2032,6 +2049,35 @@ wgpu_smoke_offscreen_instance :: proc(procs: WGPU_Offscreen_Procs) -> (string, b
 	return "", true
 }
 
+wgpu_smoke_offscreen_context :: proc(procs: WGPU_Offscreen_Procs, backend_type: WGPU_Backend_Type = WGPU_BACKEND_TYPE_UNDEFINED) -> (string, bool) {
+	descriptor := wgpu_instance_descriptor_default()
+	instance := procs.create_instance(&descriptor)
+	if instance == nil {
+		return WGPU_OFFSCREEN_INSTANCE_CREATE_ERROR, false
+	}
+	defer procs.instance_release(instance)
+
+	adapter, adapter_error, adapter_ok := wgpu_request_adapter_sync(procs, instance, backend_type)
+	if !adapter_ok {
+		return adapter_error, false
+	}
+	defer procs.adapter_release(adapter)
+
+	device, device_error, device_ok := wgpu_request_device_sync(procs, instance, adapter)
+	if !device_ok {
+		return device_error, false
+	}
+	defer procs.device_release(device)
+
+	queue := procs.device_get_queue(device)
+	if queue == nil {
+		return WGPU_OFFSCREEN_QUEUE_GET_ERROR, false
+	}
+	defer procs.queue_release(queue)
+
+	return "", true
+}
+
 wgpu_smoke_default_offscreen_instance :: proc(root: string = ".") -> (string, string, bool) {
 	path, found := wgpu_find_default_offscreen_library(root)
 	if !found {
@@ -2052,6 +2098,86 @@ wgpu_smoke_default_offscreen_instance :: proc(root: string = ".") -> (string, st
 	}
 
 	return path, "", true
+}
+
+wgpu_smoke_default_offscreen_context :: proc(root: string = ".", backend_type: WGPU_Backend_Type = WGPU_BACKEND_TYPE_UNDEFINED) -> (string, string, bool) {
+	path, found := wgpu_find_default_offscreen_library(root)
+	if !found {
+		return "", WGPU_OFFSCREEN_LIBRARY_NOT_FOUND, false
+	}
+
+	loaded, missing, loaded_ok := wgpu_load_offscreen_library(path)
+	if !loaded_ok {
+		delete(path)
+		return "", missing, false
+	}
+	defer wgpu_unload_offscreen_library(&loaded)
+
+	smoke_error, smoke_ok := wgpu_smoke_offscreen_context(loaded.procs, backend_type)
+	if !smoke_ok {
+		delete(path)
+		return "", smoke_error, false
+	}
+
+	return path, "", true
+}
+
+wgpu_request_adapter_sync :: proc(procs: WGPU_Offscreen_Procs, instance: WGPU_Instance, backend_type: WGPU_Backend_Type = WGPU_BACKEND_TYPE_UNDEFINED) -> (WGPU_Adapter, string, bool) {
+	state := WGPU_Adapter_Request_State{}
+	options := wgpu_request_adapter_options(nil)
+	options.backend_type = backend_type
+	_ = procs.instance_request_adapter(instance, &options, wgpu_request_adapter_callback_info(wgpu_request_adapter_sync_callback, rawptr(&state)))
+	if !wgpu_poll_request_until_complete(procs, instance, &state.complete) {
+		return nil, WGPU_OFFSCREEN_REQUEST_TIMEOUT_ERROR, false
+	}
+	if state.status != WGPU_REQUEST_ADAPTER_STATUS_SUCCESS || state.adapter == nil {
+		return nil, WGPU_OFFSCREEN_ADAPTER_REQUEST_ERROR, false
+	}
+	return state.adapter, "", true
+}
+
+wgpu_request_device_sync :: proc(procs: WGPU_Offscreen_Procs, instance: WGPU_Instance, adapter: WGPU_Adapter) -> (WGPU_Device, string, bool) {
+	state := WGPU_Device_Request_State{}
+	descriptor := wgpu_device_descriptor_default()
+	_ = procs.adapter_request_device(adapter, &descriptor, wgpu_request_device_callback_info(wgpu_request_device_sync_callback, rawptr(&state)))
+	if !wgpu_poll_request_until_complete(procs, instance, &state.complete) {
+		return nil, WGPU_OFFSCREEN_REQUEST_TIMEOUT_ERROR, false
+	}
+	if state.status != WGPU_REQUEST_DEVICE_STATUS_SUCCESS || state.device == nil {
+		return nil, WGPU_OFFSCREEN_DEVICE_REQUEST_ERROR, false
+	}
+	return state.device, "", true
+}
+
+wgpu_poll_request_until_complete :: proc(procs: WGPU_Offscreen_Procs, instance: WGPU_Instance, complete: ^bool) -> bool {
+	for poll_index := 0; poll_index < WGPU_OFFSCREEN_REQUEST_POLL_LIMIT && !complete^; poll_index += 1 {
+		procs.instance_process_events(instance)
+	}
+	return complete^
+}
+
+wgpu_request_adapter_sync_callback :: proc "c" (status: WGPU_Request_Adapter_Status, adapter: WGPU_Adapter, message: WGPU_String_View, userdata1, userdata2: rawptr) {
+	_ = message
+	_ = userdata2
+	if userdata1 == nil {
+		return
+	}
+	state := (^WGPU_Adapter_Request_State)(userdata1)
+	state.status = status
+	state.adapter = adapter
+	state.complete = true
+}
+
+wgpu_request_device_sync_callback :: proc "c" (status: WGPU_Request_Device_Status, device: WGPU_Device, message: WGPU_String_View, userdata1, userdata2: rawptr) {
+	_ = message
+	_ = userdata2
+	if userdata1 == nil {
+		return
+	}
+	state := (^WGPU_Device_Request_State)(userdata1)
+	state.status = status
+	state.device = device
+	state.complete = true
 }
 
 wgpu_find_default_offscreen_library :: proc(root: string = ".") -> (string, bool) {
