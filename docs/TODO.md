@@ -1,10 +1,32 @@
 # TODO
 
-## Runtime Skeleton
+## Rendering
 
 - [ ] Replace the null renderer with a `wgpu-native` renderer backend.
 - [ ] Add SDL3 or GLFW window creation for headful rendering.
+- [ ] Define the render packet boundary between ECS state and renderer backends.
+- [ ] Add offscreen render verification.
+
+## Project Runtime
+
 - [ ] Add a real TOML parser or formalize the supported scene subset.
 - [ ] Add component presence tables so sparse ECS component storage maps entities precisely.
 - [ ] Add file watching for scene hot reload.
+- [ ] Add structured diagnostics for `scrapbot check`.
+
+## ECS And Scripting
+
+- [ ] Add a reflected component registry.
+- [ ] Add scheduled systems with declared component access.
+- [ ] Add Luau scripting for project-local systems.
+- [ ] Add native Odin extension loading and hot reload.
+
+## Editor
+
+- [ ] Add an editor GUI toggle from a running project.
+- [ ] Add an entity browser and component inspector.
+
+## Documentation And Examples
+
 - [ ] Add a sample project under `examples/`.
+- [ ] Add ADR/FDR update guidance to contributor documentation.
