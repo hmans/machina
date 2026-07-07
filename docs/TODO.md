@@ -116,6 +116,7 @@
 - [x] Add first-pass Odin `wgpu-native` adapter/device/queue context smoke through the default dynamic loader.
 - [x] Add first-pass Odin `wgpu-native` offscreen clear/readback smoke through the default dynamic loader.
 - [x] Add first-pass Odin `wgpu-native` offscreen WGSL pipeline draw/readback smoke through the default dynamic loader.
+- [x] Add first-pass Odin `wgpu-native` offscreen image artifact output through the default dynamic loader.
 - [ ] Port remaining unbounded/window-loop reload diagnostics from Zig to Odin.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
 - [x] Port first-pass Odin software offscreen PNG/BMP image output and render-test pixel verification.

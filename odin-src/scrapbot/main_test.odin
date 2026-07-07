@@ -32,6 +32,42 @@ test_run_wgpu_check_command_loads_zig_package_cache_library :: proc(t: ^testing.
 }
 
 @(test)
+test_run_wgpu_render_test_command_reports_missing_library :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-wgpu-render-test-missing")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	output_path := join_test_path(t, root, "out.png")
+	defer delete(output_path)
+
+	testing.expect_value(t, run_with_output([]string{"scrapbot", "wgpu-render-test", root, output_path}, false), 1)
+}
+
+@(test)
+test_run_wgpu_render_test_command_writes_zig_package_cache_library_png :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-wgpu-render-test-loads")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	staged_library := stage_fake_wgpu_zig_package_library(t, root)
+	defer delete(staged_library)
+
+	output_path := join_test_path(t, root, "wgpu-render.png")
+	defer delete(output_path)
+
+	testing.expect_value(t, run_with_output([]string{"scrapbot", "wgpu-render-test", root, output_path}, false), 0)
+
+	image, image_err := render_load_rgb_image(output_path)
+	defer render_image_free(&image)
+	testing.expect_value(t, image_err, Render_Image_Error.None)
+	testing.expect_value(t, image.width, DEFAULT_WGPU_RENDER_TEST_WIDTH)
+	testing.expect_value(t, image.height, DEFAULT_WGPU_RENDER_TEST_HEIGHT)
+	testing.expect_value(t, image.rgb[0], u8(255))
+	testing.expect_value(t, image.rgb[1], u8(0))
+	testing.expect_value(t, image.rgb[2], u8(0))
+}
+
+@(test)
 test_run_init_command_creates_checkable_project :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-init-project")
 	defer os.remove_all(root)

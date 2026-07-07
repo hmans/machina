@@ -80,6 +80,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Odin wgpu-native context smoke slice
   - [x] Odin wgpu-native offscreen clear/readback smoke slice
   - [x] Odin wgpu-native offscreen pipeline draw/readback smoke slice
+  - [x] Odin wgpu-native offscreen image artifact smoke slice
   - [x] Odin native declaration registration slice
   - [x] Odin native execution boundary diagnostics slice
   - [ ] Odin CLI feature parity

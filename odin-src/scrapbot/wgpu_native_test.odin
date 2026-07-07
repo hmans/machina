@@ -792,6 +792,25 @@ test_wgpu_offscreen_triangle_readback_smoke_records_pipeline_draw_path :: proc(t
 }
 
 @(test)
+test_wgpu_offscreen_triangle_image_converts_readback_to_rgb :: proc(t: ^testing.T) {
+	ctx := WGPU_Test_Resolver_Context{}
+	procs, missing, procs_ok := wgpu_resolve_offscreen_procs(wgpu_test_symbol_resolver, rawptr(&ctx))
+	testing.expect_value(t, procs_ok, true)
+	testing.expect_value(t, missing, "")
+	procs.buffer_get_mapped_range = wgpu_test_buffer_get_mapped_range_red
+
+	image, render_error, render_ok := wgpu_render_offscreen_triangle_image(procs, 1, 1)
+	defer render_image_free(&image)
+	testing.expect_value(t, render_ok, true)
+	testing.expect_value(t, render_error, "")
+	testing.expect_value(t, image.width, 1)
+	testing.expect_value(t, image.height, 1)
+	testing.expect_value(t, image.rgb[0], u8(255))
+	testing.expect_value(t, image.rgb[1], u8(0))
+	testing.expect_value(t, image.rgb[2], u8(0))
+}
+
+@(test)
 test_wgpu_offscreen_triangle_readback_smoke_reports_pipeline_failure :: proc(t: ^testing.T) {
 	ctx := WGPU_Test_Resolver_Context{}
 	procs, missing, procs_ok := wgpu_resolve_offscreen_procs(wgpu_test_symbol_resolver, rawptr(&ctx))

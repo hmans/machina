@@ -10,6 +10,9 @@ VERSION :: "0.0.0-odin-migration"
 DEFAULT_STEP_FRAMES :: 1
 DEFAULT_BENCH_FRAMES :: 240
 DEFAULT_STEP_DELTA_SECONDS :: f32(1.0 / 60.0)
+DEFAULT_WGPU_RENDER_TEST_OUTPUT :: "odin-out/wgpu-render-test.png"
+DEFAULT_WGPU_RENDER_TEST_WIDTH :: 1
+DEFAULT_WGPU_RENDER_TEST_HEIGHT :: 1
 
 Simulation_Options :: struct {
 	target_path:   string,
@@ -77,6 +80,9 @@ run_with_output :: proc(args: []string, emit_output: bool) -> int {
 	if command == "wgpu-check" {
 		return run_wgpu_check(args[2:], emit_output)
 	}
+	if command == "wgpu-render-test" {
+		return run_wgpu_render_test(args[2:], emit_output)
+	}
 	if command == "init" {
 		return run_init(args[2:], emit_output)
 	}
@@ -107,6 +113,7 @@ Usage:
   scrapbot render-test [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [path] [output.png]
   scrapbot visual-test [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [--update] <path> <expected.png> [actual.png]
   scrapbot wgpu-check [root]
+  scrapbot wgpu-render-test [root] [output.png]
   scrapbot build [path] [--output DIR] [--name NAME] [--force] [--format text|json]
 
 Odin migration status:
@@ -608,6 +615,79 @@ run_visual_test :: proc(args: []string, emit_output: bool) -> int {
 	}
 	if !comparison_ok {
 		return 1
+	}
+	return 0
+}
+
+run_wgpu_render_test :: proc(args: []string, emit_output: bool) -> int {
+	root := "."
+	output_path := DEFAULT_WGPU_RENDER_TEST_OUTPUT
+	if len(args) > 2 {
+		if emit_output {
+			fmt.eprintln("wgpu-render-test expects at most a root path and output image path")
+		}
+		return 1
+	}
+	if len(args) >= 1 {
+		root = args[0]
+	}
+	if len(args) == 2 {
+		output_path = args[1]
+	}
+
+	format, format_ok := render_image_format_from_path(output_path)
+	if !format_ok {
+		if emit_output {
+			fmt.eprintf("unsupported image output: %s\n", output_path)
+		}
+		return 1
+	}
+
+	path, found := wgpu_find_default_offscreen_library(root)
+	if !found {
+		if emit_output {
+			fmt.eprintf("wgpu-native library not found under %s\n", root)
+			fmt.eprintf("Set %s to an explicit library path or populate zig-pkg.\n", WGPU_OFFSCREEN_LIBRARY_ENV)
+		}
+		return 1
+	}
+	defer delete(path)
+
+	loaded, missing, ok := wgpu_load_offscreen_library(path)
+	defer wgpu_unload_offscreen_library(&loaded)
+	if !ok {
+		if emit_output {
+			fmt.eprintf("wgpu-native library failed to load: %s\n", missing)
+			fmt.eprintf("Path: %s\n", path)
+		}
+		return 1
+	}
+
+	image, render_error, render_ok := wgpu_render_offscreen_triangle_image(
+		loaded.procs,
+		DEFAULT_WGPU_RENDER_TEST_WIDTH,
+		DEFAULT_WGPU_RENDER_TEST_HEIGHT,
+	)
+	defer render_image_free(&image)
+	if !render_ok {
+		if emit_output {
+			fmt.eprintf("wgpu-native offscreen render failed: %s\n", render_error)
+			fmt.eprintf("Path: %s\n", path)
+		}
+		return 1
+	}
+
+	write_error := render_write_image_file(image, output_path, format)
+	if write_error != .None {
+		if emit_output {
+			fmt.eprintf("failed to write WebGPU render artifact %s: %s\n", output_path, render_image_error_message(write_error))
+		}
+		return 1
+	}
+
+	if emit_output {
+		fmt.printf("wgpu-native offscreen render OK: %s\n", output_path)
+		fmt.printf("Path: %s\n", path)
 	}
 	return 0
 }
