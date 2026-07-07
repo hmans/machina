@@ -6,6 +6,7 @@ import "core:strconv"
 import "core:strings"
 
 EDITOR_TEST_TEXT_INPUT_BUFFER_LEN :: 128
+EDITOR_TEST_DIAGNOSTIC_BUFFER_LEN :: 160
 EDITOR_TEST_UNDO_CAPACITY :: 64
 EDITOR_TEST_GIZMO_AXIS_LENGTH :: f32(1.35)
 EDITOR_TEST_GIZMO_PICK_RADIUS_PX :: f32(12.0)
@@ -117,6 +118,9 @@ Editor_Test_Input_State :: struct {
 	text_input_len:              int,
 	text_input_cursor:           int,
 	text_input_selection_anchor: int,
+	has_diagnostic:              bool,
+	diagnostic_buffer:           [EDITOR_TEST_DIAGNOSTIC_BUFFER_LEN]u8,
+	diagnostic_len:              int,
 	undo_stack:                  [EDITOR_TEST_UNDO_CAPACITY]Editor_Test_Field_Edit_Command,
 	undo_len:                    int,
 	redo_stack:                  [EDITOR_TEST_UNDO_CAPACITY]Editor_Test_Field_Edit_Command,
@@ -176,6 +180,7 @@ route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: ^Runtime
 				state.selected_property_field = ""
 				state.selected_property_lane = 0
 				clear_editor_test_text_input(state)
+				clear_editor_test_diagnostic(state)
 				state.captured_pointer = true
 				consumed = true
 			} else if component_id, field_name, lane, property_ok := editor_inspector_property_at_pointer(world^, state^, input^); property_ok {
@@ -415,6 +420,7 @@ focus_editor_test_text_input :: proc(world: Runtime_World, state: ^Editor_Test_I
 	} else {
 		state.text_input_selection_anchor = state.text_input_len
 	}
+	clear_editor_test_diagnostic(state)
 	return true
 }
 
@@ -424,13 +430,14 @@ commit_editor_test_text_input :: proc(world: ^Runtime_World, state: ^Editor_Test
 	}
 	current, current_err := runtime_world_get_component_field_value(world^, state.selected_entity, state.text_input_component, state.text_input_field)
 	if current_err != .None {
+		set_editor_test_diagnostic(state, "invalid editor target: %s.%s", state.text_input_component, state.text_input_field)
 		clear_editor_test_text_input(state)
 		return false
 	}
 	text := string(state.text_input_buffer[:state.text_input_len])
 	next, parse_ok := editor_test_parse_input_value(current, text, state.text_input_lane)
 	if !parse_ok {
-		clear_editor_test_text_input(state)
+		set_editor_test_diagnostic(state, "invalid value for %s.%s", state.text_input_component, state.text_input_field)
 		return false
 	}
 	set_ok := apply_editor_test_field_value(
@@ -443,8 +450,13 @@ commit_editor_test_text_input :: proc(world: ^Runtime_World, state: ^Editor_Test
 		next,
 		true,
 	)
+	if !set_ok {
+		set_editor_test_diagnostic(state, "failed to edit %s.%s", state.text_input_component, state.text_input_field)
+		return false
+	}
+	clear_editor_test_diagnostic(state)
 	clear_editor_test_text_input(state)
-	return set_ok
+	return true
 }
 
 apply_editor_test_field_value :: proc(
@@ -471,6 +483,7 @@ apply_editor_test_field_value :: proc(
 		push_editor_test_field_command(&state.undo_stack, &state.undo_len, entity, component_id, field_name, lane, old_value, new_value)
 		clear_editor_test_field_command_stack(&state.redo_stack, &state.redo_len)
 	}
+	clear_editor_test_diagnostic(state)
 	return true
 }
 
@@ -488,6 +501,7 @@ undo_editor_test_field_edit :: proc(world: ^Runtime_World, state: ^Editor_Test_I
 	}
 	push_editor_test_field_command(&state.redo_stack, &state.redo_len, command.entity, component_id, field_name, command.lane, command.old_value, command.new_value)
 	select_editor_test_field_edit_command(world^, state, &command)
+	clear_editor_test_diagnostic(state)
 	editor_test_field_command_free(&command)
 	return true
 }
@@ -506,6 +520,7 @@ redo_editor_test_field_edit :: proc(world: ^Runtime_World, state: ^Editor_Test_I
 	}
 	push_editor_test_field_command(&state.undo_stack, &state.undo_len, command.entity, component_id, field_name, command.lane, command.old_value, command.new_value)
 	select_editor_test_field_edit_command(world^, state, &command)
+	clear_editor_test_diagnostic(state)
 	editor_test_field_command_free(&command)
 	return true
 }
@@ -665,6 +680,26 @@ clear_editor_test_text_input :: proc(state: ^Editor_Test_Input_State) {
 	state.text_input_len = 0
 	state.text_input_cursor = 0
 	state.text_input_selection_anchor = 0
+}
+
+set_editor_test_diagnostic :: proc(state: ^Editor_Test_Input_State, format: string, args: ..any) {
+	state.diagnostic_buffer = {}
+	text := fmt.bprintf(state.diagnostic_buffer[:], format, ..args)
+	state.diagnostic_len = len(text)
+	state.has_diagnostic = state.diagnostic_len > 0
+}
+
+clear_editor_test_diagnostic :: proc(state: ^Editor_Test_Input_State) {
+	state.has_diagnostic = false
+	state.diagnostic_buffer = {}
+	state.diagnostic_len = 0
+}
+
+editor_test_diagnostic_text :: proc(state: ^Editor_Test_Input_State) -> string {
+	if !state.has_diagnostic {
+		return ""
+	}
+	return string(state.diagnostic_buffer[:state.diagnostic_len])
 }
 
 editor_test_component_value_selects_all_on_focus :: proc(value: Runtime_Component_Value) -> bool {

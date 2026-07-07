@@ -61,6 +61,8 @@ Test_Editor_Expectation :: struct {
 	left_sidebar_width:     f32,
 	has_right_sidebar_width: bool,
 	right_sidebar_width:    f32,
+	has_diagnostic:         bool,
+	diagnostic:             string,
 }
 
 Test_Manifest :: struct {
@@ -136,6 +138,8 @@ Test_Manifest_Editor_Expectation_State :: struct {
 	left_sidebar_width:     f32,
 	has_right_sidebar_width: bool,
 	right_sidebar_width:    f32,
+	has_diagnostic:         bool,
+	diagnostic:             string,
 }
 
 parse_test_options :: proc(args: []string, emit_output: bool) -> (Test_Options, bool) {
@@ -273,9 +277,9 @@ run_test_case :: proc(project_path: string) -> Test_Case_Result {
 		}
 	}
 	for expectation in manifest.editor_expectations {
-		if !test_editor_expectation_matches(check.scene.world, simulation.editor_state, expectation) {
+		if !test_editor_expectation_matches(check.scene.world, &simulation.editor_state, expectation) {
 			result.failed_assertions += 1
-			append(&result.assertion_errors, test_editor_expectation_failure_message(check.scene.world, simulation.editor_state, expectation))
+			append(&result.assertion_errors, test_editor_expectation_failure_message(check.scene.world, &simulation.editor_state, expectation))
 		}
 	}
 	if result.failed_assertions > 0 {
@@ -417,7 +421,8 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 		      (expect.selected_component != "" && expect.selected_field != "") ||
 		      expect.has_selected_lane ||
 		      expect.has_left_sidebar_width ||
-		      expect.has_right_sidebar_width
+		      expect.has_right_sidebar_width ||
+		      expect.has_diagnostic
 		if ok {
 			append(&manifest.editor_expectations, Test_Editor_Expectation{
 				selected_entity = expect.selected_entity,
@@ -433,6 +438,8 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 				left_sidebar_width = expect.left_sidebar_width,
 				has_right_sidebar_width = expect.has_right_sidebar_width,
 				right_sidebar_width = expect.right_sidebar_width,
+				has_diagnostic = expect.has_diagnostic,
+				diagnostic = expect.diagnostic,
 			})
 		} else {
 			free_test_editor_expectation_state(expect^)
@@ -811,6 +818,25 @@ parse_test_manifest_editor_expect_key :: proc(expect: ^Test_Manifest_Editor_Expe
 		}
 		expect.right_sidebar_width = parsed
 		expect.has_right_sidebar_width = true
+		return true
+	case "diagnostic":
+		parsed, owned, ok := parse_basic_string_unescaped(value)
+		if !ok || parsed == "" || expect.has_diagnostic {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if owned != "" {
+			expect.diagnostic = owned
+		} else {
+			clone_ok: bool
+			expect.diagnostic, clone_ok = clone_test_string(parsed)
+			if !clone_ok {
+				return false
+			}
+		}
+		expect.has_diagnostic = true
 		return true
 	}
 	return false
@@ -1243,6 +1269,9 @@ free_test_editor_expectation :: proc(expectation: Test_Editor_Expectation) {
 	if expectation.selected_field != "" {
 		delete(expectation.selected_field)
 	}
+	if expectation.diagnostic != "" {
+		delete(expectation.diagnostic)
+	}
 }
 
 free_test_expectation_state :: proc(expect: Test_Manifest_Expectation_State) {
@@ -1270,6 +1299,9 @@ free_test_editor_expectation_state :: proc(expect: Test_Manifest_Editor_Expectat
 	if expect.selected_field != "" {
 		delete(expect.selected_field)
 	}
+	if expect.diagnostic != "" {
+		delete(expect.diagnostic)
+	}
 }
 
 free_test_expected_value :: proc(value: Test_Expected_Value) {
@@ -1290,9 +1322,9 @@ test_expectation_matches :: proc(world: Runtime_World, expectation: Test_Expecta
 	return test_expected_value_matches(expectation.expected, actual)
 }
 
-test_editor_expectation_matches :: proc(world: Runtime_World, editor_state: Editor_Test_Input_State, expectation: Test_Editor_Expectation) -> bool {
+test_editor_expectation_matches :: proc(world: Runtime_World, editor_state: ^Editor_Test_Input_State, expectation: Test_Editor_Expectation) -> bool {
 	if expectation.selected_entity != "" {
-		selected, selected_ok := editor_test_selected_entity_id(editor_state, world)
+		selected, selected_ok := editor_test_selected_entity_id(editor_state^, world)
 		if !selected_ok || selected != expectation.selected_entity {
 			return false
 		}
@@ -1319,6 +1351,9 @@ test_editor_expectation_matches :: proc(world: Runtime_World, editor_state: Edit
 		return false
 	}
 	if expectation.has_right_sidebar_width && !test_float_approx_equal(editor_state.right_sidebar_width, expectation.right_sidebar_width) {
+		return false
+	}
+	if expectation.has_diagnostic && editor_test_diagnostic_text(editor_state) != expectation.diagnostic {
 		return false
 	}
 	return true
@@ -1380,7 +1415,7 @@ test_expectation_failure_message :: proc(world: Runtime_World, expectation: Test
 	return strings.clone(strings.to_string(builder))
 }
 
-test_editor_expectation_failure_message :: proc(world: Runtime_World, editor_state: Editor_Test_Input_State, expectation: Test_Editor_Expectation) -> string {
+test_editor_expectation_failure_message :: proc(world: Runtime_World, editor_state: ^Editor_Test_Input_State, expectation: Test_Editor_Expectation) -> string {
 	builder := strings.builder_make()
 	defer strings.builder_destroy(&builder)
 	wrote := false
@@ -1388,7 +1423,7 @@ test_editor_expectation_failure_message :: proc(world: Runtime_World, editor_sta
 		strings.write_string(&builder, "editor.selected_entity: expected \"")
 		strings.write_string(&builder, expectation.selected_entity)
 		strings.write_rune(&builder, '"')
-		if actual, ok := editor_test_selected_entity_id(editor_state, world); ok {
+		if actual, ok := editor_test_selected_entity_id(editor_state^, world); ok {
 			strings.write_string(&builder, ", got \"")
 			strings.write_string(&builder, actual)
 			strings.write_rune(&builder, '"')
@@ -1469,6 +1504,18 @@ test_editor_expectation_failure_message :: proc(world: Runtime_World, editor_sta
 		append_test_format(&builder, "%g", expectation.right_sidebar_width)
 		strings.write_string(&builder, ", got ")
 		append_test_format(&builder, "%g", editor_state.right_sidebar_width)
+		wrote = true
+	}
+	if expectation.has_diagnostic {
+		if wrote {
+			strings.write_string(&builder, "; ")
+		}
+		strings.write_string(&builder, "editor.diagnostic: expected \"")
+		strings.write_string(&builder, expectation.diagnostic)
+		strings.write_string(&builder, "\", got \"")
+		strings.write_string(&builder, editor_test_diagnostic_text(editor_state))
+		strings.write_rune(&builder, '"')
+		wrote = true
 	}
 	return strings.clone(strings.to_string(builder))
 }
