@@ -304,7 +304,7 @@ print_run_result :: proc(
 	} else {
 		fmt.println(RUN_WINDOW_NOT_OPENED)
 	}
-	if options.editor {
+	if run_result_should_print_editor_status(options, window_result) {
 		fmt.println(run_result_editor_status(options, render_result, window_result))
 		if window_result.editor_paused {
 			fmt.println("Editor state: paused")
@@ -326,6 +326,10 @@ print_run_result :: proc(
 		fmt.printf("Presented surface frame: %dx%d, renderables: %d\n", render_result.surface_width, render_result.surface_height, render_result.renderable_count)
 	}
 	fmt.printf("Renderer backend: %s\n", render_backend_label(options.backend))
+}
+
+run_result_should_print_editor_status :: proc(options: Run_Options, window_result: Sdl_Run_Loop_Result) -> bool {
+	return options.editor || window_result.editor_visible
 }
 
 run_result_editor_status :: proc(options: Run_Options, render_result: Run_Render_Result, window_result: Sdl_Run_Loop_Result) -> string {

@@ -154,6 +154,7 @@
 - [x] Port live unbounded/window-loop reload diagnostics from Zig to Odin for visible software runs.
 - [x] Port first-pass editor pointer and keyboard input routing into visible Odin software/WebGPU SDL run loops.
 - [x] Port first-pass SDL text input routing into visible Odin software/WebGPU editor run loops.
+- [x] Port Ctrl+Tab editor visibility toggling into visible Odin software/WebGPU SDL run loops.
 - [x] Make default local build/test/run tasks target Odin while keeping explicit migration-era Zig compatibility tasks.
 - [x] Remove stale pending-status wording from Odin `scrapbot run` output after visible window loops and editor overlays landed.
 - [ ] Remove the vendored Zig `wgpu-native` binding after the migration-era Zig renderer and build surfaces are no longer needed.

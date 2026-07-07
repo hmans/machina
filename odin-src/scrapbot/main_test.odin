@@ -2429,6 +2429,13 @@ test_run_result_editor_status_reports_current_odin_surfaces :: proc(t: ^testing.
 }
 
 @(test)
+test_run_result_editor_status_prints_for_runtime_toggled_editor :: proc(t: ^testing.T) {
+	testing.expect_value(t, run_result_should_print_editor_status(Run_Options{}, Sdl_Run_Loop_Result{}), false)
+	testing.expect_value(t, run_result_should_print_editor_status(Run_Options{editor = true}, Sdl_Run_Loop_Result{}), true)
+	testing.expect_value(t, run_result_should_print_editor_status(Run_Options{}, Sdl_Run_Loop_Result{editor_visible = true}), true)
+}
+
+@(test)
 test_run_result_execution_status_avoids_stale_pending_wording :: proc(t: ^testing.T) {
 	testing.expect_value(
 		t,

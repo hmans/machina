@@ -145,6 +145,10 @@ test_sdl_input_maps_keyboard_state_and_editor_shortcuts :: proc(t: ^testing.T) {
 	input = sdl_input_begin_frame(state, Sdl_Window_Size{width = 100, height = 100, pixel_width = 100, pixel_height = 100}, false)
 	sdl_input_apply_key(&state, &input, .Y, true, false)
 	testing.expect_value(t, input.keyboard.editor_redo_pressed, true)
+
+	input = sdl_input_begin_frame(state, Sdl_Window_Size{width = 100, height = 100, pixel_width = 100, pixel_height = 100}, false)
+	sdl_input_apply_key(&state, &input, .TAB, true, false)
+	testing.expect_value(t, input.keyboard.editor_toggle_pressed, true)
 }
 
 @(test)
@@ -162,6 +166,29 @@ test_sdl_input_accumulates_text_input_for_current_frame :: proc(t: ^testing.T) {
 	sdl_input_clear_text_input(&state, &input)
 	testing.expect_value(t, input.text_input, "")
 	testing.expect_value(t, state.text_input_len, 0)
+}
+
+@(test)
+test_sdl_run_loop_editor_toggle_updates_frame_visibility :: proc(t: ^testing.T) {
+	editor_visible := false
+	input := frame_input_default()
+	input.debug_overlay_visible = false
+	input.keyboard.editor_toggle_pressed = true
+
+	sdl_run_loop_apply_editor_toggle(&editor_visible, &input)
+	testing.expect_value(t, editor_visible, true)
+	testing.expect_value(t, input.debug_overlay_visible, true)
+
+	input.keyboard.editor_toggle_pressed = false
+	input.debug_overlay_visible = false
+	sdl_run_loop_apply_editor_toggle(&editor_visible, &input)
+	testing.expect_value(t, editor_visible, true)
+	testing.expect_value(t, input.debug_overlay_visible, true)
+
+	input.keyboard.editor_toggle_pressed = true
+	sdl_run_loop_apply_editor_toggle(&editor_visible, &input)
+	testing.expect_value(t, editor_visible, false)
+	testing.expect_value(t, input.debug_overlay_visible, false)
 }
 
 @(test)

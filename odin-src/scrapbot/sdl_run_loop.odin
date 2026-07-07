@@ -28,6 +28,7 @@ Sdl_Run_Loop_Result :: struct {
 	surface_height:            int,
 	renderable_count:          int,
 	editor_input_routed:       bool,
+	editor_visible:            bool,
 	editor_paused:             bool,
 	editor_selected_entity_id: string,
 }
@@ -74,6 +75,24 @@ sdl_run_loop_pump_input_events :: proc(input_state: ^Sdl_Input_State, input: ^Fr
 		}
 	}
 	return false
+}
+
+sdl_run_loop_apply_editor_toggle :: proc(editor_visible: ^bool, input: ^Frame_Input) {
+	if input.keyboard.editor_toggle_pressed {
+		editor_visible^ = !editor_visible^
+	}
+	input.debug_overlay_visible = editor_visible^
+}
+
+sdl_run_loop_sync_text_input :: proc(window: ^sdl3.Window, editor_visible: bool, text_input_active: ^bool) {
+	if editor_visible && !text_input_active^ {
+		text_input_active^ = sdl3.StartTextInput(window)
+		return
+	}
+	if !editor_visible && text_input_active^ {
+		_ = sdl3.StopTextInput(window)
+		text_input_active^ = false
+	}
 }
 
 sdl_run_loop_frame_limit_reached :: proc(completed_frames, max_frames: int) -> bool {
@@ -191,7 +210,9 @@ sdl_run_live_project_loop :: proc(
 		return Sdl_Run_Loop_Result{}, Simulation_Run_Result{}, presenter_error, false
 	}
 	defer sdl_software_presenter_deinit(&presenter)
-	text_input_started := editor && sdl3.StartTextInput(window.window)
+	editor_visible := editor
+	text_input_started := false
+	sdl_run_loop_sync_text_input(window.window, editor_visible, &text_input_started)
 	defer if text_input_started do _ = sdl3.StopTextInput(window.window)
 
 	result := Sdl_Run_Loop_Result{
@@ -200,6 +221,7 @@ sdl_run_live_project_loop :: proc(
 		window_height = size.height,
 		pixel_width = size.pixel_width,
 		pixel_height = size.pixel_height,
+		editor_visible = editor_visible,
 	}
 
 	completed_frames := 0
@@ -208,11 +230,13 @@ sdl_run_live_project_loop :: proc(
 	editor_state := Editor_Test_Input_State{}
 	defer editor_test_input_state_free(&editor_state)
 	for !sdl_run_loop_frame_limit_reached(completed_frames, max_frames) {
-		frame_input := sdl_input_begin_frame(input_state, size, editor)
+		frame_input := sdl_input_begin_frame(input_state, size, editor_visible)
 		if sdl_run_loop_pump_input_events(&input_state, &frame_input, size) {
 			result.quit_requested = true
 			break
 		}
+		sdl_run_loop_apply_editor_toggle(&editor_visible, &frame_input)
+		sdl_run_loop_sync_text_input(window.window, editor_visible, &text_input_started)
 		current_ticks_ns := sdl3.GetTicksNS()
 		delta_seconds := sdl_run_loop_delta_seconds(previous_ticks_ns, current_ticks_ns)
 		previous_ticks_ns = current_ticks_ns
@@ -250,7 +274,7 @@ sdl_run_live_project_loop :: proc(
 			width = size.pixel_width,
 			height = size.pixel_height,
 			pixel_scale = DEFAULT_RENDER_PIXEL_SCALE,
-			editor = editor,
+			editor = editor_visible,
 			selected_entity_id = selected_entity_id,
 			inspector_scroll_y = editor_state.inspector_scroll_y,
 			backend = .Software,
@@ -272,7 +296,8 @@ sdl_run_live_project_loop :: proc(
 		if extract_err == .None {
 			result.renderable_count = extract.renderables + extract.ui_rects + extract.ui_texts
 		}
-		result.editor_input_routed = editor
+		result.editor_input_routed = editor_visible
+		result.editor_visible = editor_visible
 		result.editor_paused = editor_state.paused
 		if selected_id, selected_ok := editor_test_selected_entity_id(editor_state, project.check.scene.world); selected_ok {
 			result.editor_selected_entity_id = selected_id
@@ -352,7 +377,9 @@ sdl_run_live_project_wgpu_loop :: proc(
 		return Sdl_Run_Loop_Result{}, Simulation_Run_Result{}, surface_context_error, false
 	}
 	defer wgpu_surface_context_deinit(&surface_context)
-	text_input_started := editor && sdl3.StartTextInput(window.window)
+	editor_visible := editor
+	text_input_started := false
+	sdl_run_loop_sync_text_input(window.window, editor_visible, &text_input_started)
 	defer if text_input_started do _ = sdl3.StopTextInput(window.window)
 
 	result := Sdl_Run_Loop_Result{
@@ -361,6 +388,7 @@ sdl_run_live_project_wgpu_loop :: proc(
 		window_height = size.height,
 		pixel_width = size.pixel_width,
 		pixel_height = size.pixel_height,
+		editor_visible = editor_visible,
 	}
 
 	completed_frames := 0
@@ -369,11 +397,13 @@ sdl_run_live_project_wgpu_loop :: proc(
 	editor_state := Editor_Test_Input_State{}
 	defer editor_test_input_state_free(&editor_state)
 	for !sdl_run_loop_frame_limit_reached(completed_frames, max_frames) {
-		frame_input := sdl_input_begin_frame(input_state, size, editor)
+		frame_input := sdl_input_begin_frame(input_state, size, editor_visible)
 		if sdl_run_loop_pump_input_events(&input_state, &frame_input, size) {
 			result.quit_requested = true
 			break
 		}
+		sdl_run_loop_apply_editor_toggle(&editor_visible, &frame_input)
+		sdl_run_loop_sync_text_input(window.window, editor_visible, &text_input_started)
 		current_ticks_ns := sdl3.GetTicksNS()
 		delta_seconds := sdl_run_loop_delta_seconds(previous_ticks_ns, current_ticks_ns)
 		previous_ticks_ns = current_ticks_ns
@@ -411,7 +441,7 @@ sdl_run_live_project_wgpu_loop :: proc(
 			project.check.scene.world,
 			u32(size.pixel_width),
 			u32(size.pixel_height),
-			editor,
+			editor_visible,
 			selected_entity_id,
 			editor_state.inspector_scroll_y,
 		)
@@ -423,7 +453,8 @@ sdl_run_live_project_wgpu_loop :: proc(
 		result.surface_width = int(presentation.width)
 		result.surface_height = int(presentation.height)
 		result.renderable_count = presentation.renderable_count + presentation.overlay_count
-		result.editor_input_routed = editor
+		result.editor_input_routed = editor_visible
+		result.editor_visible = editor_visible
 		result.editor_paused = editor_state.paused
 		result.editor_selected_entity_id = selected_entity_id
 
