@@ -1696,7 +1696,7 @@ const MeshDemo = struct {
     }
 
     fn prepareUiDrawResources(self: *MeshDemo, device: *wgpu.Device, queue: *wgpu.Queue, config: FrameConfig) RenderError!void {
-        const rebuilt = try self.ui_vertex_cache.refresh(config.scene.world, config.width, config.height);
+        const rebuilt = try self.ui_vertex_cache.refreshWithInput(config.scene.world, config.width, config.height, config.input);
         const vertices = self.ui_vertex_cache.vertexItems();
         if (rebuilt or (vertices.len > 0 and self.ui_draw.vertex_buffer == null)) {
             try self.ui_draw.update(device, queue, vertices);

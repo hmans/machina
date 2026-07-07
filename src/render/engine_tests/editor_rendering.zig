@@ -1322,6 +1322,37 @@ test "editor profile input combines project and engine system rows" {
     try std.testing.expectEqual(runtime.SystemPhase.render, combined[1].phase);
 }
 
+test "editor profile input excludes startup systems from live rows" {
+    var state = try RenderEcsState.init(std.testing.allocator);
+    defer state.deinit();
+
+    const project_profiles = [_]runtime.SystemProfileSnapshot{
+        .{
+            .id = "game.spawn",
+            .phase = .startup,
+            .sample_count = 1,
+            .window_size = 120,
+            .last_ns = 5_000,
+            .rolling_average_ns = 5_000,
+        },
+        .{
+            .id = "game.update",
+            .phase = .update,
+            .sample_count = 2,
+            .window_size = 120,
+            .last_ns = 1_000,
+            .rolling_average_ns = 900,
+        },
+    };
+
+    const combined = try state.combineSystemProfileSnapshots(project_profiles[0..]);
+    try std.testing.expectEqual(@as(usize, 1) + state.system_profiles.items.len, combined.len);
+    try std.testing.expectEqualStrings("game.update", combined[0].id);
+    for (combined) |profile| {
+        try std.testing.expect(profile.phase != .startup);
+    }
+}
+
 test "stable editor extraction retains UI entities and lets prepare UI skip rebuilds" {
     var scene_world = runtime.World.init(std.testing.allocator);
     defer scene_world.deinit();

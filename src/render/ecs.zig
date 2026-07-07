@@ -93,6 +93,10 @@ const RenderSystemProfileState = struct {
     }
 };
 
+fn showProfileInLivePerformancePanel(profile: runtime.SystemProfileSnapshot) bool {
+    return profile.phase != .startup;
+}
+
 pub const RenderEcsState = struct {
     allocator: std.mem.Allocator,
     registry: runtime.ComponentRegistry,
@@ -179,9 +183,15 @@ pub const RenderEcsState = struct {
         self.combined_system_profile_snapshots.ensureTotalCapacity(self.allocator, project_profiles.len + render_profiles.len) catch return RenderError.OutOfMemory;
 
         for (project_profiles) |profile| {
+            if (!showProfileInLivePerformancePanel(profile)) {
+                continue;
+            }
             try self.appendDisplaySystemProfileSnapshot(profile);
         }
         for (render_profiles) |profile| {
+            if (!showProfileInLivePerformancePanel(profile)) {
+                continue;
+            }
             try self.appendDisplaySystemProfileSnapshot(profile);
         }
     }

@@ -331,9 +331,8 @@ const UiVertexCacheKey = struct {
     debug_overlay_visible: bool = false,
     non_text_generation_fingerprint: u64 = 0,
 
-    fn fromWorld(world: *const runtime.World, width: u32, height: u32) UiVertexCacheKey {
-        const stored_input = renderFrameInput(world) catch FrameInput{};
-        const input = frameInputWithDefaultOutputMetrics(stored_input, width, height);
+    fn fromInput(world: *const runtime.World, width: u32, height: u32, frame_input: FrameInput) UiVertexCacheKey {
+        const input = frameInputWithDefaultOutputMetrics(frame_input, width, height);
         return .{
             .width = width,
             .height = height,
@@ -398,34 +397,18 @@ pub const UiVertexCache = struct {
     separator_vertices: std.ArrayList(UiVertex) = .empty,
     text_vertices: std.ArrayList(UiVertex) = .empty,
     layout_cache: ui_layout.LayoutCache,
-    rect_observer: runtime.QueryObserver,
-    text_observer: runtime.QueryObserver,
-    separator_observer: runtime.QueryObserver,
     last_key: UiVertexCacheKey = .{},
     last_text_generation_fingerprint: u64 = 0,
     initialized: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) RenderError!UiVertexCache {
-        var rect_observer = runtime.QueryObserver.init(allocator, &.{runtime.ui_rect_component_id}) catch return RenderError.OutOfMemory;
-        errdefer rect_observer.deinit();
-        var text_observer = runtime.QueryObserver.init(allocator, &.{runtime.ui_text_component_id}) catch return RenderError.OutOfMemory;
-        errdefer text_observer.deinit();
-        var separator_observer = runtime.QueryObserver.init(allocator, &.{runtime.ui_separator_component_id}) catch return RenderError.OutOfMemory;
-        errdefer separator_observer.deinit();
-
         return .{
             .allocator = allocator,
             .layout_cache = ui_layout.LayoutCache.init(allocator),
-            .rect_observer = rect_observer,
-            .text_observer = text_observer,
-            .separator_observer = separator_observer,
         };
     }
 
     pub fn deinit(self: *UiVertexCache) void {
-        self.separator_observer.deinit();
-        self.text_observer.deinit();
-        self.rect_observer.deinit();
         self.layout_cache.deinit();
         self.text_vertices.deinit(self.allocator);
         self.separator_vertices.deinit(self.allocator);
@@ -435,24 +418,21 @@ pub const UiVertexCache = struct {
     }
 
     pub fn refresh(self: *UiVertexCache, world: *const runtime.World, width: u32, height: u32) RenderError!bool {
-        self.rect_observer.refresh(world.*) catch |err| return mapWorldError(err);
-        self.text_observer.refresh(world.*) catch |err| return mapWorldError(err);
-        self.separator_observer.refresh(world.*) catch |err| return mapWorldError(err);
+        const stored_input = renderFrameInput(world) catch FrameInput{};
+        return self.refreshWithInput(world, width, height, stored_input);
+    }
 
-        const key = UiVertexCacheKey.fromWorld(world, width, height);
+    pub fn refreshWithInput(self: *UiVertexCache, world: *const runtime.World, width: u32, height: u32, frame_input: FrameInput) RenderError!bool {
+        const key = UiVertexCacheKey.fromInput(world, width, height, frame_input);
         const text_generation_fingerprint = uiTextGenerationFingerprint(world);
-        const non_text_membership_changed = observerMembershipChanged(self.rect_observer) or
-            observerMembershipChanged(self.separator_observer);
-        const text_membership_changed = observerMembershipChanged(self.text_observer);
-        const should_rebuild_non_text = !self.initialized or non_text_membership_changed or !self.last_key.eql(key);
+        const should_rebuild_non_text = !self.initialized or !self.last_key.eql(key);
         const should_rebuild_text = should_rebuild_non_text or
-            text_membership_changed or
             self.last_text_generation_fingerprint != text_generation_fingerprint;
         if (!should_rebuild_non_text and !should_rebuild_text) {
             return false;
         }
 
-        const context = try uiBuildContext(world, width, height);
+        const context = try uiBuildContextFromInput(world, width, height, frame_input);
         self.layout_cache.reset(world) catch |err| return mapLayoutError(err);
         if (should_rebuild_non_text) {
             self.rect_vertices.clearRetainingCapacity();
@@ -492,10 +472,6 @@ pub const UiVertexCache = struct {
     }
 };
 
-fn observerMembershipChanged(observer: runtime.QueryObserver) bool {
-    return observer.appeared().len > 0 or observer.disappeared().len > 0;
-}
-
 pub fn buildUiVerticesInto(
     allocator: std.mem.Allocator,
     vertices: *std.ArrayList(UiVertex),
@@ -527,7 +503,11 @@ const UiBuildContext = struct {
 
 fn uiBuildContext(world: *const runtime.World, width: u32, height: u32) RenderError!UiBuildContext {
     const stored_input = renderFrameInput(world) catch FrameInput{};
-    const input = frameInputWithDefaultOutputMetrics(stored_input, width, height);
+    return uiBuildContextFromInput(world, width, height, stored_input);
+}
+
+fn uiBuildContextFromInput(world: *const runtime.World, width: u32, height: u32, frame_input: FrameInput) RenderError!UiBuildContext {
+    const input = frameInputWithDefaultOutputMetrics(frame_input, width, height);
     return .{
         .input = input,
         .pixel_scale = framePixelScale(input),
