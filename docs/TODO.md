@@ -6,14 +6,15 @@
 - [x] Use the SDL3 window path to create a `wgpu-native` surface.
 - [x] Replace the WGPU clear smoke with a simple triangle render loop.
 - [x] Add a headless WGPU PNG framegrab path.
-- [ ] Replace the WGPU triangle loop with a scene renderer.
-- [ ] Define the render packet boundary between ECS state and renderer backends.
+- [x] Replace the WGPU triangle loop with an ECS-driven rotating cube renderer.
+- [x] Define the first renderable query boundary between ECS state and renderer backends.
+- [ ] Expand the WGPU scene renderer beyond the first cube renderable.
 - [ ] Add visual comparison for offscreen render output.
 
 ## Project Runtime
 
 - [ ] Add a real TOML parser or formalize the supported scene subset.
-- [ ] Add component presence tables so sparse ECS component storage maps entities precisely.
+- [x] Add component indexes so sparse ECS component storage maps entities precisely.
 - [ ] Add file watching for scene hot reload.
 - [ ] Add structured diagnostics for `scrapbot check`.
 

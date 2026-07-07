@@ -12,7 +12,7 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 - The runtime can submit frame data through a renderer boundary.
 - The current implementation supports the null backend.
 - Users can select a renderer backend from the CLI.
-- The `wgpu` backend opens an SDL3 window, creates a `wgpu-native` surface, and runs a simple triangle render loop.
+- The `wgpu` backend opens an SDL3 window, creates a `wgpu-native` surface, and renders the ECS world's first cube renderable with a perspective camera.
 - The `wgpu` backend can also render a headless final-frame PNG with `--framegrab`.
 - The `wgpu` backend currently requires `--window` or `--framegrab`.
 - Renderer runs can be limited with `--frames`; windowed `0` means run until the window closes, while headless `0` captures one frame.
@@ -39,17 +39,23 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 **Why:** SDL3 is available through Odin's vendor bindings and gives the renderer a portable surface path. See ADR-005.
 **Tradeoff:** Headful runtime work now depends on SDL3 being available in development and distribution environments.
 
-### 4. Keep the first WGPU implementation as a triangle renderer
+### 4. Promote the WGPU smoke path into an ECS cube renderer
 
-**Decision:** The current `wgpu` backend creates a minimal WGSL render pipeline and draws a filled triangle in a window loop.
-**Why:** This proves the native window/surface/device/swapchain path plus shader and pipeline creation before introducing render packets, buffers, assets, or scene-driven drawing.
-**Tradeoff:** The backend verifies a render loop and draw call, not scene rendering.
+**Decision:** The current `wgpu` backend creates a WGSL pipeline, uploads a built-in cube mesh, and draws the first ECS renderable that has both transform and mesh components.
+**Why:** This keeps the renderer driven by ECS state while still avoiding a premature asset, material, or batching system.
+**Tradeoff:** Only the first cube primitive is drawn for now; multi-entity scene rendering remains follow-up work.
 
-### 5. Add headless framegrabs before scene rendering
+### 5. Keep headless framegrabs on the same render path
 
-**Decision:** Headless WGPU renders the same triangle pipeline into an offscreen texture, reads the final frame back to CPU memory, and writes a PNG.
-**Why:** This gives agents and tests a visual artifact before the renderer is scene-driven.
+**Decision:** Headless WGPU renders the same ECS cube pipeline into an offscreen texture, reads the final frame back to CPU memory, and writes a PNG.
+**Why:** This gives agents and tests a visual artifact that exercises the same scene-driven renderer path as the windowed backend.
 **Tradeoff:** On macOS, the current implementation creates a hidden SDL3 window for Metal adapter bootstrap even though the captured frame is rendered offscreen.
+
+### 6. Use ECS renderable queries as the first backend boundary
+
+**Decision:** The world builder records per-entity component indexes and derives renderables from entities with both transform and mesh components. Render backends query these renderables instead of reconstructing component relationships themselves.
+**Why:** Backends need coherent scene instances, not just global component counts, and this keeps GPU code out of ECS storage.
+**Tradeoff:** The query is deliberately narrow and will need to evolve into a fuller render packet or view once materials, lights, multiple meshes, and culling exist.
 
 ## Related
 
@@ -58,6 +64,6 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 
 ## Open Questions
 
-- What render packet shape should bridge ECS state into renderer-owned resources?
+- What render packet shape should replace the current first-renderable query once renderer-owned resources exist?
 - How should offscreen render output be compared once scene rendering exists?
 - How long should the headful runtime loop live before the editor and game loop exist?

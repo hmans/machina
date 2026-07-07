@@ -58,7 +58,8 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 			defer platform.close_runtime_window()
 			platform.pump_runtime_window_events()
 
-			err = wgpu_run_window(frame, config.max_frames)
+			err = wgpu_run_window(world, config.max_frames)
+			frame = ecs.render_frame_from_world(world)
 			return
 		}
 		if config.framegrab_path != "" {
@@ -69,7 +70,8 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 			defer platform.close_runtime_window()
 			platform.pump_runtime_window_events()
 
-			err = wgpu_run_headless(frame, config.max_frames, config.framegrab_path)
+			err = wgpu_run_headless(world, config.max_frames, config.framegrab_path)
+			frame = ecs.render_frame_from_world(world)
 			return
 		}
 		err = "wgpu renderer backend currently requires --window or --framegrab"

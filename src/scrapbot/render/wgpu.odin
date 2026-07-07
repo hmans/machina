@@ -1,29 +1,80 @@
 package render
 
 import "core:fmt"
+import "core:math"
 import "core:time"
+import ecs "../ecs"
 import platform "../platform"
+import shared "../shared"
 import wgpu_sdl3 "vendor:wgpu/sdl3glue"
 import "vendor:wgpu"
 
-WGPU_TRIANGLE_SHADER :: `
-@vertex
-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<f32> {
-	var positions = array<vec2<f32>, 3>(
-		vec2<f32>(0.0, 0.6),
-		vec2<f32>(-0.65, -0.45),
-		vec2<f32>(0.65, -0.45),
-	);
+WGPU_CUBE_SHADER :: `
+struct Cube_Uniform {
+	mvp: mat4x4<f32>,
+};
 
-	let position = positions[vertex_index];
-	return vec4<f32>(position, 0.0, 1.0);
+@group(0) @binding(0)
+var<uniform> cube: Cube_Uniform;
+
+struct Vertex_Input {
+	@location(0) position: vec3<f32>,
+	@location(1) color: vec3<f32>,
+};
+
+struct Vertex_Output {
+	@builtin(position) position: vec4<f32>,
+	@location(0) color: vec3<f32>,
+};
+
+@vertex
+fn vs_main(input: Vertex_Input) -> Vertex_Output {
+	var output: Vertex_Output;
+	output.position = cube.mvp * vec4<f32>(input.position, 1.0);
+	output.color = input.color;
+	return output;
 }
 
 @fragment
-fn fs_main() -> @location(0) vec4<f32> {
-	return vec4<f32>(1.0, 0.42, 0.12, 1.0);
+fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
+	return vec4<f32>(input.color, 1.0);
 }
 `
+
+Vec3 :: shared.Vec3
+Render_Instance :: shared.Render_Instance
+Camera_Instance :: shared.Camera_Instance
+
+Mat4 :: [16]f32
+
+WGPU_Cube_Vertex :: struct {
+	position: [3]f32,
+	color:    [3]f32,
+}
+
+WGPU_Cube_Uniform :: struct {
+	mvp: Mat4,
+}
+
+WGPU_CUBE_VERTICES :: [?]WGPU_Cube_Vertex {
+	{{-1, -1, -1}, {0.93, 0.24, 0.18}},
+	{{ 1, -1, -1}, {0.95, 0.67, 0.20}},
+	{{ 1,  1, -1}, {0.22, 0.73, 0.44}},
+	{{-1,  1, -1}, {0.12, 0.50, 0.84}},
+	{{-1, -1,  1}, {0.73, 0.30, 0.80}},
+	{{ 1, -1,  1}, {0.10, 0.66, 0.70}},
+	{{ 1,  1,  1}, {0.90, 0.90, 0.55}},
+	{{-1,  1,  1}, {0.96, 0.45, 0.35}},
+}
+
+WGPU_CUBE_INDICES :: [?]u16 {
+	0, 1, 2, 0, 2, 3,
+	4, 6, 5, 4, 7, 6,
+	0, 4, 5, 0, 5, 1,
+	3, 2, 6, 3, 6, 7,
+	1, 5, 6, 1, 6, 2,
+	0, 3, 7, 0, 7, 4,
+}
 
 WGPU_Request_Adapter_State :: struct {
 	completed: bool,
@@ -46,20 +97,27 @@ WGPU_Buffer_Map_State :: struct {
 }
 
 WGPU_Renderer :: struct {
-	instance:        wgpu.Instance,
-	surface:         wgpu.Surface,
-	adapter:         wgpu.Adapter,
-	device:          wgpu.Device,
-	queue:           wgpu.Queue,
-	pipeline_layout: wgpu.PipelineLayout,
-	shader:          wgpu.ShaderModule,
-	pipeline:        wgpu.RenderPipeline,
-	format:          wgpu.TextureFormat,
-	present_mode:    wgpu.PresentMode,
-	alpha_mode:      wgpu.CompositeAlphaMode,
-	width:           u32,
-	height:          u32,
-	configured:      bool,
+	instance:          wgpu.Instance,
+	surface:           wgpu.Surface,
+	adapter:           wgpu.Adapter,
+	device:            wgpu.Device,
+	queue:             wgpu.Queue,
+	pipeline_layout:   wgpu.PipelineLayout,
+	bind_group_layout: wgpu.BindGroupLayout,
+	bind_group:        wgpu.BindGroup,
+	shader:            wgpu.ShaderModule,
+	pipeline:          wgpu.RenderPipeline,
+	vertex_buffer:     wgpu.Buffer,
+	index_buffer:      wgpu.Buffer,
+	uniform_buffer:    wgpu.Buffer,
+	depth_texture:     wgpu.Texture,
+	depth_view:        wgpu.TextureView,
+	format:            wgpu.TextureFormat,
+	present_mode:      wgpu.PresentMode,
+	alpha_mode:        wgpu.CompositeAlphaMode,
+	width:             u32,
+	height:            u32,
+	configured:        bool,
 }
 
 WGPU_OFFSCREEN_WIDTH :: u32(1280)
@@ -226,7 +284,7 @@ wgpu_init_renderer :: proc(use_surface: bool, offscreen_format := wgpu.TextureFo
 		renderer.format = offscreen_format
 	}
 
-	if err = wgpu_create_triangle_pipeline(&renderer); err != "" {
+	if err = wgpu_create_cube_pipeline(&renderer); err != "" {
 		return renderer, err
 	}
 
@@ -239,6 +297,27 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	}
 	if renderer.pipeline != nil {
 		wgpu.RenderPipelineRelease(renderer.pipeline)
+	}
+	if renderer.uniform_buffer != nil {
+		wgpu.BufferRelease(renderer.uniform_buffer)
+	}
+	if renderer.index_buffer != nil {
+		wgpu.BufferRelease(renderer.index_buffer)
+	}
+	if renderer.vertex_buffer != nil {
+		wgpu.BufferRelease(renderer.vertex_buffer)
+	}
+	if renderer.bind_group != nil {
+		wgpu.BindGroupRelease(renderer.bind_group)
+	}
+	if renderer.bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.bind_group_layout)
+	}
+	if renderer.depth_view != nil {
+		wgpu.TextureViewRelease(renderer.depth_view)
+	}
+	if renderer.depth_texture != nil {
+		wgpu.TextureRelease(renderer.depth_texture)
 	}
 	if renderer.shader != nil {
 		wgpu.ShaderModuleRelease(renderer.shader)
@@ -264,34 +343,123 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	renderer^ = {}
 }
 
-wgpu_create_triangle_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
+wgpu_create_cube_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 	shader_source := wgpu.ShaderSourceWGSL {
 		chain = wgpu.ChainedStruct {
 			sType = .ShaderSourceWGSL,
 		},
-		code = WGPU_TRIANGLE_SHADER,
+		code = WGPU_CUBE_SHADER,
 	}
 	renderer.shader = wgpu.DeviceCreateShaderModule(
 		renderer.device,
 		&wgpu.ShaderModuleDescriptor {
 			nextInChain = &shader_source,
-			label       = "Scrapbot Triangle Shader",
+			label       = "Scrapbot Cube Shader",
 		},
 	)
 	if renderer.shader == nil {
 		return "failed to create wgpu shader module"
 	}
 
+	bind_group_layout_entry := wgpu.BindGroupLayoutEntry {
+		binding    = 0,
+		visibility = {.Vertex},
+		buffer = wgpu.BufferBindingLayout {
+			type           = .Uniform,
+			minBindingSize = u64(size_of(WGPU_Cube_Uniform)),
+		},
+	}
+	renderer.bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
+		renderer.device,
+		&wgpu.BindGroupLayoutDescriptor {
+			label      = "Scrapbot Cube Bind Group Layout",
+			entryCount = 1,
+			entries    = &bind_group_layout_entry,
+		},
+	)
+	if renderer.bind_group_layout == nil {
+		return "failed to create wgpu bind group layout"
+	}
+
 	renderer.pipeline_layout = wgpu.DeviceCreatePipelineLayout(
 		renderer.device,
 		&wgpu.PipelineLayoutDescriptor {
-			label = "Scrapbot Triangle Pipeline Layout",
+			label                = "Scrapbot Cube Pipeline Layout",
+			bindGroupLayoutCount = 1,
+			bindGroupLayouts     = &renderer.bind_group_layout,
 		},
 	)
 	if renderer.pipeline_layout == nil {
 		return "failed to create wgpu pipeline layout"
 	}
 
+	renderer.uniform_buffer = wgpu.DeviceCreateBuffer(
+		renderer.device,
+		&wgpu.BufferDescriptor {
+			label = "Scrapbot Cube Uniform Buffer",
+			usage = {.Uniform, .CopyDst},
+			size  = u64(size_of(WGPU_Cube_Uniform)),
+		},
+	)
+	if renderer.uniform_buffer == nil {
+		return "failed to create wgpu uniform buffer"
+	}
+
+	bind_group_entry := wgpu.BindGroupEntry {
+		binding = 0,
+		buffer  = renderer.uniform_buffer,
+		offset  = 0,
+		size    = u64(size_of(WGPU_Cube_Uniform)),
+	}
+	renderer.bind_group = wgpu.DeviceCreateBindGroup(
+		renderer.device,
+		&wgpu.BindGroupDescriptor {
+			label      = "Scrapbot Cube Bind Group",
+			layout     = renderer.bind_group_layout,
+			entryCount = 1,
+			entries    = &bind_group_entry,
+		},
+	)
+	if renderer.bind_group == nil {
+		return "failed to create wgpu bind group"
+	}
+
+	cube_vertices := WGPU_CUBE_VERTICES
+	renderer.vertex_buffer = wgpu.DeviceCreateBufferWithData(
+		renderer.device,
+		&wgpu.BufferWithDataDescriptor {
+			label = "Scrapbot Cube Vertex Buffer",
+			usage = {.Vertex},
+		},
+		cube_vertices[:],
+	)
+	if renderer.vertex_buffer == nil {
+		return "failed to create wgpu vertex buffer"
+	}
+
+	cube_indices := WGPU_CUBE_INDICES
+	renderer.index_buffer = wgpu.DeviceCreateBufferWithData(
+		renderer.device,
+		&wgpu.BufferWithDataDescriptor {
+			label = "Scrapbot Cube Index Buffer",
+			usage = {.Index},
+		},
+		cube_indices[:],
+	)
+	if renderer.index_buffer == nil {
+		return "failed to create wgpu index buffer"
+	}
+
+	vertex_attributes := [?]wgpu.VertexAttribute {
+		{format = .Float32x3, offset = 0, shaderLocation = 0},
+		{format = .Float32x3, offset = 12, shaderLocation = 1},
+	}
+	vertex_buffer_layout := wgpu.VertexBufferLayout {
+		stepMode       = .Vertex,
+		arrayStride    = u64(size_of(WGPU_Cube_Vertex)),
+		attributeCount = uint(len(vertex_attributes)),
+		attributes     = raw_data(vertex_attributes[:]),
+	}
 	color_target := wgpu.ColorTargetState {
 		format    = renderer.format,
 		writeMask = wgpu.ColorWriteMaskFlags_All,
@@ -305,16 +473,23 @@ wgpu_create_triangle_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 	renderer.pipeline = wgpu.DeviceCreateRenderPipeline(
 		renderer.device,
 		&wgpu.RenderPipelineDescriptor {
-			label  = "Scrapbot Triangle Pipeline",
+			label  = "Scrapbot Cube Pipeline",
 			layout = renderer.pipeline_layout,
 			vertex = wgpu.VertexState {
-				module     = renderer.shader,
-				entryPoint = "vs_main",
+				module      = renderer.shader,
+				entryPoint  = "vs_main",
+				bufferCount = 1,
+				buffers     = &vertex_buffer_layout,
 			},
 			primitive = wgpu.PrimitiveState {
 				topology  = .TriangleList,
 				frontFace = .CCW,
 				cullMode  = .None,
+			},
+			depthStencil = &wgpu.DepthStencilState {
+				format            = .Depth24Plus,
+				depthWriteEnabled = .True,
+				depthCompare      = .Less,
 			},
 			multisample = wgpu.MultisampleState {
 				count = 1,
@@ -328,6 +503,47 @@ wgpu_create_triangle_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 	}
 
 	return ""
+}
+
+wgpu_release_surface_depth :: proc(renderer: ^WGPU_Renderer) {
+	if renderer.depth_view != nil {
+		wgpu.TextureViewRelease(renderer.depth_view)
+		renderer.depth_view = nil
+	}
+	if renderer.depth_texture != nil {
+		wgpu.TextureRelease(renderer.depth_texture)
+		renderer.depth_texture = nil
+	}
+}
+
+wgpu_create_depth_texture :: proc(renderer: ^WGPU_Renderer, width, height: u32) -> (texture: wgpu.Texture, view: wgpu.TextureView, err: string) {
+	texture = wgpu.DeviceCreateTexture(
+		renderer.device,
+		&wgpu.TextureDescriptor {
+			label  = "Scrapbot Depth Texture",
+			usage  = {.RenderAttachment},
+			dimension = ._2D,
+			size = wgpu.Extent3D {
+				width              = width,
+				height             = height,
+				depthOrArrayLayers = 1,
+			},
+			format        = .Depth24Plus,
+			mipLevelCount = 1,
+			sampleCount   = 1,
+		},
+	)
+	if texture == nil {
+		return nil, nil, "failed to create wgpu depth texture"
+	}
+
+	view = wgpu.TextureCreateView(texture)
+	if view == nil {
+		wgpu.TextureRelease(texture)
+		return nil, nil, "failed to create wgpu depth texture view"
+	}
+
+	return texture, view, ""
 }
 
 wgpu_configure_surface :: proc(renderer: ^WGPU_Renderer) -> (drawable: bool, err: string) {
@@ -345,6 +561,8 @@ wgpu_configure_surface :: proc(renderer: ^WGPU_Renderer) -> (drawable: bool, err
 		return true, ""
 	}
 
+	wgpu_release_surface_depth(renderer)
+
 	surface_config := wgpu.SurfaceConfiguration {
 		device      = renderer.device,
 		format      = renderer.format,
@@ -358,6 +576,11 @@ wgpu_configure_surface :: proc(renderer: ^WGPU_Renderer) -> (drawable: bool, err
 	renderer.width = next_width
 	renderer.height = next_height
 	renderer.configured = true
+
+	renderer.depth_texture, renderer.depth_view, err = wgpu_create_depth_texture(renderer, next_width, next_height)
+	if err != "" {
+		return false, err
+	}
 	return true, ""
 }
 
@@ -384,7 +607,69 @@ wgpu_acquire_surface_texture :: proc(
 	return surface_texture, false, false
 }
 
-wgpu_draw_triangle_frame :: proc(renderer: ^WGPU_Renderer) -> (presented, should_quit: bool, err: string) {
+wgpu_update_cube_uniform :: proc(renderer: ^WGPU_Renderer, world: ^World, width, height: u32) -> bool {
+	instance, ok := ecs.first_render_instance(world)
+	if !ok {
+		return false
+	}
+
+	camera, camera_ok := ecs.first_camera_instance(world)
+	mvp := wgpu_build_mvp(instance, camera, camera_ok, width, height)
+	uniform := WGPU_Cube_Uniform{mvp = mvp}
+	wgpu.QueueWriteBuffer(renderer.queue, renderer.uniform_buffer, 0, &uniform, uint(size_of(WGPU_Cube_Uniform)))
+	return true
+}
+
+wgpu_encode_cube_pass :: proc(
+	renderer: ^WGPU_Renderer,
+	encoder: wgpu.CommandEncoder,
+	color_view: wgpu.TextureView,
+	depth_view: wgpu.TextureView,
+	has_renderable: bool,
+	label: string,
+) -> string {
+	color_attachment := wgpu.RenderPassColorAttachment {
+		view       = color_view,
+		depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
+		loadOp     = .Clear,
+		storeOp    = .Store,
+		clearValue = wgpu.Color{0.08, 0.10, 0.12, 1.0},
+	}
+	depth_attachment := wgpu.RenderPassDepthStencilAttachment {
+		view            = depth_view,
+		depthLoadOp     = .Clear,
+		depthStoreOp    = .Store,
+		depthClearValue = 1.0,
+		stencilLoadOp   = .Undefined,
+		stencilStoreOp  = .Undefined,
+	}
+	render_pass := wgpu.CommandEncoderBeginRenderPass(
+		encoder,
+		&wgpu.RenderPassDescriptor {
+			label                  = label,
+			colorAttachmentCount   = 1,
+			colorAttachments       = &color_attachment,
+			depthStencilAttachment = &depth_attachment,
+		},
+	)
+	if render_pass == nil {
+		return "failed to begin wgpu render pass"
+	}
+	defer wgpu.RenderPassEncoderRelease(render_pass)
+
+	if has_renderable {
+		wgpu.RenderPassEncoderSetPipeline(render_pass, renderer.pipeline)
+		wgpu.RenderPassEncoderSetBindGroup(render_pass, 0, renderer.bind_group)
+		wgpu.RenderPassEncoderSetVertexBuffer(render_pass, 0, renderer.vertex_buffer, 0, u64(size_of(WGPU_Cube_Vertex) * len(WGPU_CUBE_VERTICES)))
+		wgpu.RenderPassEncoderSetIndexBuffer(render_pass, renderer.index_buffer, .Uint16, 0, u64(size_of(u16) * len(WGPU_CUBE_INDICES)))
+		wgpu.RenderPassEncoderDrawIndexed(render_pass, u32(len(WGPU_CUBE_INDICES)), 1, 0, 0, 0)
+	}
+
+	wgpu.RenderPassEncoderEnd(render_pass)
+	return ""
+}
+
+wgpu_draw_cube_frame :: proc(renderer: ^WGPU_Renderer, world: ^World) -> (presented, should_quit: bool, err: string) {
 	drawable, configure_err := wgpu_configure_surface(renderer)
 	if configure_err != "" || !drawable {
 		return false, false, configure_err
@@ -420,36 +705,20 @@ wgpu_draw_triangle_frame :: proc(renderer: ^WGPU_Renderer) -> (presented, should
 	defer wgpu.TextureViewRelease(view)
 	defer wgpu.TextureRelease(texture)
 
-	encoder := wgpu.DeviceCreateCommandEncoder(renderer.device, &wgpu.CommandEncoderDescriptor{label = "Scrapbot Triangle Encoder"})
+	ecs.step_world(world, 1.0 / 60.0)
+	has_renderable := wgpu_update_cube_uniform(renderer, world, renderer.width, renderer.height)
+
+	encoder := wgpu.DeviceCreateCommandEncoder(renderer.device, &wgpu.CommandEncoderDescriptor{label = "Scrapbot Cube Encoder"})
 	if encoder == nil {
 		return false, false, "failed to create wgpu command encoder"
 	}
 	defer wgpu.CommandEncoderRelease(encoder)
 
-	color_attachment := wgpu.RenderPassColorAttachment {
-		view       = view,
-		depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
-		loadOp     = .Clear,
-		storeOp    = .Store,
-		clearValue = wgpu.Color{0.08, 0.10, 0.12, 1.0},
+	if err = wgpu_encode_cube_pass(renderer, encoder, view, renderer.depth_view, has_renderable, "Scrapbot Cube Pass"); err != "" {
+		return false, false, err
 	}
-	render_pass := wgpu.CommandEncoderBeginRenderPass(
-		encoder,
-		&wgpu.RenderPassDescriptor {
-			label                = "Scrapbot Triangle Pass",
-			colorAttachmentCount = 1,
-			colorAttachments     = &color_attachment,
-		},
-	)
-	if render_pass == nil {
-		return false, false, "failed to begin wgpu render pass"
-	}
-	wgpu.RenderPassEncoderSetPipeline(render_pass, renderer.pipeline)
-	wgpu.RenderPassEncoderDraw(render_pass, 3, 1, 0, 0)
-	wgpu.RenderPassEncoderEnd(render_pass)
-	wgpu.RenderPassEncoderRelease(render_pass)
 
-	command_buffer := wgpu.CommandEncoderFinish(encoder, &wgpu.CommandBufferDescriptor{label = "Scrapbot Triangle Commands"})
+	command_buffer := wgpu.CommandEncoderFinish(encoder, &wgpu.CommandBufferDescriptor{label = "Scrapbot Cube Commands"})
 	if command_buffer == nil {
 		return false, false, "failed to finish wgpu command encoder"
 	}
@@ -465,41 +734,27 @@ wgpu_draw_triangle_frame :: proc(renderer: ^WGPU_Renderer) -> (presented, should
 
 wgpu_render_offscreen_frame :: proc(
 	renderer: ^WGPU_Renderer,
+	world: ^World,
 	texture: wgpu.Texture,
 	view: wgpu.TextureView,
+	depth_view: wgpu.TextureView,
 	readback: wgpu.Buffer = nil,
 	row_stride: u32 = 0,
 	width: u32 = 0,
 	height: u32 = 0,
 ) -> string {
-	encoder := wgpu.DeviceCreateCommandEncoder(renderer.device, &wgpu.CommandEncoderDescriptor{label = "Scrapbot Headless Triangle Encoder"})
+	ecs.step_world(world, 1.0 / 60.0)
+	has_renderable := wgpu_update_cube_uniform(renderer, world, width, height)
+
+	encoder := wgpu.DeviceCreateCommandEncoder(renderer.device, &wgpu.CommandEncoderDescriptor{label = "Scrapbot Headless Cube Encoder"})
 	if encoder == nil {
 		return "failed to create wgpu command encoder"
 	}
 	defer wgpu.CommandEncoderRelease(encoder)
 
-	color_attachment := wgpu.RenderPassColorAttachment {
-		view       = view,
-		depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
-		loadOp     = .Clear,
-		storeOp    = .Store,
-		clearValue = wgpu.Color{0.08, 0.10, 0.12, 1.0},
+	if err := wgpu_encode_cube_pass(renderer, encoder, view, depth_view, has_renderable, "Scrapbot Headless Cube Pass"); err != "" {
+		return err
 	}
-	render_pass := wgpu.CommandEncoderBeginRenderPass(
-		encoder,
-		&wgpu.RenderPassDescriptor {
-			label                = "Scrapbot Headless Triangle Pass",
-			colorAttachmentCount = 1,
-			colorAttachments     = &color_attachment,
-		},
-	)
-	if render_pass == nil {
-		return "failed to begin wgpu render pass"
-	}
-	wgpu.RenderPassEncoderSetPipeline(render_pass, renderer.pipeline)
-	wgpu.RenderPassEncoderDraw(render_pass, 3, 1, 0, 0)
-	wgpu.RenderPassEncoderEnd(render_pass)
-	wgpu.RenderPassEncoderRelease(render_pass)
 
 	if readback != nil {
 		wgpu.CommandEncoderCopyTextureToBuffer(
@@ -523,7 +778,7 @@ wgpu_render_offscreen_frame :: proc(
 		)
 	}
 
-	command_buffer := wgpu.CommandEncoderFinish(encoder, &wgpu.CommandBufferDescriptor{label = "Scrapbot Headless Triangle Commands"})
+	command_buffer := wgpu.CommandEncoderFinish(encoder, &wgpu.CommandBufferDescriptor{label = "Scrapbot Headless Cube Commands"})
 	if command_buffer == nil {
 		return "failed to finish wgpu command encoder"
 	}
@@ -533,7 +788,7 @@ wgpu_render_offscreen_frame :: proc(
 	return ""
 }
 
-wgpu_run_headless :: proc(frame: Render_Frame, max_frames: u32, framegrab_path: string) -> string {
+wgpu_run_headless :: proc(world: ^World, max_frames: u32, framegrab_path: string) -> string {
 	renderer, init_err := wgpu_init_renderer(true)
 	defer wgpu_destroy_renderer(&renderer)
 	if init_err != "" {
@@ -573,6 +828,13 @@ wgpu_run_headless :: proc(frame: Render_Frame, max_frames: u32, framegrab_path: 
 	}
 	defer wgpu.TextureViewRelease(view)
 
+	depth_texture, depth_view, depth_err := wgpu_create_depth_texture(&renderer, width, height)
+	if depth_err != "" {
+		return depth_err
+	}
+	defer wgpu.TextureViewRelease(depth_view)
+	defer wgpu.TextureRelease(depth_texture)
+
 	readback := wgpu.DeviceCreateBuffer(
 		renderer.device,
 		&wgpu.BufferDescriptor {
@@ -594,12 +856,14 @@ wgpu_run_headless :: proc(frame: Render_Frame, max_frames: u32, framegrab_path: 
 		capture := index == frame_count - 1
 		err := wgpu_render_offscreen_frame(
 			&renderer,
+			world,
 			texture,
 			view,
+			depth_view,
 			readback if capture else nil,
 			row_stride if capture else 0,
-			width if capture else 0,
-			height if capture else 0,
+			width,
+			height,
 		)
 		if err != "" {
 			return err
@@ -639,6 +903,173 @@ wgpu_run_headless :: proc(frame: Render_Frame, max_frames: u32, framegrab_path: 
 	return write_png_rgba8(framegrab_path, pixels, width, height)
 }
 
+wgpu_build_mvp :: proc(instance: Render_Instance, camera: Camera_Instance, has_camera: bool, width, height: u32) -> Mat4 {
+	transform := instance.transform
+	aspect := f32(16.0 / 9.0)
+	if width > 0 && height > 0 {
+		aspect = f32(width) / f32(height)
+	}
+
+	eye := Vec3{0, 2, 6}
+	fov := f32(60)
+	near := f32(0.1)
+	far := f32(100)
+	if has_camera {
+		eye = camera.transform.position
+		if camera.camera.fov > 0 {
+			fov = camera.camera.fov
+		}
+		if camera.camera.near > 0 {
+			near = camera.camera.near
+		}
+		if camera.camera.far > near {
+			far = camera.camera.far
+		}
+	}
+
+	model := mat4_mul(
+		mat4_translate(transform.position),
+		mat4_mul(
+			mat4_rotate_z(transform.rotation.z),
+			mat4_mul(
+				mat4_rotate_y(transform.rotation.y),
+				mat4_mul(mat4_rotate_x(transform.rotation.x), mat4_scale(transform.scale)),
+			),
+		),
+	)
+	view := mat4_look_at(eye, Vec3{0, 0, 0}, Vec3{0, 1, 0})
+	projection := mat4_perspective(math.to_radians(fov), aspect, near, far)
+	return mat4_mul(projection, mat4_mul(view, model))
+}
+
+mat4_identity :: proc() -> Mat4 {
+	return Mat4 {
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1,
+	}
+}
+
+mat4_mul :: proc(a, b: Mat4) -> Mat4 {
+	result: Mat4
+	for column in 0 ..< 4 {
+		for row in 0 ..< 4 {
+			sum: f32
+			for index in 0 ..< 4 {
+				sum += a[index * 4 + row] * b[column * 4 + index]
+			}
+			result[column * 4 + row] = sum
+		}
+	}
+	return result
+}
+
+mat4_translate :: proc(value: Vec3) -> Mat4 {
+	result := mat4_identity()
+	result[12] = value.x
+	result[13] = value.y
+	result[14] = value.z
+	return result
+}
+
+mat4_scale :: proc(value: Vec3) -> Mat4 {
+	result := mat4_identity()
+	result[0] = value.x
+	result[5] = value.y
+	result[10] = value.z
+	return result
+}
+
+mat4_rotate_x :: proc(angle: f32) -> Mat4 {
+	c := math.cos(angle)
+	s := math.sin(angle)
+	result := mat4_identity()
+	result[5] = c
+	result[6] = s
+	result[9] = -s
+	result[10] = c
+	return result
+}
+
+mat4_rotate_y :: proc(angle: f32) -> Mat4 {
+	c := math.cos(angle)
+	s := math.sin(angle)
+	result := mat4_identity()
+	result[0] = c
+	result[2] = -s
+	result[8] = s
+	result[10] = c
+	return result
+}
+
+mat4_rotate_z :: proc(angle: f32) -> Mat4 {
+	c := math.cos(angle)
+	s := math.sin(angle)
+	result := mat4_identity()
+	result[0] = c
+	result[1] = s
+	result[4] = -s
+	result[5] = c
+	return result
+}
+
+mat4_perspective :: proc(fovy_radians, aspect, near, far: f32) -> Mat4 {
+	f := 1 / math.tan(fovy_radians / 2)
+	result: Mat4
+	result[0] = f / aspect
+	result[5] = f
+	result[10] = far / (near - far)
+	result[11] = -1
+	result[14] = (far * near) / (near - far)
+	return result
+}
+
+mat4_look_at :: proc(eye, target, up: Vec3) -> Mat4 {
+	forward := vec3_normalize(vec3_sub(target, eye))
+	side := vec3_normalize(vec3_cross(forward, up))
+	true_up := vec3_cross(side, forward)
+
+	result := mat4_identity()
+	result[0] = side.x
+	result[1] = true_up.x
+	result[2] = -forward.x
+	result[4] = side.y
+	result[5] = true_up.y
+	result[6] = -forward.y
+	result[8] = side.z
+	result[9] = true_up.z
+	result[10] = -forward.z
+	result[12] = -vec3_dot(side, eye)
+	result[13] = -vec3_dot(true_up, eye)
+	result[14] = vec3_dot(forward, eye)
+	return result
+}
+
+vec3_sub :: proc(a, b: Vec3) -> Vec3 {
+	return Vec3{a.x - b.x, a.y - b.y, a.z - b.z}
+}
+
+vec3_cross :: proc(a, b: Vec3) -> Vec3 {
+	return Vec3 {
+		a.y * b.z - a.z * b.y,
+		a.z * b.x - a.x * b.z,
+		a.x * b.y - a.y * b.x,
+	}
+}
+
+vec3_dot :: proc(a, b: Vec3) -> f32 {
+	return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+vec3_normalize :: proc(value: Vec3) -> Vec3 {
+	length := math.sqrt(vec3_dot(value, value))
+	if length <= 0 {
+		return Vec3{}
+	}
+	return Vec3{value.x / length, value.y / length, value.z / length}
+}
+
 copy_framegrab_row :: proc(dst, src: []u8, format: wgpu.TextureFormat) {
 	#partial switch format {
 	case .BGRA8Unorm, .BGRA8UnormSrgb:
@@ -657,7 +1088,7 @@ align_to :: proc(value, alignment: u32) -> u32 {
 	return ((value + alignment - 1) / alignment) * alignment
 }
 
-wgpu_run_window :: proc(frame: Render_Frame, max_frames: u32) -> string {
+wgpu_run_window :: proc(world: ^World, max_frames: u32) -> string {
 	renderer, init_err := wgpu_init_renderer(true)
 	defer wgpu_destroy_renderer(&renderer)
 	if init_err != "" {
@@ -671,7 +1102,7 @@ wgpu_run_window :: proc(frame: Render_Frame, max_frames: u32) -> string {
 		}
 		wgpu.InstanceProcessEvents(renderer.instance)
 
-		_, should_quit, draw_err := wgpu_draw_triangle_frame(&renderer)
+		_, should_quit, draw_err := wgpu_draw_cube_frame(&renderer, world)
 		if draw_err != "" {
 			return draw_err
 		}

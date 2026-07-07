@@ -58,8 +58,29 @@ Mesh_Component :: struct {
 }
 
 World_Entity :: struct {
-	id:   Entity,
-	name: string,
+	id:              Entity,
+	name:            string,
+	transform_index: int,
+	camera_index:    int,
+	mesh_index:      int,
+}
+
+Renderable :: struct {
+	entity_index:    int,
+	transform_index: int,
+	mesh_index:      int,
+}
+
+Render_Instance :: struct {
+	entity:    World_Entity,
+	transform: Transform_Component,
+	mesh:      Mesh_Component,
+}
+
+Camera_Instance :: struct {
+	entity:    World_Entity,
+	transform: Transform_Component,
+	camera:    Camera_Component,
 }
 
 World :: struct {
@@ -67,10 +88,12 @@ World :: struct {
 	transforms: #soa[dynamic]Transform_Component,
 	cameras:    [dynamic]Camera_Component,
 	meshes:     [dynamic]Mesh_Component,
+	renderables: [dynamic]Renderable,
 }
 
 Render_Frame :: struct {
-	entity_count: int,
-	camera_count: int,
-	mesh_count:   int,
+	entity_count:     int,
+	camera_count:     int,
+	mesh_count:       int,
+	renderable_count: int,
 }

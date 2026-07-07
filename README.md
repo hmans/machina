@@ -24,7 +24,7 @@ Scrapbot currently has a small Odin CLI and runtime skeleton:
 
 During development, use `mise build` to compile the CLI and `mise scrapbot -- [args...]` to compile and run it with arguments forwarded to Scrapbot.
 
-This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Rendering is pluggable at the runtime boundary. The `null` backend supports headless smoke tests, while the `wgpu` backend uses SDL3 and `wgpu-native` to run a simple triangle loop. Headless WGPU can write a final-frame PNG with `--framegrab`.
+This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Rendering is pluggable at the runtime boundary. The `null` backend supports headless smoke tests, while the `wgpu` backend uses SDL3 and `wgpu-native` to render the ECS scene's first cube with a perspective camera. Headless WGPU can write a final-frame PNG with `--framegrab`.
 
 Example projects live in [`examples/`](examples/). The minimal example can be verified with `mise scrapbot run examples/minimal`.
 
@@ -97,14 +97,14 @@ Run the full local test suite with `mise test`.
   - [x] Headful rendering smoke
   - [x] WebGPU triangle render loop
   - [x] Headless WebGPU framegrab
-  - [ ] WebGPU scene renderer
+  - [x] WebGPU ECS cube renderer
+  - [ ] Multi-entity WebGPU scene renderer
   - [ ] Offscreen render comparison
 - Scene Data
-  - [ ] Cameras
+  - [x] Basic cameras
   - [ ] Lighting
-  - [ ] Primitive meshes
+  - [x] Cube primitive mesh
   - [ ] Materials
-  - [ ] Legacy cube rendering
   - [ ] Scene camera workflow
 - Pipeline
   - [ ] Render batching
