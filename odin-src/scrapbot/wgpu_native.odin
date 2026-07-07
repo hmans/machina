@@ -922,6 +922,7 @@ WGPU_Instance_Release_Proc :: proc "c" (instance: WGPU_Instance)
 WGPU_Adapter_Release_Proc :: proc "c" (adapter: WGPU_Adapter)
 WGPU_Device_Release_Proc :: proc "c" (device: WGPU_Device)
 WGPU_Queue_Release_Proc :: proc "c" (queue: WGPU_Queue)
+WGPU_Device_Poll_Proc :: proc "c" (device: WGPU_Device, wait: WGPU_Bool, submission_index: rawptr) -> WGPU_Bool
 
 WGPU_Symbol_Resolver :: proc(name: string, user_data: rawptr) -> rawptr
 
@@ -932,6 +933,15 @@ WGPU_OFFSCREEN_ADAPTER_REQUEST_ERROR :: "request_adapter"
 WGPU_OFFSCREEN_DEVICE_REQUEST_ERROR :: "request_device"
 WGPU_OFFSCREEN_QUEUE_GET_ERROR :: "get_queue"
 WGPU_OFFSCREEN_REQUEST_TIMEOUT_ERROR :: "request_timeout"
+WGPU_OFFSCREEN_TEXTURE_CREATE_ERROR :: "create_texture"
+WGPU_OFFSCREEN_TEXTURE_VIEW_CREATE_ERROR :: "create_texture_view"
+WGPU_OFFSCREEN_BUFFER_CREATE_ERROR :: "create_staging_buffer"
+WGPU_OFFSCREEN_COMMAND_ENCODER_CREATE_ERROR :: "create_command_encoder"
+WGPU_OFFSCREEN_RENDER_PASS_CREATE_ERROR :: "begin_render_pass"
+WGPU_OFFSCREEN_COMMAND_BUFFER_CREATE_ERROR :: "finish_command_buffer"
+WGPU_OFFSCREEN_MAP_ERROR :: "map_buffer"
+WGPU_OFFSCREEN_MAPPED_RANGE_ERROR :: "get_mapped_range"
+WGPU_OFFSCREEN_READBACK_ERROR :: "readback_pixel"
 WGPU_OFFSCREEN_LIBRARY_ENV :: "SCRAPBOT_WGPU_NATIVE_LIBRARY"
 WGPU_OFFSCREEN_REQUEST_POLL_LIMIT :: 2048
 
@@ -992,6 +1002,7 @@ WGPU_SYMBOL_INSTANCE_RELEASE :: "wgpuInstanceRelease"
 WGPU_SYMBOL_ADAPTER_RELEASE :: "wgpuAdapterRelease"
 WGPU_SYMBOL_DEVICE_RELEASE :: "wgpuDeviceRelease"
 WGPU_SYMBOL_QUEUE_RELEASE :: "wgpuQueueRelease"
+WGPU_SYMBOL_DEVICE_POLL :: "wgpuDevicePoll"
 
 WGPU_Offscreen_Procs :: struct {
 	create_instance:                        WGPU_Create_Instance_Proc,
@@ -1051,6 +1062,7 @@ WGPU_Offscreen_Procs :: struct {
 	adapter_release:                        WGPU_Adapter_Release_Proc,
 	device_release:                         WGPU_Device_Release_Proc,
 	queue_release:                          WGPU_Queue_Release_Proc,
+	device_poll:                            WGPU_Device_Poll_Proc,
 }
 
 WGPU_Offscreen_Dynamic_Library :: struct {
@@ -1072,6 +1084,11 @@ WGPU_Device_Request_State :: struct {
 	complete: bool,
 	status:   WGPU_Request_Device_Status,
 	device:   WGPU_Device,
+}
+
+WGPU_Buffer_Map_State :: struct {
+	complete: bool,
+	status:   WGPU_Map_Async_Status,
 }
 
 wgpu_string_view_null :: proc() -> WGPU_String_View {
@@ -1996,6 +2013,10 @@ wgpu_resolve_offscreen_procs :: proc(resolver: WGPU_Symbol_Resolver, user_data: 
 	if symbol == nil do return procs, WGPU_SYMBOL_QUEUE_RELEASE, false
 	procs.queue_release = cast(WGPU_Queue_Release_Proc)symbol
 
+	symbol = resolver(WGPU_SYMBOL_DEVICE_POLL, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_POLL, false
+	procs.device_poll = cast(WGPU_Device_Poll_Proc)symbol
+
 	return procs, "", true
 }
 
@@ -2078,6 +2099,127 @@ wgpu_smoke_offscreen_context :: proc(procs: WGPU_Offscreen_Procs, backend_type: 
 	return "", true
 }
 
+wgpu_smoke_offscreen_clear_readback :: proc(procs: WGPU_Offscreen_Procs, backend_type: WGPU_Backend_Type = WGPU_BACKEND_TYPE_UNDEFINED) -> (string, bool) {
+	descriptor := wgpu_instance_descriptor_default()
+	instance := procs.create_instance(&descriptor)
+	if instance == nil {
+		return WGPU_OFFSCREEN_INSTANCE_CREATE_ERROR, false
+	}
+	defer procs.instance_release(instance)
+
+	adapter, adapter_error, adapter_ok := wgpu_request_adapter_sync(procs, instance, backend_type)
+	if !adapter_ok {
+		return adapter_error, false
+	}
+	defer procs.adapter_release(adapter)
+
+	device, device_error, device_ok := wgpu_request_device_sync(procs, instance, adapter)
+	if !device_ok {
+		return device_error, false
+	}
+	defer procs.device_release(device)
+
+	queue := procs.device_get_queue(device)
+	if queue == nil {
+		return WGPU_OFFSCREEN_QUEUE_GET_ERROR, false
+	}
+	defer procs.queue_release(queue)
+
+	width :: u32(4)
+	height :: u32(4)
+	bytes_per_row :: u32(256)
+	buffer_size :: u64(bytes_per_row) * u64(height)
+
+	texture_descriptor := wgpu_texture_descriptor_2d(wgpu_string_view_empty(), width, height, WGPU_DEFAULT_TARGET_FORMAT, wgpu_offscreen_texture_usage())
+	texture := procs.device_create_texture(device, &texture_descriptor)
+	if texture == nil {
+		return WGPU_OFFSCREEN_TEXTURE_CREATE_ERROR, false
+	}
+	defer procs.texture_release(texture)
+
+	view_descriptor := wgpu_single_mip_texture_view_descriptor(wgpu_string_view_empty())
+	texture_view := procs.texture_create_view(texture, &view_descriptor)
+	if texture_view == nil {
+		return WGPU_OFFSCREEN_TEXTURE_VIEW_CREATE_ERROR, false
+	}
+	defer procs.texture_view_release(texture_view)
+
+	buffer_descriptor := wgpu_buffer_descriptor(wgpu_string_view_empty(), wgpu_staging_buffer_usage(), buffer_size)
+	staging_buffer := procs.device_create_buffer(device, &buffer_descriptor)
+	if staging_buffer == nil {
+		return WGPU_OFFSCREEN_BUFFER_CREATE_ERROR, false
+	}
+	defer procs.buffer_release(staging_buffer)
+
+	encoder_descriptor := wgpu_command_encoder_descriptor(wgpu_string_view_empty())
+	encoder := procs.device_create_command_encoder(device, &encoder_descriptor)
+	if encoder == nil {
+		return WGPU_OFFSCREEN_COMMAND_ENCODER_CREATE_ERROR, false
+	}
+	defer procs.command_encoder_release(encoder)
+
+	color_attachments := [?]WGPU_Color_Attachment{
+		wgpu_color_attachment_clear(texture_view, wgpu_color(1.0, 1.0, 1.0, 1.0)),
+	}
+	pass_descriptor := wgpu_render_pass_descriptor(wgpu_string_view_empty(), &color_attachments[0], 1)
+	render_pass := procs.command_encoder_begin_render_pass(encoder, &pass_descriptor)
+	if render_pass == nil {
+		return WGPU_OFFSCREEN_RENDER_PASS_CREATE_ERROR, false
+	}
+	procs.render_pass_encoder_end(render_pass)
+	procs.render_pass_encoder_release(render_pass)
+
+	source := wgpu_texel_copy_texture_info(texture)
+	destination := wgpu_texel_copy_buffer_info(staging_buffer, bytes_per_row, height)
+	copy_size := wgpu_extent_3d(width, height)
+	procs.command_encoder_copy_texture_to_buffer(encoder, &source, &destination, &copy_size)
+
+	command_buffer_descriptor := wgpu_command_buffer_descriptor(wgpu_string_view_empty())
+	command_buffer := procs.command_encoder_finish(encoder, &command_buffer_descriptor)
+	if command_buffer == nil {
+		return WGPU_OFFSCREEN_COMMAND_BUFFER_CREATE_ERROR, false
+	}
+
+	command_buffers := [?]WGPU_Command_Buffer{command_buffer}
+	procs.queue_submit(queue, 1, &command_buffers[0])
+	procs.command_buffer_release(command_buffer)
+
+	map_state := WGPU_Buffer_Map_State{}
+	_ = procs.buffer_map_async(
+		staging_buffer,
+		WGPU_MAP_MODE_READ,
+		0,
+		c.size_t(buffer_size),
+		wgpu_buffer_map_callback_info(wgpu_buffer_map_sync_callback, rawptr(&map_state)),
+	)
+	if !wgpu_poll_device_until_complete(procs, device, &map_state.complete) {
+		return WGPU_OFFSCREEN_REQUEST_TIMEOUT_ERROR, false
+	}
+	if map_state.status != WGPU_MAP_ASYNC_STATUS_SUCCESS {
+		return WGPU_OFFSCREEN_MAP_ERROR, false
+	}
+	defer procs.buffer_unmap(staging_buffer)
+
+	mapped_raw := procs.buffer_get_mapped_range(staging_buffer, 0, c.size_t(buffer_size))
+	if mapped_raw == nil {
+		return WGPU_OFFSCREEN_MAPPED_RANGE_ERROR, false
+	}
+
+	pixels := transmute([^]u8)mapped_raw
+	if pixels[0] < 240 || pixels[1] < 240 || pixels[2] < 240 || pixels[3] < 240 {
+		return WGPU_OFFSCREEN_READBACK_ERROR, false
+	}
+
+	return "", true
+}
+
+wgpu_poll_device_until_complete :: proc(procs: WGPU_Offscreen_Procs, device: WGPU_Device, complete: ^bool) -> bool {
+	for poll_index := 0; poll_index < WGPU_OFFSCREEN_REQUEST_POLL_LIMIT && !complete^; poll_index += 1 {
+		_ = procs.device_poll(device, WGPU_TRUE, nil)
+	}
+	return complete^
+}
+
 wgpu_smoke_default_offscreen_instance :: proc(root: string = ".") -> (string, string, bool) {
 	path, found := wgpu_find_default_offscreen_library(root)
 	if !found {
@@ -2114,6 +2256,28 @@ wgpu_smoke_default_offscreen_context :: proc(root: string = ".", backend_type: W
 	defer wgpu_unload_offscreen_library(&loaded)
 
 	smoke_error, smoke_ok := wgpu_smoke_offscreen_context(loaded.procs, backend_type)
+	if !smoke_ok {
+		delete(path)
+		return "", smoke_error, false
+	}
+
+	return path, "", true
+}
+
+wgpu_smoke_default_offscreen_clear_readback :: proc(root: string = ".", backend_type: WGPU_Backend_Type = WGPU_BACKEND_TYPE_UNDEFINED) -> (string, string, bool) {
+	path, found := wgpu_find_default_offscreen_library(root)
+	if !found {
+		return "", WGPU_OFFSCREEN_LIBRARY_NOT_FOUND, false
+	}
+
+	loaded, missing, loaded_ok := wgpu_load_offscreen_library(path)
+	if !loaded_ok {
+		delete(path)
+		return "", missing, false
+	}
+	defer wgpu_unload_offscreen_library(&loaded)
+
+	smoke_error, smoke_ok := wgpu_smoke_offscreen_clear_readback(loaded.procs, backend_type)
 	if !smoke_ok {
 		delete(path)
 		return "", smoke_error, false
@@ -2177,6 +2341,17 @@ wgpu_request_device_sync_callback :: proc "c" (status: WGPU_Request_Device_Statu
 	state := (^WGPU_Device_Request_State)(userdata1)
 	state.status = status
 	state.device = device
+	state.complete = true
+}
+
+wgpu_buffer_map_sync_callback :: proc "c" (status: WGPU_Map_Async_Status, message: WGPU_String_View, userdata1, userdata2: rawptr) {
+	_ = message
+	_ = userdata2
+	if userdata1 == nil {
+		return
+	}
+	state := (^WGPU_Buffer_Map_State)(userdata1)
+	state.status = status
 	state.complete = true
 }
 

@@ -582,7 +582,7 @@ test_wgpu_offscreen_proc_table_resolves_required_symbols :: proc(t: ^testing.T) 
 
 	testing.expect_value(t, ok, true)
 	testing.expect_value(t, missing, "")
-	testing.expect_value(t, ctx.calls, 57)
+	testing.expect_value(t, ctx.calls, 58)
 	testing.expect_value(t, ctx.last_user_data, rawptr(&ctx))
 
 	instance := procs.create_instance((^WGPU_Instance_Descriptor)(nil))
@@ -730,6 +730,44 @@ test_wgpu_offscreen_context_smoke_reports_missing_queue :: proc(t: ^testing.T) {
 	smoke_error, smoke_ok := wgpu_smoke_offscreen_context(procs)
 	testing.expect_value(t, smoke_ok, false)
 	testing.expect_value(t, smoke_error, WGPU_OFFSCREEN_QUEUE_GET_ERROR)
+}
+
+@(test)
+test_wgpu_offscreen_clear_readback_smoke_records_render_copy_map_path :: proc(t: ^testing.T) {
+	ctx := WGPU_Test_Resolver_Context{}
+	procs, missing, procs_ok := wgpu_resolve_offscreen_procs(wgpu_test_symbol_resolver, rawptr(&ctx))
+	testing.expect_value(t, procs_ok, true)
+	testing.expect_value(t, missing, "")
+
+	smoke_error, smoke_ok := wgpu_smoke_offscreen_clear_readback(procs)
+	testing.expect_value(t, smoke_ok, true)
+	testing.expect_value(t, smoke_error, "")
+}
+
+@(test)
+test_wgpu_offscreen_clear_readback_smoke_reports_map_failure :: proc(t: ^testing.T) {
+	ctx := WGPU_Test_Resolver_Context{}
+	procs, missing, procs_ok := wgpu_resolve_offscreen_procs(wgpu_test_symbol_resolver, rawptr(&ctx))
+	testing.expect_value(t, procs_ok, true)
+	testing.expect_value(t, missing, "")
+	procs.buffer_map_async = wgpu_test_buffer_map_async_error
+
+	smoke_error, smoke_ok := wgpu_smoke_offscreen_clear_readback(procs)
+	testing.expect_value(t, smoke_ok, false)
+	testing.expect_value(t, smoke_error, WGPU_OFFSCREEN_MAP_ERROR)
+}
+
+@(test)
+test_wgpu_offscreen_clear_readback_smoke_reports_bad_pixel :: proc(t: ^testing.T) {
+	ctx := WGPU_Test_Resolver_Context{}
+	procs, missing, procs_ok := wgpu_resolve_offscreen_procs(wgpu_test_symbol_resolver, rawptr(&ctx))
+	testing.expect_value(t, procs_ok, true)
+	testing.expect_value(t, missing, "")
+	procs.buffer_get_mapped_range = wgpu_test_buffer_get_mapped_range_black
+
+	smoke_error, smoke_ok := wgpu_smoke_offscreen_clear_readback(procs)
+	testing.expect_value(t, smoke_ok, false)
+	testing.expect_value(t, smoke_error, WGPU_OFFSCREEN_READBACK_ERROR)
 }
 
 @(test)
@@ -921,6 +959,22 @@ test_wgpu_default_context_smoke_uses_discovered_zig_package_cache_library :: pro
 	testing.expect_value(t, same_resolved_path(smoke_path, cache_library_path), true)
 }
 
+@(test)
+test_wgpu_default_clear_readback_smoke_uses_discovered_zig_package_cache_library :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "wgpu-default-clear-readback-smoke")
+	defer os.remove_all(root)
+	defer delete(root)
+
+	cache_library_path := stage_fake_wgpu_zig_package_library(t, root)
+	defer delete(cache_library_path)
+
+	smoke_path, missing, ok := wgpu_smoke_default_offscreen_clear_readback(root)
+	defer if ok { delete(smoke_path) }
+	testing.expect_value(t, ok, true)
+	testing.expect_value(t, missing, "")
+	testing.expect_value(t, same_resolved_path(smoke_path, cache_library_path), true)
+}
+
 build_fake_wgpu_library :: proc(t: ^testing.T, root, source: string) -> string {
 	write_file(t, root, "fake_wgpu.odin", source)
 
@@ -1012,6 +1066,9 @@ WGPU_String_View :: struct #align(align_of(rawptr)) {
 
 WGPU_Request_Adapter_Callback :: proc "c" (status: u32, adapter: rawptr, message: WGPU_String_View, userdata1, userdata2: rawptr)
 WGPU_Request_Device_Callback :: proc "c" (status: u32, device: rawptr, message: WGPU_String_View, userdata1, userdata2: rawptr)
+WGPU_Buffer_Map_Callback :: proc "c" (status: u32, message: WGPU_String_View, userdata1, userdata2: rawptr)
+
+FAKE_WGPU_MAPPED_WHITE_PIXEL := [?]u8{255, 255, 255, 255}
 
 WGPU_Buffer_Map_Callback_Info :: struct #align(align_of(rawptr)) {
 	next_in_chain: rawptr,
@@ -1338,7 +1395,10 @@ wgpuBufferMapAsync :: proc "c" (buffer: rawptr, mode: u64, offset, size: c.size_
 	_ = mode
 	_ = offset
 	_ = size
-	_ = callback_info
+	if callback_info.callback != nil {
+		callback := cast(WGPU_Buffer_Map_Callback)callback_info.callback
+		callback(1, WGPU_String_View{}, callback_info.userdata1, callback_info.userdata2)
+	}
 	return WGPU_Future{id = 0x2008}
 }
 
@@ -1347,7 +1407,7 @@ wgpuBufferGetMappedRange :: proc "c" (buffer: rawptr, offset, size: c.size_t) ->
 	_ = buffer
 	_ = offset
 	_ = size
-	return rawptr(uintptr(0x2009))
+	return rawptr(&FAKE_WGPU_MAPPED_WHITE_PIXEL[0])
 }
 
 @(export)
@@ -1438,6 +1498,14 @@ wgpuDeviceRelease :: proc "c" (device: rawptr) {
 @(export)
 wgpuQueueRelease :: proc "c" (queue: rawptr) {
 	_ = queue
+}
+
+@(export)
+wgpuDevicePoll :: proc "c" (device: rawptr, wait: u32, submission_index: rawptr) -> u32 {
+	_ = device
+	_ = wait
+	_ = submission_index
+	return 1
 }
 `
 
@@ -1870,6 +1938,9 @@ WGPU_Test_Resolver_Context :: struct {
 	last_user_data: rawptr,
 }
 
+wgpu_test_mapped_white_pixel := [?]u8{255, 255, 255, 255}
+wgpu_test_mapped_black_pixel := [?]u8{0, 0, 0, 255}
+
 wgpu_test_symbol_resolver :: proc(name: string, user_data: rawptr) -> rawptr {
 	ctx := (^WGPU_Test_Resolver_Context)(user_data)
 	ctx.calls += 1
@@ -1992,6 +2063,8 @@ wgpu_test_symbol_resolver :: proc(name: string, user_data: rawptr) -> rawptr {
 		return rawptr(wgpu_test_device_release)
 	case WGPU_SYMBOL_QUEUE_RELEASE:
 		return rawptr(wgpu_test_queue_release)
+	case WGPU_SYMBOL_DEVICE_POLL:
+		return rawptr(wgpu_test_device_poll)
 	}
 	return nil
 }
@@ -2260,15 +2333,31 @@ wgpu_test_buffer_map_async :: proc "c" (buffer: WGPU_Buffer, mode: WGPU_Map_Mode
 	_ = mode
 	_ = offset
 	_ = size
-	_ = callback_info
+	callback_info.callback(WGPU_MAP_ASYNC_STATUS_SUCCESS, WGPU_String_View{}, callback_info.userdata1, callback_info.userdata2)
 	return WGPU_Future{id = 0x1008}
+}
+
+wgpu_test_buffer_map_async_error :: proc "c" (buffer: WGPU_Buffer, mode: WGPU_Map_Mode, offset, size: c.size_t, callback_info: WGPU_Buffer_Map_Callback_Info) -> WGPU_Future {
+	_ = buffer
+	_ = mode
+	_ = offset
+	_ = size
+	callback_info.callback(WGPU_MAP_ASYNC_STATUS_ERROR, WGPU_String_View{}, callback_info.userdata1, callback_info.userdata2)
+	return WGPU_Future{id = 0x1080}
 }
 
 wgpu_test_buffer_get_mapped_range :: proc "c" (buffer: WGPU_Buffer, offset, size: c.size_t) -> rawptr {
 	_ = buffer
 	_ = offset
 	_ = size
-	return rawptr(uintptr(0x1009))
+	return rawptr(&wgpu_test_mapped_white_pixel[0])
+}
+
+wgpu_test_buffer_get_mapped_range_black :: proc "c" (buffer: WGPU_Buffer, offset, size: c.size_t) -> rawptr {
+	_ = buffer
+	_ = offset
+	_ = size
+	return rawptr(&wgpu_test_mapped_black_pixel[0])
 }
 
 wgpu_test_buffer_unmap :: proc "c" (buffer: WGPU_Buffer) {
@@ -2341,6 +2430,13 @@ wgpu_test_device_release :: proc "c" (device: WGPU_Device) {
 
 wgpu_test_queue_release :: proc "c" (queue: WGPU_Queue) {
 	_ = queue
+}
+
+wgpu_test_device_poll :: proc "c" (device: WGPU_Device, wait: WGPU_Bool, submission_index: rawptr) -> WGPU_Bool {
+	_ = device
+	_ = wait
+	_ = submission_index
+	return WGPU_TRUE
 }
 
 @(test)
