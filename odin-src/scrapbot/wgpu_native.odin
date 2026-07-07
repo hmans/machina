@@ -27,6 +27,15 @@ WGPU_Callback_Mode :: u32
 WGPU_Index_Format :: u32
 WGPU_Load_Op :: u32
 WGPU_Store_Op :: u32
+WGPU_Shader_Stage :: WGPU_Flags
+WGPU_Buffer_Binding_Type :: u32
+WGPU_Sampler_Binding_Type :: u32
+WGPU_Texture_Sample_Type :: u32
+WGPU_Storage_Texture_Access :: u32
+WGPU_Address_Mode :: u32
+WGPU_Filter_Mode :: u32
+WGPU_Mipmap_Filter_Mode :: u32
+WGPU_Compare_Function :: u32
 WGPU_Feature_Level :: u32
 WGPU_Power_Preference :: u32
 WGPU_Backend_Type :: u32
@@ -53,6 +62,7 @@ WGPU_Render_Pipeline :: rawptr
 WGPU_Pipeline_Layout :: rawptr
 WGPU_Bind_Group :: rawptr
 WGPU_Bind_Group_Layout :: rawptr
+WGPU_Sampler :: rawptr
 WGPU_Command_Encoder :: rawptr
 WGPU_Command_Buffer :: rawptr
 WGPU_Render_Pass_Encoder :: rawptr
@@ -90,6 +100,60 @@ WGPU_LOAD_OP_CLEAR :: WGPU_Load_Op(0x00000002)
 WGPU_STORE_OP_UNDEFINED :: WGPU_Store_Op(0x00000000)
 WGPU_STORE_OP_STORE :: WGPU_Store_Op(0x00000001)
 WGPU_STORE_OP_DISCARD :: WGPU_Store_Op(0x00000002)
+
+WGPU_SHADER_STAGE_NONE :: WGPU_Shader_Stage(0x0000000000000000)
+WGPU_SHADER_STAGE_VERTEX :: WGPU_Shader_Stage(0x0000000000000001)
+WGPU_SHADER_STAGE_FRAGMENT :: WGPU_Shader_Stage(0x0000000000000002)
+WGPU_SHADER_STAGE_COMPUTE :: WGPU_Shader_Stage(0x0000000000000004)
+
+WGPU_BUFFER_BINDING_TYPE_BINDING_NOT_USED :: WGPU_Buffer_Binding_Type(0x00000000)
+WGPU_BUFFER_BINDING_TYPE_UNDEFINED :: WGPU_Buffer_Binding_Type(0x00000001)
+WGPU_BUFFER_BINDING_TYPE_UNIFORM :: WGPU_Buffer_Binding_Type(0x00000002)
+WGPU_BUFFER_BINDING_TYPE_STORAGE :: WGPU_Buffer_Binding_Type(0x00000003)
+WGPU_BUFFER_BINDING_TYPE_READ_ONLY_STORAGE :: WGPU_Buffer_Binding_Type(0x00000004)
+
+WGPU_SAMPLER_BINDING_TYPE_BINDING_NOT_USED :: WGPU_Sampler_Binding_Type(0x00000000)
+WGPU_SAMPLER_BINDING_TYPE_UNDEFINED :: WGPU_Sampler_Binding_Type(0x00000001)
+WGPU_SAMPLER_BINDING_TYPE_FILTERING :: WGPU_Sampler_Binding_Type(0x00000002)
+WGPU_SAMPLER_BINDING_TYPE_NON_FILTERING :: WGPU_Sampler_Binding_Type(0x00000003)
+WGPU_SAMPLER_BINDING_TYPE_COMPARISON :: WGPU_Sampler_Binding_Type(0x00000004)
+
+WGPU_TEXTURE_SAMPLE_TYPE_BINDING_NOT_USED :: WGPU_Texture_Sample_Type(0x00000000)
+WGPU_TEXTURE_SAMPLE_TYPE_UNDEFINED :: WGPU_Texture_Sample_Type(0x00000001)
+WGPU_TEXTURE_SAMPLE_TYPE_FLOAT :: WGPU_Texture_Sample_Type(0x00000002)
+WGPU_TEXTURE_SAMPLE_TYPE_UNFILTERABLE_FLOAT :: WGPU_Texture_Sample_Type(0x00000003)
+WGPU_TEXTURE_SAMPLE_TYPE_DEPTH :: WGPU_Texture_Sample_Type(0x00000004)
+WGPU_TEXTURE_SAMPLE_TYPE_SINT :: WGPU_Texture_Sample_Type(0x00000005)
+WGPU_TEXTURE_SAMPLE_TYPE_UINT :: WGPU_Texture_Sample_Type(0x00000006)
+
+WGPU_STORAGE_TEXTURE_ACCESS_BINDING_NOT_USED :: WGPU_Storage_Texture_Access(0x00000000)
+WGPU_STORAGE_TEXTURE_ACCESS_UNDEFINED :: WGPU_Storage_Texture_Access(0x00000001)
+WGPU_STORAGE_TEXTURE_ACCESS_WRITE_ONLY :: WGPU_Storage_Texture_Access(0x00000002)
+WGPU_STORAGE_TEXTURE_ACCESS_READ_ONLY :: WGPU_Storage_Texture_Access(0x00000003)
+WGPU_STORAGE_TEXTURE_ACCESS_READ_WRITE :: WGPU_Storage_Texture_Access(0x00000004)
+
+WGPU_ADDRESS_MODE_UNDEFINED :: WGPU_Address_Mode(0x00000000)
+WGPU_ADDRESS_MODE_CLAMP_TO_EDGE :: WGPU_Address_Mode(0x00000001)
+WGPU_ADDRESS_MODE_REPEAT :: WGPU_Address_Mode(0x00000002)
+WGPU_ADDRESS_MODE_MIRROR_REPEAT :: WGPU_Address_Mode(0x00000003)
+
+WGPU_FILTER_MODE_UNDEFINED :: WGPU_Filter_Mode(0x00000000)
+WGPU_FILTER_MODE_NEAREST :: WGPU_Filter_Mode(0x00000001)
+WGPU_FILTER_MODE_LINEAR :: WGPU_Filter_Mode(0x00000002)
+
+WGPU_MIPMAP_FILTER_MODE_UNDEFINED :: WGPU_Mipmap_Filter_Mode(0x00000000)
+WGPU_MIPMAP_FILTER_MODE_NEAREST :: WGPU_Mipmap_Filter_Mode(0x00000001)
+WGPU_MIPMAP_FILTER_MODE_LINEAR :: WGPU_Mipmap_Filter_Mode(0x00000002)
+
+WGPU_COMPARE_FUNCTION_UNDEFINED :: WGPU_Compare_Function(0x00000000)
+WGPU_COMPARE_FUNCTION_NEVER :: WGPU_Compare_Function(0x00000001)
+WGPU_COMPARE_FUNCTION_LESS :: WGPU_Compare_Function(0x00000002)
+WGPU_COMPARE_FUNCTION_EQUAL :: WGPU_Compare_Function(0x00000003)
+WGPU_COMPARE_FUNCTION_LESS_EQUAL :: WGPU_Compare_Function(0x00000004)
+WGPU_COMPARE_FUNCTION_GREATER :: WGPU_Compare_Function(0x00000005)
+WGPU_COMPARE_FUNCTION_NOT_EQUAL :: WGPU_Compare_Function(0x00000006)
+WGPU_COMPARE_FUNCTION_GREATER_EQUAL :: WGPU_Compare_Function(0x00000007)
+WGPU_COMPARE_FUNCTION_ALWAYS :: WGPU_Compare_Function(0x00000008)
 
 WGPU_FEATURE_LEVEL_COMPATIBILITY :: WGPU_Feature_Level(0x00000001)
 WGPU_FEATURE_LEVEL_CORE :: WGPU_Feature_Level(0x00000002)
@@ -341,6 +405,89 @@ WGPU_Render_Pass_Descriptor :: struct #align(align_of(rawptr)) {
 	timestamp_writes:           rawptr,
 }
 
+WGPU_Buffer_Binding_Layout :: struct #align(align_of(rawptr)) {
+	next_in_chain:      ^WGPU_Chained_Struct,
+	type_:              WGPU_Buffer_Binding_Type,
+	has_dynamic_offset: WGPU_Bool,
+	min_binding_size:   u64,
+}
+
+WGPU_Sampler_Binding_Layout :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	type_:         WGPU_Sampler_Binding_Type,
+}
+
+WGPU_Texture_Binding_Layout :: struct #align(align_of(rawptr)) {
+	next_in_chain:  ^WGPU_Chained_Struct,
+	sample_type:    WGPU_Texture_Sample_Type,
+	view_dimension: WGPU_Texture_View_Dimension,
+	multisampled:   WGPU_Bool,
+}
+
+WGPU_Storage_Texture_Binding_Layout :: struct #align(align_of(rawptr)) {
+	next_in_chain:  ^WGPU_Chained_Struct,
+	access:         WGPU_Storage_Texture_Access,
+	format:         WGPU_Texture_Format,
+	view_dimension: WGPU_Texture_View_Dimension,
+}
+
+WGPU_Bind_Group_Layout_Entry :: struct #align(align_of(rawptr)) {
+	next_in_chain:   ^WGPU_Chained_Struct,
+	binding:         u32,
+	visibility:      WGPU_Shader_Stage,
+	buffer:          WGPU_Buffer_Binding_Layout,
+	sampler:         WGPU_Sampler_Binding_Layout,
+	texture:         WGPU_Texture_Binding_Layout,
+	storage_texture: WGPU_Storage_Texture_Binding_Layout,
+}
+
+WGPU_Bind_Group_Layout_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	label:         WGPU_String_View,
+	entry_count:   c.size_t,
+	entries:       [^]WGPU_Bind_Group_Layout_Entry,
+}
+
+WGPU_Bind_Group_Entry :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	binding:       u32,
+	buffer:        WGPU_Buffer,
+	offset:        u64,
+	size:          u64,
+	sampler:       WGPU_Sampler,
+	texture_view:  WGPU_Texture_View,
+}
+
+WGPU_Bind_Group_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain: ^WGPU_Chained_Struct,
+	label:         WGPU_String_View,
+	layout:        WGPU_Bind_Group_Layout,
+	entry_count:   c.size_t,
+	entries:       [^]WGPU_Bind_Group_Entry,
+}
+
+WGPU_Sampler_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain:  ^WGPU_Chained_Struct,
+	label:          WGPU_String_View,
+	address_mode_u: WGPU_Address_Mode,
+	address_mode_v: WGPU_Address_Mode,
+	address_mode_w: WGPU_Address_Mode,
+	mag_filter:     WGPU_Filter_Mode,
+	min_filter:     WGPU_Filter_Mode,
+	mipmap_filter:  WGPU_Mipmap_Filter_Mode,
+	lod_min_clamp:  f32,
+	lod_max_clamp:  f32,
+	compare:        WGPU_Compare_Function,
+	max_anisotropy: u16,
+}
+
+WGPU_Pipeline_Layout_Descriptor :: struct #align(align_of(rawptr)) {
+	next_in_chain:           ^WGPU_Chained_Struct,
+	label:                   WGPU_String_View,
+	bind_group_layout_count: c.size_t,
+	bind_group_layouts:      [^]WGPU_Bind_Group_Layout,
+}
+
 WGPU_Instance_Capabilities :: struct #align(align_of(rawptr)) {
 	next_in_chain:            ^WGPU_Chained_Struct_Out,
 	timed_wait_any_enable:    WGPU_Bool,
@@ -428,6 +575,10 @@ WGPU_Buffer_Map_Callback_Info :: struct #align(align_of(rawptr)) {
 
 WGPU_Device_Create_Texture_Proc :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Texture_Descriptor) -> WGPU_Texture
 WGPU_Device_Create_Buffer_Proc :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Buffer_Descriptor) -> WGPU_Buffer
+WGPU_Device_Create_Bind_Group_Layout_Proc :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Bind_Group_Layout_Descriptor) -> WGPU_Bind_Group_Layout
+WGPU_Device_Create_Pipeline_Layout_Proc :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Pipeline_Layout_Descriptor) -> WGPU_Pipeline_Layout
+WGPU_Device_Create_Sampler_Proc :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Sampler_Descriptor) -> WGPU_Sampler
+WGPU_Device_Create_Bind_Group_Proc :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Bind_Group_Descriptor) -> WGPU_Bind_Group
 WGPU_Device_Create_Command_Encoder_Proc :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Command_Encoder_Descriptor) -> WGPU_Command_Encoder
 WGPU_Texture_Create_View_Proc :: proc "c" (texture: WGPU_Texture, descriptor: ^WGPU_Texture_View_Descriptor) -> WGPU_Texture_View
 WGPU_Command_Encoder_Copy_Texture_To_Buffer_Proc :: proc "c" (encoder: WGPU_Command_Encoder, source: ^WGPU_Texel_Copy_Texture_Info, destination: ^WGPU_Texel_Copy_Buffer_Info, copy_size: ^WGPU_Extent_3D)
@@ -450,6 +601,10 @@ WGPU_Instance_Process_Events_Proc :: proc "c" (instance: WGPU_Instance)
 WGPU_Texture_Release_Proc :: proc "c" (texture: WGPU_Texture)
 WGPU_Texture_View_Release_Proc :: proc "c" (texture_view: WGPU_Texture_View)
 WGPU_Buffer_Release_Proc :: proc "c" (buffer: WGPU_Buffer)
+WGPU_Bind_Group_Layout_Release_Proc :: proc "c" (bind_group_layout: WGPU_Bind_Group_Layout)
+WGPU_Pipeline_Layout_Release_Proc :: proc "c" (pipeline_layout: WGPU_Pipeline_Layout)
+WGPU_Sampler_Release_Proc :: proc "c" (sampler: WGPU_Sampler)
+WGPU_Bind_Group_Release_Proc :: proc "c" (bind_group: WGPU_Bind_Group)
 WGPU_Command_Encoder_Release_Proc :: proc "c" (encoder: WGPU_Command_Encoder)
 WGPU_Command_Buffer_Release_Proc :: proc "c" (command_buffer: WGPU_Command_Buffer)
 WGPU_Render_Pass_Encoder_Release_Proc :: proc "c" (render_pass: WGPU_Render_Pass_Encoder)
@@ -468,6 +623,10 @@ WGPU_OFFSCREEN_LIBRARY_LOAD_ERROR :: "load_library"
 
 WGPU_SYMBOL_DEVICE_CREATE_TEXTURE :: "wgpuDeviceCreateTexture"
 WGPU_SYMBOL_DEVICE_CREATE_BUFFER :: "wgpuDeviceCreateBuffer"
+WGPU_SYMBOL_DEVICE_CREATE_BIND_GROUP_LAYOUT :: "wgpuDeviceCreateBindGroupLayout"
+WGPU_SYMBOL_DEVICE_CREATE_PIPELINE_LAYOUT :: "wgpuDeviceCreatePipelineLayout"
+WGPU_SYMBOL_DEVICE_CREATE_SAMPLER :: "wgpuDeviceCreateSampler"
+WGPU_SYMBOL_DEVICE_CREATE_BIND_GROUP :: "wgpuDeviceCreateBindGroup"
 WGPU_SYMBOL_DEVICE_CREATE_COMMAND_ENCODER :: "wgpuDeviceCreateCommandEncoder"
 WGPU_SYMBOL_TEXTURE_CREATE_VIEW :: "wgpuTextureCreateView"
 WGPU_SYMBOL_COMMAND_ENCODER_COPY_TEXTURE_TO_BUFFER :: "wgpuCommandEncoderCopyTextureToBuffer"
@@ -490,6 +649,10 @@ WGPU_SYMBOL_INSTANCE_PROCESS_EVENTS :: "wgpuInstanceProcessEvents"
 WGPU_SYMBOL_TEXTURE_RELEASE :: "wgpuTextureRelease"
 WGPU_SYMBOL_TEXTURE_VIEW_RELEASE :: "wgpuTextureViewRelease"
 WGPU_SYMBOL_BUFFER_RELEASE :: "wgpuBufferRelease"
+WGPU_SYMBOL_BIND_GROUP_LAYOUT_RELEASE :: "wgpuBindGroupLayoutRelease"
+WGPU_SYMBOL_PIPELINE_LAYOUT_RELEASE :: "wgpuPipelineLayoutRelease"
+WGPU_SYMBOL_SAMPLER_RELEASE :: "wgpuSamplerRelease"
+WGPU_SYMBOL_BIND_GROUP_RELEASE :: "wgpuBindGroupRelease"
 WGPU_SYMBOL_COMMAND_ENCODER_RELEASE :: "wgpuCommandEncoderRelease"
 WGPU_SYMBOL_COMMAND_BUFFER_RELEASE :: "wgpuCommandBufferRelease"
 WGPU_SYMBOL_RENDER_PASS_ENCODER_RELEASE :: "wgpuRenderPassEncoderRelease"
@@ -509,6 +672,10 @@ WGPU_Offscreen_Procs :: struct {
 	device_get_queue:                       WGPU_Device_Get_Queue_Proc,
 	device_create_texture:                  WGPU_Device_Create_Texture_Proc,
 	device_create_buffer:                   WGPU_Device_Create_Buffer_Proc,
+	device_create_bind_group_layout:        WGPU_Device_Create_Bind_Group_Layout_Proc,
+	device_create_pipeline_layout:          WGPU_Device_Create_Pipeline_Layout_Proc,
+	device_create_sampler:                  WGPU_Device_Create_Sampler_Proc,
+	device_create_bind_group:               WGPU_Device_Create_Bind_Group_Proc,
 	device_create_command_encoder:          WGPU_Device_Create_Command_Encoder_Proc,
 	texture_create_view:                    WGPU_Texture_Create_View_Proc,
 	command_encoder_copy_texture_to_buffer: WGPU_Command_Encoder_Copy_Texture_To_Buffer_Proc,
@@ -531,6 +698,10 @@ WGPU_Offscreen_Procs :: struct {
 	texture_release:                        WGPU_Texture_Release_Proc,
 	texture_view_release:                   WGPU_Texture_View_Release_Proc,
 	buffer_release:                         WGPU_Buffer_Release_Proc,
+	bind_group_layout_release:              WGPU_Bind_Group_Layout_Release_Proc,
+	pipeline_layout_release:                WGPU_Pipeline_Layout_Release_Proc,
+	sampler_release:                        WGPU_Sampler_Release_Proc,
+	bind_group_release:                     WGPU_Bind_Group_Release_Proc,
 	command_encoder_release:                WGPU_Command_Encoder_Release_Proc,
 	command_buffer_release:                 WGPU_Command_Buffer_Release_Proc,
 	render_pass_encoder_release:            WGPU_Render_Pass_Encoder_Release_Proc,
@@ -706,6 +877,190 @@ wgpu_render_pass_descriptor :: proc(label: WGPU_String_View, color_attachments: 
 	}
 }
 
+wgpu_buffer_binding_layout_not_used :: proc() -> WGPU_Buffer_Binding_Layout {
+	return WGPU_Buffer_Binding_Layout{
+		next_in_chain = nil,
+		type_ = WGPU_BUFFER_BINDING_TYPE_BINDING_NOT_USED,
+		has_dynamic_offset = WGPU_FALSE,
+		min_binding_size = 0,
+	}
+}
+
+wgpu_uniform_buffer_binding_layout :: proc(min_binding_size: u64) -> WGPU_Buffer_Binding_Layout {
+	return WGPU_Buffer_Binding_Layout{
+		next_in_chain = nil,
+		type_ = WGPU_BUFFER_BINDING_TYPE_UNIFORM,
+		has_dynamic_offset = WGPU_FALSE,
+		min_binding_size = min_binding_size,
+	}
+}
+
+wgpu_sampler_binding_layout_not_used :: proc() -> WGPU_Sampler_Binding_Layout {
+	return WGPU_Sampler_Binding_Layout{
+		next_in_chain = nil,
+		type_ = WGPU_SAMPLER_BINDING_TYPE_BINDING_NOT_USED,
+	}
+}
+
+wgpu_sampler_binding_layout :: proc(type_: WGPU_Sampler_Binding_Type) -> WGPU_Sampler_Binding_Layout {
+	return WGPU_Sampler_Binding_Layout{
+		next_in_chain = nil,
+		type_ = type_,
+	}
+}
+
+wgpu_texture_binding_layout_not_used :: proc() -> WGPU_Texture_Binding_Layout {
+	return WGPU_Texture_Binding_Layout{
+		next_in_chain = nil,
+		sample_type = WGPU_TEXTURE_SAMPLE_TYPE_BINDING_NOT_USED,
+		view_dimension = WGPU_TEXTURE_VIEW_DIMENSION_2D,
+		multisampled = WGPU_FALSE,
+	}
+}
+
+wgpu_texture_binding_layout_2d :: proc(sample_type: WGPU_Texture_Sample_Type) -> WGPU_Texture_Binding_Layout {
+	return WGPU_Texture_Binding_Layout{
+		next_in_chain = nil,
+		sample_type = sample_type,
+		view_dimension = WGPU_TEXTURE_VIEW_DIMENSION_2D,
+		multisampled = WGPU_FALSE,
+	}
+}
+
+wgpu_storage_texture_binding_layout_not_used :: proc() -> WGPU_Storage_Texture_Binding_Layout {
+	return WGPU_Storage_Texture_Binding_Layout{
+		next_in_chain = nil,
+		access = WGPU_STORAGE_TEXTURE_ACCESS_BINDING_NOT_USED,
+		format = WGPU_TEXTURE_FORMAT_UNDEFINED,
+		view_dimension = WGPU_TEXTURE_VIEW_DIMENSION_2D,
+	}
+}
+
+wgpu_bind_group_layout_entry_buffer :: proc(binding: u32, visibility: WGPU_Shader_Stage, min_binding_size: u64) -> WGPU_Bind_Group_Layout_Entry {
+	return WGPU_Bind_Group_Layout_Entry{
+		next_in_chain = nil,
+		binding = binding,
+		visibility = visibility,
+		buffer = wgpu_uniform_buffer_binding_layout(min_binding_size),
+		sampler = wgpu_sampler_binding_layout_not_used(),
+		texture = wgpu_texture_binding_layout_not_used(),
+		storage_texture = wgpu_storage_texture_binding_layout_not_used(),
+	}
+}
+
+wgpu_bind_group_layout_entry_texture :: proc(binding: u32, visibility: WGPU_Shader_Stage, sample_type: WGPU_Texture_Sample_Type) -> WGPU_Bind_Group_Layout_Entry {
+	return WGPU_Bind_Group_Layout_Entry{
+		next_in_chain = nil,
+		binding = binding,
+		visibility = visibility,
+		buffer = wgpu_buffer_binding_layout_not_used(),
+		sampler = wgpu_sampler_binding_layout_not_used(),
+		texture = wgpu_texture_binding_layout_2d(sample_type),
+		storage_texture = wgpu_storage_texture_binding_layout_not_used(),
+	}
+}
+
+wgpu_bind_group_layout_entry_sampler :: proc(binding: u32, visibility: WGPU_Shader_Stage, type_: WGPU_Sampler_Binding_Type) -> WGPU_Bind_Group_Layout_Entry {
+	return WGPU_Bind_Group_Layout_Entry{
+		next_in_chain = nil,
+		binding = binding,
+		visibility = visibility,
+		buffer = wgpu_buffer_binding_layout_not_used(),
+		sampler = wgpu_sampler_binding_layout(type_),
+		texture = wgpu_texture_binding_layout_not_used(),
+		storage_texture = wgpu_storage_texture_binding_layout_not_used(),
+	}
+}
+
+wgpu_bind_group_layout_descriptor :: proc(label: WGPU_String_View, entries: [^]WGPU_Bind_Group_Layout_Entry, entry_count: c.size_t) -> WGPU_Bind_Group_Layout_Descriptor {
+	return WGPU_Bind_Group_Layout_Descriptor{
+		next_in_chain = nil,
+		label = label,
+		entry_count = entry_count,
+		entries = entries,
+	}
+}
+
+wgpu_bind_group_entry_buffer :: proc(binding: u32, buffer: WGPU_Buffer, size: u64, offset: u64 = 0) -> WGPU_Bind_Group_Entry {
+	return WGPU_Bind_Group_Entry{
+		next_in_chain = nil,
+		binding = binding,
+		buffer = buffer,
+		offset = offset,
+		size = size,
+		sampler = nil,
+		texture_view = nil,
+	}
+}
+
+wgpu_bind_group_entry_texture :: proc(binding: u32, texture_view: WGPU_Texture_View) -> WGPU_Bind_Group_Entry {
+	return WGPU_Bind_Group_Entry{
+		next_in_chain = nil,
+		binding = binding,
+		buffer = nil,
+		offset = 0,
+		size = WGPU_WHOLE_SIZE,
+		sampler = nil,
+		texture_view = texture_view,
+	}
+}
+
+wgpu_bind_group_entry_sampler :: proc(binding: u32, sampler: WGPU_Sampler) -> WGPU_Bind_Group_Entry {
+	return WGPU_Bind_Group_Entry{
+		next_in_chain = nil,
+		binding = binding,
+		buffer = nil,
+		offset = 0,
+		size = WGPU_WHOLE_SIZE,
+		sampler = sampler,
+		texture_view = nil,
+	}
+}
+
+wgpu_bind_group_descriptor :: proc(label: WGPU_String_View, layout: WGPU_Bind_Group_Layout, entries: [^]WGPU_Bind_Group_Entry, entry_count: c.size_t) -> WGPU_Bind_Group_Descriptor {
+	return WGPU_Bind_Group_Descriptor{
+		next_in_chain = nil,
+		label = label,
+		layout = layout,
+		entry_count = entry_count,
+		entries = entries,
+	}
+}
+
+wgpu_sampler_descriptor_default :: proc(label: WGPU_String_View) -> WGPU_Sampler_Descriptor {
+	return WGPU_Sampler_Descriptor{
+		next_in_chain = nil,
+		label = label,
+		address_mode_u = WGPU_ADDRESS_MODE_CLAMP_TO_EDGE,
+		address_mode_v = WGPU_ADDRESS_MODE_CLAMP_TO_EDGE,
+		address_mode_w = WGPU_ADDRESS_MODE_CLAMP_TO_EDGE,
+		mag_filter = WGPU_FILTER_MODE_NEAREST,
+		min_filter = WGPU_FILTER_MODE_NEAREST,
+		mipmap_filter = WGPU_MIPMAP_FILTER_MODE_NEAREST,
+		lod_min_clamp = 0.0,
+		lod_max_clamp = 32.0,
+		compare = WGPU_COMPARE_FUNCTION_UNDEFINED,
+		max_anisotropy = 1,
+	}
+}
+
+wgpu_sampler_descriptor_linear :: proc(label: WGPU_String_View, compare: WGPU_Compare_Function = WGPU_COMPARE_FUNCTION_UNDEFINED) -> WGPU_Sampler_Descriptor {
+	descriptor := wgpu_sampler_descriptor_default(label)
+	descriptor.mag_filter = WGPU_FILTER_MODE_LINEAR
+	descriptor.min_filter = WGPU_FILTER_MODE_LINEAR
+	descriptor.compare = compare
+	return descriptor
+}
+
+wgpu_pipeline_layout_descriptor :: proc(label: WGPU_String_View, bind_group_layouts: [^]WGPU_Bind_Group_Layout, bind_group_layout_count: c.size_t) -> WGPU_Pipeline_Layout_Descriptor {
+	return WGPU_Pipeline_Layout_Descriptor{
+		next_in_chain = nil,
+		label = label,
+		bind_group_layout_count = bind_group_layout_count,
+		bind_group_layouts = bind_group_layouts,
+	}
+}
+
 wgpu_instance_descriptor_default :: proc() -> WGPU_Instance_Descriptor {
 	return WGPU_Instance_Descriptor{
 		next_in_chain = nil,
@@ -833,6 +1188,22 @@ wgpu_resolve_offscreen_procs :: proc(resolver: WGPU_Symbol_Resolver, user_data: 
 	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_CREATE_BUFFER, false
 	procs.device_create_buffer = cast(WGPU_Device_Create_Buffer_Proc)symbol
 
+	symbol = resolver(WGPU_SYMBOL_DEVICE_CREATE_BIND_GROUP_LAYOUT, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_CREATE_BIND_GROUP_LAYOUT, false
+	procs.device_create_bind_group_layout = cast(WGPU_Device_Create_Bind_Group_Layout_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_DEVICE_CREATE_PIPELINE_LAYOUT, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_CREATE_PIPELINE_LAYOUT, false
+	procs.device_create_pipeline_layout = cast(WGPU_Device_Create_Pipeline_Layout_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_DEVICE_CREATE_SAMPLER, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_CREATE_SAMPLER, false
+	procs.device_create_sampler = cast(WGPU_Device_Create_Sampler_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_DEVICE_CREATE_BIND_GROUP, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_CREATE_BIND_GROUP, false
+	procs.device_create_bind_group = cast(WGPU_Device_Create_Bind_Group_Proc)symbol
+
 	symbol = resolver(WGPU_SYMBOL_DEVICE_CREATE_COMMAND_ENCODER, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_DEVICE_CREATE_COMMAND_ENCODER, false
 	procs.device_create_command_encoder = cast(WGPU_Device_Create_Command_Encoder_Proc)symbol
@@ -920,6 +1291,22 @@ wgpu_resolve_offscreen_procs :: proc(resolver: WGPU_Symbol_Resolver, user_data: 
 	symbol = resolver(WGPU_SYMBOL_BUFFER_RELEASE, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_BUFFER_RELEASE, false
 	procs.buffer_release = cast(WGPU_Buffer_Release_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_BIND_GROUP_LAYOUT_RELEASE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_BIND_GROUP_LAYOUT_RELEASE, false
+	procs.bind_group_layout_release = cast(WGPU_Bind_Group_Layout_Release_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_PIPELINE_LAYOUT_RELEASE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_PIPELINE_LAYOUT_RELEASE, false
+	procs.pipeline_layout_release = cast(WGPU_Pipeline_Layout_Release_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_SAMPLER_RELEASE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_SAMPLER_RELEASE, false
+	procs.sampler_release = cast(WGPU_Sampler_Release_Proc)symbol
+
+	symbol = resolver(WGPU_SYMBOL_BIND_GROUP_RELEASE, user_data)
+	if symbol == nil do return procs, WGPU_SYMBOL_BIND_GROUP_RELEASE, false
+	procs.bind_group_release = cast(WGPU_Bind_Group_Release_Proc)symbol
 
 	symbol = resolver(WGPU_SYMBOL_COMMAND_ENCODER_RELEASE, user_data)
 	if symbol == nil do return procs, WGPU_SYMBOL_COMMAND_ENCODER_RELEASE, false
