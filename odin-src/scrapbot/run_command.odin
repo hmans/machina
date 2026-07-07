@@ -336,13 +336,14 @@ run_present_hidden_wgpu_surface :: proc(world: Runtime_World, target_path: strin
 	defer delete(path)
 
 	loaded, missing, loaded_ok := wgpu_load_offscreen_library(path)
-	defer wgpu_unload_offscreen_library(&loaded)
 	if !loaded_ok {
 		if missing == "" {
 			missing = WGPU_OFFSCREEN_LIBRARY_LOAD_ERROR
 		}
 		return WGPU_Surface_Presentation_Report{}, missing, false
 	}
+	// Keep the backend library resident after presenting a native surface; some
+	// Linux WebGPU/Xlib stacks retain process-lifetime shutdown hooks.
 
 	init_err := sdl_video_init()
 	if init_err != .None {

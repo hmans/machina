@@ -232,7 +232,6 @@ run_wgpu_surface_check :: proc(args: []string, emit_output: bool) -> int {
 	defer delete(path)
 
 	loaded, missing, loaded_ok := wgpu_load_offscreen_library(path)
-	defer wgpu_unload_offscreen_library(&loaded)
 	if !loaded_ok {
 		if emit_output {
 			fmt.eprintf("wgpu-native library failed to load: %s\n", missing)
@@ -240,6 +239,8 @@ run_wgpu_surface_check :: proc(args: []string, emit_output: bool) -> int {
 		}
 		return 1
 	}
+	// Keep the backend library resident after presenting a native surface; some
+	// Linux WebGPU/Xlib stacks retain process-lifetime shutdown hooks.
 
 	init_err := sdl_video_init()
 	if init_err != .None {
