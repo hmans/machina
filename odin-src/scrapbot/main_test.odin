@@ -545,6 +545,101 @@ selected_entity = "second"
 }
 
 @(test)
+test_run_test_command_replays_editor_entity_spawn :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-entity-spawn")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Entity Spawn Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Entity Spawn Test"
+version = 1
+
+[[entities]]
+id = "base"
+name = "Base"
+
+[entities.components.flag]
+value = 1
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 1
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_spawn_pressed = true
+
+[[expect.editor]]
+selected_entity = "editor-spawn-1"
+entity_count = 3
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_run_test_command_replays_editor_entity_despawn :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-entity-despawn")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Entity Despawn Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Entity Despawn Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.flag]
+value = 1
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 2
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_despawn_pressed = true
+
+[[expect.editor]]
+entity_count = 1
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_run_test_command_replays_editor_entity_scroll_selection :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-test-editor-entity-scroll-selection")
 	defer os.remove_all(root)

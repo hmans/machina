@@ -48,6 +48,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Odin editor chrome input ownership replay slice
   - [x] Odin editor playback replay slice
   - [x] Odin editor entity-list selection replay slice
+  - [x] Odin editor entity spawn/despawn replay slice
   - [x] Odin editor entity-list scroll replay slice
   - [x] Odin editor system-list scroll replay slice
   - [x] Odin editor inspector scroll replay slice

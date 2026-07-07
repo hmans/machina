@@ -156,7 +156,8 @@
 - [ ] Add visual scroll support to inspector component vgroups.
 - [ ] Add typed inspector controls for floats, ints, strings, and enums.
 - [ ] Add editor controls to add and remove components on the selected entity.
-- [ ] Add editor controls to spawn and despawn entities.
+- [x] Add first-pass editor spawn and despawn replay/SDL controls.
+- [ ] Add visible editor chrome controls to spawn and despawn entities.
 - [ ] Persist inspector edits back to text scene files.
 - [x] Add first-pass validation diagnostics for failed inspector edits.
 - [x] Add first-pass inspector text copy, paste, and clipboard support.

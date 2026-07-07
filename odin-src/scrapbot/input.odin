@@ -50,8 +50,10 @@ Frame_Input_Keyboard :: struct {
 	editor_backspace_pressed: bool,
 	editor_delete_pressed: bool,
 	editor_select_all_pressed: bool,
-	editor_copy_pressed: bool,
-	editor_paste_pressed: bool,
+	editor_copy_pressed:       bool,
+	editor_paste_pressed:      bool,
+	editor_spawn_pressed:      bool,
+	editor_despawn_pressed:    bool,
 }
 
 Frame_Input :: struct {
@@ -127,6 +129,7 @@ Editor_Test_Input_State :: struct {
 	clipboard_buffer:            [EDITOR_TEST_TEXT_INPUT_BUFFER_LEN]u8,
 	clipboard_len:               int,
 	clipboard_changed:           bool,
+	editor_spawn_index:          int,
 	undo_stack:                  [EDITOR_TEST_UNDO_CAPACITY]Editor_Test_Field_Edit_Command,
 	undo_len:                    int,
 	redo_stack:                  [EDITOR_TEST_UNDO_CAPACITY]Editor_Test_Field_Edit_Command,
@@ -346,6 +349,12 @@ apply_editor_test_keyboard_edits :: proc(state: ^Editor_Test_Input_State, world:
 	}
 	if input.keyboard.editor_copy_pressed {
 		return copy_editor_test_selected_entity_id(world^, state)
+	}
+	if input.keyboard.editor_spawn_pressed {
+		return spawn_editor_test_entity(world, state)
+	}
+	if input.keyboard.editor_despawn_pressed {
+		return despawn_editor_test_selected_entity(world, state)
 	}
 	return false
 }
@@ -812,6 +821,57 @@ copy_editor_test_selected_entity_id :: proc(world: Runtime_World, state: ^Editor
 		return false
 	}
 	return set_editor_test_clipboard(state, entity_id)
+}
+
+spawn_editor_test_entity :: proc(world: ^Runtime_World, state: ^Editor_Test_Input_State) -> bool {
+	id_buffer: [64]u8
+	name_buffer: [64]u8
+	for attempt := 0; attempt < 1000; attempt += 1 {
+		state.editor_spawn_index += 1
+		id := fmt.bprintf(id_buffer[:], "editor-spawn-%d", state.editor_spawn_index)
+		name := fmt.bprintf(name_buffer[:], "Editor Spawn %d", state.editor_spawn_index)
+		entity, err := runtime_world_create_entity(world, id, name)
+		if err == .None {
+			state.selected_entity = entity
+			state.has_selected_entity = true
+			state.has_selected_property = false
+			state.selected_property_component = ""
+			state.selected_property_field = ""
+			state.selected_property_lane = 0
+			clear_editor_test_text_input(state)
+			clear_editor_test_diagnostic(state)
+			return true
+		}
+		if err != .Duplicate_Entity_ID {
+			set_editor_test_diagnostic(state, "Could not spawn entity: %s", runtime_error_label(err))
+			return true
+		}
+	}
+	set_editor_test_diagnostic(state, "Could not spawn entity: Duplicate_Entity_ID")
+	return true
+}
+
+despawn_editor_test_selected_entity :: proc(world: ^Runtime_World, state: ^Editor_Test_Input_State) -> bool {
+	if !state.has_selected_entity {
+		return false
+	}
+	err := runtime_world_remove_entity(world, state.selected_entity)
+	clear_editor_test_selection(state)
+	if err != .None {
+		set_editor_test_diagnostic(state, "Could not despawn entity: %s", runtime_error_label(err))
+	}
+	return true
+}
+
+clear_editor_test_selection :: proc(state: ^Editor_Test_Input_State) {
+	state.selected_entity = {}
+	state.has_selected_entity = false
+	state.has_selected_property = false
+	state.selected_property_component = ""
+	state.selected_property_field = ""
+	state.selected_property_lane = 0
+	clear_editor_test_text_input(state)
+	clear_editor_test_diagnostic(state)
 }
 
 set_editor_test_clipboard :: proc(state: ^Editor_Test_Input_State, text: string) -> bool {

@@ -49,6 +49,8 @@ Test_Expectation :: struct {
 
 Test_Editor_Expectation :: struct {
 	selected_entity:        string,
+	has_entity_count:      bool,
+	entity_count:          int,
 	has_system_scroll_y:    bool,
 	system_scroll_y:        f32,
 	has_inspector_scroll_y: bool,
@@ -128,6 +130,8 @@ Test_Manifest_Input_State :: struct {
 Test_Manifest_Editor_Expectation_State :: struct {
 	active:                 bool,
 	selected_entity:        string,
+	has_entity_count:      bool,
+	entity_count:          int,
 	has_system_scroll_y:    bool,
 	system_scroll_y:        f32,
 	has_inspector_scroll_y: bool,
@@ -420,6 +424,7 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 			return false
 		}
 		ok := expect.selected_entity != "" ||
+		      expect.has_entity_count ||
 		      expect.has_system_scroll_y ||
 		      expect.has_inspector_scroll_y ||
 		      (expect.selected_component != "" && expect.selected_field != "") ||
@@ -431,6 +436,8 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 		if ok {
 			append(&manifest.editor_expectations, Test_Editor_Expectation{
 				selected_entity = expect.selected_entity,
+				has_entity_count = expect.has_entity_count,
+				entity_count = expect.entity_count,
 				has_system_scroll_y = expect.has_system_scroll_y,
 				system_scroll_y = expect.system_scroll_y,
 				has_inspector_scroll_y = expect.has_inspector_scroll_y,
@@ -725,6 +732,17 @@ parse_test_manifest_editor_expect_key :: proc(expect: ^Test_Manifest_Editor_Expe
 				return false
 			}
 		}
+		return true
+	case "entity_count":
+		if expect.has_entity_count {
+			return false
+		}
+		parsed, ok := strconv.parse_int(strings.trim_space(value), 10)
+		if !ok || parsed < 0 {
+			return false
+		}
+		expect.entity_count = parsed
+		expect.has_entity_count = true
 		return true
 	case "system_scroll_y":
 		if expect.has_system_scroll_y {
@@ -1142,6 +1160,20 @@ parse_test_manifest_input_key :: proc(input: ^Test_Manifest_Input_State, key, va
 		}
 		input.input.keyboard.editor_paste_pressed = parsed
 		return true
+	case "editor_spawn_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_spawn_pressed = parsed
+		return true
+	case "editor_despawn_pressed":
+		parsed, ok := parse_test_manifest_bool(value)
+		if !ok {
+			return false
+		}
+		input.input.keyboard.editor_despawn_pressed = parsed
+		return true
 	case "text_input":
 		parsed, owned, ok := parse_basic_string_unescaped(value)
 		if !ok {
@@ -1405,6 +1437,9 @@ test_editor_expectation_matches :: proc(world: Runtime_World, editor_state: ^Edi
 			return false
 		}
 	}
+	if expectation.has_entity_count && runtime_world_entity_count(world) != expectation.entity_count {
+		return false
+	}
 	if expectation.has_system_scroll_y && !test_float_approx_equal(editor_state.system_scroll_y, expectation.system_scroll_y) {
 		return false
 	}
@@ -1509,6 +1544,16 @@ test_editor_expectation_failure_message :: proc(world: Runtime_World, editor_sta
 		} else {
 			strings.write_string(&builder, ", got none")
 		}
+		wrote = true
+	}
+	if expectation.has_entity_count {
+		if wrote {
+			strings.write_string(&builder, "; ")
+		}
+		strings.write_string(&builder, "editor.entity_count: expected ")
+		append_test_format(&builder, "%d", expectation.entity_count)
+		strings.write_string(&builder, ", got ")
+		append_test_format(&builder, "%d", runtime_world_entity_count(world))
 		wrote = true
 	}
 	if expectation.has_system_scroll_y {

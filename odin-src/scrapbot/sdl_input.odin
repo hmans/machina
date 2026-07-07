@@ -180,6 +180,9 @@ sdl_input_apply_key :: proc(state: ^Sdl_Input_State, input: ^Frame_Input, scanco
 		input.keyboard.editor_backspace_pressed = down && !repeat
 	case .DELETE:
 		input.keyboard.editor_delete_pressed = down && !repeat
+		input.keyboard.editor_despawn_pressed = down && !repeat
+	case .INSERT:
+		input.keyboard.editor_spawn_pressed = down && !repeat
 	case .TAB:
 		input.keyboard.editor_toggle_pressed = down && !repeat && state.ctrl_down
 	case:
@@ -188,6 +191,7 @@ sdl_input_apply_key :: proc(state: ^Sdl_Input_State, input: ^Frame_Input, scanco
 	input.keyboard.editor_select_all_pressed = down && !repeat && scancode == .A && editor_shortcut_down
 	input.keyboard.editor_copy_pressed = down && !repeat && scancode == .C && editor_shortcut_down
 	input.keyboard.editor_paste_pressed = down && !repeat && scancode == .V && editor_shortcut_down
+	input.keyboard.editor_spawn_pressed = input.keyboard.editor_spawn_pressed || (down && !repeat && scancode == .N && editor_shortcut_down)
 	input.keyboard.editor_undo_pressed = down && !repeat && scancode == .Z && editor_shortcut_down && !state.shift_down
 	input.keyboard.editor_redo_pressed = down && !repeat && editor_shortcut_down && ((scancode == .Z && state.shift_down) || scancode == .Y)
 	if input.keyboard.editor_paste_pressed {
