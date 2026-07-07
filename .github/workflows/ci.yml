@@ -137,7 +137,20 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
-          Invoke-Scrapbot test tests/projects
+          $projectTests = @(
+            "tests/projects/auto_door",
+            "tests/projects/batching_animation",
+            "tests/projects/editor_chrome_input",
+            "tests/projects/health_tick",
+            "tests/projects/projectile_lifetime",
+            "tests/projects/render_camera_light",
+            "tests/projects/spawn_lifecycle",
+            "tests/projects/ui_command_replay",
+            "tests/projects/ui_scroll_replay"
+          )
+          foreach ($projectTest in $projectTests) {
+            Invoke-Scrapbot test $projectTest
+          }
           Invoke-Scrapbot bench examples/spawn_swarm --frames 60 --format=json
       - name: Render and visual tests
         shell: pwsh

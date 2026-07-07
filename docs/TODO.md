@@ -188,6 +188,7 @@
 - [ ] Remove Zig build/test/dependency surfaces after Odin parity is verified.
 - [ ] Investigate Linux CI standalone Odin CLI process crashes after `check`; `odin test` covers engine behavior, but Linux platform smoke currently avoids standalone simulation, render, visual, and run commands until the process crash is fixed.
 - [ ] Investigate the Windows CI `odin test odin-src/scrapbot` hang; Windows platform CI currently validates Odin by building the CLI and running standalone command smoke tests while macOS/Linux run the unit suite.
+- [ ] Investigate Windows CI Odin-native fixture build failures for `tests/projects/native_motion` and `tests/projects/native_lifecycle`; Windows platform project smoke currently runs the non-native fixture set.
 - [x] Add retained scroll-view/vgroup routing for Odin inspector scrolling.
 - [x] Add visual scroll support to inspector component vgroups.
 - [x] Add first-pass Odin software render pixels for typed inspector controls.
