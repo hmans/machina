@@ -11,7 +11,7 @@ description: A map of the example projects and test fixtures included with Scrap
 | `examples/showcase/` | Text-authored renderables, typed Luau systems, camera, lighting, and offscreen verification. |
 | `examples/spawn_swarm/` | Startup-spawned swarm, animation, batching, shadows, renderer singleton postprocess settings, and editor profiling. |
 | `examples/ui_gallery/` | Retained UI primitive gallery with canvas scaling, rounded panels, borders, layout containers, scrolling, buttons, toggles, progress bars, and command events. |
-| `examples/native_motion/` | Project-local Zig native module declared in the project manifest. |
+| `examples/native_motion/` | Project-local Odin native module declared in the project manifest. |
 
 ## Useful Commands
 
@@ -47,7 +47,7 @@ scrapbot render-test examples/native_motion zig-out/native-motion-render-test.pn
 | `auto_door` | Scripted state changes and boolean assertions. |
 | `batching_animation` | Render batching plus animated scene data. |
 | `health_tick` | Simple scalar component mutation. |
-| `native_lifecycle` | Project-local Zig typed field access plus spawn/despawn/add/remove component commands. |
+| `native_lifecycle` | Project-local Odin typed field access plus spawn/despawn/add/remove component commands. |
 | `native_motion` | Project-local native system motion. |
 | `projectile_lifetime` | Deferred despawn/lifetime behavior. |
 | `render_camera_light` | Scene-driven camera and directional light data. |

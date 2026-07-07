@@ -128,7 +128,7 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 - WGSL shaders embedded into the binary: `src/shaders/`
 - Canonical smoke-test project: `examples/minimal/`
 - Retained UI primitive gallery: `examples/ui_gallery/`
-- Project-local native Zig module example: `examples/native_motion/`
+- Project-local native Odin module example: `examples/native_motion/`
 - Automated game-shaped fixtures: `tests/projects/`
 
 ## Further Reading
