@@ -175,7 +175,7 @@ pub fn collectTestProjects(
         projects.deinit(allocator);
     }
 
-    if (isTestProject(io, target_dir)) {
+    if (isTestProject(io, allocator, target_dir)) {
         try projects.append(allocator, try allocator.dupe(u8, target_path));
         return try projects.toOwnedSlice(allocator);
     }
@@ -186,7 +186,7 @@ pub fn collectTestProjects(
             continue;
         }
 
-        const child_is_project = childIsTestProject(io, target_dir, entry.name);
+        const child_is_project = childIsTestProject(io, allocator, target_dir, entry.name);
         if (!child_is_project) {
             continue;
         }
@@ -200,15 +200,28 @@ pub fn collectTestProjects(
     return try projects.toOwnedSlice(allocator);
 }
 
-fn childIsTestProject(io: Io, parent_dir: Io.Dir, child_name: []const u8) bool {
+fn childIsTestProject(io: Io, allocator: std.mem.Allocator, parent_dir: Io.Dir, child_name: []const u8) bool {
     const child_dir = parent_dir.openDir(io, child_name, .{}) catch return false;
     defer child_dir.close(io);
-    return isTestProject(io, child_dir);
+    return isTestProject(io, allocator, child_dir);
 }
 
-fn isTestProject(io: Io, dir: Io.Dir) bool {
+fn isTestProject(io: Io, allocator: std.mem.Allocator, dir: Io.Dir) bool {
     const has_project_manifest = pathExists(io, dir, scrapbot.project_file_name) or pathExists(io, dir, scrapbot.legacy_project_file_name);
-    return has_project_manifest and pathExists(io, dir, "test.scrapbot.toml");
+    return has_project_manifest and pathExists(io, dir, "test.scrapbot.toml") and !hasOdinNativeProjectManifest(io, allocator, dir);
+}
+
+fn hasOdinNativeProjectManifest(io: Io, allocator: std.mem.Allocator, dir: Io.Dir) bool {
+    const manifest_name = if (pathExists(io, dir, scrapbot.project_file_name))
+        scrapbot.project_file_name
+    else if (pathExists(io, dir, scrapbot.legacy_project_file_name))
+        scrapbot.legacy_project_file_name
+    else
+        return false;
+    const contents = dir.readFileAlloc(io, manifest_name, allocator, .limited(64 * 1024)) catch return false;
+    defer allocator.free(contents);
+    return std.mem.indexOf(u8, contents, "native = \"native/game.odin\"") != null or
+        std.mem.indexOf(u8, contents, ".odin\"") != null;
 }
 
 fn pathExists(io: Io, dir: Io.Dir, path: []const u8) bool {
