@@ -166,6 +166,7 @@ wgpu_surface_context_present_scene_frame :: proc(
 	inspector_scroll_y: f32 = 0,
 	camera_override_enabled: bool = false,
 	camera_override: Editor_Test_Camera_State = {},
+	gizmo_axis: Editor_Test_Axis = .None,
 ) -> (WGPU_Surface_Presentation_Report, string, bool) {
 	config_error, config_ok := wgpu_surface_context_configure(ctx, width, height)
 	if !config_ok {
@@ -189,7 +190,17 @@ wgpu_surface_context_present_scene_frame :: proc(
 	overlay_count := 0
 	if editor_overlay {
 		if selected_entity_id != "" {
-			overlay_count = wgpu_append_editor_chrome_vertices_for_selection(&vertices, world, int(width), int(height), selected_entity_id, inspector_scroll_y)
+			overlay_count = wgpu_append_editor_chrome_vertices_for_selection(
+				&vertices,
+				world,
+				int(width),
+				int(height),
+				selected_entity_id,
+				inspector_scroll_y,
+				gizmo_axis,
+				camera_override_enabled,
+				camera_override,
+			)
 		} else {
 			overlay_count = wgpu_append_editor_chrome_vertices(&vertices, int(width), int(height))
 		}
@@ -441,6 +452,7 @@ wgpu_present_surface_scene_with_world :: proc(
 	inspector_scroll_y: f32 = 0,
 	camera_override_enabled: bool = false,
 	camera_override: Editor_Test_Camera_State = {},
+	gizmo_axis: Editor_Test_Axis = .None,
 ) -> (WGPU_Surface_Presentation_Report, string, bool) {
 	if width == 0 || height == 0 {
 		return WGPU_Surface_Presentation_Report{}, WGPU_OFFSCREEN_INVALID_SIZE_ERROR, false
@@ -465,7 +477,17 @@ wgpu_present_surface_scene_with_world :: proc(
 	overlay_count := 0
 	if editor_overlay {
 		if selected_entity_id != "" {
-			overlay_count = wgpu_append_editor_chrome_vertices_for_selection(&vertices, world, int(width), int(height), selected_entity_id, inspector_scroll_y)
+			overlay_count = wgpu_append_editor_chrome_vertices_for_selection(
+				&vertices,
+				world,
+				int(width),
+				int(height),
+				selected_entity_id,
+				inspector_scroll_y,
+				gizmo_axis,
+				camera_override_enabled,
+				camera_override,
+			)
 		} else {
 			overlay_count = wgpu_append_editor_chrome_vertices(&vertices, int(width), int(height))
 		}

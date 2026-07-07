@@ -42,6 +42,7 @@
 - [x] Odin visible editor gizmo hit testing and dragging can use the same visible-run fly-camera override as rendering.
 - [x] Odin translate-gizmo drags produce one grouped undo/redo and pending scene edit command on release.
 - [x] Odin SDL run-loop frame ticks have deterministic editor selection and translate-gizmo smoke coverage from SDL pointer input.
+- [x] Odin software and WebGPU editor render paths draw selected translate-gizmo X/Y/Z axes, and visible SDL runs pass active-axis state for drag highlighting.
 - [x] macOS release artifacts are built from the Odin CLI, bundle the SDL3 runtime dylib, and release-please updates the Odin CLI version constant.
 - [x] Odin `render-bench` can benchmark first-pass in-memory software render generation with text/JSON output.
 - [x] Default `mise build`, `mise test`, and `mise scrapbot` now target the Odin CLI; migration-era Zig tasks are explicit `*-zig` compatibility tasks.
@@ -163,6 +164,7 @@
 - [x] Port Ctrl+Tab editor visibility toggling into visible Odin software/WebGPU SDL run loops.
 - [x] Route visible Odin editor gizmo hit testing and dragging through the active fly-camera override.
 - [x] Add deterministic SDL run-loop smoke coverage for editor selection and translate-gizmo paths.
+- [x] Draw selected Odin editor translate-gizmo axes in software and WebGPU editor render paths, with active-axis highlighting during visible SDL drags.
 - [x] Build macOS release artifacts from the Odin CLI instead of the migration-era Zig CLI, with the SDL3 runtime dylib bundled beside the binary.
 - [x] Make default local build/test/run tasks target Odin while keeping explicit migration-era Zig compatibility tasks.
 - [x] Remove stale pending-status wording from Odin `scrapbot run` output after visible window loops and editor overlays landed.
@@ -196,7 +198,7 @@
 - [ ] Add multi-selection and batch component editing.
 - [ ] Add rotation and scale gizmos.
 - [ ] Add local-space, world-space, and snapping modes for gizmos.
-- [ ] Add hover styling and axis constraints for transform gizmos.
+- [ ] Add hover styling for transform gizmos.
 - [ ] Add undo grouping for multi-field edits and future non-translate editor transactions.
 - [ ] Add editor transaction persistence across live reloads.
 - [ ] Add ID-buffer or accelerated picking for precise selection.

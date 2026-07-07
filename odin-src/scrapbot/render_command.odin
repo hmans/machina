@@ -32,6 +32,7 @@ Render_Options :: struct {
 	editor:             bool,
 	selected_entity_id: string,
 	inspector_scroll_y: f32,
+	gizmo_axis:        Editor_Test_Axis,
 	camera_override_enabled: bool,
 	camera_override:         Editor_Test_Camera_State,
 	backend:            Render_Backend,

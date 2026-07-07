@@ -162,6 +162,25 @@ tint = [1.0, 0.5, 0.25]
 	expect_wgpu_vertex_color(t, vertices[:], EDITOR_CHROME_INSPECTOR_VEC3_Z_COLOR)
 }
 
+@(test)
+test_wgpu_editor_selected_vertices_append_gizmo_axes :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "wgpu-editor-selected-gizmo-vertices")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "WGPU Editor Gizmo Vertices"), Project_Error.None)
+	result := check_project(root)
+	defer free_check_result(result)
+	testing.expect_value(t, result.err, Project_Error.None)
+
+	vertices: [dynamic]WGPU_Scene_Vertex
+	defer delete(vertices)
+	count := wgpu_append_editor_chrome_vertices_for_selection(&vertices, result.scene.world, 320, 240, "018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001", 0, .Y)
+	testing.expect_value(t, count > 0, true)
+	expect_wgpu_vertex_color(t, vertices[:], EDITOR_GIZMO_AXIS_X_COLOR)
+	expect_wgpu_vertex_color(t, vertices[:], EDITOR_GIZMO_AXIS_ACTIVE_COLOR)
+	expect_wgpu_vertex_color(t, vertices[:], EDITOR_GIZMO_AXIS_Z_COLOR)
+}
+
 expect_wgpu_vertex_color :: proc(t: ^testing.T, vertices: []WGPU_Scene_Vertex, color: [3]u8) {
 	expected := [3]f32{f32(color[0]) / 255.0, f32(color[1]) / 255.0, f32(color[2]) / 255.0}
 	for vertex in vertices {

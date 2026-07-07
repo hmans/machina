@@ -2640,6 +2640,43 @@ test_run_render_command_writes_editor_chrome_pixels :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_run_render_command_writes_selected_gizmo_axis_pixels :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-render-editor-gizmo-axis")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Render Editor Gizmo Axis"), Project_Error.None)
+	output_path := project_relative_path(root, "editor-gizmo-render.png")
+	defer delete(output_path)
+
+	exit_code := run_with_output(
+		[]string{
+			"scrapbot",
+			"render",
+			"--editor",
+			"--select",
+			"018f6f78-4b6f-74a2-9f8f-5d7f3a8d0001",
+			"--width",
+			"320",
+			"--height",
+			"240",
+			root,
+			output_path,
+		},
+		false,
+	)
+	testing.expect_value(t, exit_code, 0)
+
+	image, image_err := render_load_rgb_image(output_path)
+	if image_err != .None {
+		testing.fail_now(t, "failed to load rendered editor gizmo image")
+	}
+	defer render_image_free(&image)
+	expect_render_color_present(t, image, EDITOR_GIZMO_AXIS_X_COLOR)
+	expect_render_color_present(t, image, EDITOR_GIZMO_AXIS_Y_COLOR)
+	expect_render_color_present(t, image, EDITOR_GIZMO_AXIS_Z_COLOR)
+}
+
+@(test)
 test_run_render_command_applies_editor_inspector_scroll_pixels :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-render-editor-inspector-scroll")
 	defer os.remove_all(root)
@@ -3071,6 +3108,18 @@ expect_render_pixel :: proc(t: ^testing.T, image: Render_Image, x, y: int, color
 	testing.expect_value(t, image.rgb[offset], color[0])
 	testing.expect_value(t, image.rgb[offset + 1], color[1])
 	testing.expect_value(t, image.rgb[offset + 2], color[2])
+}
+
+expect_render_color_present :: proc(t: ^testing.T, image: Render_Image, color: [3]u8) {
+	for y in 0 ..< image.height {
+		for x in 0 ..< image.width {
+			offset := (y * image.width + x) * 3
+			if image.rgb[offset] == color[0] && image.rgb[offset + 1] == color[1] && image.rgb[offset + 2] == color[2] {
+				return
+			}
+		}
+	}
+	testing.fail_now(t, "expected render color was not present")
 }
 
 @(test)

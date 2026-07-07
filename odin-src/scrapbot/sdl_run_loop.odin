@@ -415,6 +415,7 @@ sdl_run_live_project_loop :: proc(
 			editor = editor_visible,
 			selected_entity_id = selected_entity_id,
 			inspector_scroll_y = editor_state.inspector_scroll_y,
+			gizmo_axis = editor_state.dragging_axis,
 			camera_override_enabled = fly_camera.initialized,
 			camera_override = sdl_fly_camera_render_camera(fly_camera),
 			backend = .Software,
@@ -593,6 +594,7 @@ sdl_run_live_project_wgpu_loop :: proc(
 			editor_state.inspector_scroll_y,
 			fly_camera.initialized,
 			sdl_fly_camera_render_camera(fly_camera),
+			editor_state.dragging_axis,
 		)
 		if !present_ok {
 			result.completed_frames = completed_frames

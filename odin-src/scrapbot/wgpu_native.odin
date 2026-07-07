@@ -2612,7 +2612,17 @@ wgpu_render_scene_image_with_procs :: proc(procs: WGPU_Offscreen_Procs, world: R
 	wgpu_collect_scene_vertices_with_options(&vertices, world, options)
 	if options.editor {
 		if options.selected_entity_id != "" {
-			wgpu_append_editor_chrome_vertices_for_selection(&vertices, world, options.width, options.height, options.selected_entity_id, options.inspector_scroll_y)
+			wgpu_append_editor_chrome_vertices_for_selection(
+				&vertices,
+				world,
+				options.width,
+				options.height,
+				options.selected_entity_id,
+				options.inspector_scroll_y,
+				options.gizmo_axis,
+				options.camera_override_enabled,
+				options.camera_override,
+			)
 		} else {
 			wgpu_append_editor_chrome_vertices(&vertices, options.width, options.height)
 		}
@@ -2855,11 +2865,24 @@ wgpu_append_editor_chrome_vertices_for_selection :: proc(
 	width, height: int,
 	selected_entity_id: string,
 	inspector_scroll_y: f32 = 0,
+	gizmo_axis: Editor_Test_Axis = .None,
+	camera_override_enabled: bool = false,
+	camera_override: Editor_Test_Camera_State = {},
 ) -> int {
 	count := wgpu_append_editor_chrome_vertices(vertices, width, height)
 	if selected_entity_id == "" || width <= 0 || height <= 0 {
 		return count
 	}
+	count += wgpu_append_editor_gizmo_vertices(
+		vertices,
+		world,
+		width,
+		height,
+		selected_entity_id,
+		gizmo_axis,
+		camera_override_enabled,
+		camera_override,
+	)
 
 	top_height := min(max(24, height / 12), max(1, height / 3))
 	bottom_height := min(max(18, height / 16), max(1, height / 5))
@@ -2881,6 +2904,94 @@ wgpu_append_editor_chrome_vertices_for_selection :: proc(
 	accent_height := min(max(8, body_height / 18), body_height - 28)
 	count += wgpu_append_chrome_rect(vertices, width, height, Renderable_Rect{x = accent_x, y = accent_y, width = accent_width, height = accent_height}, EDITOR_CHROME_SELECTION_COLOR)
 	count += wgpu_append_editor_inspector_card_vertices(vertices, world, width, height, selected_entity_id, right_x, body_y, right_width, body_height, inspector_scroll_y)
+	return count
+}
+
+wgpu_append_editor_gizmo_vertices :: proc(
+	vertices: ^[dynamic]WGPU_Scene_Vertex,
+	world: Runtime_World,
+	width, height: int,
+	selected_entity_id: string,
+	active_axis: Editor_Test_Axis,
+	camera_override_enabled: bool,
+	camera_override: Editor_Test_Camera_State,
+) -> int {
+	entity, entity_ok := runtime_world_find_entity_by_id(world, selected_entity_id)
+	if !entity_ok {
+		return 0
+	}
+	position, position_ok := editor_test_transform_position(world, entity)
+	if !position_ok {
+		return 0
+	}
+	camera := render_options_camera(
+		world,
+		Render_Options{
+			width = width,
+			height = height,
+			editor = true,
+			camera_override_enabled = camera_override_enabled,
+			camera_override = camera_override,
+		},
+	)
+	viewport := render_scene_viewport(width, height, true)
+	origin, origin_ok := render_project_world_to_viewport(position, camera, viewport)
+	if !origin_ok || !render_screen_point_in_viewport(origin, viewport) {
+		return 0
+	}
+	count := 0
+	axes := [?]Editor_Test_Axis{.X, .Y, .Z}
+	for axis in axes {
+		vector, vector_ok := editor_test_axis_vector(axis)
+		if !vector_ok {
+			continue
+		}
+		end, end_ok := render_project_world_to_viewport(editor_test_add_vec3(position, editor_test_scale_vec3(vector, EDITOR_TEST_GIZMO_AXIS_LENGTH)), camera, viewport)
+		if !end_ok || !render_screen_point_in_viewport(end, viewport) {
+			continue
+		}
+		color := render_gizmo_axis_color(axis, active_axis)
+		thickness := axis == active_axis ? 5 : 3
+		count += wgpu_append_screen_line_rects(vertices, width, height, origin, end, thickness, color)
+		tip_size := thickness + 2
+		tip_radius := max(2, tip_size / 2)
+		tip_x := int(end[0] + 0.5) - tip_radius
+		tip_y := int(end[1] + 0.5) - tip_radius
+		count += wgpu_append_chrome_rect(
+			vertices,
+			width,
+			height,
+			Renderable_Rect{x = tip_x, y = tip_y, width = tip_radius * 2 + 1, height = tip_radius * 2 + 1},
+			color,
+		)
+	}
+	return count
+}
+
+wgpu_append_screen_line_rects :: proc(
+	vertices: ^[dynamic]WGPU_Scene_Vertex,
+	width, height: int,
+	start, end: [2]f32,
+	thickness: int,
+	color: [3]u8,
+) -> int {
+	dx := end[0] - start[0]
+	dy := end[1] - start[1]
+	steps := max(1, int(max_f32(render_abs_f32(dx), render_abs_f32(dy)) + 0.5))
+	radius := max(1, thickness / 2)
+	count := 0
+	for step in 0 ..= steps {
+		t := f32(step) / f32(steps)
+		x := int(start[0] + dx * t + 0.5)
+		y := int(start[1] + dy * t + 0.5)
+		count += wgpu_append_chrome_rect(
+			vertices,
+			width,
+			height,
+			Renderable_Rect{x = x - radius, y = y - radius, width = max(1, thickness), height = max(1, thickness)},
+			color,
+		)
+	}
 	return count
 }
 

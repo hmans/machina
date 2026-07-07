@@ -85,6 +85,10 @@ EDITOR_CHROME_INSPECTOR_TOGGLE_KNOB_COLOR :: [3]u8{232, 238, 244}
 EDITOR_CHROME_INSPECTOR_VEC3_X_COLOR :: [3]u8{220, 112, 104}
 EDITOR_CHROME_INSPECTOR_VEC3_Y_COLOR :: [3]u8{149, 204, 116}
 EDITOR_CHROME_INSPECTOR_VEC3_Z_COLOR :: [3]u8{87, 169, 216}
+EDITOR_GIZMO_AXIS_X_COLOR :: [3]u8{236, 88, 76}
+EDITOR_GIZMO_AXIS_Y_COLOR :: [3]u8{105, 194, 92}
+EDITOR_GIZMO_AXIS_Z_COLOR :: [3]u8{80, 156, 235}
+EDITOR_GIZMO_AXIS_ACTIVE_COLOR :: [3]u8{255, 230, 116}
 
 render_write_scene_image :: proc(world: Runtime_World, options: Render_Options, verify_output: bool) -> (Render_Image_Verification, Render_Image_Error) {
 	format, format_ok := render_image_format_from_path(options.output_path)
@@ -420,6 +424,7 @@ render_draw_editor_chrome :: proc(image: ^Render_Image, world: Runtime_World, op
 	if viewport_width > 0 && body_height > 0 {
 		render_stroke_rect(image, viewport_x, body_y, viewport_width, body_height, EDITOR_CHROME_VIEWPORT_COLOR)
 	}
+	render_draw_editor_gizmo_axes(image, world, options)
 	if options.selected_entity_id != "" && right_width > 24 && body_height > 28 {
 		accent_x := image.width - right_width + 12
 		accent_y := body_y + 14
@@ -429,6 +434,85 @@ render_draw_editor_chrome :: proc(image: ^Render_Image, world: Runtime_World, op
 		render_draw_editor_inspector_cards(image, world, options.selected_entity_id, image.width - right_width, body_y, right_width, body_height, options.inspector_scroll_y)
 	}
 	render_draw_editor_component_buttons(image, image.width - right_width, right_width, body_y)
+}
+
+render_draw_editor_gizmo_axes :: proc(image: ^Render_Image, world: Runtime_World, options: Render_Options) {
+	if options.selected_entity_id == "" {
+		return
+	}
+	entity, entity_ok := runtime_world_find_entity_by_id(world, options.selected_entity_id)
+	if !entity_ok {
+		return
+	}
+	position, position_ok := editor_test_transform_position(world, entity)
+	if !position_ok {
+		return
+	}
+	camera := render_options_camera(world, options)
+	viewport := render_scene_viewport(image.width, image.height, true)
+	origin, origin_ok := render_project_world_to_viewport(position, camera, viewport)
+	if !origin_ok || !render_screen_point_in_viewport(origin, viewport) {
+		return
+	}
+	axes := [?]Editor_Test_Axis{.X, .Y, .Z}
+	for axis in axes {
+		vector, vector_ok := editor_test_axis_vector(axis)
+		if !vector_ok {
+			continue
+		}
+		end, end_ok := render_project_world_to_viewport(editor_test_add_vec3(position, editor_test_scale_vec3(vector, EDITOR_TEST_GIZMO_AXIS_LENGTH)), camera, viewport)
+		if !end_ok || !render_screen_point_in_viewport(end, viewport) {
+			continue
+		}
+		color := render_gizmo_axis_color(axis, options.gizmo_axis)
+		thickness := axis == options.gizmo_axis ? 5 : 3
+		render_draw_screen_line(image, origin, end, thickness, color)
+		render_draw_gizmo_axis_tip(image, end, thickness + 2, color)
+	}
+}
+
+render_screen_point_in_viewport :: proc(point: [2]f32, viewport: Render_Viewport) -> bool {
+	return point[0] >= viewport.x &&
+	       point[1] >= viewport.y &&
+	       point[0] <= viewport.x + viewport.width &&
+	       point[1] <= viewport.y + viewport.height
+}
+
+render_gizmo_axis_color :: proc(axis, active_axis: Editor_Test_Axis) -> [3]u8 {
+	if axis == active_axis {
+		return EDITOR_GIZMO_AXIS_ACTIVE_COLOR
+	}
+	switch axis {
+	case .X:
+		return EDITOR_GIZMO_AXIS_X_COLOR
+	case .Y:
+		return EDITOR_GIZMO_AXIS_Y_COLOR
+	case .Z:
+		return EDITOR_GIZMO_AXIS_Z_COLOR
+	case .None:
+		return EDITOR_CHROME_SELECTION_COLOR
+	}
+	return EDITOR_CHROME_SELECTION_COLOR
+}
+
+render_draw_screen_line :: proc(image: ^Render_Image, start, end: [2]f32, thickness: int, color: [3]u8) {
+	dx := end[0] - start[0]
+	dy := end[1] - start[1]
+	steps := max(1, int(math.round_f32(max_f32(render_abs_f32(dx), render_abs_f32(dy)))))
+	radius := max(1, thickness / 2)
+	for step in 0 ..= steps {
+		t := f32(step) / f32(steps)
+		x := int(math.round_f32(start[0] + dx * t))
+		y := int(math.round_f32(start[1] + dy * t))
+		render_fill_rect(image, x - radius, y - radius, max(1, thickness), max(1, thickness), color)
+	}
+}
+
+render_draw_gizmo_axis_tip :: proc(image: ^Render_Image, center: [2]f32, size: int, color: [3]u8) {
+	x := int(math.round_f32(center[0]))
+	y := int(math.round_f32(center[1]))
+	radius := max(2, size / 2)
+	render_fill_rect(image, x - radius, y - radius, radius * 2 + 1, radius * 2 + 1, color)
 }
 
 render_draw_editor_entity_buttons :: proc(image: ^Render_Image, left_width, body_y: int) {
