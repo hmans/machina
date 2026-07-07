@@ -594,7 +594,7 @@ run_project :: proc(args: []string, emit_output: bool) -> int {
 		simulation := Simulation_Run_Result{}
 		window_error: string
 		window_ok: bool
-		window_result, simulation, window_error, window_ok = sdl_run_live_project_loop(&live, options.max_frames, false, &run_report)
+		window_result, simulation, window_error, window_ok = sdl_run_live_project_loop(&live, options.max_frames, false, emit_output, &run_report)
 		if !window_ok {
 			if emit_output {
 				fmt.eprintf("run window loop failed: %s\n", window_error)

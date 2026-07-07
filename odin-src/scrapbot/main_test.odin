@@ -1019,6 +1019,18 @@ test_run_options_use_sdl_window_loop_for_bounded_visible_software_runs :: proc(t
 }
 
 @(test)
+test_print_run_reload_events_since_returns_total_seen_events :: proc(t: ^testing.T) {
+	report := Live_Project_Run_Report{}
+	defer live_project_run_report_free(&report)
+
+	append(&report.reloads, Live_Reload_Event{frame = 0, info = Live_Reload_Info{project_reloaded = true, entity_count = 1, system_count = 1}})
+	append(&report.reloads, Live_Reload_Event{frame = 1, info = Live_Reload_Info{scripts_reloaded = true, entity_count = 1, system_count = 1}})
+
+	testing.expect_value(t, print_run_reload_events_since(report, 2), 2)
+	testing.expect_value(t, print_run_reload_events_since(report, 99), 2)
+}
+
+@(test)
 test_run_command_rejects_hidden_without_frame_limit :: proc(t: ^testing.T) {
 	exit_code := run_with_output([]string{"scrapbot", "run", "--hidden"}, false)
 	testing.expect_value(t, exit_code, 1)

@@ -290,9 +290,7 @@ print_run_result :: proc(
 		runtime_system_schedule_batch_count(result.update_schedule),
 		runtime_system_schedule_system_count(result.update_schedule),
 	)
-	for event in report.reloads {
-		print_run_reload_event(event)
-	}
+	print_run_reload_events_since(report, window_result.live_reload_events_printed)
 	if options.max_frames > 0 {
 		fmt.printf("Frames: %d/%d\n", completed_frames, options.max_frames)
 	} else if window_result.window_opened {
@@ -341,6 +339,17 @@ print_run_reload_event :: proc(event: Live_Reload_Event) {
 		info.entity_count,
 		info.system_count,
 	)
+}
+
+print_run_reload_events_since :: proc(report: Live_Project_Run_Report, start_index: int) -> int {
+	printed_count := 0
+	for event, index in report.reloads {
+		if index >= start_index {
+			print_run_reload_event(event)
+		}
+		printed_count = index + 1
+	}
+	return printed_count
 }
 
 run_present_hidden_wgpu_surface :: proc(world: Runtime_World, target_path: string) -> (WGPU_Surface_Presentation_Report, string, bool) {

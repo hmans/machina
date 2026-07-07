@@ -7,13 +7,14 @@ SDL_RUN_LOOP_MAX_DELTA_SECONDS :: f32(0.1)
 SDL_RUN_LOOP_IDLE_DELAY_MS :: sdl3.Uint32(1)
 
 Sdl_Run_Loop_Result :: struct {
-	completed_frames: int,
-	window_opened:    bool,
-	window_width:     int,
-	window_height:    int,
-	pixel_width:      int,
-	pixel_height:     int,
-	quit_requested:   bool,
+	completed_frames:          int,
+	window_opened:             bool,
+	window_width:              int,
+	window_height:             int,
+	pixel_width:               int,
+	pixel_height:              int,
+	quit_requested:            bool,
+	live_reload_events_printed: int,
 }
 
 sdl_run_loop_event_requests_quit :: proc(event: sdl3.Event) -> bool {
@@ -52,6 +53,7 @@ sdl_run_live_project_loop :: proc(
 	project: ^Live_Project,
 	max_frames: int,
 	hidden: bool,
+	emit_live_reload_output: bool,
 	report: ^Live_Project_Run_Report,
 ) -> (Sdl_Run_Loop_Result, Simulation_Run_Result, string, bool) {
 	init_err := sdl_video_init()
@@ -95,6 +97,9 @@ sdl_run_live_project_loop :: proc(
 			return result, frame, "", true
 		}
 		completed_frames = frame.completed_frames
+		if emit_live_reload_output && report != nil {
+			result.live_reload_events_printed = print_run_reload_events_since(report^, result.live_reload_events_printed)
+		}
 		if max_frames == 0 {
 			sdl3.Delay(SDL_RUN_LOOP_IDLE_DELAY_MS)
 		}
