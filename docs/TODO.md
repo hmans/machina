@@ -157,7 +157,7 @@
 - [ ] Add visual scroll support to inspector component vgroups.
 - [ ] Add typed inspector controls for floats, ints, strings, and enums.
 - [x] Add first-pass editor add/remove component replay controls.
-- [ ] Add visible editor chrome controls to add and remove components on the selected entity.
+- [x] Add visible editor chrome controls to add and remove components on the selected entity.
 - [x] Add first-pass editor spawn and despawn replay/SDL controls.
 - [x] Add visible editor chrome controls to spawn and despawn entities.
 - [ ] Persist inspector edits back to text scene files.

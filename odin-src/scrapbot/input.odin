@@ -186,6 +186,16 @@ route_editor_test_input :: proc(state: ^Editor_Test_Input_State, registry: Runti
 				despawn_editor_test_selected_entity(world, state)
 				state.captured_pointer = true
 				consumed = true
+			} else if editor_pointer_in_add_component_button(input^) {
+				commit_editor_test_text_input(world, state)
+				add_editor_test_first_missing_component(registry, world, state)
+				state.captured_pointer = true
+				consumed = true
+			} else if editor_pointer_in_remove_component_button(input^) {
+				commit_editor_test_text_input(world, state)
+				remove_editor_test_visible_component(world, state)
+				state.captured_pointer = true
+				consumed = true
 			} else if splitter, splitter_ok := editor_splitter_at_pointer(state^, input^); splitter_ok {
 				state.dragging_splitter = splitter
 				state.captured_pointer = true
@@ -972,6 +982,52 @@ remove_editor_test_component :: proc(world: ^Runtime_World, state: ^Editor_Test_
 	return true
 }
 
+add_editor_test_first_missing_component :: proc(registry: Runtime_Component_Registry, world: ^Runtime_World, state: ^Editor_Test_Input_State) -> bool {
+	if !state.has_selected_entity {
+		return false
+	}
+	for component in registry.components {
+		if !editor_test_component_addable_from_visible_chrome(component.id) {
+			continue
+		}
+		has_component, has_err := runtime_world_has_component(world^, state.selected_entity, component.id)
+		if has_err != .None {
+			set_editor_test_diagnostic(state, "Could not add component: %s", runtime_error_label(has_err))
+			return true
+		}
+		if !has_component {
+			return add_editor_test_component(registry, world, state, component.id)
+		}
+	}
+	set_editor_test_diagnostic(state, "No addable component available")
+	return true
+}
+
+remove_editor_test_visible_component :: proc(world: ^Runtime_World, state: ^Editor_Test_Input_State) -> bool {
+	if !state.has_selected_entity {
+		return false
+	}
+	if state.has_selected_property && state.selected_property_component != "" {
+		return remove_editor_test_component(world, state, state.selected_property_component)
+	}
+	selected_index, selected_err := runtime_world_entity_index(world^, state.selected_entity)
+	if selected_err != .None {
+		set_editor_test_diagnostic(state, "Could not remove component: %s", runtime_error_label(selected_err))
+		return true
+	}
+	for table in world.component_tables {
+		if selected_index < len(table.rows_by_entity) && table.rows_by_entity[selected_index] >= 0 {
+			return remove_editor_test_component(world, state, table.id)
+		}
+	}
+	set_editor_test_diagnostic(state, "No component selected")
+	return true
+}
+
+editor_test_component_addable_from_visible_chrome :: proc(component_id: string) -> bool {
+	return component_id != "" && !strings.has_prefix(component_id, "scrapbot.")
+}
+
 editor_test_default_component_value :: proc(component_id: string, field: Runtime_Component_Field_Definition) -> Runtime_Component_Value {
 	switch field.value_type {
 	case .Boolean:
@@ -1525,6 +1581,16 @@ editor_pointer_in_despawn_entity_button :: proc(input: Frame_Input) -> bool {
 	return editor_pointer_in_rect(input, x, y, width, height)
 }
 
+editor_pointer_in_add_component_button :: proc(input: Frame_Input) -> bool {
+	x, y, width, height := editor_component_add_button_rect(input.viewport_width, input.viewport_height)
+	return editor_pointer_in_rect(input, x, y, width, height)
+}
+
+editor_pointer_in_remove_component_button :: proc(input: Frame_Input) -> bool {
+	x, y, width, height := editor_component_remove_button_rect(input.viewport_width, input.viewport_height)
+	return editor_pointer_in_rect(input, x, y, width, height)
+}
+
 editor_play_button_rect :: proc(window_width: f32) -> (x, y, width, height: f32) {
 	body_width := max_f32(window_width, 1)
 	return max_f32(body_width - UI_EDITOR_PANEL_PADDING_X - UI_EDITOR_CONTROL_BUTTON_WIDTH * 2 - UI_EDITOR_CONTROL_BUTTON_GAP, UI_EDITOR_PANEL_PADDING_X),
@@ -1545,6 +1611,20 @@ editor_entity_spawn_button_rect :: proc(window_width, window_height: f32) -> (x,
 editor_entity_despawn_button_rect :: proc(window_width, window_height: f32) -> (x, y, width, height: f32) {
 	spawn_x, spawn_y, spawn_width, spawn_height := editor_entity_spawn_button_rect(window_width, window_height)
 	return spawn_x + spawn_width + 8.0, spawn_y, spawn_width, spawn_height
+}
+
+editor_component_add_button_rect :: proc(window_width, window_height: f32) -> (x, y, width, height: f32) {
+	panel_x, panel_y, panel_width, _ := editor_right_sidebar_panel_rect(window_width, window_height)
+	width = 44.0
+	height = 28.0
+	x = panel_x + max_f32(panel_width - UI_EDITOR_PANEL_PADDING_X - width * 2.0 - 8.0, UI_EDITOR_PANEL_PADDING_X)
+	y = panel_y + max_f32((editor_system_rows_y_offset() - height) * 0.5, 4.0)
+	return
+}
+
+editor_component_remove_button_rect :: proc(window_width, window_height: f32) -> (x, y, width, height: f32) {
+	add_x, add_y, add_width, add_height := editor_component_add_button_rect(window_width, window_height)
+	return add_x + add_width + 8.0, add_y, add_width, add_height
 }
 
 editor_entity_at_pointer :: proc(world: Runtime_World, state: Editor_Test_Input_State, input: Frame_Input) -> (Entity_Handle, bool) {

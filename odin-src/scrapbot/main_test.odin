@@ -857,6 +857,136 @@ selected_missing_component = "flag"
 }
 
 @(test)
+test_run_test_command_routes_editor_add_component_button :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-add-component-button")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Add Component Button Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+
+local Extra = ecs.component("extra", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Add Component Button Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.flag]
+value = 1
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 2
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [1168.0, 100.0]
+primary_pressed = true
+primary_down = true
+
+[[expect.editor]]
+selected_entity = "target"
+selected_has_component = "extra"
+selected_component = "extra"
+selected_field = "value"
+
+[[expect.field]]
+entity = "target"
+component = "extra"
+field = "value"
+equals_int = 0
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_run_test_command_routes_editor_remove_component_button :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-remove-component-button")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Remove Component Button Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Remove Component Button Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.flag]
+value = 1
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 3
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [1000.0, 170.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 3
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [1220.0, 100.0]
+primary_pressed = true
+primary_down = true
+
+[[expect.editor]]
+selected_entity = "target"
+selected_missing_component = "flag"
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_run_test_command_replays_editor_entity_scroll_selection :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-test-editor-entity-scroll-selection")
 	defer os.remove_all(root)
@@ -2275,6 +2405,9 @@ test_run_render_command_writes_editor_chrome_pixels :: proc(t: ^testing.T) {
 	expect_render_pixel(t, image, 26, 34, EDITOR_CHROME_BUTTON_COLOR)
 	expect_render_pixel(t, image, 32, 40, EDITOR_CHROME_BUTTON_ACCENT_COLOR)
 	expect_render_pixel(t, image, 51, 40, EDITOR_CHROME_BUTTON_DESTRUCTIVE_COLOR)
+	expect_render_pixel(t, image, 278, 36, EDITOR_CHROME_BUTTON_COLOR)
+	expect_render_pixel(t, image, 284, 37, EDITOR_CHROME_BUTTON_ACCENT_COLOR)
+	expect_render_pixel(t, image, 303, 39, EDITOR_CHROME_BUTTON_DESTRUCTIVE_COLOR)
 	expect_render_pixel(t, image, 236, 38, EDITOR_CHROME_SELECTION_COLOR)
 	expect_render_pixel(t, image, 72, 24, EDITOR_CHROME_VIEWPORT_COLOR)
 	expect_render_pixel(t, image, 238, 62, EDITOR_CHROME_INSPECTOR_CARD_HEADER_COLOR)

@@ -416,6 +416,7 @@ render_draw_editor_chrome :: proc(image: ^Render_Image, world: Runtime_World, op
 		render_fill_rect(image, accent_x, accent_y, accent_width, accent_height, EDITOR_CHROME_SELECTION_COLOR)
 		render_draw_editor_inspector_cards(image, world, options.selected_entity_id, image.width - right_width, body_y, right_width, body_height)
 	}
+	render_draw_editor_component_buttons(image, image.width - right_width, right_width, body_y)
 }
 
 render_draw_editor_entity_buttons :: proc(image: ^Render_Image, left_width, body_y: int) {
@@ -435,6 +436,25 @@ render_draw_editor_entity_buttons :: proc(image: ^Render_Image, left_width, body
 	render_fill_rect(image, despawn_x, button_y, button_size, button_size, EDITOR_CHROME_BUTTON_COLOR)
 	render_stroke_rect(image, despawn_x, button_y, button_size, button_size, EDITOR_CHROME_RULE_COLOR)
 	render_fill_rect(image, despawn_x + 4, button_y + button_size / 2 - 1, max(2, button_size - 8), 2, EDITOR_CHROME_BUTTON_DESTRUCTIVE_COLOR)
+}
+
+render_draw_editor_component_buttons :: proc(image: ^Render_Image, right_x, right_width, body_y: int) {
+	if right_width < 32 {
+		return
+	}
+	button_size := min(max(10, right_width / 6), 18)
+	gap := max(4, button_size / 4)
+	spawn_x := right_x + max(4, right_width - button_size * 2 - gap - 8)
+	button_y := body_y + 8
+	render_fill_rect(image, spawn_x, button_y, button_size, button_size, EDITOR_CHROME_BUTTON_COLOR)
+	render_stroke_rect(image, spawn_x, button_y, button_size, button_size, EDITOR_CHROME_RULE_COLOR)
+	render_fill_rect(image, spawn_x + button_size / 2 - 1, button_y + 4, 2, max(2, button_size - 8), EDITOR_CHROME_BUTTON_ACCENT_COLOR)
+	render_fill_rect(image, spawn_x + 4, button_y + button_size / 2 - 1, max(2, button_size - 8), 2, EDITOR_CHROME_BUTTON_ACCENT_COLOR)
+
+	remove_x := spawn_x + button_size + gap
+	render_fill_rect(image, remove_x, button_y, button_size, button_size, EDITOR_CHROME_BUTTON_COLOR)
+	render_stroke_rect(image, remove_x, button_y, button_size, button_size, EDITOR_CHROME_RULE_COLOR)
+	render_fill_rect(image, remove_x + 4, button_y + button_size / 2 - 1, max(2, button_size - 8), 2, EDITOR_CHROME_BUTTON_DESTRUCTIVE_COLOR)
 }
 
 render_draw_editor_inspector_cards :: proc(image: ^Render_Image, world: Runtime_World, selected_entity_id: string, right_x, body_y, right_width, body_height: int) {
