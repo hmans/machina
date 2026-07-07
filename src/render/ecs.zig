@@ -72,6 +72,14 @@ const RenderSystemProfileState = struct {
         self.last_ns = duration_ns;
     }
 
+    fn reset(self: *RenderSystemProfileState) void {
+        self.samples_ns = [_]u64{0} ** render_system_profile_window_frames;
+        self.sample_count = 0;
+        self.next_sample = 0;
+        self.total_ns = 0;
+        self.last_ns = 0;
+    }
+
     fn snapshot(self: RenderSystemProfileState) runtime.SystemProfileSnapshot {
         const average_ns = if (self.sample_count == 0) 0 else self.total_ns / self.sample_count;
         return .{
@@ -238,6 +246,12 @@ pub const RenderEcsState = struct {
                 profile.record(duration_ns);
                 return;
             }
+        }
+    }
+
+    pub fn resetSystemProfileSamples(self: *RenderEcsState) void {
+        for (self.system_profiles.items) |*profile| {
+            profile.reset();
         }
     }
 

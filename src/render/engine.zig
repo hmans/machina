@@ -368,6 +368,40 @@ pub const ImageRenderOptions = struct {
     frame_update: ?FrameUpdateHook = null,
 };
 
+pub const RenderBenchmarkOptions = struct {
+    frames: u32 = 120,
+    warmup_frames: u32 = 30,
+    delta_seconds: f32 = live_run_default_delta_seconds,
+    width: u32 = default_output_width,
+    height: u32 = default_output_height,
+    pixel_scale: f32 = 1.0,
+    frame_input: FrameInput = .{},
+    frame_update: ?FrameUpdateHook = null,
+};
+
+pub const RenderBenchmarkResult = struct {
+    frames: u32,
+    warmup_frames: u32,
+    delta_seconds: f32,
+    width: u32,
+    height: u32,
+    pixel_scale: f32,
+    total_ns: u64,
+    system_profiles: []runtime.SystemProfileSnapshot,
+
+    pub fn deinit(self: *RenderBenchmarkResult, allocator: std.mem.Allocator) void {
+        for (self.system_profiles) |profile| {
+            allocator.free(profile.id);
+        }
+        allocator.free(self.system_profiles);
+        self.* = undefined;
+    }
+
+    pub fn nsPerFrame(self: RenderBenchmarkResult) u64 {
+        return if (self.frames == 0) 0 else self.total_ns / @as(u64, self.frames);
+    }
+};
+
 pub const Scene = struct {
     world: *runtime.World,
 };
@@ -657,6 +691,132 @@ pub fn renderDemoImageWithInput(io: Io, allocator: std.mem.Allocator, output_pat
 
 pub fn renderDemoImageFrames(io: Io, allocator: std.mem.Allocator, output_path: []const u8, scene: Scene, options: ImageRenderOptions) !void {
     try renderDemoOutputFrames(io, allocator, output_path, scene, options, try imageFormatFromPath(output_path));
+}
+
+pub fn renderBenchmarkFrames(io: Io, allocator: std.mem.Allocator, scene: Scene, options: RenderBenchmarkOptions) !RenderBenchmarkResult {
+    _ = io;
+    if (options.width == 0 or options.height == 0) {
+        return RenderError.InvalidScene;
+    }
+
+    const output_extent = wgpu.Extent3D{
+        .width = options.width,
+        .height = options.height,
+        .depth_or_array_layers = 1,
+    };
+    const instance = wgpu.Instance.create(null) orelse return RenderError.NoAdapter;
+    defer instance.release();
+
+    var gpu = try openGpu(instance, null);
+    defer gpu.deinit();
+
+    const texture_format = wgpu.TextureFormat.bgra8_unorm_srgb;
+    const target_texture = gpu.device.createTexture(&wgpu.TextureDescriptor{
+        .label = wgpu.StringView.fromSlice("Scrapbot render benchmark target"),
+        .size = output_extent,
+        .format = texture_format,
+        .usage = wgpu.TextureUsages.render_attachment,
+    }) orelse return RenderError.NoDevice;
+    defer target_texture.release();
+
+    const target_view = target_texture.createView(&wgpu.TextureViewDescriptor{
+        .label = wgpu.StringView.fromSlice("Scrapbot render benchmark target view"),
+        .mip_level_count = 1,
+        .array_layer_count = 1,
+    }) orelse return RenderError.NoDevice;
+    defer target_view.release();
+
+    var demo = try MeshDemo.create(allocator, gpu.device, gpu.queue, texture_format, scene);
+    defer demo.deinit();
+
+    var depth = try DepthTarget.create(gpu.device, options.width, options.height);
+    defer depth.deinit();
+
+    try drawBenchmarkFrames(instance, gpu.device, gpu.queue, target_view, depth.view orelse return RenderError.NoDevice, scene, &demo, options, options.warmup_frames);
+    demo.render_state.resetSystemProfileSamples();
+
+    const started_ns = monotonicTimestampNs();
+    try drawBenchmarkFrames(instance, gpu.device, gpu.queue, target_view, depth.view orelse return RenderError.NoDevice, scene, &demo, options, options.frames);
+    const total_ns = elapsedNanosecondsSince(started_ns);
+
+    const profiles = try copySystemProfileSnapshots(allocator, demo.render_state.systemProfileSnapshots());
+    errdefer freeSystemProfileSnapshots(allocator, profiles);
+
+    return .{
+        .frames = options.frames,
+        .warmup_frames = options.warmup_frames,
+        .delta_seconds = options.delta_seconds,
+        .width = options.width,
+        .height = options.height,
+        .pixel_scale = options.pixel_scale,
+        .total_ns = total_ns,
+        .system_profiles = profiles,
+    };
+}
+
+fn drawBenchmarkFrames(
+    instance: *wgpu.Instance,
+    device: *wgpu.Device,
+    queue: *wgpu.Queue,
+    target_view: *wgpu.TextureView,
+    depth_view: *wgpu.TextureView,
+    scene: Scene,
+    demo: *MeshDemo,
+    options: RenderBenchmarkOptions,
+    frames: u32,
+) !void {
+    var frame_index: u32 = 0;
+    while (frame_index < frames) : (frame_index += 1) {
+        var input = frameInputWithOutputMetrics(options.frame_input, options.width, options.height, options.pixel_scale);
+        input.delta_seconds = options.delta_seconds;
+        input.system_profile_count_hint = demo.renderSystemProfileCount();
+        if (options.frame_update) |frame_update| {
+            frame_update.step(frame_update.context, options.delta_seconds, &input);
+        }
+
+        try demo.draw(device, queue, target_view, depth_view, .{
+            .width = options.width,
+            .height = options.height,
+            .scene = scene,
+            .input = input,
+        });
+        instance.processEvents();
+    }
+}
+
+fn copySystemProfileSnapshots(
+    allocator: std.mem.Allocator,
+    snapshots: []const runtime.SystemProfileSnapshot,
+) ![]runtime.SystemProfileSnapshot {
+    const copied = try allocator.alloc(runtime.SystemProfileSnapshot, snapshots.len);
+    errdefer allocator.free(copied);
+
+    var copied_count: usize = 0;
+    errdefer {
+        for (copied[0..copied_count]) |profile| {
+            allocator.free(profile.id);
+        }
+    }
+
+    for (snapshots, 0..) |snapshot, index| {
+        copied[index] = .{
+            .id = try allocator.dupe(u8, snapshot.id),
+            .phase = snapshot.phase,
+            .sample_count = snapshot.sample_count,
+            .window_size = snapshot.window_size,
+            .last_ns = snapshot.last_ns,
+            .rolling_average_ns = snapshot.rolling_average_ns,
+        };
+        copied_count += 1;
+    }
+    return copied;
+}
+
+fn freeSystemProfileSnapshots(allocator: std.mem.Allocator, snapshots: []runtime.SystemProfileSnapshot) void {
+    for (snapshots) |profile| {
+        allocator.free(profile.id);
+    }
+    allocator.free(snapshots);
 }
 
 fn renderDemoOutputFrames(
