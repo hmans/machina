@@ -62,6 +62,9 @@ run_with_output :: proc(args: []string, emit_output: bool) -> int {
 	if command == "bench" {
 		return run_bench(args[2:], emit_output)
 	}
+	if command == "render-bench" {
+		return run_render_bench(args[2:], emit_output)
+	}
 	if command == "test" {
 		return run_test(args[2:], emit_output)
 	}
@@ -113,6 +116,7 @@ Usage:
   scrapbot check [path] [--format text|json]
   scrapbot step [path] [--frames N] [--dt seconds] [--format text|json]
   scrapbot bench [path] [--frames N] [--dt seconds] [--format text|json]
+  scrapbot render-bench [--editor] [--select entity-id] [--frames N] [--warmup N] [--dt seconds] [--width PX] [--height PX] [--pixel-scale S] [--format text|json] [path]
   scrapbot test [tests-path|project-path] [--format text|json]
   scrapbot run [path] [--frames N] [--editor] [--hidden] [--backend software|wgpu] [--render-output output.png] [--render-width PX] [--render-height PX] [--render-pixel-scale S]
   scrapbot render [--backend software|wgpu] [--editor] [--select entity-id] [--inspector-scroll-y PX] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [path] [output.png]
@@ -546,6 +550,102 @@ run_bench :: proc(args: []string, emit_output: bool) -> int {
 		print_bench_result(result, options, startup_ns, update_ns, simulation.completed_frames)
 	}
 	return 0
+}
+
+run_render_bench :: proc(args: []string, emit_output: bool) -> int {
+	options, options_ok := parse_render_bench_options(args, emit_output)
+	if !options_ok {
+		return 1
+	}
+
+	live, live_err := live_project_init(options.target_path)
+	defer live_project_free(&live)
+	if live_err != .None {
+		if emit_output {
+			print_project_check_error(live.check, options.target_path, options.format)
+		}
+		return 1
+	}
+
+	if options.selected_entity_id != "" {
+		if _, found := runtime_world_find_entity_by_id(live.check.scene.world, options.selected_entity_id); !found {
+			if emit_output {
+				fmt.eprintf("render-bench selected entity not found: %s\n", options.selected_entity_id)
+			}
+			return 1
+		}
+	}
+
+	startup := live_project_run_startup_if_needed(&live)
+	if !startup.ok {
+		live.check.diagnostic = startup.diagnostic
+		live.check.err = .Invalid_Script
+		if emit_output {
+			print_project_check_error(live.check, options.target_path, options.format)
+		}
+		return 1
+	}
+
+	render_options := Render_Options{
+		target_path = options.target_path,
+		output_path = DEFAULT_RENDER_OUTPUT,
+		frames = 1,
+		width = options.width,
+		height = options.height,
+		pixel_scale = options.pixel_scale,
+		editor = options.editor,
+		selected_entity_id = options.selected_entity_id,
+		backend = .Software,
+	}
+
+	for frame in 0 ..< options.warmup_frames {
+		if !render_bench_step_and_render(&live, render_options, options.delta_seconds, frame, options.target_path, options.format, emit_output) {
+			return 1
+		}
+	}
+
+	start := time.tick_now()
+	for frame in 0 ..< options.frames {
+		if !render_bench_step_and_render(&live, render_options, options.delta_seconds, frame, options.target_path, options.format, emit_output) {
+			return 1
+		}
+	}
+	total_ns := time.duration_nanoseconds(time.tick_since(start))
+
+	if emit_output {
+		print_render_bench_result(live.check, options, Render_Bench_Result{
+			frames = options.frames,
+			warmup_frames = options.warmup_frames,
+			delta_seconds = options.delta_seconds,
+			width = options.width,
+			height = options.height,
+			pixel_scale = options.pixel_scale,
+			total_ns = total_ns,
+		})
+	}
+	return 0
+}
+
+render_bench_step_and_render :: proc(live: ^Live_Project, options: Render_Options, delta_seconds: f32, completed_frames: int, target_path: string, format: Check_Output_Format, emit_output: bool) -> bool {
+	frame := live_project_run_frame_with_report(live, delta_seconds, completed_frames, nil)
+	if !frame.ok {
+		live.check.diagnostic = frame.diagnostic
+		live.check.err = .Invalid_Script
+		if emit_output {
+			print_project_check_error(live.check, target_path, format)
+		}
+		return false
+	}
+
+	image, image_ok := render_image_from_scene(live.check.scene.world, options)
+	if !image_ok {
+		if emit_output {
+			fmt.eprintln("render-bench failed: render image allocation failed")
+		}
+		return false
+	}
+	render_image_free(&image)
+	return true
 }
 
 run_test :: proc(args: []string, emit_output: bool) -> int {
@@ -1429,6 +1529,14 @@ parse_simulation_options :: proc(args: []string, default_frames: int, emit_outpu
 parse_positive_int :: proc(value: string) -> (int, bool) {
 	parsed, ok := strconv.parse_int(value, 10)
 	if !ok || parsed <= 0 {
+		return 0, false
+	}
+	return parsed, true
+}
+
+parse_non_negative_int :: proc(value: string) -> (int, bool) {
+	parsed, ok := strconv.parse_int(value, 10)
+	if !ok || parsed < 0 {
 		return 0, false
 	}
 	return parsed, true

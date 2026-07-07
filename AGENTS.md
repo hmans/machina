@@ -99,16 +99,17 @@ Please refer to the `README.md` for a high-level overview of the engine's featur
 - Use `scrapbot test` for automated gameplay and UI input replay fixture coverage.
 - Use `scrapbot step` for narrow deterministic script/ECS debugging and runtime diagnostic checks.
 - Use `scrapbot bench` for headless performance smoke coverage; keep renderable and render-batch counts useful enough to catch batching regressions.
-- Use `mise build` for normal optimized builds.
-- Use `mise build-debug` or `zig build test` when Debug safety checks matter.
-- Do not run `zig build test` and `mise test` concurrently. The current tests use shared fixed temp project paths, so parallel invocations can collide and produce misleading filesystem failures.
+- Use `mise build` for the default Odin CLI build.
+- Use `mise test` for the default Odin test suite.
+- Use `mise build-zig`, `mise build-debug-zig`, `mise test-zig`, or `mise visual-test-zig` only when checking migration-era Zig compatibility.
+- Do not run `mise test-zig` and `mise test` concurrently. The current tests use shared fixed temp project paths, so parallel invocations can collide and produce misleading filesystem failures.
 - For rendering, shader, scene-driven render data, or visual expectation changes, use `.agents/skills/scrapbot-render-verification`.
 - For script diagnostics, Luau bridge error reporting, `scrapbot check` output, script reload/runtime failure handling, or editor/agent diagnostic surfaces, use `.agents/skills/scrapbot-script-diagnostics`.
 - For editor layout changes, prefer engine-generated offscreen artifacts with `scrapbot render --editor`; use `--select <entity-id>` when selected-entity inspector state matters.
 - When a render example depends on startup-spawned content, run startup before offscreen verification and keep the example covered by `mise test`.
 - Do not run visible `scrapbot run` smoke tests by default. Prefer headless commands, offscreen render verification, and hidden bounded surface smoke tests such as `mise scrapbot run examples/minimal --hidden --frames 2`; ask the user before launching a visible Scrapbot window unless they explicitly requested one.
 - For `scrapbot run` window-loop, surface, or live-reload changes, run a bounded hidden surface smoke test such as `mise scrapbot run examples/minimal --hidden --frames 2`; use a visible headful run only when hidden presentation is insufficient.
-- For editor input bugs, add deterministic frame-replay coverage in Zig tests before relying on manual headful checks.
+- For editor input bugs, add deterministic frame-replay coverage in Odin tests before relying on manual headful checks.
 - When investigating performance, compare optimized and Debug builds, and separate headless update cost from headful render/presentation cost before changing engine architecture.
 
 ## Project Map

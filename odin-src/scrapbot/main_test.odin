@@ -277,6 +277,64 @@ test_run_bench_command_rejects_extra_arguments :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_parse_render_bench_options_accepts_editor_selection_timing_dimensions_and_json :: proc(t: ^testing.T) {
+	options, ok := parse_render_bench_options(
+		[]string{"--frames", "4", "--warmup=2", "--dt", "0.25", "--width=320", "--height", "240", "--pixel-scale", "2.0", "--select", "cube", "--format=json", "project"},
+		false,
+	)
+	testing.expect_value(t, ok, true)
+	testing.expect_value(t, options.frames, 4)
+	testing.expect_value(t, options.warmup_frames, 2)
+	testing.expect_value(t, options.delta_seconds, f32(0.25))
+	testing.expect_value(t, options.width, 320)
+	testing.expect_value(t, options.height, 240)
+	testing.expect_value(t, options.pixel_scale, f32(2.0))
+	testing.expect_value(t, options.editor, true)
+	testing.expect_value(t, options.selected_entity_id, "cube")
+	testing.expect_value(t, options.format, Check_Output_Format.JSON)
+	testing.expect_value(t, options.target_path, "project")
+}
+
+@(test)
+test_run_render_bench_command_accepts_initialized_project :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-render-bench-project")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Render Bench"), Project_Error.None)
+
+	exit_code := run_with_output([]string{"scrapbot", "render-bench", root, "--frames=2", "--warmup=1", "--width=64", "--height=48", "--format=json"}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_run_render_bench_command_rejects_missing_selected_entity :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-render-bench-missing-selection")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Render Bench Missing Selection"), Project_Error.None)
+
+	exit_code := run_with_output([]string{"scrapbot", "render-bench", "--select", "missing", root}, false)
+	testing.expect_value(t, exit_code, 1)
+}
+
+@(test)
+test_run_render_bench_command_rejects_invalid_warmup :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-render-bench-invalid")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Render Bench Invalid"), Project_Error.None)
+
+	exit_code := run_with_output([]string{"scrapbot", "render-bench", root, "--warmup", "-1"}, false)
+	testing.expect_value(t, exit_code, 1)
+}
+
+@(test)
+test_parse_render_bench_options_rejects_extra_path_after_current_directory :: proc(t: ^testing.T) {
+	_, ok := parse_render_bench_options([]string{".", "examples/minimal"}, false)
+	testing.expect_value(t, ok, false)
+}
+
+@(test)
 test_run_test_command_accepts_test_project_directory :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-test-project")
 	defer os.remove_all(root)

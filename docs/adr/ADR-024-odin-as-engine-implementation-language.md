@@ -20,7 +20,7 @@ Scrapbot's engine implementation language is Odin.
 
 New engine implementation work should move toward Odin modules and Odin build/test workflows. The repository may keep Zig implementation code temporarily as migration scaffolding, but Zig is no longer the desired end state for engine-owned runtime, renderer, scripting bridge, UI/editor, CLI, or test implementation.
 
-The migration starts with a separate Odin source root and explicit Odin build tasks. Existing Zig commands remain available until their Odin replacements are feature-complete enough to preserve the current project, scene, scripting, rendering, editor, and verification contracts.
+The migration started with a separate Odin source root and explicit Odin build tasks. As Odin parity has advanced, the default local `mise build`, `mise test`, and `mise scrapbot` tasks now target the Odin CLI. Existing Zig commands remain available as explicit migration-era `*-zig` compatibility tasks until their remaining behavior can be removed.
 
 The migration keeps these architectural commitments unless later ADRs explicitly change them:
 
@@ -42,10 +42,10 @@ The migration must replace several Zig-specific surfaces:
 - `build.zig` and `build.zig.zon` package/build orchestration.
 - The vendored Zig `wgpu-native` binding package, which remains only for migration-era Zig renderer builds now that Odin WebGPU smoke tasks stage the host library directly.
 - Project-local native Zig module builds, generated `scrapbot_native` APIs, fixtures, and diagnostics.
-- Zig-specific CI setup, test commands, cache directories, and agent guidance.
+- Zig-specific CI setup, default test commands, cache directories, and agent guidance.
 - Zig tests that currently prove ECS, scripting, UI layout, renderer extraction, editor interaction, native reload, and CLI behavior.
 
-Odin introduces its own toolchain and package conventions. The repository uses `mise.toml` as the shared tool entrypoint, so Odin provisioning and tasks should live there while the migration is active.
+Odin introduces its own toolchain and package conventions. The repository uses `mise.toml` as the shared tool entrypoint, so Odin provisioning and default tasks live there while the migration is active. Zig compatibility tasks should stay explicit and named with a `-zig` suffix while the migration keeps them.
 
 Until feature parity is reached, some documentation will necessarily describe both the current Zig implementation and the intended Odin target. Those references should be explicit about migration status rather than implying that both languages are equally supported end states.
 

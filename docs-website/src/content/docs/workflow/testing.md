@@ -128,24 +128,30 @@ Benchmark output includes scene counts, renderable counts, render batch counts, 
 Render one PNG:
 
 ```sh
-scrapbot render examples/showcase zig-out/showcase.png
+scrapbot render examples/showcase odin-out/showcase.png
 ```
 
 Render an editor/inspector state without clicking in a headful window:
 
 ```sh
-scrapbot render --editor --select native-cyan-box examples/native_motion zig-out/native-motion-editor.png
+scrapbot render --editor --select native-cyan-box examples/native_motion odin-out/native-motion-editor.png
 ```
 
 Render and verify visible output:
 
 ```sh
-scrapbot render-test examples/showcase zig-out/showcase-render-test.png
+scrapbot render-test examples/showcase odin-out/showcase-render-test.png
 ```
 
 Render tests are deterministic and should be used before relying on headful screenshots for renderer or editor-layout work.
 
-For engine heap leak coverage, automation can run bounded commands with `SCRAPBOT_LEAK_CHECK=1`. This is an internal validation switch used by the default test workflow; it checks Scrapbot-owned Zig allocations and is not a replacement for OS, driver, or GPU leak tools.
+For quick first-pass render timing, use:
+
+```sh
+scrapbot render-bench examples/minimal --frames=120 --warmup=10 --format=json
+```
+
+For migration-era Zig heap leak coverage, automation can run bounded Zig commands with `SCRAPBOT_LEAK_CHECK=1`. This internal validation switch checks Scrapbot-owned Zig allocations and is not a replacement for OS, driver, or GPU leak tools.
 
 ## Full Suite
 
@@ -157,8 +163,18 @@ mise test
 
 It currently runs:
 
-- Zig unit tests.
-- Optimized CLI build.
-- All `tests/projects/` fixtures.
-- A benchmark smoke test.
-- Offscreen render tests for key examples.
+- Odin unit tests.
+- Odin Luau bridge build.
+- Odin command, runtime, renderer, editor replay, native module, and WebGPU boundary coverage.
+
+The migration-era Zig suite remains available as:
+
+```sh
+mise test-zig
+```
+
+The migration-era checked-in visual golden comparison remains available as:
+
+```sh
+mise visual-test-zig
+```

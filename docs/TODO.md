@@ -37,6 +37,8 @@
 - [x] Odin visible software window-loop reloads emit live reload diagnostics while suppressing duplicate final-summary events.
 - [x] Odin visible software runs can present software-rendered scene and first-pass editor chrome pixels through an SDL texture.
 - [x] Odin visible software and WebGPU SDL run loops can route first-pass editor pointer, keyboard, and text input through the shared runtime input/editor model.
+- [x] Odin `render-bench` can benchmark first-pass in-memory software render generation with text/JSON output.
+- [x] Default `mise build`, `mise test`, and `mise scrapbot` now target the Odin CLI; migration-era Zig tasks are explicit `*-zig` compatibility tasks.
 - [x] Odin WebGPU dynamic library discovery no longer falls back to migration-era Zig `zig-out` or `zig-pkg` cache paths.
 - [x] Odin render extraction can count renderables, batches, cameras, lights, and UI draw primitives.
 - [x] Odin `render` and `render-test` can validate projects, run bounded frame simulation, check selected entities, and report pending backend render stats.
@@ -76,6 +78,7 @@
 - [x] Port detailed Luau runtime bridge diagnostics from Zig to Odin.
 - [x] Port first-pass deterministic step command from Zig to Odin.
 - [x] Port first-pass benchmark command from Zig to Odin.
+- [x] Port first-pass render-bench command from Zig to Odin.
 - [x] Port first-pass test command discovery and manifest validation from Zig to Odin.
 - [x] Port first-pass test command field assertion execution from Zig to Odin.
 - [x] Port first-pass test command input resource replay from Zig to Odin.
@@ -149,6 +152,7 @@
 - [x] Port live unbounded/window-loop reload diagnostics from Zig to Odin for visible software runs.
 - [x] Port first-pass editor pointer and keyboard input routing into visible Odin software/WebGPU SDL run loops.
 - [x] Port first-pass SDL text input routing into visible Odin software/WebGPU editor run loops.
+- [x] Make default local build/test/run tasks target Odin while keeping explicit migration-era Zig compatibility tasks.
 - [ ] Remove the vendored Zig `wgpu-native` binding after the migration-era Zig renderer and build surfaces are no longer needed.
 - [x] Port first-pass Odin software offscreen PNG/BMP image output and render-test pixel verification.
 - [x] Port first-pass Odin visual-test golden update/comparison, tolerance checks, and render artifact metadata sidecars.

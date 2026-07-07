@@ -8,6 +8,8 @@ DEFAULT_RENDER_WIDTH :: 640
 DEFAULT_RENDER_HEIGHT :: 480
 DEFAULT_RENDER_PIXEL_SCALE :: f32(1.0)
 DEFAULT_RENDER_FRAMES :: 1
+DEFAULT_RENDER_BENCH_FRAMES :: 120
+DEFAULT_RENDER_BENCH_WARMUP_FRAMES :: 30
 DEFAULT_RENDER_OUTPUT :: "odin-out/scrapbot-render.png"
 DEFAULT_RENDER_TEST_OUTPUT :: "odin-out/scrapbot-render-test.png"
 DEFAULT_VISUAL_TEST_OUTPUT :: "odin-out/scrapbot-visual-test.png"
@@ -37,6 +39,29 @@ Visual_Test_Options :: struct {
 	render:        Render_Options,
 	expected_path: string,
 	update:        bool,
+}
+
+Render_Bench_Options :: struct {
+	target_path:        string,
+	frames:             int,
+	warmup_frames:      int,
+	delta_seconds:      f32,
+	width:              int,
+	height:             int,
+	pixel_scale:        f32,
+	editor:             bool,
+	selected_entity_id: string,
+	format:             Check_Output_Format,
+}
+
+Render_Bench_Result :: struct {
+	frames:        int,
+	warmup_frames: int,
+	delta_seconds: f32,
+	width:         int,
+	height:        int,
+	pixel_scale:   f32,
+	total_ns:      i64,
 }
 
 parse_render_options :: proc(args: []string, default_output: string, emit_output: bool) -> (Render_Options, bool) {
@@ -244,6 +269,234 @@ parse_render_options :: proc(args: []string, default_output: string, emit_output
 	return options, true
 }
 
+parse_render_bench_options :: proc(args: []string, emit_output: bool) -> (Render_Bench_Options, bool) {
+	options := Render_Bench_Options{
+		target_path = ".",
+		frames = DEFAULT_RENDER_BENCH_FRAMES,
+		warmup_frames = DEFAULT_RENDER_BENCH_WARMUP_FRAMES,
+		delta_seconds = DEFAULT_STEP_DELTA_SECONDS,
+		width = DEFAULT_RENDER_WIDTH,
+		height = DEFAULT_RENDER_HEIGHT,
+		pixel_scale = DEFAULT_RENDER_PIXEL_SCALE,
+		format = .Text,
+	}
+	i := 0
+	target_seen := false
+	for i < len(args) {
+		arg := args[i]
+		if strings.has_prefix(arg, "--frames=") {
+			frames, ok := parse_positive_int(arg[len("--frames="):])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --frames: %s\n", arg[len("--frames="):])
+				return options, false
+			}
+			options.frames = frames
+			i += 1
+			continue
+		}
+		if arg == "--frames" {
+			if i + 1 >= len(args) {
+				if emit_output do fmt.eprintln("missing value for --frames")
+				return options, false
+			}
+			frames, ok := parse_positive_int(args[i + 1])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --frames: %s\n", args[i + 1])
+				return options, false
+			}
+			options.frames = frames
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--warmup=") {
+			warmup, ok := parse_non_negative_int(arg[len("--warmup="):])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --warmup: %s\n", arg[len("--warmup="):])
+				return options, false
+			}
+			options.warmup_frames = warmup
+			i += 1
+			continue
+		}
+		if arg == "--warmup" {
+			if i + 1 >= len(args) {
+				if emit_output do fmt.eprintln("missing value for --warmup")
+				return options, false
+			}
+			warmup, ok := parse_non_negative_int(args[i + 1])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --warmup: %s\n", args[i + 1])
+				return options, false
+			}
+			options.warmup_frames = warmup
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--dt=") {
+			delta_seconds, ok := parse_positive_f32(arg[len("--dt="):])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --dt: %s\n", arg[len("--dt="):])
+				return options, false
+			}
+			options.delta_seconds = delta_seconds
+			i += 1
+			continue
+		}
+		if arg == "--dt" {
+			if i + 1 >= len(args) {
+				if emit_output do fmt.eprintln("missing value for --dt")
+				return options, false
+			}
+			delta_seconds, ok := parse_positive_f32(args[i + 1])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --dt: %s\n", args[i + 1])
+				return options, false
+			}
+			options.delta_seconds = delta_seconds
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--width=") {
+			width, ok := parse_positive_int(arg[len("--width="):])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --width: %s\n", arg[len("--width="):])
+				return options, false
+			}
+			options.width = width
+			i += 1
+			continue
+		}
+		if arg == "--width" {
+			if i + 1 >= len(args) {
+				if emit_output do fmt.eprintln("missing value for --width")
+				return options, false
+			}
+			width, ok := parse_positive_int(args[i + 1])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --width: %s\n", args[i + 1])
+				return options, false
+			}
+			options.width = width
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--height=") {
+			height, ok := parse_positive_int(arg[len("--height="):])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --height: %s\n", arg[len("--height="):])
+				return options, false
+			}
+			options.height = height
+			i += 1
+			continue
+		}
+		if arg == "--height" {
+			if i + 1 >= len(args) {
+				if emit_output do fmt.eprintln("missing value for --height")
+				return options, false
+			}
+			height, ok := parse_positive_int(args[i + 1])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --height: %s\n", args[i + 1])
+				return options, false
+			}
+			options.height = height
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--pixel-scale=") {
+			pixel_scale, ok := parse_positive_f32(arg[len("--pixel-scale="):])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --pixel-scale: %s\n", arg[len("--pixel-scale="):])
+				return options, false
+			}
+			options.pixel_scale = pixel_scale
+			i += 1
+			continue
+		}
+		if arg == "--pixel-scale" {
+			if i + 1 >= len(args) {
+				if emit_output do fmt.eprintln("missing value for --pixel-scale")
+				return options, false
+			}
+			pixel_scale, ok := parse_positive_f32(args[i + 1])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --pixel-scale: %s\n", args[i + 1])
+				return options, false
+			}
+			options.pixel_scale = pixel_scale
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--select=") {
+			selected := arg[len("--select="):]
+			if selected == "" {
+				if emit_output do fmt.eprintln("missing value for --select")
+				return options, false
+			}
+			options.selected_entity_id = selected
+			options.editor = true
+			i += 1
+			continue
+		}
+		if arg == "--select" {
+			if i + 1 >= len(args) {
+				if emit_output do fmt.eprintln("missing value for --select")
+				return options, false
+			}
+			if args[i + 1] == "" {
+				if emit_output do fmt.eprintln("missing value for --select")
+				return options, false
+			}
+			options.selected_entity_id = args[i + 1]
+			options.editor = true
+			i += 2
+			continue
+		}
+		if arg == "--editor" {
+			options.editor = true
+			i += 1
+			continue
+		}
+		if strings.has_prefix(arg, "--format=") {
+			format, ok := parse_output_format(arg[len("--format="):])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --format: %s\n", arg[len("--format="):])
+				return options, false
+			}
+			options.format = format
+			i += 1
+			continue
+		}
+		if arg == "--format" {
+			if i + 1 >= len(args) {
+				if emit_output do fmt.eprintln("missing value for --format")
+				return options, false
+			}
+			format, ok := parse_output_format(args[i + 1])
+			if !ok {
+				if emit_output do fmt.eprintf("invalid --format: %s\n", args[i + 1])
+				return options, false
+			}
+			options.format = format
+			i += 2
+			continue
+		}
+		if len(arg) > 0 && arg[0] == '-' {
+			if emit_output do fmt.eprintf("unknown argument: %s\n", arg)
+			return options, false
+		}
+		if target_seen {
+			if emit_output do fmt.eprintf("unexpected argument: %s\n", arg)
+			return options, false
+		}
+		options.target_path = arg
+		target_seen = true
+		i += 1
+	}
+	return options, true
+}
+
 parse_render_backend :: proc(value: string) -> (Render_Backend, bool) {
 	switch value {
 	case "software":
@@ -405,6 +658,48 @@ print_visual_test_result :: proc(result: Project_Check_Result, options: Visual_T
 	}
 	print_render_extract_text(result)
 	fmt.printf("Renderer backend: %s\n", render_backend_label(options.render.backend))
+}
+
+print_render_bench_result :: proc(result: Project_Check_Result, options: Render_Bench_Options, bench: Render_Bench_Result) {
+	ns_per_frame := f64(0)
+	if bench.frames > 0 {
+		ns_per_frame = f64(bench.total_ns) / f64(bench.frames)
+	}
+	total_ms := f64(bench.total_ns) / 1_000_000.0
+	ms_per_frame := ns_per_frame / 1_000_000.0
+	switch options.format {
+	case .Text:
+		fmt.printf("Render benchmark OK: %s\n", result.project.name)
+		fmt.printf("Scene: %s\n", result.scene.name)
+		fmt.printf("Frames: %d, warmup: %d, dt: %g\n", bench.frames, bench.warmup_frames, bench.delta_seconds)
+		fmt.printf("Output: %dx%d @%gx\n", bench.width, bench.height, bench.pixel_scale)
+		fmt.printf("Render: %g ms total, %g ms/frame\n", total_ms, ms_per_frame)
+		fmt.printf("Renderer backend: %s\n", ODIN_SOFTWARE_RENDER_BACKEND)
+		print_render_extract_text(result)
+	case .JSON:
+		fmt.print(`{"ok":true,"project":{"name":"`)
+		json_print(result.project.name, false)
+		fmt.print(`"},"scene":{"name":"`)
+		json_print(result.scene.name, false)
+		fmt.printf(`","entities":%d,"component_instances":%d,"renderable_cubes":%d`, result.scene.entity_count, result.scene.component_instance_count, result.scene.renderable_cube_count)
+		fmt.print(`},"render_benchmark":{`)
+		fmt.printf(`"frames":%d,"warmup_frames":%d,"dt":%g,"width":%d,"height":%d,"pixel_scale":%g,"total_ns":%d,"ns_per_frame":%g`,
+			bench.frames,
+			bench.warmup_frames,
+			bench.delta_seconds,
+			bench.width,
+			bench.height,
+			bench.pixel_scale,
+			bench.total_ns,
+			ns_per_frame,
+		)
+		fmt.print(`,"renderer_backend":"`)
+		json_print("odin_software_render_benchmark", false)
+		fmt.print(`"}`)
+		fmt.print(`,"render_stats":`)
+		print_render_extract_json(result)
+		fmt.println(`}`)
+	}
 }
 
 render_backend_label :: proc(backend: Render_Backend) -> string {

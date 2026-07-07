@@ -29,8 +29,8 @@ jobs:
           version: 0.16.0
           cache-key: ci-odin
           cache-size-limit: 4096
-      - name: Build and test Odin scaffold
-        run: mise odin-smoke && mise test-odin && xvfb-run -a mise odin-sdl-smoke && xvfb-run -a mise odin-wgpu-surface-smoke
+      - name: Build and test Odin CLI
+        run: mise build && ./odin-out/scrapbot --version && mise test && xvfb-run -a mise odin-sdl-smoke && xvfb-run -a mise odin-wgpu-surface-smoke
 
   macos:
     runs-on: macos-latest

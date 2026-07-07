@@ -41,6 +41,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Odin Luau runtime bridge diagnostics slice
   - [x] Odin deterministic step command slice
   - [x] Odin benchmark command slice
+  - [x] Odin render benchmark command slice
   - [x] Odin test discovery/manifest command slice
   - [x] Odin test field assertion execution slice
   - [x] Odin test input resource replay slice
@@ -117,7 +118,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Odin visible editor component lifecycle controls slice
   - [x] Odin native declaration registration slice
   - [x] Odin native execution boundary diagnostics slice
-  - [ ] Odin CLI feature parity
+  - [x] Odin CLI feature parity
   - [ ] Zig engine implementation removed
 - Runtime
   - [x] Single-binary CLI

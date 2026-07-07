@@ -7,7 +7,7 @@ Scrapbot uses `mise` for local tool versions and task shortcuts.
 
 ## Platform Setup
 
-Scrapbot builds with Zig and uses SDL3 for `scrapbot run`. Install SDL3 before building the headful runner.
+Scrapbot's default CLI builds with Odin and uses SDL3 for `scrapbot run`. Zig is still used during the migration for the Luau bridge and explicit legacy compatibility tasks. Install SDL3 before building the headful runner.
 
 ### macOS
 
@@ -51,18 +51,16 @@ Use the MSVC toolchain and install SDL3 with vcpkg:
 vcpkg install sdl3:x64-windows
 ```
 
-Build with the Windows MSVC target and pass the vcpkg SDL3 paths:
+Build normally:
 
 ```powershell
-zig build -Dtarget=x86_64-windows-msvc `
-  -Dsdl3_include_path="$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\include" `
-  -Dsdl3_library_path="$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\lib"
+mise build
 ```
 
-Copy `SDL3.dll` from the vcpkg `bin` directory next to `scrapbot.exe` before running the CLI:
+Copy `SDL3.dll` from the vcpkg `bin` directory next to the built CLI before running headful commands:
 
 ```powershell
-Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\SDL3.dll" zig-out\bin\
+Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\SDL3.dll" odin-out\
 ```
 
 ## Build the CLI
@@ -73,12 +71,12 @@ From the repository root:
 mise build
 ```
 
-This builds the optimized `scrapbot` CLI into `zig-out/bin/scrapbot`.
+This builds the Odin `scrapbot` CLI into `odin-out/scrapbot`.
 
-For Debug safety checks, use:
+For the migration-era Zig CLI, use:
 
 ```sh
-mise build-debug
+mise build-zig
 ```
 
 ## Create a Project
