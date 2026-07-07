@@ -67,6 +67,8 @@ Frame_Input :: struct {
 	system_profile_count_hint: int,
 	text_input:                string,
 	clipboard_text:            string,
+	editor_add_component_id:   string,
+	editor_remove_component_id: string,
 }
 
 Step_Input_Frame :: struct {
@@ -143,14 +145,14 @@ frame_input_default :: proc() -> Frame_Input {
 	}
 }
 
-route_editor_test_input :: proc(state: ^Editor_Test_Input_State, world: ^Runtime_World, input: ^Frame_Input) {
+route_editor_test_input :: proc(state: ^Editor_Test_Input_State, registry: Runtime_Component_Registry, world: ^Runtime_World, input: ^Frame_Input) {
 	state.step_once = false
 	if !input.debug_overlay_visible {
 		state.captured_pointer = false
 		return
 	}
 	consumed := false
-	if apply_editor_test_keyboard_edits(state, world, input^) {
+	if apply_editor_test_keyboard_edits(state, registry, world, input^) {
 		consumed = true
 	}
 	if input.pointer.has_position {
@@ -279,7 +281,7 @@ editor_test_input_state_free :: proc(state: ^Editor_Test_Input_State) {
 	clear_editor_test_field_command_stack(&state.redo_stack, &state.redo_len)
 }
 
-apply_editor_test_keyboard_edits :: proc(state: ^Editor_Test_Input_State, world: ^Runtime_World, input: Frame_Input) -> bool {
+apply_editor_test_keyboard_edits :: proc(state: ^Editor_Test_Input_State, registry: Runtime_Component_Registry, world: ^Runtime_World, input: Frame_Input) -> bool {
 	consumed := false
 	if state.text_input_active {
 		if input.keyboard.editor_copy_pressed {
@@ -355,6 +357,12 @@ apply_editor_test_keyboard_edits :: proc(state: ^Editor_Test_Input_State, world:
 	}
 	if input.keyboard.editor_despawn_pressed {
 		return despawn_editor_test_selected_entity(world, state)
+	}
+	if input.editor_add_component_id != "" {
+		return add_editor_test_component(registry, world, state, input.editor_add_component_id)
+	}
+	if input.editor_remove_component_id != "" {
+		return remove_editor_test_component(world, state, input.editor_remove_component_id)
 	}
 	return false
 }
@@ -861,6 +869,179 @@ despawn_editor_test_selected_entity :: proc(world: ^Runtime_World, state: ^Edito
 		set_editor_test_diagnostic(state, "Could not despawn entity: %s", runtime_error_label(err))
 	}
 	return true
+}
+
+add_editor_test_component :: proc(registry: Runtime_Component_Registry, world: ^Runtime_World, state: ^Editor_Test_Input_State, component_id: string) -> bool {
+	if !state.has_selected_entity {
+		return false
+	}
+	definition, found := runtime_find_component(registry, component_id)
+	if !found {
+		set_editor_test_diagnostic(state, "Unknown component: %s", component_id)
+		return true
+	}
+	if _, entity_err := runtime_world_entity(world^, state.selected_entity); entity_err != .None {
+		set_editor_test_diagnostic(state, "Could not add component: %s", runtime_error_label(entity_err))
+		return true
+	}
+	has_component, has_err := runtime_world_has_component(world^, state.selected_entity, component_id)
+	if has_err != .None {
+		set_editor_test_diagnostic(state, "Could not add component: %s", runtime_error_label(has_err))
+		return true
+	}
+	if has_component {
+		set_editor_test_diagnostic(state, "Component already present: %s", component_id)
+		return true
+	}
+
+	fields := make([]Runtime_Component_Field_Value, len(definition.fields))
+	if fields == nil && len(definition.fields) > 0 {
+		set_editor_test_diagnostic(state, "Could not add component: Out_Of_Memory")
+		return true
+	}
+	defer delete(fields)
+	for field, index in definition.fields {
+		fields[index] = Runtime_Component_Field_Value{
+			name = field.name,
+			value = editor_test_default_component_value(component_id, field),
+		}
+	}
+	set_err := runtime_world_set_component(world, state.selected_entity, component_id, fields)
+	if set_err != .None {
+		set_editor_test_diagnostic(state, "Could not add component: %s", runtime_error_label(set_err))
+		return true
+	}
+
+	clear_editor_test_field_command_stack(&state.undo_stack, &state.undo_len)
+	clear_editor_test_field_command_stack(&state.redo_stack, &state.redo_len)
+	clear_editor_test_text_input(state)
+	clear_editor_test_diagnostic(state)
+	if len(definition.fields) > 0 {
+		state.selected_property_component = component_id
+		state.selected_property_field = definition.fields[0].name
+		state.selected_property_lane = 0
+		state.has_selected_property = true
+	} else {
+		state.has_selected_property = false
+		state.selected_property_component = ""
+		state.selected_property_field = ""
+		state.selected_property_lane = 0
+	}
+	return true
+}
+
+remove_editor_test_component :: proc(world: ^Runtime_World, state: ^Editor_Test_Input_State, component_id: string) -> bool {
+	if !state.has_selected_entity {
+		return false
+	}
+	has_component, has_err := runtime_world_has_component(world^, state.selected_entity, component_id)
+	if has_err != .None {
+		set_editor_test_diagnostic(state, "Could not remove component: %s", runtime_error_label(has_err))
+		return true
+	}
+	if !has_component {
+		set_editor_test_diagnostic(state, "Component not present: %s", component_id)
+		return true
+	}
+	_, remove_err := runtime_world_remove_component(world, state.selected_entity, component_id)
+	if remove_err != .None {
+		set_editor_test_diagnostic(state, "Could not remove component: %s", runtime_error_label(remove_err))
+		return true
+	}
+
+	clear_editor_test_field_command_stack(&state.undo_stack, &state.undo_len)
+	clear_editor_test_field_command_stack(&state.redo_stack, &state.redo_len)
+	if state.has_selected_property && state.selected_property_component == component_id {
+		state.has_selected_property = false
+		state.selected_property_component = ""
+		state.selected_property_field = ""
+		state.selected_property_lane = 0
+		clear_editor_test_text_input(state)
+	}
+	clear_editor_test_diagnostic(state)
+	return true
+}
+
+editor_test_default_component_value :: proc(component_id: string, field: Runtime_Component_Field_Definition) -> Runtime_Component_Value {
+	switch field.value_type {
+	case .Boolean:
+		switch component_id {
+		case RENDERER_COMPONENT_ID:
+			switch field.name {
+			case "hdr", "postprocess_enabled", "bloom_enabled", "vignette_enabled", "chromatic_aberration_enabled":
+				return runtime_component_value_boolean(true)
+			}
+		}
+		return runtime_component_value_boolean(false)
+	case .Int:
+		if component_id == GEOMETRY_PRIMITIVE_COMPONENT_ID {
+			switch field.name {
+			case "segments":
+				return runtime_component_value_int(16)
+			case "rings":
+				return runtime_component_value_int(8)
+			}
+		}
+		return runtime_component_value_int(0)
+	case .Float:
+		if component_id == RENDERER_COMPONENT_ID {
+			switch field.name {
+			case "bloom_threshold":
+				return runtime_component_value_float(0.85)
+			case "bloom_intensity":
+				return runtime_component_value_float(0.12)
+			case "bloom_radius":
+				return runtime_component_value_float(1.0)
+			case "vignette_strength":
+				return runtime_component_value_float(0.24)
+			case "vignette_radius":
+				return runtime_component_value_float(0.82)
+			case "chromatic_aberration_strength":
+				return runtime_component_value_float(0.0025)
+			}
+		}
+		return runtime_component_value_float(0.0)
+	case .Vec3:
+		switch component_id {
+		case TRANSFORM_COMPONENT_ID:
+			if field.name == "scale" {
+				return runtime_component_value_vec3({1.0, 1.0, 1.0})
+			}
+		case CUBE_RENDERER_COMPONENT_ID:
+			if field.name == "color" {
+				return runtime_component_value_vec3({1.0, 1.0, 1.0})
+			}
+		case SURFACE_MATERIAL_COMPONENT_ID:
+			if field.name == "base_color" {
+				return runtime_component_value_vec3({1.0, 1.0, 1.0})
+			}
+		}
+		return runtime_component_value_vec3({0.0, 0.0, 0.0})
+	case .String:
+		switch component_id {
+		case GEOMETRY_PRIMITIVE_COMPONENT_ID:
+			if field.name == "primitive" {
+				return runtime_component_value_string("cube")
+			}
+		case RENDERER_COMPONENT_ID:
+			switch field.name {
+			case "tone_mapping":
+				return runtime_component_value_string("aces")
+			case "antialiasing":
+				return runtime_component_value_string("fxaa")
+			}
+		case "scrapbot.ui.canvas":
+			if field.name == "scale_mode" {
+				return runtime_component_value_string("none")
+			}
+		case "scrapbot.ui.layout.item":
+			if field.name == "align" {
+				return runtime_component_value_string("start")
+			}
+		}
+		return runtime_component_value_string("")
+	}
+	return Runtime_Component_Value{}
 }
 
 clear_editor_test_selection :: proc(state: ^Editor_Test_Input_State) {

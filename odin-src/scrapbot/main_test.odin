@@ -640,6 +640,124 @@ entity_count = 1
 }
 
 @(test)
+test_run_test_command_replays_editor_add_component :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-add-component")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Add Component Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+
+local Extra = ecs.component("extra", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Add Component Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.flag]
+value = 1
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 2
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_add_component = "extra"
+
+[[expect.editor]]
+selected_entity = "target"
+selected_has_component = "extra"
+selected_component = "extra"
+selected_field = "value"
+
+[[expect.field]]
+entity = "target"
+component = "extra"
+field = "value"
+equals_int = 0
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
+test_run_test_command_replays_editor_remove_component :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-remove-component")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Remove Component Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+scripts = ["scripts/components.luau"]
+`)
+	write_file(t, root, "scripts/components.luau", `local Flag = ecs.component("flag", {
+  fields = ecs.fields({
+    value = "int",
+  }),
+})
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Remove Component Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components.flag]
+value = 1
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 2
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+editor_remove_component = "flag"
+
+[[expect.editor]]
+selected_entity = "target"
+selected_missing_component = "flag"
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_run_test_command_replays_editor_entity_scroll_selection :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-test-editor-entity-scroll-selection")
 	defer os.remove_all(root)

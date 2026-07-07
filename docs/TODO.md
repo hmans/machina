@@ -155,7 +155,8 @@
 - [x] Add retained scroll-view/vgroup routing for Odin inspector scrolling.
 - [ ] Add visual scroll support to inspector component vgroups.
 - [ ] Add typed inspector controls for floats, ints, strings, and enums.
-- [ ] Add editor controls to add and remove components on the selected entity.
+- [x] Add first-pass editor add/remove component replay controls.
+- [ ] Add visible editor chrome controls to add and remove components on the selected entity.
 - [x] Add first-pass editor spawn and despawn replay/SDL controls.
 - [ ] Add visible editor chrome controls to spawn and despawn entities.
 - [ ] Persist inspector edits back to text scene files.

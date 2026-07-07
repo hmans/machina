@@ -51,6 +51,8 @@ Test_Editor_Expectation :: struct {
 	selected_entity:        string,
 	has_entity_count:      bool,
 	entity_count:          int,
+	selected_has_component: string,
+	selected_missing_component: string,
 	has_system_scroll_y:    bool,
 	system_scroll_y:        f32,
 	has_inspector_scroll_y: bool,
@@ -132,6 +134,8 @@ Test_Manifest_Editor_Expectation_State :: struct {
 	selected_entity:        string,
 	has_entity_count:      bool,
 	entity_count:          int,
+	selected_has_component: string,
+	selected_missing_component: string,
 	has_system_scroll_y:    bool,
 	system_scroll_y:        f32,
 	has_inspector_scroll_y: bool,
@@ -425,6 +429,8 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 		}
 		ok := expect.selected_entity != "" ||
 		      expect.has_entity_count ||
+		      expect.selected_has_component != "" ||
+		      expect.selected_missing_component != "" ||
 		      expect.has_system_scroll_y ||
 		      expect.has_inspector_scroll_y ||
 		      (expect.selected_component != "" && expect.selected_field != "") ||
@@ -438,6 +444,8 @@ parse_test_manifest :: proc(contents: string) -> (Test_Manifest, bool) {
 				selected_entity = expect.selected_entity,
 				has_entity_count = expect.has_entity_count,
 				entity_count = expect.entity_count,
+				selected_has_component = expect.selected_has_component,
+				selected_missing_component = expect.selected_missing_component,
 				has_system_scroll_y = expect.has_system_scroll_y,
 				system_scroll_y = expect.system_scroll_y,
 				has_inspector_scroll_y = expect.has_inspector_scroll_y,
@@ -743,6 +751,42 @@ parse_test_manifest_editor_expect_key :: proc(expect: ^Test_Manifest_Editor_Expe
 		}
 		expect.entity_count = parsed
 		expect.has_entity_count = true
+		return true
+	case "selected_has_component":
+		parsed, owned, ok := parse_basic_string_unescaped(value)
+		if !ok || parsed == "" || expect.selected_has_component != "" {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if owned != "" {
+			expect.selected_has_component = owned
+		} else {
+			clone_ok: bool
+			expect.selected_has_component, clone_ok = clone_test_string(parsed)
+			if !clone_ok {
+				return false
+			}
+		}
+		return true
+	case "selected_missing_component":
+		parsed, owned, ok := parse_basic_string_unescaped(value)
+		if !ok || parsed == "" || expect.selected_missing_component != "" {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if owned != "" {
+			expect.selected_missing_component = owned
+		} else {
+			clone_ok: bool
+			expect.selected_missing_component, clone_ok = clone_test_string(parsed)
+			if !clone_ok {
+				return false
+			}
+		}
 		return true
 	case "system_scroll_y":
 		if expect.has_system_scroll_y {
@@ -1174,6 +1218,42 @@ parse_test_manifest_input_key :: proc(input: ^Test_Manifest_Input_State, key, va
 		}
 		input.input.keyboard.editor_despawn_pressed = parsed
 		return true
+	case "editor_add_component":
+		parsed, owned, ok := parse_basic_string_unescaped(value)
+		if !ok || parsed == "" || input.input.editor_add_component_id != "" {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if owned != "" {
+			input.input.editor_add_component_id = owned
+		} else {
+			clone_ok: bool
+			input.input.editor_add_component_id, clone_ok = clone_test_string(parsed)
+			if !clone_ok {
+				return false
+			}
+		}
+		return true
+	case "editor_remove_component":
+		parsed, owned, ok := parse_basic_string_unescaped(value)
+		if !ok || parsed == "" || input.input.editor_remove_component_id != "" {
+			if owned != "" {
+				delete(owned)
+			}
+			return false
+		}
+		if owned != "" {
+			input.input.editor_remove_component_id = owned
+		} else {
+			clone_ok: bool
+			input.input.editor_remove_component_id, clone_ok = clone_test_string(parsed)
+			if !clone_ok {
+				return false
+			}
+		}
+		return true
 	case "text_input":
 		parsed, owned, ok := parse_basic_string_unescaped(value)
 		if !ok {
@@ -1337,6 +1417,12 @@ free_test_input_frame :: proc(input_frame: Step_Input_Frame) {
 	if input_frame.input.clipboard_text != "" {
 		delete(input_frame.input.clipboard_text)
 	}
+	if input_frame.input.editor_add_component_id != "" {
+		delete(input_frame.input.editor_add_component_id)
+	}
+	if input_frame.input.editor_remove_component_id != "" {
+		delete(input_frame.input.editor_remove_component_id)
+	}
 }
 
 free_test_input_state :: proc(input: Test_Manifest_Input_State) {
@@ -1345,6 +1431,12 @@ free_test_input_state :: proc(input: Test_Manifest_Input_State) {
 	}
 	if input.input.clipboard_text != "" {
 		delete(input.input.clipboard_text)
+	}
+	if input.input.editor_add_component_id != "" {
+		delete(input.input.editor_add_component_id)
+	}
+	if input.input.editor_remove_component_id != "" {
+		delete(input.input.editor_remove_component_id)
 	}
 }
 
@@ -1364,6 +1456,12 @@ free_test_expectation :: proc(expectation: Test_Expectation) {
 free_test_editor_expectation :: proc(expectation: Test_Editor_Expectation) {
 	if expectation.selected_entity != "" {
 		delete(expectation.selected_entity)
+	}
+	if expectation.selected_has_component != "" {
+		delete(expectation.selected_has_component)
+	}
+	if expectation.selected_missing_component != "" {
+		delete(expectation.selected_missing_component)
 	}
 	if expectation.selected_component != "" {
 		delete(expectation.selected_component)
@@ -1397,6 +1495,12 @@ free_test_expectation_state :: proc(expect: Test_Manifest_Expectation_State) {
 free_test_editor_expectation_state :: proc(expect: Test_Manifest_Editor_Expectation_State) {
 	if expect.selected_entity != "" {
 		delete(expect.selected_entity)
+	}
+	if expect.selected_has_component != "" {
+		delete(expect.selected_has_component)
+	}
+	if expect.selected_missing_component != "" {
+		delete(expect.selected_missing_component)
 	}
 	if expect.selected_component != "" {
 		delete(expect.selected_component)
@@ -1439,6 +1543,24 @@ test_editor_expectation_matches :: proc(world: Runtime_World, editor_state: ^Edi
 	}
 	if expectation.has_entity_count && runtime_world_entity_count(world) != expectation.entity_count {
 		return false
+	}
+	if expectation.selected_has_component != "" {
+		if !editor_state.has_selected_entity {
+			return false
+		}
+		has_component, err := runtime_world_has_component(world, editor_state.selected_entity, expectation.selected_has_component)
+		if err != .None || !has_component {
+			return false
+		}
+	}
+	if expectation.selected_missing_component != "" {
+		if !editor_state.has_selected_entity {
+			return false
+		}
+		has_component, err := runtime_world_has_component(world, editor_state.selected_entity, expectation.selected_missing_component)
+		if err != .None || has_component {
+			return false
+		}
 	}
 	if expectation.has_system_scroll_y && !test_float_approx_equal(editor_state.system_scroll_y, expectation.system_scroll_y) {
 		return false
@@ -1556,6 +1678,26 @@ test_editor_expectation_failure_message :: proc(world: Runtime_World, editor_sta
 		append_test_format(&builder, "%d", runtime_world_entity_count(world))
 		wrote = true
 	}
+	if expectation.selected_has_component != "" {
+		if wrote {
+			strings.write_string(&builder, "; ")
+		}
+		strings.write_string(&builder, "editor.selected_has_component: expected \"")
+		strings.write_string(&builder, expectation.selected_has_component)
+		strings.write_string(&builder, "\", got ")
+		append_test_selected_component_presence_text(&builder, world, editor_state, expectation.selected_has_component)
+		wrote = true
+	}
+	if expectation.selected_missing_component != "" {
+		if wrote {
+			strings.write_string(&builder, "; ")
+		}
+		strings.write_string(&builder, "editor.selected_missing_component: expected missing \"")
+		strings.write_string(&builder, expectation.selected_missing_component)
+		strings.write_string(&builder, "\", got ")
+		append_test_selected_component_presence_text(&builder, world, editor_state, expectation.selected_missing_component)
+		wrote = true
+	}
 	if expectation.has_system_scroll_y {
 		if wrote {
 			strings.write_string(&builder, "; ")
@@ -1653,6 +1795,23 @@ test_editor_expectation_failure_message :: proc(world: Runtime_World, editor_sta
 		wrote = true
 	}
 	return strings.clone(strings.to_string(builder))
+}
+
+append_test_selected_component_presence_text :: proc(builder: ^strings.Builder, world: Runtime_World, editor_state: ^Editor_Test_Input_State, component_id: string) {
+	if !editor_state.has_selected_entity {
+		strings.write_string(builder, "no selected entity")
+		return
+	}
+	has_component, err := runtime_world_has_component(world, editor_state.selected_entity, component_id)
+	if err != .None {
+		strings.write_string(builder, runtime_error_label(err))
+		return
+	}
+	if has_component {
+		strings.write_string(builder, "present")
+	} else {
+		strings.write_string(builder, "missing")
+	}
 }
 
 append_test_expected_value_text :: proc(builder: ^strings.Builder, value: Test_Expected_Value) {
