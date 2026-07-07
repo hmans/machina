@@ -149,7 +149,7 @@ run_wgpu_check :: proc(args: []string, emit_output: bool) -> int {
 		return 1
 	}
 
-	smoke_error, smoke_ok := wgpu_smoke_offscreen_clear_readback(loaded.procs)
+	smoke_error, smoke_ok := wgpu_smoke_offscreen_triangle_readback(loaded.procs)
 	if !smoke_ok {
 		if emit_output {
 			fmt.eprintf("wgpu-native offscreen smoke failed: %s\n", smoke_error)
@@ -159,7 +159,7 @@ run_wgpu_check :: proc(args: []string, emit_output: bool) -> int {
 	}
 
 	if emit_output {
-		fmt.printf("wgpu-native offscreen OK: %s\n", path)
+		fmt.printf("wgpu-native offscreen pipeline OK: %s\n", path)
 	}
 	return 0
 }

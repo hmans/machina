@@ -82,6 +82,14 @@ test_wgpu_string_view_can_hold_explicit_pointer_and_length :: proc(t: ^testing.T
 }
 
 @(test)
+test_wgpu_string_view_can_point_at_odin_string_data :: proc(t: ^testing.T) {
+	value := "main"
+	view := wgpu_string_view_from_string(value)
+	testing.expect_value(t, view.data, raw_data(value))
+	testing.expect_value(t, view.length, c.size_t(4))
+}
+
+@(test)
 test_wgpu_renderer_formats_match_vendored_binding_values :: proc(t: ^testing.T) {
 	testing.expect_value(t, WGPU_DEFAULT_TARGET_FORMAT, WGPU_Texture_Format(0x18))
 	testing.expect_value(t, WGPU_DEPTH_FORMAT, WGPU_Texture_Format(0x28))
@@ -771,6 +779,45 @@ test_wgpu_offscreen_clear_readback_smoke_reports_bad_pixel :: proc(t: ^testing.T
 }
 
 @(test)
+test_wgpu_offscreen_triangle_readback_smoke_records_pipeline_draw_path :: proc(t: ^testing.T) {
+	ctx := WGPU_Test_Resolver_Context{}
+	procs, missing, procs_ok := wgpu_resolve_offscreen_procs(wgpu_test_symbol_resolver, rawptr(&ctx))
+	testing.expect_value(t, procs_ok, true)
+	testing.expect_value(t, missing, "")
+	procs.buffer_get_mapped_range = wgpu_test_buffer_get_mapped_range_red
+
+	smoke_error, smoke_ok := wgpu_smoke_offscreen_triangle_readback(procs)
+	testing.expect_value(t, smoke_ok, true)
+	testing.expect_value(t, smoke_error, "")
+}
+
+@(test)
+test_wgpu_offscreen_triangle_readback_smoke_reports_pipeline_failure :: proc(t: ^testing.T) {
+	ctx := WGPU_Test_Resolver_Context{}
+	procs, missing, procs_ok := wgpu_resolve_offscreen_procs(wgpu_test_symbol_resolver, rawptr(&ctx))
+	testing.expect_value(t, procs_ok, true)
+	testing.expect_value(t, missing, "")
+	procs.device_create_render_pipeline = wgpu_test_device_create_render_pipeline_failure
+
+	smoke_error, smoke_ok := wgpu_smoke_offscreen_triangle_readback(procs)
+	testing.expect_value(t, smoke_ok, false)
+	testing.expect_value(t, smoke_error, WGPU_OFFSCREEN_RENDER_PIPELINE_CREATE_ERROR)
+}
+
+@(test)
+test_wgpu_offscreen_triangle_readback_smoke_reports_bad_pixel :: proc(t: ^testing.T) {
+	ctx := WGPU_Test_Resolver_Context{}
+	procs, missing, procs_ok := wgpu_resolve_offscreen_procs(wgpu_test_symbol_resolver, rawptr(&ctx))
+	testing.expect_value(t, procs_ok, true)
+	testing.expect_value(t, missing, "")
+	procs.buffer_get_mapped_range = wgpu_test_buffer_get_mapped_range_black
+
+	smoke_error, smoke_ok := wgpu_smoke_offscreen_triangle_readback(procs)
+	testing.expect_value(t, smoke_ok, false)
+	testing.expect_value(t, smoke_error, WGPU_OFFSCREEN_READBACK_ERROR)
+}
+
+@(test)
 test_wgpu_offscreen_dynamic_library_loads_proc_table :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "wgpu-offscreen-dynlib")
 	defer os.remove_all(root)
@@ -960,15 +1007,15 @@ test_wgpu_default_context_smoke_uses_discovered_zig_package_cache_library :: pro
 }
 
 @(test)
-test_wgpu_default_clear_readback_smoke_uses_discovered_zig_package_cache_library :: proc(t: ^testing.T) {
-	root := make_test_project_root(t, "wgpu-default-clear-readback-smoke")
+test_wgpu_default_triangle_readback_smoke_uses_discovered_zig_package_cache_library :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "wgpu-default-triangle-readback-smoke")
 	defer os.remove_all(root)
 	defer delete(root)
 
 	cache_library_path := stage_fake_wgpu_zig_package_library(t, root)
 	defer delete(cache_library_path)
 
-	smoke_path, missing, ok := wgpu_smoke_default_offscreen_clear_readback(root)
+	smoke_path, missing, ok := wgpu_smoke_default_offscreen_triangle_readback(root)
 	defer if ok { delete(smoke_path) }
 	testing.expect_value(t, ok, true)
 	testing.expect_value(t, missing, "")
@@ -1068,7 +1115,7 @@ WGPU_Request_Adapter_Callback :: proc "c" (status: u32, adapter: rawptr, message
 WGPU_Request_Device_Callback :: proc "c" (status: u32, device: rawptr, message: WGPU_String_View, userdata1, userdata2: rawptr)
 WGPU_Buffer_Map_Callback :: proc "c" (status: u32, message: WGPU_String_View, userdata1, userdata2: rawptr)
 
-FAKE_WGPU_MAPPED_WHITE_PIXEL := [?]u8{255, 255, 255, 255}
+FAKE_WGPU_MAPPED_PIXEL := [?]u8{0, 0, 255, 255}
 
 WGPU_Buffer_Map_Callback_Info :: struct #align(align_of(rawptr)) {
 	next_in_chain: rawptr,
@@ -1407,7 +1454,7 @@ wgpuBufferGetMappedRange :: proc "c" (buffer: rawptr, offset, size: c.size_t) ->
 	_ = buffer
 	_ = offset
 	_ = size
-	return rawptr(&FAKE_WGPU_MAPPED_WHITE_PIXEL[0])
+	return rawptr(&FAKE_WGPU_MAPPED_PIXEL[0])
 }
 
 @(export)
@@ -1939,6 +1986,7 @@ WGPU_Test_Resolver_Context :: struct {
 }
 
 wgpu_test_mapped_white_pixel := [?]u8{255, 255, 255, 255}
+wgpu_test_mapped_red_pixel := [?]u8{0, 0, 255, 255}
 wgpu_test_mapped_black_pixel := [?]u8{0, 0, 0, 255}
 
 wgpu_test_symbol_resolver :: proc(name: string, user_data: rawptr) -> rawptr {
@@ -2165,6 +2213,12 @@ wgpu_test_device_create_render_pipeline :: proc "c" (device: WGPU_Device, descri
 	return WGPU_Render_Pipeline(rawptr(uintptr(0x1014)))
 }
 
+wgpu_test_device_create_render_pipeline_failure :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Render_Pipeline_Descriptor) -> WGPU_Render_Pipeline {
+	_ = device
+	_ = descriptor
+	return nil
+}
+
 wgpu_test_device_create_command_encoder :: proc "c" (device: WGPU_Device, descriptor: ^WGPU_Command_Encoder_Descriptor) -> WGPU_Command_Encoder {
 	_ = device
 	_ = descriptor
@@ -2351,6 +2405,13 @@ wgpu_test_buffer_get_mapped_range :: proc "c" (buffer: WGPU_Buffer, offset, size
 	_ = offset
 	_ = size
 	return rawptr(&wgpu_test_mapped_white_pixel[0])
+}
+
+wgpu_test_buffer_get_mapped_range_red :: proc "c" (buffer: WGPU_Buffer, offset, size: c.size_t) -> rawptr {
+	_ = buffer
+	_ = offset
+	_ = size
+	return rawptr(&wgpu_test_mapped_red_pixel[0])
 }
 
 wgpu_test_buffer_get_mapped_range_black :: proc "c" (buffer: WGPU_Buffer, offset, size: c.size_t) -> rawptr {
