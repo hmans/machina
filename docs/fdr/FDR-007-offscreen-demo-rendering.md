@@ -7,12 +7,13 @@
 
 Offscreen demo rendering proves that Scrapbot can initialize the WebGPU backend, create GPU resources, render through a graphics pipeline, read pixels back, and write an inspectable image artifact without opening a window.
 
-**Odin migration note:** During the staged Odin rewrite, the Odin `render` and `render-test` commands currently validate projects, parse render flags, run bounded Luau frame simulation, check selected entity ids, write first-pass software PNG/BMP artifacts plus metadata sidecars from ECS render data, draw deterministic software editor chrome pixels for `--editor`, and verify `render-test` foreground coverage, visible components, and color groups. The Odin `visual-test` command can update golden fixtures, compare expected and actual PNG/BMP images with tolerance metrics, and fail on mismatches against that first-pass software artifact path. WebGPU readback and hidden headful smoke paths still remain in the Zig implementation until the Odin `wgpu-native` renderer lands.
+**Odin migration note:** During the staged Odin rewrite, the Odin `render` and `render-test` commands validate projects, parse render flags, run bounded Luau frame simulation, check selected entity ids, write first-pass software or WebGPU PNG/BMP artifacts plus metadata sidecars from ECS render data, draw deterministic software editor chrome pixels for `--editor`, and verify `render-test` foreground coverage, visible components, and color groups. The Odin `visual-test` command can update golden fixtures, compare expected and actual PNG/BMP images with tolerance metrics, and fail on mismatches against those offscreen artifact paths. Bounded hidden `run --backend wgpu` can now write one final offscreen WebGPU frame after simulation; hidden headful surface presentation still remains in Zig until the Odin SDL/window loop lands.
 
 ## Behavior
 
 - Users can run `scrapbot render [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [path] [output.png]` against a valid project.
 - Users can run `scrapbot render-test [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [path] [output.png]` to render offscreen and verify the generated image.
+- Users can run `scrapbot run [path] --frames N --hidden --backend wgpu --render-output output.png` to execute a bounded hidden Odin frame loop and write the final simulated frame through the offscreen WebGPU renderer.
 - The command validates the project before rendering.
 - The command loads the project's default scene and draws one frame of its renderable mesh and UI overlay entities into an offscreen texture by default.
 - When `--frames N` is greater than one, the command reuses the same offscreen GPU resources, runs fixed `1/60` updates, renders each frame, and writes or verifies the final frame.

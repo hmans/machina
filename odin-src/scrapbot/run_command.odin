@@ -4,15 +4,33 @@ import "core:fmt"
 import "core:strings"
 
 Run_Options :: struct {
-	target_path: string,
-	max_frames:  int,
-	editor:      bool,
-	hidden:      bool,
+	target_path:            string,
+	max_frames:             int,
+	editor:                 bool,
+	hidden:                 bool,
+	backend:                Render_Backend,
+	render_output_path:     string,
+	render_output_explicit: bool,
+	render_width:           int,
+	render_height:          int,
+	render_pixel_scale:     f32,
+}
+
+Run_Render_Result :: struct {
+	rendered:    bool,
+	output_path: string,
+	width:       int,
+	height:      int,
+	pixel_scale: f32,
 }
 
 parse_run_options :: proc(args: []string, emit_output: bool) -> (Run_Options, bool) {
 	options := Run_Options{
 		target_path = ".",
+		render_output_path = DEFAULT_RUN_RENDER_OUTPUT,
+		render_width = DEFAULT_RENDER_WIDTH,
+		render_height = DEFAULT_RENDER_HEIGHT,
+		render_pixel_scale = DEFAULT_RENDER_PIXEL_SCALE,
 	}
 
 	i := 0
@@ -59,6 +77,144 @@ parse_run_options :: proc(args: []string, emit_output: bool) -> (Run_Options, bo
 			i += 1
 			continue
 		}
+		if strings.has_prefix(arg, "--backend=") {
+			backend, ok := parse_render_backend(arg[len("--backend="):])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --backend: %s\n", arg[len("--backend="):])
+				}
+				return options, false
+			}
+			options.backend = backend
+			i += 1
+			continue
+		}
+		if arg == "--backend" {
+			if i + 1 >= len(args) {
+				if emit_output {
+					fmt.eprintln("missing value for --backend")
+				}
+				return options, false
+			}
+			backend, ok := parse_render_backend(args[i + 1])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --backend: %s\n", args[i + 1])
+				}
+				return options, false
+			}
+			options.backend = backend
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--render-output=") {
+			options.render_output_path = arg[len("--render-output="):]
+			options.render_output_explicit = true
+			i += 1
+			continue
+		}
+		if arg == "--render-output" {
+			if i + 1 >= len(args) {
+				if emit_output {
+					fmt.eprintln("missing value for --render-output")
+				}
+				return options, false
+			}
+			options.render_output_path = args[i + 1]
+			options.render_output_explicit = true
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--render-width=") {
+			width, ok := parse_positive_int(arg[len("--render-width="):])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --render-width: %s\n", arg[len("--render-width="):])
+				}
+				return options, false
+			}
+			options.render_width = width
+			i += 1
+			continue
+		}
+		if arg == "--render-width" {
+			if i + 1 >= len(args) {
+				if emit_output {
+					fmt.eprintln("missing value for --render-width")
+				}
+				return options, false
+			}
+			width, ok := parse_positive_int(args[i + 1])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --render-width: %s\n", args[i + 1])
+				}
+				return options, false
+			}
+			options.render_width = width
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--render-height=") {
+			height, ok := parse_positive_int(arg[len("--render-height="):])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --render-height: %s\n", arg[len("--render-height="):])
+				}
+				return options, false
+			}
+			options.render_height = height
+			i += 1
+			continue
+		}
+		if arg == "--render-height" {
+			if i + 1 >= len(args) {
+				if emit_output {
+					fmt.eprintln("missing value for --render-height")
+				}
+				return options, false
+			}
+			height, ok := parse_positive_int(args[i + 1])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --render-height: %s\n", args[i + 1])
+				}
+				return options, false
+			}
+			options.render_height = height
+			i += 2
+			continue
+		}
+		if strings.has_prefix(arg, "--render-pixel-scale=") {
+			pixel_scale, ok := parse_positive_f32(arg[len("--render-pixel-scale="):])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --render-pixel-scale: %s\n", arg[len("--render-pixel-scale="):])
+				}
+				return options, false
+			}
+			options.render_pixel_scale = pixel_scale
+			i += 1
+			continue
+		}
+		if arg == "--render-pixel-scale" {
+			if i + 1 >= len(args) {
+				if emit_output {
+					fmt.eprintln("missing value for --render-pixel-scale")
+				}
+				return options, false
+			}
+			pixel_scale, ok := parse_positive_f32(args[i + 1])
+			if !ok {
+				if emit_output {
+					fmt.eprintf("invalid --render-pixel-scale: %s\n", args[i + 1])
+				}
+				return options, false
+			}
+			options.render_pixel_scale = pixel_scale
+			i += 2
+			continue
+		}
 		if len(arg) > 0 && arg[0] == '-' {
 			if emit_output {
 				fmt.eprintf("unknown argument: %s\n", arg)
@@ -82,10 +238,34 @@ parse_run_options :: proc(args: []string, emit_output: bool) -> (Run_Options, bo
 		}
 		return options, false
 	}
+	if options.backend == .WebGPU && options.editor {
+		if emit_output {
+			fmt.eprintln("run failed: WebGPU editor chrome is not ported yet")
+		}
+		return options, false
+	}
+	if options.backend == .WebGPU && !options.hidden {
+		if emit_output {
+			fmt.eprintln("run failed: WebGPU presentation is not ported yet; use --hidden --frames")
+		}
+		return options, false
+	}
+	if options.backend == .WebGPU && options.max_frames == 0 {
+		if emit_output {
+			fmt.eprintln("run failed: WebGPU run rendering requires --frames")
+		}
+		return options, false
+	}
+	if options.render_output_explicit && options.backend != .WebGPU {
+		if emit_output {
+			fmt.eprintln("--render-output requires --backend wgpu")
+		}
+		return options, false
+	}
 	return options, true
 }
 
-print_run_result :: proc(result: Project_Check_Result, options: Run_Options, completed_frames: int, report: Live_Project_Run_Report) {
+print_run_result :: proc(result: Project_Check_Result, options: Run_Options, completed_frames: int, report: Live_Project_Run_Report, render_result: Run_Render_Result) {
 	fmt.printf("Loaded project %s\n", result.project.name)
 	fmt.printf("Selected scene: %s\n", result.project.default_scene)
 	fmt.printf("Scene entities: %d\n", result.scene.entity_count)
@@ -117,7 +297,11 @@ print_run_result :: proc(result: Project_Check_Result, options: Run_Options, com
 	} else {
 		fmt.println("Execution: pending unbounded Odin window loop")
 	}
-	fmt.println("Renderer backend: pending Odin wgpu-native binding")
+	if render_result.rendered {
+		fmt.printf("Rendered frame: %s\n", render_result.output_path)
+		fmt.printf("Render viewport: %dx%d @%gx\n", render_result.width, render_result.height, render_result.pixel_scale)
+	}
+	fmt.printf("Renderer backend: %s\n", render_backend_label(options.backend))
 }
 
 print_run_reload_event :: proc(event: Live_Reload_Event) {

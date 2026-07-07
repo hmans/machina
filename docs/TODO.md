@@ -118,12 +118,13 @@
 - [x] Add first-pass Odin `wgpu-native` offscreen WGSL pipeline draw/readback smoke through the default dynamic loader.
 - [x] Add first-pass Odin `wgpu-native` offscreen image artifact output through the default dynamic loader.
 - [x] Port first-pass Odin WebGPU scene render image output behind `render --backend wgpu`.
+- [x] Port first-pass bounded hidden Odin `run --backend wgpu` offscreen frame output.
 - [ ] Port remaining unbounded/window-loop reload diagnostics from Zig to Odin.
 - [ ] Replace the vendored Zig `wgpu-native` binding with Odin C ABI bindings.
 - [x] Port first-pass Odin software offscreen PNG/BMP image output and render-test pixel verification.
 - [x] Port first-pass Odin visual-test golden update/comparison, tolerance checks, and render artifact metadata sidecars.
 - [x] Port first-pass Odin software editor chrome pixels for offscreen render/visual artifacts.
-- [ ] Port Odin hidden headful WebGPU smoke paths.
+- [ ] Port Odin hidden headful WebGPU surface smoke paths.
 - [ ] Complete unbounded/window-loop Odin project/scene/script/native live reload integration and replacement of the Zig reload path.
 - [ ] Remove Zig build/test/dependency surfaces after Odin parity is verified.
 - [ ] Add scroll support to inspector component vgroups.

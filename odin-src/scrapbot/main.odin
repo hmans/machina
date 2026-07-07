@@ -108,7 +108,7 @@ Usage:
   scrapbot step [path] [--frames N] [--dt seconds] [--format text|json]
   scrapbot bench [path] [--frames N] [--dt seconds] [--format text|json]
   scrapbot test [tests-path|project-path] [--format text|json]
-  scrapbot run [path] [--frames N] [--editor] [--hidden]
+  scrapbot run [path] [--frames N] [--editor] [--hidden] [--backend software|wgpu] [--render-output output.png] [--render-width PX] [--render-height PX] [--render-pixel-scale S]
   scrapbot render [--backend software|wgpu] [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [path] [output.png]
   scrapbot render-test [--backend software|wgpu] [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [path] [output.png]
   scrapbot visual-test [--backend software|wgpu] [--editor] [--select entity-id] [--frames N] [--width PX] [--height PX] [--pixel-scale S] [--update] <path> <expected.png> [actual.png]
@@ -120,7 +120,7 @@ Odin migration status:
   init, check, build, deterministic step, benchmark, test discovery, and bounded run
   currently cover text project creation, validation, packaging, and schedule-aware frame accounting slices.
   Luau execution, native module execution, retained scene UI/editor input replay, software render/visual output,
-  image comparison, and first-pass offscreen editor chrome are partially ported;
+  WebGPU offscreen run/render output, image comparison, and first-pass offscreen editor chrome are partially ported;
   WebGPU presentation, unbounded window-loop reload diagnostics, and the full editor shell are still being ported.`)
 }
 
@@ -424,8 +424,49 @@ run_project :: proc(args: []string, emit_output: bool) -> int {
 		completed_frames = simulation.completed_frames
 	}
 
+	render_result := Run_Render_Result{}
+	if options.backend == .WebGPU {
+		_, extract_err := render_extract_scene(live.check.scene.world)
+		if extract_err != .None {
+			if emit_output {
+				fmt.eprintln("run render failed: invalid scene render data")
+			}
+			return 1
+		}
+		render_options := Render_Options{
+			target_path = options.target_path,
+			output_path = options.render_output_path,
+			frames = options.max_frames,
+			width = options.render_width,
+			height = options.render_height,
+			pixel_scale = options.render_pixel_scale,
+			backend = options.backend,
+		}
+		_, image_err := render_write_scene_image(live.check.scene.world, render_options, false)
+		if image_err != .None {
+			if emit_output {
+				fmt.eprintf("run render failed: %s\n", render_image_error_message(image_err))
+			}
+			return 1
+		}
+		metadata_err := render_write_artifact_metadata(render_options.output_path, render_options)
+		if metadata_err != .None {
+			if emit_output {
+				fmt.eprintf("run render metadata failed: %s\n", render_image_error_message(metadata_err))
+			}
+			return 1
+		}
+		render_result = Run_Render_Result{
+			rendered = true,
+			output_path = render_options.output_path,
+			width = render_options.width,
+			height = render_options.height,
+			pixel_scale = render_options.pixel_scale,
+		}
+	}
+
 	if emit_output {
-		print_run_result(live.check, options, completed_frames, run_report)
+		print_run_result(live.check, options, completed_frames, run_report, render_result)
 	}
 	return 0
 }

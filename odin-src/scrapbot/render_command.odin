@@ -11,7 +11,8 @@ DEFAULT_RENDER_FRAMES :: 1
 DEFAULT_RENDER_OUTPUT :: "odin-out/scrapbot-render.png"
 DEFAULT_RENDER_TEST_OUTPUT :: "odin-out/scrapbot-render-test.png"
 DEFAULT_VISUAL_TEST_OUTPUT :: "odin-out/scrapbot-visual-test.png"
-ODIN_SOFTWARE_RENDER_BACKEND :: "odin software offscreen placeholder; WebGPU binding pending"
+DEFAULT_RUN_RENDER_OUTPUT :: "odin-out/scrapbot-run-wgpu.png"
+ODIN_SOFTWARE_RENDER_BACKEND :: "odin software offscreen placeholder"
 ODIN_WGPU_RENDER_BACKEND :: "odin wgpu-native offscreen scene renderer"
 
 Render_Backend :: enum {

@@ -989,16 +989,71 @@ test_run_command_accepts_development_odin_native_project :: proc(t: ^testing.T) 
 
 @(test)
 test_parse_run_options_accepts_frames_editor_and_hidden_flags :: proc(t: ^testing.T) {
-	options, ok := parse_run_options([]string{"--frames", "12", "--editor", "--hidden"}, false)
+	options, ok := parse_run_options(
+		[]string{"--frames", "12", "--editor", "--hidden", "--backend", "software", "--render-width=320", "--render-height", "240", "--render-pixel-scale", "2.0"},
+		false,
+	)
 	testing.expect_value(t, ok, true)
 	testing.expect_value(t, options.max_frames, 12)
 	testing.expect_value(t, options.editor, true)
 	testing.expect_value(t, options.hidden, true)
+	testing.expect_value(t, options.backend, Render_Backend.Software)
+	testing.expect_value(t, options.render_width, 320)
+	testing.expect_value(t, options.render_height, 240)
+	testing.expect_value(t, options.render_pixel_scale, f32(2.0))
 }
 
 @(test)
 test_run_command_rejects_hidden_without_frame_limit :: proc(t: ^testing.T) {
 	exit_code := run_with_output([]string{"scrapbot", "run", "--hidden"}, false)
+	testing.expect_value(t, exit_code, 1)
+}
+
+@(test)
+test_run_command_writes_bounded_hidden_wgpu_frame_with_fake_library :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-run-wgpu-hidden")
+	defer os.remove_all(root)
+	defer delete(root)
+	testing.expect_value(t, init_project(root, "CLI Run WGPU"), Project_Error.None)
+
+	staged_library := stage_fake_wgpu_zig_package_library(t, root)
+	defer delete(staged_library)
+
+	output_path := project_relative_path(root, "wgpu-run.png")
+	defer delete(output_path)
+
+	exit_code := run_with_output(
+		[]string{"scrapbot", "run", root, "--frames", "2", "--hidden", "--backend", "wgpu", "--render-width", "1", "--render-height", "1", "--render-output", output_path},
+		false,
+	)
+	testing.expect_value(t, exit_code, 0)
+
+	image, image_err := render_load_rgb_image(output_path)
+	defer render_image_free(&image)
+	testing.expect_value(t, image_err, Render_Image_Error.None)
+	testing.expect_value(t, image.width, 1)
+	testing.expect_value(t, image.height, 1)
+	expect_render_pixel(t, image, 0, 0, {255, 0, 0})
+
+	metadata_path := render_artifact_metadata_path(output_path)
+	defer delete(metadata_path)
+	metadata, metadata_err := os.read_entire_file(metadata_path, context.allocator)
+	if metadata_err != nil {
+		testing.fail_now(t, "failed to read run render metadata")
+	}
+	defer delete(metadata)
+	testing.expect_value(t, strings.contains(string(metadata), `"backend": "wgpu"`), true)
+}
+
+@(test)
+test_run_command_rejects_wgpu_without_hidden_window_until_presentation_is_ported :: proc(t: ^testing.T) {
+	exit_code := run_with_output([]string{"scrapbot", "run", "--frames", "1", "--backend", "wgpu"}, false)
+	testing.expect_value(t, exit_code, 1)
+}
+
+@(test)
+test_run_command_rejects_wgpu_editor_chrome_until_ported :: proc(t: ^testing.T) {
+	exit_code := run_with_output([]string{"scrapbot", "run", "--frames", "1", "--hidden", "--editor", "--backend", "wgpu"}, false)
 	testing.expect_value(t, exit_code, 1)
 }
 
