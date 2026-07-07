@@ -2413,6 +2413,41 @@ test_run_options_use_sdl_window_loop_for_visible_wgpu_runs :: proc(t: ^testing.T
 }
 
 @(test)
+test_run_result_editor_status_reports_current_odin_surfaces :: proc(t: ^testing.T) {
+	software := Run_Options{backend = .Software, editor = true}
+	software_render := Run_Render_Result{presented = true}
+	software_window := Sdl_Run_Loop_Result{editor_input_routed = true}
+	testing.expect_value(t, run_result_editor_status(software, software_render, software_window), "Editor: first-pass software chrome overlay and input routing")
+
+	wgpu := Run_Options{backend = .WebGPU, editor = true}
+	wgpu_render := Run_Render_Result{presented = true}
+	wgpu_window := Sdl_Run_Loop_Result{editor_input_routed = false}
+	testing.expect_value(t, run_result_editor_status(wgpu, wgpu_render, wgpu_window), "Editor: first-pass WebGPU editor overlay")
+
+	hidden_without_surface := Run_Options{backend = .Software, editor = true, hidden = true, max_frames = 2}
+	testing.expect_value(t, run_result_editor_status(hidden_without_surface, Run_Render_Result{}, Sdl_Run_Loop_Result{}), RUN_EDITOR_NO_VISIBLE_SURFACE)
+}
+
+@(test)
+test_run_result_execution_status_avoids_stale_pending_wording :: proc(t: ^testing.T) {
+	testing.expect_value(
+		t,
+		run_result_execution_status(Run_Options{max_frames = 2}, Sdl_Run_Loop_Result{}),
+		RUN_EXECUTION_ODIN_SCHEDULED_SYSTEMS,
+	)
+	testing.expect_value(
+		t,
+		run_result_execution_status(Run_Options{}, Sdl_Run_Loop_Result{window_opened = true}),
+		RUN_EXECUTION_ODIN_SCHEDULED_SYSTEMS,
+	)
+	testing.expect_value(
+		t,
+		run_result_execution_status(Run_Options{}, Sdl_Run_Loop_Result{}),
+		RUN_EXECUTION_NO_FRAME_LOOP,
+	)
+}
+
+@(test)
 test_print_run_reload_events_since_returns_total_seen_events :: proc(t: ^testing.T) {
 	report := Live_Project_Run_Report{}
 	defer live_project_run_report_free(&report)

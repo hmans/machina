@@ -28,6 +28,13 @@ Run_Render_Result :: struct {
 	renderable_count: int,
 }
 
+RUN_STATUS_NO_UNBOUNDED_LOOP :: "Frames: no bounded frame count and no visible window loop"
+RUN_WINDOW_NOT_OPENED :: "Window: not opened"
+RUN_WINDOW_PRESENTATION_UNAVAILABLE :: "presentation unavailable"
+RUN_EDITOR_NO_VISIBLE_SURFACE :: "Editor: requested, no visible editor surface"
+RUN_EXECUTION_NO_FRAME_LOOP :: "Execution: no bounded frame count or visible window loop selected"
+RUN_EXECUTION_ODIN_SCHEDULED_SYSTEMS :: "Execution: Odin scheduled systems"
+
 parse_run_options :: proc(args: []string, emit_output: bool) -> (Run_Options, bool) {
 	options := Run_Options{
 		target_path = ".",
@@ -282,7 +289,7 @@ print_run_result :: proc(
 	} else if window_result.window_opened {
 		fmt.printf("Frames: %d before window exit\n", completed_frames)
 	} else {
-		fmt.println("Frames: unbounded window loop pending Odin renderer")
+		fmt.println(RUN_STATUS_NO_UNBOUNDED_LOOP)
 	}
 	if options.hidden {
 		fmt.println("Window: hidden")
@@ -292,29 +299,13 @@ print_run_result :: proc(
 		} else if options.backend == .Software && window_result.presented {
 			fmt.printf("Window: visible SDL software loop %dx%d (%dx%d pixels)\n", window_result.window_width, window_result.window_height, window_result.pixel_width, window_result.pixel_height)
 		} else {
-			fmt.printf("Window: visible SDL loop %dx%d (%dx%d pixels), presentation pending\n", window_result.window_width, window_result.window_height, window_result.pixel_width, window_result.pixel_height)
+			fmt.printf("Window: visible SDL loop %dx%d (%dx%d pixels), %s\n", window_result.window_width, window_result.window_height, window_result.pixel_width, window_result.pixel_height, RUN_WINDOW_PRESENTATION_UNAVAILABLE)
 		}
 	} else {
-		fmt.println("Window: visible presentation pending Odin renderer")
+		fmt.println(RUN_WINDOW_NOT_OPENED)
 	}
 	if options.editor {
-		if render_result.presented {
-			if options.backend == .WebGPU {
-				if window_result.editor_input_routed {
-					fmt.println("Editor: first-pass WebGPU editor overlay and input routing")
-				} else {
-					fmt.println("Editor: first-pass WebGPU editor overlay")
-				}
-			} else {
-				if window_result.editor_input_routed {
-					fmt.println("Editor: first-pass software chrome overlay and input routing")
-				} else {
-					fmt.println("Editor: first-pass software chrome overlay")
-				}
-			}
-		} else {
-			fmt.println("Editor: requested, pending Odin editor shell")
-		}
+		fmt.println(run_result_editor_status(options, render_result, window_result))
 		if window_result.editor_paused {
 			fmt.println("Editor state: paused")
 		}
@@ -323,11 +314,7 @@ print_run_result :: proc(
 		}
 	}
 	print_render_extract_text(result)
-	if options.max_frames > 0 || window_result.window_opened {
-		fmt.println("Execution: Odin scheduled systems")
-	} else {
-		fmt.println("Execution: pending unbounded Odin window loop")
-	}
+	fmt.println(run_result_execution_status(options, window_result))
 	if window_result.quit_requested {
 		fmt.println("Execution: stopped after SDL quit request")
 	}
@@ -339,6 +326,29 @@ print_run_result :: proc(
 		fmt.printf("Presented surface frame: %dx%d, renderables: %d\n", render_result.surface_width, render_result.surface_height, render_result.renderable_count)
 	}
 	fmt.printf("Renderer backend: %s\n", render_backend_label(options.backend))
+}
+
+run_result_editor_status :: proc(options: Run_Options, render_result: Run_Render_Result, window_result: Sdl_Run_Loop_Result) -> string {
+	if render_result.presented {
+		if options.backend == .WebGPU {
+			if window_result.editor_input_routed {
+				return "Editor: first-pass WebGPU editor overlay and input routing"
+			}
+			return "Editor: first-pass WebGPU editor overlay"
+		}
+		if window_result.editor_input_routed {
+			return "Editor: first-pass software chrome overlay and input routing"
+		}
+		return "Editor: first-pass software chrome overlay"
+	}
+	return RUN_EDITOR_NO_VISIBLE_SURFACE
+}
+
+run_result_execution_status :: proc(options: Run_Options, window_result: Sdl_Run_Loop_Result) -> string {
+	if options.max_frames > 0 || window_result.window_opened {
+		return RUN_EXECUTION_ODIN_SCHEDULED_SYSTEMS
+	}
+	return RUN_EXECUTION_NO_FRAME_LOOP
 }
 
 print_run_reload_event :: proc(event: Live_Reload_Event) {

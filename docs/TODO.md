@@ -41,7 +41,7 @@
 - [x] Default `mise build`, `mise test`, and `mise scrapbot` now target the Odin CLI; migration-era Zig tasks are explicit `*-zig` compatibility tasks.
 - [x] Odin WebGPU dynamic library discovery no longer falls back to migration-era Zig `zig-out` or `zig-pkg` cache paths.
 - [x] Odin render extraction can count renderables, batches, cameras, lights, and UI draw primitives.
-- [x] Odin `render` and `render-test` can validate projects, run bounded frame simulation, check selected entities, and report pending backend render stats.
+- [x] Odin `render` and `render-test` can validate projects, run bounded frame simulation, check selected entities, and report render extraction stats.
 - [x] Odin `visual-test` can validate projects, expected/actual paths, selected entities, bounded frame simulation, golden update, image comparison, tolerance checks, and metadata sidecars against first-pass software render artifacts.
 - [x] Odin offscreen render artifacts can include first-pass software editor chrome pixels for `--editor` and selected-entity overlays.
 - [x] Odin `check` can statically register project-local native Odin component and system declarations from `native = "native/game.odin"`.
@@ -153,6 +153,7 @@
 - [x] Port first-pass editor pointer and keyboard input routing into visible Odin software/WebGPU SDL run loops.
 - [x] Port first-pass SDL text input routing into visible Odin software/WebGPU editor run loops.
 - [x] Make default local build/test/run tasks target Odin while keeping explicit migration-era Zig compatibility tasks.
+- [x] Remove stale pending-status wording from Odin `scrapbot run` output after visible window loops and editor overlays landed.
 - [ ] Remove the vendored Zig `wgpu-native` binding after the migration-era Zig renderer and build surfaces are no longer needed.
 - [x] Port first-pass Odin software offscreen PNG/BMP image output and render-test pixel verification.
 - [x] Port first-pass Odin visual-test golden update/comparison, tolerance checks, and render artifact metadata sidecars.
