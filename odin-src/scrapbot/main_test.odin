@@ -1939,6 +1939,73 @@ equals_string = "plane"
 }
 
 @(test)
+test_run_test_command_replays_editor_inspector_renderer_selector :: proc(t: ^testing.T) {
+	root := make_test_project_root(t, "cli-test-editor-inspector-renderer-selector")
+	defer os.remove_all(root)
+	defer delete(root)
+	write_file(t, root, PROJECT_FILE_NAME, `name = "Editor Inspector Renderer Selector Test"
+version = 1
+default_scene = "scenes/main.scene.toml"
+`)
+	write_file(t, root, "scenes/main.scene.toml", `name = "Editor Inspector Renderer Selector Test"
+version = 1
+
+[[entities]]
+id = "target"
+name = "Target"
+
+[entities.components."scrapbot.renderer"]
+hdr = true
+tone_mapping = "aces"
+exposure = 0.0
+postprocess_enabled = true
+antialiasing = "fxaa"
+bloom_enabled = true
+bloom_threshold = 0.85
+bloom_intensity = 0.12
+bloom_radius = 1.0
+vignette_enabled = true
+vignette_strength = 0.24
+vignette_radius = 0.82
+chromatic_aberration_enabled = true
+chromatic_aberration_strength = 0.0025
+`)
+	write_file(t, root, TEST_MANIFEST_NAME, `frames = 2
+dt = 0.016
+
+[[input.frame]]
+frame = 1
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [20.0, 500.0]
+primary_pressed = true
+primary_down = true
+
+[[input.frame]]
+frame = 2
+editor_visible = true
+viewport = [1280.0, 720.0]
+pointer = [900.0, 294.0]
+primary_pressed = true
+primary_down = true
+
+[[expect.editor]]
+selected_entity = "target"
+selected_component = "scrapbot.renderer"
+selected_field = "tone_mapping"
+
+[[expect.field]]
+entity = "target"
+component = "scrapbot.renderer"
+field = "tone_mapping"
+equals_string = "none"
+`)
+
+	exit_code := run_with_output([]string{"scrapbot", "test", root}, false)
+	testing.expect_value(t, exit_code, 0)
+}
+
+@(test)
 test_run_test_command_replays_editor_inspector_primitive_selector_undo :: proc(t: ^testing.T) {
 	root := make_test_project_root(t, "cli-test-editor-inspector-primitive-selector-undo")
 	defer os.remove_all(root)

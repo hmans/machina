@@ -30,7 +30,7 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 - `vec3` fields render one input box per lane, each preceded by a colored lane label: red `X`, green `Y`, and blue `Z`.
 - Color-like `vec3` fields additionally render a color swatch next to the lane input boxes.
 - Boolean fields render as click-to-toggle controls.
-- Known enum-like string fields render as selectors. The first selector is `scrapbot.geometry.primitive.primitive`, which cycles through built-in primitive names.
+- Known enum-like string fields render as selectors. First-pass selectors cover built-in primitive names, renderer tone mapping and antialiasing modes, canvas scale modes, and retained UI alignment fields.
 - Clicking a value input focuses it for editing and gives it a focus-ring border plus a visible caret.
 - Numeric value inputs select their full value when focused so typing can immediately replace the existing number. Select-all-on-focus is treated as an input-control option rather than a global editor rule.
 - Focused inputs accept typed text through the platform text-input path.
@@ -105,7 +105,7 @@ The editor entity inspector lets a developer inspect and lightly manipulate live
 
 **Decision:** The inspector has one reusable field-row layout and adds typed control variants for value kinds. Numeric and general string values use text inputs, `vec3` values use lane inputs preceded by colored `X`/`Y`/`Z` labels, color-like `vec3` values add a swatch, booleans use toggles, and known enum-like strings can use selectors.
 **Why:** This follows the editor-library direction: one base editing component shape with type-specific gadgets, instead of one-off layout code per component field. It also keeps live ECS mutation and undo/redo on the same field-command path.
-**Tradeoff:** The first selector is hard-coded to built-in primitive geometry values. Rich enum metadata, dropdowns, sliders, drag editing, validation messages, and persisted scene edits still need later design.
+**Tradeoff:** The first selectors are hard-coded to known engine string fields. Rich enum metadata, dropdowns, sliders, drag editing, validation messages, and persisted scene edits still need later design.
 
 ### 6. Route editor controls through retained UI commands
 

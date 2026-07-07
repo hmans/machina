@@ -60,6 +60,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Odin editor inspector text caret replay slice
   - [x] Odin editor inspector vec3 lane edit replay slice
   - [x] Odin editor inspector typed control replay slice
+  - [x] Odin editor inspector known selector replay slice
   - [x] Odin editor inspector undo/redo replay slice
   - [x] Odin editor inspector invalid-edit diagnostics slice
   - [x] Odin editor inspector clipboard copy/paste slice

@@ -420,7 +420,7 @@ next_editor_test_typed_control_value :: proc(component_id, field_name: string, v
 	case .Boolean:
 		return runtime_component_value_boolean(!value.boolean), true
 	case .String:
-		if next, ok := editor_test_primitive_selector_next_value(component_id, field_name, value.string_value); ok {
+		if next, ok := editor_test_known_selector_next_value(component_id, field_name, value.string_value); ok {
 			return runtime_component_value_string(next), true
 		}
 	case .Int, .Float, .Vec3:
@@ -428,25 +428,43 @@ next_editor_test_typed_control_value :: proc(component_id, field_name: string, v
 	return Runtime_Component_Value{}, false
 }
 
-editor_test_primitive_selector_next_value :: proc(component_id, field_name, value: string) -> (string, bool) {
-	if !editor_test_field_is_primitive_selector(component_id, field_name) {
-		return "", false
-	}
-	switch value {
-	case "box":
-		return "plane", true
-	case "plane":
-		return "uv_sphere", true
-	case "uv_sphere":
-		return "ico_sphere", true
-	case "ico_sphere":
-		return "box", true
+editor_test_known_selector_next_value :: proc(component_id, field_name, value: string) -> (string, bool) {
+	switch component_id {
+	case GEOMETRY_PRIMITIVE_COMPONENT_ID:
+		if field_name == "primitive" {
+			return editor_test_next_string_option(value, []string{"box", "plane", "sphere", "uv_sphere", "ico_sphere"})
+		}
+	case RENDERER_COMPONENT_ID:
+		switch field_name {
+		case "tone_mapping":
+			return editor_test_next_string_option(value, []string{"none", "reinhard", "aces"})
+		case "antialiasing":
+			return editor_test_next_string_option(value, []string{"none", "fxaa"})
+		}
+	case UI_CANVAS_COMPONENT_ID:
+		if field_name == "scale_mode" {
+			return editor_test_next_string_option(value, []string{"none", "fit", "fill"})
+		}
+	case UI_LAYOUT_ITEM_COMPONENT_ID:
+		if field_name == "align" {
+			return editor_test_next_string_option(value, []string{"start", "center", "end"})
+		}
+	case UI_TEXT_BLOCK_COMPONENT_ID:
+		switch field_name {
+		case "horizontal_align", "vertical_align":
+			return editor_test_next_string_option(value, []string{"start", "center", "end"})
+		}
 	}
 	return "", false
 }
 
-editor_test_field_is_primitive_selector :: proc(component_id, field_name: string) -> bool {
-	return component_id == GEOMETRY_PRIMITIVE_COMPONENT_ID && field_name == "primitive"
+editor_test_next_string_option :: proc(value: string, options: []string) -> (string, bool) {
+	for option, index in options {
+		if value == option {
+			return options[(index + 1) % len(options)], true
+		}
+	}
+	return "", false
 }
 
 focus_editor_test_text_input :: proc(world: Runtime_World, state: ^Editor_Test_Input_State, component_id, field_name: string, lane: int) -> bool {
@@ -1087,7 +1105,7 @@ editor_test_default_component_value :: proc(component_id: string, field: Runtime
 		switch component_id {
 		case GEOMETRY_PRIMITIVE_COMPONENT_ID:
 			if field.name == "primitive" {
-				return runtime_component_value_string("cube")
+				return runtime_component_value_string("box")
 			}
 		case RENDERER_COMPONENT_ID:
 			switch field.name {

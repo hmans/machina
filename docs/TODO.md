@@ -26,7 +26,7 @@
 - [x] Odin Luau runtime bridge diagnostics include active system, component field, and runtime error context.
 - [x] Odin `step` can validate projects and report deterministic frame/schedule summaries.
 - [x] Odin `bench` can report validation/update timing with Odin Luau execution and render extraction stats.
-- [x] Odin `test` can discover test projects, validate test manifests, replay script-visible input resources, route retained scene UI commands/scroll, consume editor-chrome pointer input, replay editor play/pause and single-step buttons, replay first-pass editor entity-list/system-list/inspector scrolling, entity selection, inspector field selection, splitter dragging, inspector text editing with caret navigation and selection, vec3 lane editing, boolean toggles, primitive selectors, inspector undo/redo, invalid inspector edit diagnostics, and translate gizmo dragging, execute Luau-backed frame simulation, and evaluate first-pass field/editor assertions.
+- [x] Odin `test` can discover test projects, validate test manifests, replay script-visible input resources, route retained scene UI commands/scroll, consume editor-chrome pointer input, replay editor play/pause and single-step buttons, replay first-pass editor entity-list/system-list/inspector scrolling, entity selection, inspector field selection, splitter dragging, inspector text editing with caret navigation and selection, vec3 lane editing, boolean toggles, known engine string selectors, inspector undo/redo, invalid inspector edit diagnostics, and translate gizmo dragging, execute Luau-backed frame simulation, and evaluate first-pass field/editor assertions.
 - [x] Odin `run` can validate projects, execute bounded hidden frame updates, write final offscreen WebGPU frame artifacts, and present scene-derived frames through a hidden WebGPU surface.
 - [x] Odin WebGPU smoke tasks can stage the host `wgpu-native` runtime library into `odin-out/lib` without building the Zig engine.
 - [x] Odin `run --backend wgpu --frames N` can drive a bounded visible SDL window loop, tick live project reload/update state, and present scene-derived WebGPU frames.
@@ -89,7 +89,7 @@
 - [x] Port first-pass editor inspector text editing replay for Odin test replay.
 - [x] Port first-pass editor inspector text caret navigation and selection replay for Odin test replay.
 - [x] Port first-pass editor inspector vec3 lane text editing replay for Odin test replay.
-- [x] Port first-pass editor inspector boolean toggle and primitive selector replay for Odin test replay.
+- [x] Port first-pass editor inspector boolean toggle and known engine string selector replay for Odin test replay.
 - [x] Port first-pass editor inspector field undo/redo replay for Odin test replay and SDL editor shortcuts.
 - [x] Port first-pass editor inspector invalid-edit diagnostics for Odin test replay.
 - [x] Port first-pass editor gizmo capture and drag replay for Odin test replay.
@@ -157,7 +157,7 @@
 - [x] Add retained scroll-view/vgroup routing for Odin inspector scrolling.
 - [x] Add visual scroll support to inspector component vgroups.
 - [x] Add first-pass Odin software render pixels for typed inspector controls.
-- [ ] Add typed inspector controls for floats, ints, strings, and enums.
+- [x] Add first-pass typed inspector controls for floats, ints, strings, booleans, vec3 lanes, and known engine enum-like string fields.
 - [x] Add first-pass editor add/remove component replay controls.
 - [x] Add visible editor chrome controls to add and remove components on the selected entity.
 - [x] Add first-pass editor spawn and despawn replay/SDL controls.
