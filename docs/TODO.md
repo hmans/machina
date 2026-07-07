@@ -165,7 +165,7 @@
 - [ ] Persist inspector edits back to text scene files.
 - [x] Add first-pass validation diagnostics for failed inspector edits.
 - [x] Add first-pass inspector text copy, paste, and clipboard support.
-- [ ] Add visual tests for inspector editing widgets.
+- [x] Add visual tests for inspector editing widgets.
 - [ ] Polish selected-entity header truncation and copy behavior.
 - [ ] Keep `examples/ui_gallery/` current with inspector control primitives.
 

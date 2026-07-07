@@ -72,6 +72,7 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
   - [x] Odin software render image output slice
   - [x] Odin visual-test command validation slice
   - [x] Odin visual-test golden comparison slice
+  - [x] Odin inspector widget visual-test coverage slice
   - [x] Odin offscreen editor chrome render slice
   - [x] Odin software selected inspector card render slice
   - [x] Odin software inspector visual scroll render slice
