@@ -16,7 +16,7 @@ Luau scripting lets project directories include fast-iteration game code without
 - Scripts can call `scrapbot.log(message)`.
 - Scripts can read `scrapbot.entity_count()` and `scrapbot.renderable_count()`.
 - Scripts can define project components with `scrapbot.component(name, schema)`, where the first supported field type is `"vec3"`.
-- `scrapbot.component` returns a typed component handle, such as `ScrapbotComponent<Autorotate>`.
+- `scrapbot.component` returns a typed component handle that scripts can cast to a project-local handle type.
 - Scripts can register frame systems with `scrapbot.system(function(delta_seconds) ... end)`.
 - Scripts can query scene-defined custom components with `scrapbot.query(component_handle, callback)`.
 - Luau definitions type query callback components from the component handle.

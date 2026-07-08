@@ -17,13 +17,24 @@ test_luau_script_can_read_ecs_counts :: proc(t: ^testing.T) {
 	runtime: Runtime
 	defer destroy_runtime(&runtime)
 	result := run_source(&runtime, `
-type Autorotate = {
-	velocity: ScrapbotVec3,
+type Vec3 = {
+	x: number,
+	y: number,
+	z: number,
 }
 
-local AutorotateComponent: ScrapbotComponent<Autorotate> = scrapbot.component("autorotate", {
+type Component<T> = {
+	name: string,
+	_type: T?,
+}
+
+type Autorotate = {
+	velocity: Vec3,
+}
+
+local AutorotateComponent = scrapbot.component("autorotate", {
 	velocity = "vec3",
-})
+}) :: Component<Autorotate>
 
 assert(scrapbot.entity_count() == 2)
 assert(scrapbot.renderable_count() == 1)
@@ -68,13 +79,24 @@ velocity = [0, 2, 0]
 	runtime: Runtime
 	defer destroy_runtime(&runtime)
 	result := run_source(&runtime, `
-type Autorotate = {
-	velocity: ScrapbotVec3,
+type Vec3 = {
+	x: number,
+	y: number,
+	z: number,
 }
 
-local AutorotateComponent: ScrapbotComponent<Autorotate> = scrapbot.component("autorotate", {
+type Component<T> = {
+	name: string,
+	_type: T?,
+}
+
+type Autorotate = {
+	velocity: Vec3,
+}
+
+local AutorotateComponent = scrapbot.component("autorotate", {
 	velocity = "vec3",
-})
+}) :: Component<Autorotate>
 
 scrapbot.system(function(delta_seconds)
 	scrapbot.query(AutorotateComponent, function(entity, autorotate)

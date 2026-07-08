@@ -63,13 +63,24 @@ velocity = [0, 1.5707963, 0]
 default_script_template :: proc() -> string {
 	return `scrapbot.log("hello from Scrapbot")
 
-type Autorotate = {
-	velocity: ScrapbotVec3,
+type Vec3 = {
+	x: number,
+	y: number,
+	z: number,
 }
 
-local AutorotateComponent: ScrapbotComponent<Autorotate> = scrapbot.component("autorotate", {
+type Component<T> = {
+	name: string,
+	_type: T?,
+}
+
+type Autorotate = {
+	velocity: Vec3,
+}
+
+local AutorotateComponent = scrapbot.component("autorotate", {
 	velocity = "vec3",
-})
+}) :: Component<Autorotate>
 
 scrapbot.system(function(delta_seconds)
 	scrapbot.query(AutorotateComponent, function(entity, autorotate)
