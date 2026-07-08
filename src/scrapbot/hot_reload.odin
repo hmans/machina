@@ -10,6 +10,8 @@ import project "./project"
 import script "./script"
 import shared "./shared"
 
+HOT_RELOAD_CHECK_INTERVAL_SECONDS :: f32(0.25)
+
 File_Stamp :: struct {
 	exists:      bool,
 	modified_ns: i64,
@@ -25,6 +27,7 @@ Hot_Reload_State :: struct {
 	runtime:      script.Runtime,
 	last_good_script_source: string,
 	has_last_good_script:    bool,
+	seconds_until_next_check: f32,
 }
 
 Script_Load :: struct {
@@ -59,6 +62,7 @@ init_hot_reload_state :: proc(
 
 	state.scene_stamp = file_stamp(state.scene_path)
 	state.script_stamp = file_stamp(state.script_path)
+	state.seconds_until_next_check = HOT_RELOAD_CHECK_INTERVAL_SECONDS
 
 	return load_script_runtime(state, world)
 }
@@ -77,8 +81,17 @@ hot_reload_frame_system :: proc(data: rawptr, world: ^shared.World, delta_second
 		return ""
 	}
 
-	poll_hot_reload(state, world)
+	maybe_poll_hot_reload(state, world, delta_seconds)
 	return script.step_runtime(&state.runtime, world, delta_seconds)
+}
+
+maybe_poll_hot_reload :: proc(state: ^Hot_Reload_State, world: ^shared.World, delta_seconds: f32) {
+	state.seconds_until_next_check -= delta_seconds
+	if state.seconds_until_next_check > 0 {
+		return
+	}
+	state.seconds_until_next_check = HOT_RELOAD_CHECK_INTERVAL_SECONDS
+	poll_hot_reload(state, world)
 }
 
 poll_hot_reload :: proc(state: ^Hot_Reload_State, world: ^shared.World) {
@@ -119,12 +132,13 @@ reload_project_world_and_script :: proc(state: ^Hot_Reload_State, world: ^shared
 	next_world := ecs.build_world(&loaded.scene)
 	script_load := load_script_from_path(state.script_path, &next_world)
 	if script_load.err != "" {
+		reload_err := script_load.err
 		ecs.destroy_world(&next_world)
 		destroy_script_load(&script_load)
 		if restore_err := restore_last_good_script_runtime(state, world); restore_err != "" {
-			return fmt.tprintf("%s; failed to restore last good script: %s", script_load.err, restore_err)
+			return fmt.tprintf("%s; failed to restore last good script: %s", reload_err, restore_err)
 		}
-		return script_load.err
+		return reload_err
 	}
 
 	ecs.destroy_world(world)
@@ -145,11 +159,12 @@ reload_project_world_and_script :: proc(state: ^Hot_Reload_State, world: ^shared
 load_script_runtime :: proc(state: ^Hot_Reload_State, world: ^shared.World) -> string {
 	script_load := load_script_from_path(state.script_path, world)
 	if script_load.err != "" {
+		reload_err := script_load.err
 		destroy_script_load(&script_load)
 		if restore_err := restore_last_good_script_runtime(state, world); restore_err != "" {
-			return fmt.tprintf("%s; failed to restore last good script: %s", script_load.err, restore_err)
+			return fmt.tprintf("%s; failed to restore last good script: %s", reload_err, restore_err)
 		}
-		return script_load.err
+		return reload_err
 	}
 
 	script.destroy_runtime(&state.runtime)

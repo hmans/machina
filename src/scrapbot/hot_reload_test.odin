@@ -98,6 +98,38 @@ test_hot_reload_replaces_luau_script_systems :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_hot_reload_checks_files_periodically :: proc(t: ^testing.T) {
+	root, parent := make_hot_reload_test_project(t)
+	defer delete(root)
+	defer os.remove_all(parent)
+
+	loaded := project.load_project(root)
+	testing.expect(t, loaded.err == "")
+	world := ecs.build_world(&loaded.scene)
+	defer ecs.destroy_world(&world)
+
+	state: Hot_Reload_State
+	init_err := init_hot_reload_state(&state, root, &loaded, &world)
+	project.destroy_project_load_result(&loaded)
+	testing.expect(t, init_err == "")
+	defer destroy_hot_reload_state(&state)
+
+	script_path := join_hot_reload_path(t, root, project.DEFAULT_SCRIPT)
+	defer delete(script_path)
+	time.sleep(5 * time.Millisecond)
+	write_err := os.write_entire_file(script_path, HOT_RELOAD_SCRIPT_SOURCE)
+	testing.expect(t, write_err == nil)
+
+	step_err := hot_reload_frame_system(cast(rawptr)&state, &world, HOT_RELOAD_CHECK_INTERVAL_SECONDS / 2)
+	testing.expect(t, step_err == "")
+	testing.expect(t, world.transforms[1].rotation.x == 0)
+
+	step_err = hot_reload_frame_system(cast(rawptr)&state, &world, HOT_RELOAD_CHECK_INTERVAL_SECONDS)
+	testing.expect(t, step_err == "")
+	testing.expect(t, world.transforms[1].rotation.x > 0.7)
+}
+
+@(test)
 test_hot_reload_replaces_scene_world :: proc(t: ^testing.T) {
 	root, parent := make_hot_reload_test_project(t)
 	defer delete(root)
@@ -120,7 +152,7 @@ test_hot_reload_replaces_scene_world :: proc(t: ^testing.T) {
 	write_err := os.write_entire_file(scene_path, HOT_RELOAD_TWO_CUBE_SCENE)
 	testing.expect(t, write_err == nil)
 
-	step_err := hot_reload_frame_system(cast(rawptr)&state, &world, 0)
+	step_err := hot_reload_frame_system(cast(rawptr)&state, &world, HOT_RELOAD_CHECK_INTERVAL_SECONDS)
 	testing.expect(t, step_err == "")
 	testing.expect(t, len(world.entities) == 3)
 	testing.expect(t, len(world.renderables) == 2)
@@ -162,6 +194,9 @@ test_hot_reload_keeps_last_good_script_on_reload_error :: proc(t: ^testing.T) {
 	time.sleep(5 * time.Millisecond)
 	write_err := os.write_entire_file(script_path, `error("reload failed")`)
 	testing.expect(t, write_err == nil)
+
+	reload_err := load_script_runtime(&state, &world)
+	testing.expect(t, reload_err != "")
 
 	step_err = hot_reload_frame_system(cast(rawptr)&state, &world, 1.0)
 	testing.expect(t, step_err == "")

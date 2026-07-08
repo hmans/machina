@@ -13,7 +13,7 @@ Luau scripting lets project directories include fast-iteration game code without
 - `scrapbot init` creates a starter `scripts/main.luau`.
 - `scrapbot run` executes the script after scene loading and ECS world construction.
 - Script errors fail the run with a Luau diagnostic.
-- `scrapbot run --hot-reload` polls `scripts/main.luau` and the default scene TOML during renderer frames.
+- `scrapbot run --hot-reload` periodically checks `scripts/main.luau` and the default scene TOML while renderer frames are advancing.
 - Successful script reload replaces the active Luau runtime; failed script reload keeps the last good runtime.
 - Successful scene reload rebuilds the ECS world and validates `scripts/main.luau` against it before swapping state; failed scene reload keeps the last good world and runtime.
 - Scripts can call `scrapbot.log(message)`.
@@ -66,9 +66,9 @@ This was the first scripting slice. The current API has since grown a narrow ECS
 
 ### 6. Poll project files for first hot reload
 
-**Decision:** `--hot-reload` polls file modification stamps once per renderer frame.
-**Why:** Polling is portable, backend-neutral, and enough to validate runtime state replacement before introducing platform file watching services.
-**Tradeoff:** Reloads only happen while frames are advancing, and the first implementation watches the active default scene and `scripts/main.luau` rather than every project asset.
+**Decision:** `--hot-reload` checks file modification stamps on a short interval while renderer frames are advancing.
+**Why:** Periodic checks are portable, backend-neutral, and enough to validate runtime state replacement before introducing platform file watching services.
+**Tradeoff:** Reloads are not immediate, and the first implementation watches the active default scene and `scripts/main.luau` rather than every project asset.
 
 ## Related
 
