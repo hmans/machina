@@ -99,7 +99,7 @@ local AutorotateComponent = scrapbot.component("autorotate", {
 }) :: Component<Autorotate>
 
 scrapbot.system(function(delta_seconds)
-	scrapbot.query(AutorotateComponent, function(entity, autorotate)
+	scrapbot.query(AutorotateComponent, function(entity, autorotate: Autorotate)
 		local rotation = scrapbot.get_rotation(entity)
 		rotation.x += autorotate.velocity.x * delta_seconds
 		rotation.y += autorotate.velocity.y * delta_seconds
