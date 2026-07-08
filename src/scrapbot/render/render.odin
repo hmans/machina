@@ -5,11 +5,14 @@ import platform "../platform"
 import shared "../shared"
 
 Renderer_Backend :: shared.Renderer_Backend
+Frame_System_Proc :: #type proc(data: rawptr, world: ^World, delta_seconds: f32) -> string
 Run_Config :: struct {
-	backend:        Renderer_Backend,
-	window:         bool,
-	max_frames:     u32,
-	framegrab_path: string,
+	backend:           Renderer_Backend,
+	window:            bool,
+	max_frames:        u32,
+	framegrab_path:    string,
+	frame_system:      Frame_System_Proc,
+	frame_system_data: rawptr,
 }
 World :: shared.World
 Render_Frame :: shared.Render_Frame
@@ -35,9 +38,13 @@ renderer_backend_name :: proc(backend: Renderer_Backend) -> string {
 }
 
 run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame, err: string) {
-	switch config.backend {
+	run_config := config
+	switch run_config.backend {
 	case .Null:
-		if config.window {
+		if err = run_frame_system(&run_config, world, 1.0 / 60.0); err != "" {
+			return
+		}
+		if run_config.window {
 			window_err := platform.open_runtime_window("Scrapbot", 1280, 720)
 			if window_err != "" {
 				return frame, window_err
@@ -50,7 +57,7 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 		return renderer_submit(&renderer, world), ""
 	case .WGPU:
 		frame = ecs.render_frame_from_world(world)
-		if config.window {
+		if run_config.window {
 			window_err := platform.open_runtime_window("Scrapbot WGPU", 1280, 720)
 			if window_err != "" {
 				return frame, window_err
@@ -58,11 +65,11 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 			defer platform.close_runtime_window()
 			platform.pump_runtime_window_events()
 
-			err = wgpu_run_window(world, config.max_frames)
+			err = wgpu_run_window(world, &run_config)
 			frame = ecs.render_frame_from_world(world)
 			return
 		}
-		if config.framegrab_path != "" {
+		if run_config.framegrab_path != "" {
 			window_err := platform.open_hidden_runtime_window("Scrapbot WGPU Headless", 1280, 720)
 			if window_err != "" {
 				return frame, window_err
@@ -70,7 +77,7 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 			defer platform.close_runtime_window()
 			platform.pump_runtime_window_events()
 
-			err = wgpu_run_headless(world, config.max_frames, config.framegrab_path)
+			err = wgpu_run_headless(world, &run_config)
 			frame = ecs.render_frame_from_world(world)
 			return
 		}
@@ -79,4 +86,11 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 	}
 
 	return frame, "unknown renderer backend"
+}
+
+run_frame_system :: proc(config: ^Run_Config, world: ^World, delta_seconds: f32) -> string {
+	if config.frame_system == nil {
+		return ""
+	}
+	return config.frame_system(config.frame_system_data, world, delta_seconds)
 }

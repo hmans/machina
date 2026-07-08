@@ -15,6 +15,8 @@ Project_Config :: shared.Project_Config
 Scene :: shared.Scene
 Scene_Entity :: shared.Scene_Entity
 Vec3 :: shared.Vec3
+Custom_Component :: shared.Custom_Component
+Named_Vec3 :: shared.Named_Vec3
 
 Project_Load_Result :: struct {
 	config: Project_Config,
@@ -52,13 +54,24 @@ scale = [1, 1, 1]
 
 [entities.mesh]
 primitive = "cube"
+
+[entities.components.autorotate]
+velocity = [0, 1.5707963, 0]
 `
 }
 
 default_script_template :: proc() -> string {
 	return `scrapbot.log("hello from Scrapbot")
-scrapbot.log("entities: " .. tostring(scrapbot.entity_count()))
-scrapbot.log("renderables: " .. tostring(scrapbot.renderable_count()))
+
+scrapbot.system(function(delta_seconds)
+	scrapbot.query("autorotate", function(entity, autorotate)
+		local rotation = scrapbot.get_rotation(entity)
+		rotation.x += autorotate.velocity.x * delta_seconds
+		rotation.y += autorotate.velocity.y * delta_seconds
+		rotation.z += autorotate.velocity.z * delta_seconds
+		scrapbot.set_rotation(entity, rotation)
+	end)
+end)
 `
 }
 
@@ -69,6 +82,21 @@ type Scrapbot = {
 	log: (message: any) -> (),
 	entity_count: () -> number,
 	renderable_count: () -> number,
+	system: (system: (delta_seconds: number) -> ()) -> (),
+	query: (component_name: string, callback: (entity: ScrapbotEntity, component: any) -> ()) -> (),
+	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
+	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
+}
+
+type ScrapbotEntity = {
+	index: number,
+	name: string?,
+}
+
+type ScrapbotVec3 = {
+	x: number,
+	y: number,
+	z: number,
 }
 
 declare scrapbot: Scrapbot
@@ -232,8 +260,19 @@ load_project :: proc(root: string) -> Project_Load_Result {
 }
 
 destroy_project_load_result :: proc(result: ^Project_Load_Result) {
-	delete(result.scene.entities)
+	destroy_scene(&result.scene)
 	result^ = {}
+}
+
+destroy_scene :: proc(scene: ^Scene) {
+	for &entity in scene.entities {
+		for &component in entity.custom_components {
+			delete(component.vec3_fields)
+		}
+		delete(entity.custom_components)
+	}
+	delete(scene.entities)
+	scene^ = {}
 }
 
 check_project :: proc(root: string) -> string {

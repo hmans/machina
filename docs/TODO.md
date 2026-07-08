@@ -25,7 +25,9 @@
 - [ ] Add scheduled systems with declared component access.
 - [x] Execute a project-local Luau entry script during `scrapbot run`.
 - [x] Add Luau LSP metadata for the built-in `scrapbot` global.
-- [ ] Add Luau scripting for project-local systems.
+- [x] Add a first Luau system bridge for project-local systems.
+- [x] Add scene-defined custom component data for Luau systems.
+- [ ] Add reflected Luau component schemas and generated typed component APIs.
 - [ ] Add native Odin extension loading and hot reload.
 
 ## Editor

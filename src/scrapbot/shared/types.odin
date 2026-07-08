@@ -37,6 +37,8 @@ Scene_Entity :: struct {
 
 	has_mesh: bool,
 	mesh:     Mesh_Component,
+
+	custom_components: [dynamic]Custom_Component,
 }
 
 Entity :: struct {
@@ -58,6 +60,17 @@ Camera_Component :: struct {
 
 Mesh_Component :: struct {
 	primitive: string,
+}
+
+Named_Vec3 :: struct {
+	name:  string,
+	value: Vec3,
+}
+
+Custom_Component :: struct {
+	entity_index: int,
+	name:         string,
+	vec3_fields: [dynamic]Named_Vec3,
 }
 
 World_Entity :: struct {
@@ -98,6 +111,7 @@ World :: struct {
 	cameras:    [dynamic]Camera_Component,
 	meshes:     [dynamic]Mesh_Component,
 	renderables: [dynamic]Renderable,
+	custom_components: [dynamic]Custom_Component,
 }
 
 Render_Frame :: struct {

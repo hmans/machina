@@ -681,7 +681,7 @@ wgpu_encode_cube_pass :: proc(
 	return ""
 }
 
-wgpu_draw_cube_frame :: proc(renderer: ^WGPU_Renderer, world: ^World) -> (presented, should_quit: bool, err: string) {
+wgpu_draw_cube_frame :: proc(renderer: ^WGPU_Renderer, world: ^World, config: ^Run_Config) -> (presented, should_quit: bool, err: string) {
 	drawable, configure_err := wgpu_configure_surface(renderer)
 	if configure_err != "" || !drawable {
 		return false, false, configure_err
@@ -717,7 +717,9 @@ wgpu_draw_cube_frame :: proc(renderer: ^WGPU_Renderer, world: ^World) -> (presen
 	defer wgpu.TextureViewRelease(view)
 	defer wgpu.TextureRelease(texture)
 
-	ecs.step_world(world, 1.0 / 60.0)
+	if err = run_frame_system(config, world, 1.0 / 60.0); err != "" {
+		return false, false, err
+	}
 	render_list := ecs.build_render_list(world)
 	defer ecs.destroy_render_list(&render_list)
 	instance_count := wgpu_update_cube_uniforms(renderer, &render_list, renderer.width, renderer.height)
@@ -756,8 +758,13 @@ wgpu_render_offscreen_frame :: proc(
 	row_stride: u32 = 0,
 	width: u32 = 0,
 	height: u32 = 0,
+	config: ^Run_Config = nil,
 ) -> string {
-	ecs.step_world(world, 1.0 / 60.0)
+	if config != nil {
+		if err := run_frame_system(config, world, 1.0 / 60.0); err != "" {
+			return err
+		}
+	}
 	render_list := ecs.build_render_list(world)
 	defer ecs.destroy_render_list(&render_list)
 	instance_count := wgpu_update_cube_uniforms(renderer, &render_list, width, height)
@@ -804,7 +811,7 @@ wgpu_render_offscreen_frame :: proc(
 	return ""
 }
 
-wgpu_run_headless :: proc(world: ^World, max_frames: u32, framegrab_path: string) -> string {
+wgpu_run_headless :: proc(world: ^World, config: ^Run_Config) -> string {
 	renderer, init_err := wgpu_init_renderer(true)
 	defer wgpu_destroy_renderer(&renderer)
 	if init_err != "" {
@@ -864,7 +871,7 @@ wgpu_run_headless :: proc(world: ^World, max_frames: u32, framegrab_path: string
 	}
 	defer wgpu.BufferRelease(readback)
 
-	frame_count := max_frames
+	frame_count := config.max_frames
 	if frame_count == 0 {
 		frame_count = 1
 	}
@@ -880,6 +887,7 @@ wgpu_run_headless :: proc(world: ^World, max_frames: u32, framegrab_path: string
 			row_stride if capture else 0,
 			width,
 			height,
+			config,
 		)
 		if err != "" {
 			return err
@@ -916,7 +924,7 @@ wgpu_run_headless :: proc(world: ^World, max_frames: u32, framegrab_path: string
 		copy_framegrab_row(pixels[dst:dst + int(row_bytes)], mapped[src:src + int(row_bytes)], renderer.format)
 	}
 
-	return write_png_rgba8(framegrab_path, pixels, width, height)
+	return write_png_rgba8(config.framegrab_path, pixels, width, height)
 }
 
 wgpu_build_mvp :: proc(instance: Render_Instance, camera: Camera_Instance, has_camera: bool, width, height: u32) -> Mat4 {
@@ -1104,7 +1112,7 @@ align_to :: proc(value, alignment: u32) -> u32 {
 	return ((value + alignment - 1) / alignment) * alignment
 }
 
-wgpu_run_window :: proc(world: ^World, max_frames: u32) -> string {
+wgpu_run_window :: proc(world: ^World, config: ^Run_Config) -> string {
 	renderer, init_err := wgpu_init_renderer(true)
 	defer wgpu_destroy_renderer(&renderer)
 	if init_err != "" {
@@ -1112,13 +1120,13 @@ wgpu_run_window :: proc(world: ^World, max_frames: u32) -> string {
 	}
 
 	frame_count: u32
-	for max_frames == 0 || frame_count < max_frames {
+	for config.max_frames == 0 || frame_count < config.max_frames {
 		if platform.pump_runtime_window_events() {
 			break
 		}
 		wgpu.InstanceProcessEvents(renderer.instance)
 
-		_, should_quit, draw_err := wgpu_draw_cube_frame(&renderer, world)
+		_, should_quit, draw_err := wgpu_draw_cube_frame(&renderer, world, config)
 		if draw_err != "" {
 			return draw_err
 		}

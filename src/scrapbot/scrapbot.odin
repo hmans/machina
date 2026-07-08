@@ -33,6 +33,7 @@ run_headless :: proc(root: string) -> Runtime_Result {
 
 run_project :: proc(root: string, config: Run_Config) -> Runtime_Result {
 	result: Runtime_Result
+	run_config := config
 
 	loaded := project.load_project(root)
 	defer project.destroy_project_load_result(&loaded)
@@ -44,12 +45,18 @@ run_project :: proc(root: string, config: Run_Config) -> Runtime_Result {
 	world := ecs.build_world(&loaded.scene)
 	defer ecs.destroy_world(&world)
 
-	script_result := script.run_project_script(root, &world)
+	script_runtime: script.Runtime
+	defer script.destroy_runtime(&script_runtime)
+	script_result := script.run_project_script(&script_runtime, root, &world)
 	if script_result.err != "" {
 		result.err = script_result.err
 		return result
 	}
+	if script_result.ran {
+		run_config.frame_system = script.step_frame_system
+		run_config.frame_system_data = &script_runtime
+	}
 
-	result.frame, result.err = render.run_renderer(config, &world)
+	result.frame, result.err = render.run_renderer(run_config, &world)
 	return result
 }

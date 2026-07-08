@@ -1,6 +1,5 @@
 package ecs
 
-import "core:math"
 import shared "../shared"
 
 Scene :: shared.Scene
@@ -12,16 +11,20 @@ Renderable :: shared.Renderable
 Render_Instance :: shared.Render_Instance
 Camera_Instance :: shared.Camera_Instance
 Render_List :: shared.Render_List
+Custom_Component :: shared.Custom_Component
 
-CUBE_ROTATION_SPEED_RADIANS_PER_SECOND :: f32(math.PI / 2)
 INVALID_COMPONENT_INDEX :: -1
 
 destroy_world :: proc(world: ^World) {
+	for &component in world.custom_components {
+		delete(component.vec3_fields)
+	}
 	delete(world.entities)
 	delete(world.transforms)
 	delete(world.cameras)
 	delete(world.meshes)
 	delete(world.renderables)
+	delete(world.custom_components)
 	world^ = {}
 }
 
@@ -48,6 +51,16 @@ build_world :: proc(scene: ^Scene) -> World {
 		if entity.has_mesh {
 			world_entity.mesh_index = len(world.meshes)
 			append(&world.meshes, entity.mesh)
+		}
+		for component in entity.custom_components {
+			world_component := Custom_Component {
+				entity_index = int(id.index),
+				name         = component.name,
+			}
+			for field in component.vec3_fields {
+				append(&world_component.vec3_fields, field)
+			}
+			append(&world.custom_components, world_component)
 		}
 
 		append(&world.entities, world_entity)
@@ -95,23 +108,6 @@ destroy_render_list :: proc(list: ^Render_List) {
 	list^ = {}
 }
 
-step_world :: proc(world: ^World, delta_seconds: f32) {
-	for renderable in world.renderables {
-		instance, ok := render_instance_from_renderable(world, renderable)
-		if !ok {
-			continue
-		}
-
-		if instance.mesh.primitive != "cube" {
-			continue
-		}
-
-		transform := instance.transform
-		transform.rotation.y = wrap_radians(transform.rotation.y + CUBE_ROTATION_SPEED_RADIANS_PER_SECOND * delta_seconds)
-		world.transforms[renderable.transform_index] = transform
-	}
-}
-
 render_instance_from_renderable :: proc(world: ^World, renderable: Renderable) -> (instance: Render_Instance, ok: bool) {
 	if renderable.entity_index < 0 || renderable.entity_index >= len(world.entities) {
 		return {}, false
@@ -146,16 +142,4 @@ first_camera_instance :: proc(world: ^World) -> (instance: Camera_Instance, ok: 
 		}, true
 	}
 	return {}, false
-}
-
-wrap_radians :: proc(value: f32) -> f32 {
-	full_turn := f32(2 * math.PI)
-	wrapped := value
-	for wrapped >= full_turn {
-		wrapped -= full_turn
-	}
-	for wrapped < 0 {
-		wrapped += full_turn
-	}
-	return wrapped
 }

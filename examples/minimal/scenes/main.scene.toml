@@ -22,6 +22,9 @@ scale = [1, 1, 1]
 [entities.mesh]
 primitive = "cube"
 
+[entities.components.autorotate]
+velocity = [0, 1.5707963, 0]
+
 [[entities]]
 name = "Right Cube"
 
@@ -32,3 +35,6 @@ scale = [1, 1, 1]
 
 [entities.mesh]
 primitive = "cube"
+
+[entities.components.autorotate]
+velocity = [0, -1.5707963, 0]

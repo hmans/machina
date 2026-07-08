@@ -26,7 +26,7 @@
 
 **`project.toml`** - The project manifest in the root of a Scrapbot project directory.
 
-**Scene file** - A TOML file that describes entities and known components. The generated default scene is `scenes/main.scene.toml`.
+**Scene file** - A TOML file that describes entities, built-in components, and simple project-defined component data. The generated default scene is `scenes/main.scene.toml`.
 
 **Text-first project** - A Scrapbot project whose primary source of truth is ordinary text files that can be edited by humans, tools, and agents.
 

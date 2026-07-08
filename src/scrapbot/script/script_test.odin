@@ -3,17 +3,20 @@ package script
 import "core:testing"
 import ecs "../ecs"
 import project "../project"
+import shared "../shared"
 
 @(test)
 test_luau_script_can_read_ecs_counts :: proc(t: ^testing.T) {
 	scene, parse_result := project.parse_scene(project.default_scene_template())
-	defer delete(scene.entities)
+	defer project.destroy_scene(&scene)
 	testing.expect(t, parse_result.err == .None)
 
 	world := ecs.build_world(&scene)
 	defer ecs.destroy_world(&world)
 
-	result := run_source(`
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
 assert(scrapbot.entity_count() == 2)
 assert(scrapbot.renderable_count() == 1)
 `, "=test", &world)
@@ -24,8 +27,53 @@ assert(scrapbot.renderable_count() == 1)
 
 @(test)
 test_luau_script_reports_runtime_errors :: proc(t: ^testing.T) {
-	result := run_source(`error("boom")`, "=test", nil)
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `error("boom")`, "=test", nil)
 
 	testing.expect(t, !result.ran)
 	testing.expect(t, result.err != "")
+}
+
+@(test)
+test_luau_system_rotates_entities_with_custom_component :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.transform]
+position = [0, 0, 0]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+
+[entities.mesh]
+primitive = "cube"
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+scrapbot.system(function(delta_seconds)
+	scrapbot.query("autorotate", function(entity, autorotate)
+		local rotation = scrapbot.get_rotation(entity)
+		rotation.x += autorotate.velocity.x * delta_seconds
+		rotation.y += autorotate.velocity.y * delta_seconds
+		rotation.z += autorotate.velocity.z * delta_seconds
+		scrapbot.set_rotation(entity, rotation)
+	end)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 0.5)
+	testing.expect(t, step_err == "")
+	testing.expect(t, world.transforms[0].rotation == shared.Vec3{0, 1, 0})
 }

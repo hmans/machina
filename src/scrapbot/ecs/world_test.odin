@@ -28,6 +28,9 @@ scale = [1, 1, 1]
 [entities.mesh]
 primitive = "cube"
 
+[entities.components.autorotate]
+velocity = [0, 1.5707963, 0]
+
 [[entities]]
 name = "Right Cube"
 
@@ -38,12 +41,15 @@ scale = [1, 1, 1]
 
 [entities.mesh]
 primitive = "cube"
+
+[entities.components.autorotate]
+velocity = [0, -1.5707963, 0]
 `
 
 @(test)
 test_scene_builds_world_with_soa_transforms :: proc(t: ^testing.T) {
 	scene, result := project.parse_scene(project.default_scene_template())
-	defer delete(scene.entities)
+	defer project.destroy_scene(&scene)
 
 	testing.expect(t, result.err == .None)
 	testing.expect(t, len(scene.entities) == 2)
@@ -56,17 +62,20 @@ test_scene_builds_world_with_soa_transforms :: proc(t: ^testing.T) {
 	testing.expect(t, len(world.cameras) == 1)
 	testing.expect(t, len(world.meshes) == 1)
 	testing.expect(t, len(world.renderables) == 1)
+	testing.expect(t, len(world.custom_components) == 1)
 	testing.expect(t, world.entities[0].camera_index == 0)
 	testing.expect(t, world.entities[1].transform_index == 1)
 	testing.expect(t, world.entities[1].mesh_index == 0)
 	testing.expect(t, world.renderables[0].entity_index == 1)
+	testing.expect(t, world.custom_components[0].entity_index == 1)
+	testing.expect(t, world.custom_components[0].name == "autorotate")
 	testing.expect(t, world.transforms[1].position == shared.Vec3{0, 0, 0})
 }
 
 @(test)
 test_render_list_includes_multiple_cube_renderables :: proc(t: ^testing.T) {
 	scene, result := project.parse_scene(MULTI_CUBE_SCENE)
-	defer delete(scene.entities)
+	defer project.destroy_scene(&scene)
 
 	testing.expect(t, result.err == .None)
 	testing.expect(t, len(scene.entities) == 3)
@@ -78,6 +87,7 @@ test_render_list_includes_multiple_cube_renderables :: proc(t: ^testing.T) {
 	testing.expect(t, len(world.transforms) == 3)
 	testing.expect(t, len(world.meshes) == 2)
 	testing.expect(t, len(world.renderables) == 2)
+	testing.expect(t, len(world.custom_components) == 2)
 
 	render_list := build_render_list(&world)
 	defer destroy_render_list(&render_list)
@@ -89,23 +99,23 @@ test_render_list_includes_multiple_cube_renderables :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_step_world_rotates_cube_renderables :: proc(t: ^testing.T) {
+test_world_preserves_project_custom_components :: proc(t: ^testing.T) {
 	scene, result := project.parse_scene(MULTI_CUBE_SCENE)
-	defer delete(scene.entities)
+	defer project.destroy_scene(&scene)
 
 	testing.expect(t, result.err == .None)
 
 	world := build_world(&scene)
 	defer destroy_world(&world)
 
-	left_before := world.transforms[world.entities[1].transform_index].rotation.y
-	right_before := world.transforms[world.entities[2].transform_index].rotation.y
-	step_world(&world, 1)
-	left_after := world.transforms[world.entities[1].transform_index].rotation.y
-	right_after := world.transforms[world.entities[2].transform_index].rotation.y
-
-	testing.expect(t, left_after > left_before)
-	testing.expect(t, right_after > right_before)
+	testing.expect(t, len(world.custom_components) == 2)
+	testing.expect(t, world.custom_components[0].entity_index == 1)
+	testing.expect(t, world.custom_components[0].name == "autorotate")
+	testing.expect(t, len(world.custom_components[0].vec3_fields) == 1)
+	testing.expect(t, world.custom_components[0].vec3_fields[0].name == "velocity")
+	testing.expect(t, world.custom_components[0].vec3_fields[0].value.y > 0)
+	testing.expect(t, world.custom_components[1].entity_index == 2)
+	testing.expect(t, world.custom_components[1].vec3_fields[0].value.y < 0)
 
 	camera, camera_ok := first_camera_instance(&world)
 	testing.expect(t, camera_ok)

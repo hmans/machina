@@ -65,6 +65,7 @@ parse_project_config :: proc(source: string) -> (config: Project_Config, result:
 parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 	section := ""
 	current: ^Scene_Entity
+	current_component: ^Custom_Component
 
 	text := source
 	for raw_line in strings.split_lines_iterator(&text) {
@@ -85,6 +86,21 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 				return scene, fail(.Invalid_Syntax, fmt.tprintf("%s appears before [[entities]]", line))
 			}
 			section = line[10:len(line) - 1]
+			current_component = nil
+			continue
+		}
+
+		component_name, is_component_section := parse_component_section(line)
+		if is_component_section {
+			if current == nil {
+				return scene, fail(.Invalid_Syntax, fmt.tprintf("%s appears before [[entities]]", line))
+			}
+			if !is_component_name(component_name) {
+				return scene, fail(.Invalid_Field, fmt.tprintf("invalid component name '%s'", component_name))
+			}
+			append(&current.custom_components, Custom_Component{name = component_name})
+			current_component = &current.custom_components[len(current.custom_components) - 1]
+			section = "component"
 			continue
 		}
 
@@ -145,6 +161,19 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			if !found || current.mesh.primitive == "" {
 				return scene, fail(.Invalid_Field, "mesh.primitive must be a non-empty basic string")
 			}
+		case "component":
+			if current_component == nil {
+				return scene, fail(.Invalid_Syntax, "component fields must appear under [entities.components.<name>]")
+			}
+			if !is_component_name(key) {
+				return scene, fail(.Invalid_Field, fmt.tprintf("invalid component field '%s'", key))
+			}
+			vec: Vec3
+			vec, found = parse_vec3(value)
+			if !found {
+				return scene, fail(.Invalid_Field, fmt.tprintf("%s.%s must be a vec3 array", current_component.name, key))
+			}
+			append(&current_component.vec3_fields, Named_Vec3{name = key, value = vec})
 		case:
 			return scene, fail(.Invalid_Syntax, fmt.tprintf("unknown scene section '%s'", section))
 		}
@@ -163,6 +192,28 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 	}
 
 	return scene, ok()
+}
+
+parse_component_section :: proc(line: string) -> (name: string, ok: bool) {
+	prefix :: "[entities.components."
+	if !strings.has_prefix(line, prefix) || !strings.has_suffix(line, "]") {
+		return "", false
+	}
+	name = line[len(prefix):len(line) - 1]
+	return name, true
+}
+
+is_component_name :: proc(name: string) -> bool {
+	if name == "" {
+		return false
+	}
+	for c in name {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 strip_comment :: proc(line: string) -> string {
