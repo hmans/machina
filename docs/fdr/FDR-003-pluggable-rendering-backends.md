@@ -12,7 +12,7 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 - The runtime can submit frame data through a renderer boundary.
 - The current implementation supports the null backend.
 - Users can select a renderer backend from the CLI.
-- The `wgpu` backend opens an SDL3 window, creates a `wgpu-native` surface, and renders the ECS world's first cube renderable with a perspective camera.
+- The `wgpu` backend opens an SDL3 window, creates a `wgpu-native` surface, and renders ECS cube renderables with a perspective camera.
 - The `wgpu` backend can also render a headless final-frame PNG with `--framegrab`.
 - The `wgpu` backend currently requires `--window` or `--framegrab`.
 - Renderer runs can be limited with `--frames`; windowed `0` means run until the window closes, while headless `0` captures one frame.
@@ -41,9 +41,9 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 
 ### 4. Promote the WGPU smoke path into an ECS cube renderer
 
-**Decision:** The current `wgpu` backend creates a WGSL pipeline, uploads a built-in cube mesh, and draws the first ECS renderable that has both transform and mesh components.
+**Decision:** The current `wgpu` backend creates a WGSL pipeline, uploads a built-in cube mesh, and draws ECS renderables that have both transform and mesh components.
 **Why:** This keeps the renderer driven by ECS state while still avoiding a premature asset, material, or batching system.
-**Tradeoff:** Only the first cube primitive is drawn for now; multi-entity scene rendering remains follow-up work.
+**Tradeoff:** Only cube primitives are drawn for now; general mesh, material, and batching work remains follow-up work.
 
 ### 5. Keep headless framegrabs on the same render path
 
@@ -53,9 +53,9 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 
 ### 6. Use ECS renderable queries as the first backend boundary
 
-**Decision:** The world builder records per-entity component indexes and derives renderables from entities with both transform and mesh components. Render backends query these renderables instead of reconstructing component relationships themselves.
+**Decision:** The world builder records per-entity component indexes and derives renderables from entities with both transform and mesh components. ECS builds a short-lived render list from those renderables, and render backends consume that list instead of reconstructing component relationships themselves.
 **Why:** Backends need coherent scene instances, not just global component counts, and this keeps GPU code out of ECS storage.
-**Tradeoff:** The query is deliberately narrow and will need to evolve into a fuller render packet or view once materials, lights, multiple meshes, and culling exist.
+**Tradeoff:** The render list is deliberately narrow and will need to evolve into a fuller render packet or view once materials, lights, multiple mesh types, and culling exist.
 
 ## Related
 
@@ -64,6 +64,6 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 
 ## Open Questions
 
-- What render packet shape should replace the current first-renderable query once renderer-owned resources exist?
+- What render packet shape should replace the current cube render list once renderer-owned resources exist?
 - How should offscreen render output be compared once scene rendering exists?
 - How long should the headful runtime loop live before the editor and game loop exist?

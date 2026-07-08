@@ -11,7 +11,7 @@ import "vendor:wgpu"
 
 WGPU_CUBE_SHADER :: `
 struct Cube_Uniform {
-	mvp: mat4x4<f32>,
+	mvp: array<mat4x4<f32>, 64>,
 };
 
 @group(0) @binding(0)
@@ -28,9 +28,9 @@ struct Vertex_Output {
 };
 
 @vertex
-fn vs_main(input: Vertex_Input) -> Vertex_Output {
+fn vs_main(input: Vertex_Input, @builtin(instance_index) instance_index: u32) -> Vertex_Output {
 	var output: Vertex_Output;
-	output.position = cube.mvp * vec4<f32>(input.position, 1.0);
+	output.position = cube.mvp[instance_index] * vec4<f32>(input.position, 1.0);
 	output.color = input.color;
 	return output;
 }
@@ -44,8 +44,11 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 Vec3 :: shared.Vec3
 Render_Instance :: shared.Render_Instance
 Camera_Instance :: shared.Camera_Instance
+Render_List :: shared.Render_List
 
 Mat4 :: [16]f32
+
+WGPU_MAX_CUBE_INSTANCES :: 64
 
 WGPU_Cube_Vertex :: struct {
 	position: [3]f32,
@@ -53,7 +56,7 @@ WGPU_Cube_Vertex :: struct {
 }
 
 WGPU_Cube_Uniform :: struct {
-	mvp: Mat4,
+	mvp: [WGPU_MAX_CUBE_INSTANCES]Mat4,
 }
 
 WGPU_CUBE_VERTICES :: [?]WGPU_Cube_Vertex {
@@ -607,17 +610,26 @@ wgpu_acquire_surface_texture :: proc(
 	return surface_texture, false, false
 }
 
-wgpu_update_cube_uniform :: proc(renderer: ^WGPU_Renderer, world: ^World, width, height: u32) -> bool {
-	instance, ok := ecs.first_render_instance(world)
-	if !ok {
-		return false
+wgpu_update_cube_uniforms :: proc(renderer: ^WGPU_Renderer, render_list: ^Render_List, width, height: u32) -> u32 {
+	uniform: WGPU_Cube_Uniform
+	instance_count := 0
+	for instance in render_list.instances {
+		if instance.mesh.primitive != "cube" {
+			continue
+		}
+		if instance_count >= WGPU_MAX_CUBE_INSTANCES {
+			break
+		}
+
+		uniform.mvp[instance_count] = wgpu_build_mvp(instance, render_list.camera, render_list.has_camera, width, height)
+		instance_count += 1
+	}
+	if instance_count == 0 {
+		return 0
 	}
 
-	camera, camera_ok := ecs.first_camera_instance(world)
-	mvp := wgpu_build_mvp(instance, camera, camera_ok, width, height)
-	uniform := WGPU_Cube_Uniform{mvp = mvp}
 	wgpu.QueueWriteBuffer(renderer.queue, renderer.uniform_buffer, 0, &uniform, uint(size_of(WGPU_Cube_Uniform)))
-	return true
+	return u32(instance_count)
 }
 
 wgpu_encode_cube_pass :: proc(
@@ -625,7 +637,7 @@ wgpu_encode_cube_pass :: proc(
 	encoder: wgpu.CommandEncoder,
 	color_view: wgpu.TextureView,
 	depth_view: wgpu.TextureView,
-	has_renderable: bool,
+	instance_count: u32,
 	label: string,
 ) -> string {
 	color_attachment := wgpu.RenderPassColorAttachment {
@@ -657,12 +669,12 @@ wgpu_encode_cube_pass :: proc(
 	}
 	defer wgpu.RenderPassEncoderRelease(render_pass)
 
-	if has_renderable {
+	if instance_count > 0 {
 		wgpu.RenderPassEncoderSetPipeline(render_pass, renderer.pipeline)
 		wgpu.RenderPassEncoderSetBindGroup(render_pass, 0, renderer.bind_group)
 		wgpu.RenderPassEncoderSetVertexBuffer(render_pass, 0, renderer.vertex_buffer, 0, u64(size_of(WGPU_Cube_Vertex) * len(WGPU_CUBE_VERTICES)))
 		wgpu.RenderPassEncoderSetIndexBuffer(render_pass, renderer.index_buffer, .Uint16, 0, u64(size_of(u16) * len(WGPU_CUBE_INDICES)))
-		wgpu.RenderPassEncoderDrawIndexed(render_pass, u32(len(WGPU_CUBE_INDICES)), 1, 0, 0, 0)
+		wgpu.RenderPassEncoderDrawIndexed(render_pass, u32(len(WGPU_CUBE_INDICES)), instance_count, 0, 0, 0)
 	}
 
 	wgpu.RenderPassEncoderEnd(render_pass)
@@ -706,7 +718,9 @@ wgpu_draw_cube_frame :: proc(renderer: ^WGPU_Renderer, world: ^World) -> (presen
 	defer wgpu.TextureRelease(texture)
 
 	ecs.step_world(world, 1.0 / 60.0)
-	has_renderable := wgpu_update_cube_uniform(renderer, world, renderer.width, renderer.height)
+	render_list := ecs.build_render_list(world)
+	defer ecs.destroy_render_list(&render_list)
+	instance_count := wgpu_update_cube_uniforms(renderer, &render_list, renderer.width, renderer.height)
 
 	encoder := wgpu.DeviceCreateCommandEncoder(renderer.device, &wgpu.CommandEncoderDescriptor{label = "Scrapbot Cube Encoder"})
 	if encoder == nil {
@@ -714,7 +728,7 @@ wgpu_draw_cube_frame :: proc(renderer: ^WGPU_Renderer, world: ^World) -> (presen
 	}
 	defer wgpu.CommandEncoderRelease(encoder)
 
-	if err = wgpu_encode_cube_pass(renderer, encoder, view, renderer.depth_view, has_renderable, "Scrapbot Cube Pass"); err != "" {
+	if err = wgpu_encode_cube_pass(renderer, encoder, view, renderer.depth_view, instance_count, "Scrapbot Cube Pass"); err != "" {
 		return false, false, err
 	}
 
@@ -744,7 +758,9 @@ wgpu_render_offscreen_frame :: proc(
 	height: u32 = 0,
 ) -> string {
 	ecs.step_world(world, 1.0 / 60.0)
-	has_renderable := wgpu_update_cube_uniform(renderer, world, width, height)
+	render_list := ecs.build_render_list(world)
+	defer ecs.destroy_render_list(&render_list)
+	instance_count := wgpu_update_cube_uniforms(renderer, &render_list, width, height)
 
 	encoder := wgpu.DeviceCreateCommandEncoder(renderer.device, &wgpu.CommandEncoderDescriptor{label = "Scrapbot Headless Cube Encoder"})
 	if encoder == nil {
@@ -752,7 +768,7 @@ wgpu_render_offscreen_frame :: proc(
 	}
 	defer wgpu.CommandEncoderRelease(encoder)
 
-	if err := wgpu_encode_cube_pass(renderer, encoder, view, depth_view, has_renderable, "Scrapbot Headless Cube Pass"); err != "" {
+	if err := wgpu_encode_cube_pass(renderer, encoder, view, depth_view, instance_count, "Scrapbot Headless Cube Pass"); err != "" {
 		return err
 	}
 

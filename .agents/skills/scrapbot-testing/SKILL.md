@@ -52,7 +52,7 @@ Use `--frames` for automated smoke checks so the command returns. Without `--fra
 
 ## Headless WGPU Framegrabs
 
-Headless framegrab renders the WGPU triangle into an offscreen texture, reads back the final frame, and writes a PNG:
+Headless framegrab renders the WGPU cube scene into an offscreen texture, reads back the final frame, and writes a PNG:
 
 ```sh
 bin/scrapbot run examples/minimal --backend wgpu --headless --frames 2 --framegrab /tmp/scrapbot-framegrab.png
@@ -71,7 +71,7 @@ Expected basics:
 
 - `file` reports `PNG image data, 1280 x 720, 8-bit/color RGBA`.
 - `xxd` starts with `8950 4e47 0d0a 1a0a`.
-- Visual inspection shows the orange triangle on the dark clear color.
+- Visual inspection shows the example project's colored cube renderables on the dark clear color.
 
 Use `view_image` on the PNG when visual inspection matters.
 

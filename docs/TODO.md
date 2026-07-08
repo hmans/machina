@@ -8,7 +8,8 @@
 - [x] Add a headless WGPU PNG framegrab path.
 - [x] Replace the WGPU triangle loop with an ECS-driven rotating cube renderer.
 - [x] Define the first renderable query boundary between ECS state and renderer backends.
-- [ ] Expand the WGPU scene renderer beyond the first cube renderable.
+- [x] Expand the WGPU renderer beyond the first cube renderable.
+- [ ] Expand the WGPU renderer beyond cube primitives.
 - [ ] Add visual comparison for offscreen render output.
 
 ## Project Runtime

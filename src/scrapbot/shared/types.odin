@@ -83,6 +83,12 @@ Camera_Instance :: struct {
 	camera:    Camera_Component,
 }
 
+Render_List :: struct {
+	instances:  [dynamic]Render_Instance,
+	camera:     Camera_Instance,
+	has_camera: bool,
+}
+
 World :: struct {
 	entities:   [dynamic]World_Entity,
 	transforms: #soa[dynamic]Transform_Component,

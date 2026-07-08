@@ -11,6 +11,7 @@ Render_Frame :: shared.Render_Frame
 Renderable :: shared.Renderable
 Render_Instance :: shared.Render_Instance
 Camera_Instance :: shared.Camera_Instance
+Render_List :: shared.Render_List
 
 CUBE_ROTATION_SPEED_RADIANS_PER_SECOND :: f32(math.PI / 2)
 INVALID_COMPONENT_INDEX :: -1
@@ -74,50 +75,59 @@ render_frame_from_world :: proc(world: ^World) -> Render_Frame {
 	}
 }
 
+build_render_list :: proc(world: ^World) -> Render_List {
+	list: Render_List
+	list.camera, list.has_camera = first_camera_instance(world)
+
+	for renderable in world.renderables {
+		instance, ok := render_instance_from_renderable(world, renderable)
+		if !ok {
+			continue
+		}
+		append(&list.instances, instance)
+	}
+
+	return list
+}
+
+destroy_render_list :: proc(list: ^Render_List) {
+	delete(list.instances)
+	list^ = {}
+}
+
 step_world :: proc(world: ^World, delta_seconds: f32) {
 	for renderable in world.renderables {
-		if renderable.transform_index < 0 || renderable.transform_index >= len(world.transforms) {
-			continue
-		}
-		if renderable.mesh_index < 0 || renderable.mesh_index >= len(world.meshes) {
-			continue
-		}
-
-		mesh := world.meshes[renderable.mesh_index]
-		if mesh.primitive != "cube" {
+		instance, ok := render_instance_from_renderable(world, renderable)
+		if !ok {
 			continue
 		}
 
-		transform := world.transforms[renderable.transform_index]
+		if instance.mesh.primitive != "cube" {
+			continue
+		}
+
+		transform := instance.transform
 		transform.rotation.y = wrap_radians(transform.rotation.y + CUBE_ROTATION_SPEED_RADIANS_PER_SECOND * delta_seconds)
 		world.transforms[renderable.transform_index] = transform
 	}
 }
 
-first_render_instance :: proc(world: ^World) -> (instance: Render_Instance, ok: bool) {
-	for renderable in world.renderables {
-		if renderable.entity_index < 0 || renderable.entity_index >= len(world.entities) {
-			continue
-		}
-		if renderable.transform_index < 0 || renderable.transform_index >= len(world.transforms) {
-			continue
-		}
-		if renderable.mesh_index < 0 || renderable.mesh_index >= len(world.meshes) {
-			continue
-		}
-
-		mesh := world.meshes[renderable.mesh_index]
-		if mesh.primitive != "cube" {
-			continue
-		}
-
-		return Render_Instance {
-			entity    = world.entities[renderable.entity_index],
-			transform = world.transforms[renderable.transform_index],
-			mesh      = mesh,
-		}, true
+render_instance_from_renderable :: proc(world: ^World, renderable: Renderable) -> (instance: Render_Instance, ok: bool) {
+	if renderable.entity_index < 0 || renderable.entity_index >= len(world.entities) {
+		return {}, false
 	}
-	return {}, false
+	if renderable.transform_index < 0 || renderable.transform_index >= len(world.transforms) {
+		return {}, false
+	}
+	if renderable.mesh_index < 0 || renderable.mesh_index >= len(world.meshes) {
+		return {}, false
+	}
+
+	return Render_Instance {
+		entity    = world.entities[renderable.entity_index],
+		transform = world.transforms[renderable.transform_index],
+		mesh      = world.meshes[renderable.mesh_index],
+	}, true
 }
 
 first_camera_instance :: proc(world: ^World) -> (instance: Camera_Instance, ok: bool) {
