@@ -4,9 +4,9 @@ type Scrapbot = {
 	log: (message: any) -> (),
 	entity_count: () -> number,
 	renderable_count: () -> number,
-	component: (name: string, schema: ScrapbotComponentSchema) -> (),
+	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T>,
 	system: (system: (delta_seconds: number) -> ()) -> (),
-	query: (component_name: string, callback: (entity: ScrapbotEntity, component: any) -> ()) -> (),
+	query: <T>(component: ScrapbotComponent<T>, callback: (entity: ScrapbotEntity, component: T) -> ()) -> (),
 	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
 	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
 }
@@ -22,8 +22,15 @@ type ScrapbotVec3 = {
 	z: number,
 }
 
-type ScrapbotComponentSchema = {
-	[string]: "vec3",
+type ScrapbotComponent<T> = {
+	name: string,
+	_type: T?,
 }
+
+type ScrapbotComponentSchema = {
+	[string]: ScrapbotComponentFieldType,
+}
+
+type ScrapbotComponentFieldType = "vec3"
 
 declare scrapbot: Scrapbot

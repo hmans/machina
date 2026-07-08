@@ -17,7 +17,11 @@ test_luau_script_can_read_ecs_counts :: proc(t: ^testing.T) {
 	runtime: Runtime
 	defer destroy_runtime(&runtime)
 	result := run_source(&runtime, `
-scrapbot.component("autorotate", {
+type Autorotate = {
+	velocity: ScrapbotVec3,
+}
+
+local AutorotateComponent: ScrapbotComponent<Autorotate> = scrapbot.component("autorotate", {
 	velocity = "vec3",
 })
 
@@ -64,12 +68,16 @@ velocity = [0, 2, 0]
 	runtime: Runtime
 	defer destroy_runtime(&runtime)
 	result := run_source(&runtime, `
-scrapbot.component("autorotate", {
+type Autorotate = {
+	velocity: ScrapbotVec3,
+}
+
+local AutorotateComponent: ScrapbotComponent<Autorotate> = scrapbot.component("autorotate", {
 	velocity = "vec3",
 })
 
 scrapbot.system(function(delta_seconds)
-	scrapbot.query("autorotate", function(entity, autorotate)
+	scrapbot.query(AutorotateComponent, function(entity, autorotate)
 		local rotation = scrapbot.get_rotation(entity)
 		rotation.x += autorotate.velocity.x * delta_seconds
 		rotation.y += autorotate.velocity.y * delta_seconds
@@ -142,4 +150,41 @@ scrapbot.component("autorotate", {
 
 	testing.expect(t, !result.ran)
 	testing.expect(t, result.err == `scene component "autorotate" has field "velocity" that is not defined by scripts/main.luau`)
+}
+
+@(test)
+test_luau_query_requires_component_handle :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.transform]
+position = [0, 0, 0]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+scrapbot.system(function()
+	scrapbot.query("autorotate", function() end)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 0.5)
+	testing.expect(t, step_err == "Luau system: scrapbot.query expects a component handle and callback")
 }

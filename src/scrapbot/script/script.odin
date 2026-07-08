@@ -279,7 +279,8 @@ scrapbot_component :: proc "c" (L: Lua_State) -> c.int {
 		lua_settop(L, -2)
 	}
 
-	return 0
+	push_component_handle(L, component.name)
+	return 1
 }
 
 scrapbot_system :: proc "c" (L: Lua_State) -> c.int {
@@ -360,16 +361,22 @@ component_field :: proc(definition: Component_Definition, name: string) -> (fiel
 
 scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 	runtime := cast(^Runtime)lua_getthreaddata(L)
-	if runtime == nil || runtime.world == nil || lua_type(L, 2) != LUA_TFUNCTION {
+	if runtime == nil || runtime.world == nil {
 		return 0
+	}
+	if lua_type(L, 1) != LUA_TTABLE || lua_type(L, 2) != LUA_TFUNCTION {
+		return luau_push_error(L, "scrapbot.query expects a component handle and callback")
 	}
 
 	name_length: c.size_t
-	name_data := lua_tolstring(L, 1, &name_length)
+	lua_getfield(L, 1, "name")
+	name_data := lua_tolstring(L, -1, &name_length)
 	if name_data == nil {
-		return 0
+		lua_settop(L, -2)
+		return luau_push_error(L, "scrapbot.query component handle must contain a name")
 	}
 	component_name := luau_string(name_data, name_length)
+	lua_settop(L, -2)
 
 	callback_ref := lua_ref(L, 2)
 	for component in runtime.world.custom_components {
@@ -388,6 +395,12 @@ scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 	}
 	lua_unref(L, callback_ref)
 	return 0
+}
+
+push_component_handle :: proc "c" (L: Lua_State, name: string) {
+	lua_createtable(L, 0, 1)
+	lua_pushlstring(L, cstring(raw_data(name)), c.size_t(len(name)))
+	lua_setfield(L, -2, "name")
 }
 
 scrapbot_get_rotation :: proc "c" (L: Lua_State) -> c.int {

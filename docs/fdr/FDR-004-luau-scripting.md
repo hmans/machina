@@ -16,8 +16,10 @@ Luau scripting lets project directories include fast-iteration game code without
 - Scripts can call `scrapbot.log(message)`.
 - Scripts can read `scrapbot.entity_count()` and `scrapbot.renderable_count()`.
 - Scripts can define project components with `scrapbot.component(name, schema)`, where the first supported field type is `"vec3"`.
+- `scrapbot.component` returns a typed component handle, such as `ScrapbotComponent<Autorotate>`.
 - Scripts can register frame systems with `scrapbot.system(function(delta_seconds) ... end)`.
-- Scripts can query scene-defined custom components with `scrapbot.query(component_name, callback)`.
+- Scripts can query scene-defined custom components with `scrapbot.query(component_handle, callback)`.
+- Luau definitions type query callback components from the component handle.
 - Scripts can read and write entity rotation through `scrapbot.get_rotation(entity)` and `scrapbot.set_rotation(entity, rotation)`.
 - Scene files can attach simple custom vec3 component data with `[entities.components.<name>]` sections.
 - Scene custom component data must match a component schema defined by `scripts/main.luau`.
@@ -53,9 +55,9 @@ This was the first scripting slice. The current API has since grown a narrow ECS
 
 ### 5. Start custom components as simple scene data
 
-**Decision:** Allow scripts to define project components with `scrapbot.component(name, schema)` and let scene files attach matching data with `[entities.components.<name>]` sections whose initial fields are vec3 values.
+**Decision:** Allow scripts to define project components with `scrapbot.component(name, schema)` and let scene files attach matching data with `[entities.components.<name>]` sections whose initial fields are vec3 values. `scrapbot.component` returns a typed handle that carries the Luau component payload type into `scrapbot.query`.
 **Why:** This is enough for the first project-owned system, `autorotate.velocity`, while keeping the parser and Luau bridge small.
-**Tradeoff:** Component schemas are only runtime-validated string schemas. Luau receives component tables dynamically, and only transform rotation has mutation helpers.
+**Tradeoff:** Component schemas are still string schemas at runtime, so the schema table is not yet generated from the Luau payload type. Luau receives component tables dynamically, and only transform rotation has mutation helpers.
 
 ## Related
 

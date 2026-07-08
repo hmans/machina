@@ -28,7 +28,9 @@
 - [x] Add a first Luau system bridge for project-local systems.
 - [x] Add scene-defined custom component data for Luau systems.
 - [x] Validate scene custom components against Luau-defined component schemas.
+- [x] Add typed Luau component handles for query callbacks.
 - [ ] Add reflected Luau component schemas and generated typed component APIs.
+- [ ] Add a Luau analyzer check for example project scripts.
 - [ ] Add native Odin extension loading and hot reload.
 
 ## Editor
