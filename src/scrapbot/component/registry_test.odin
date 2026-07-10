@@ -82,11 +82,11 @@ test_luau_types_include_registered_components :: proc(t: ^testing.T) {
 	testing.expect(t, generate_err == "")
 	defer delete(text)
 
-	testing.expect(t, strings.contains(text, "type ScrapbotTransform = {"))
+	testing.expect(t, strings.contains(text, "export type ScrapbotTransform = {"))
 	testing.expect(t, strings.contains(text, "\tposition: Vec3,"))
-	testing.expect(t, strings.contains(text, "type Autorotate = {"))
+	testing.expect(t, strings.contains(text, "export type Autorotate = {"))
 	testing.expect(t, strings.contains(text, "\tvelocity: Vec3,"))
-	testing.expect(t, strings.contains(text, "type AutorotateComponent = ScrapbotComponent<Autorotate>"))
+	testing.expect(t, strings.contains(text, "export type AutorotateComponent = ScrapbotComponent<Autorotate>"))
 }
 
 @(test)

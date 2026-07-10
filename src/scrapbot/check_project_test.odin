@@ -22,9 +22,9 @@ test_check_project_refreshes_luau_types_from_script_registry :: proc(t: ^testing
 	types_bytes, read_err := os.read_entire_file(types_path, context.temp_allocator)
 	testing.expect(t, read_err == nil)
 	types_text := string(types_bytes)
-	testing.expect(t, strings.contains(types_text, "type Autorotate = {"))
+	testing.expect(t, strings.contains(types_text, "export type Autorotate = {"))
 	testing.expect(t, strings.contains(types_text, "\tvelocity: Vec3,"))
-	testing.expect(t, strings.contains(types_text, "type AutorotateComponent = ScrapbotComponent<Autorotate>"))
+	testing.expect(t, strings.contains(types_text, "export type AutorotateComponent = ScrapbotComponent<Autorotate>"))
 }
 
 @(test)
