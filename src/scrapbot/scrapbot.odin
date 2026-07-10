@@ -1,6 +1,7 @@
 package scrapbot
 
 import ecs "./ecs"
+import component "./component"
 import project "./project"
 import render "./render"
 import script "./script"
@@ -10,6 +11,8 @@ VERSION :: "0.1.0-dev"
 
 PROJECT_FILE :: shared.PROJECT_FILE
 DEFAULT_SCENE :: shared.DEFAULT_SCENE
+DEFAULT_SCRIPT :: shared.DEFAULT_SCRIPT
+DEFAULT_LUAU_TYPES :: shared.DEFAULT_LUAU_TYPES
 
 Renderer_Backend :: shared.Renderer_Backend
 Run_Config :: render.Run_Config
@@ -22,10 +25,38 @@ Runtime_Result :: struct {
 init_project :: project.init_project
 load_project :: project.load_project
 destroy_project_load_result :: project.destroy_project_load_result
-check_project :: project.check_project
 
 parse_renderer_backend :: render.parse_renderer_backend
 renderer_backend_name :: render.renderer_backend_name
+
+check_project :: proc(root: string) -> string {
+	loaded := project.load_project(root)
+	defer project.destroy_project_load_result(&loaded)
+	if loaded.err != "" {
+		return loaded.err
+	}
+	if err := project.validate_namespaced_scene_components(&loaded.scene); err != "" {
+		return err
+	}
+
+	world := ecs.build_world(&loaded.scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: script.Runtime
+	defer script.destroy_runtime(&runtime)
+	script_result := script.run_project_script_for_check(&runtime, root, &world)
+	if script_result.err != "" {
+		return script_result.err
+	}
+
+	if script_result.ran {
+		return project.write_luau_types(root, &runtime.registry)
+	}
+
+	fallback_registry: component.Registry
+	component.init_registry(&fallback_registry)
+	return project.write_luau_types(root, &fallback_registry)
+}
 
 run_headless :: proc(root: string) -> Runtime_Result {
 	return run_project(root, Run_Config{backend = .Null})

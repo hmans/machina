@@ -23,10 +23,15 @@ Run_Result :: struct {
 	err: string,
 }
 
+Source_Options :: struct {
+	log_enabled: bool,
+}
+
 Runtime :: struct {
 	L: Lua_State,
 	world: ^World,
 	registry: component.Registry,
+	log_enabled: bool,
 	systems: [MAX_SCRIPT_SYSTEMS]Script_System,
 	system_count: int,
 }
@@ -36,6 +41,14 @@ Script_System :: struct {
 }
 
 run_project_script :: proc(runtime: ^Runtime, root: string, world: ^World) -> Run_Result {
+	return run_project_script_with_options(runtime, root, world, Source_Options{log_enabled = true})
+}
+
+run_project_script_for_check :: proc(runtime: ^Runtime, root: string, world: ^World) -> Run_Result {
+	return run_project_script_with_options(runtime, root, world, Source_Options{})
+}
+
+run_project_script_with_options :: proc(runtime: ^Runtime, root: string, world: ^World, options: Source_Options) -> Run_Result {
 	result: Run_Result
 
 	script_path, join_err := filepath.join({root, DEFAULT_SCRIPT})
@@ -55,15 +68,20 @@ run_project_script :: proc(runtime: ^Runtime, root: string, world: ^World) -> Ru
 		return result
 	}
 
-	result = run_source(runtime, string(source), DEFAULT_SCRIPT_CHUNK, world)
+	result = run_source_with_options(runtime, string(source), DEFAULT_SCRIPT_CHUNK, world, options)
 	result.ran = result.err == ""
 	return result
 }
 
 run_source :: proc(runtime: ^Runtime, source, chunk_name: string, world: ^World) -> Run_Result {
+	return run_source_with_options(runtime, source, chunk_name, world, Source_Options{log_enabled = true})
+}
+
+run_source_with_options :: proc(runtime: ^Runtime, source, chunk_name: string, world: ^World, options: Source_Options) -> Run_Result {
 	result: Run_Result
 	runtime^ = {}
 	runtime.world = world
+	runtime.log_enabled = options.log_enabled
 	component.init_registry(&runtime.registry)
 
 	L := luaL_newstate()
@@ -184,6 +202,11 @@ register_scrapbot_api :: proc(L: Lua_State) {
 }
 
 scrapbot_log :: proc "c" (L: Lua_State) -> c.int {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	if runtime == nil || !runtime.log_enabled {
+		return 0
+	}
+
 	length: c.size_t
 	data := lua_tolstring(L, 1, &length)
 	if data != nil {

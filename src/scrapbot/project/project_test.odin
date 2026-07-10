@@ -126,7 +126,9 @@ test_init_project_writes_luau_lsp_metadata :: proc(t: ^testing.T) {
 
 	types_bytes, types_err := os.read_entire_file(types_path, context.temp_allocator)
 	testing.expect(t, types_err == nil)
-	testing.expect(t, string(types_bytes) == default_luau_types_template())
+	expected_types := default_luau_types_template()
+	defer delete(expected_types)
+	testing.expect(t, string(types_bytes) == expected_types)
 
 	settings_bytes, settings_err := os.read_entire_file(settings_path, context.temp_allocator)
 	testing.expect(t, settings_err == nil)

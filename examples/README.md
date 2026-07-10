@@ -13,3 +13,5 @@ Validate it without running a frame with:
 ```sh
 mise scrapbot check examples/minimal
 ```
+
+`check` also refreshes `types/scrapbot.d.luau` from the project's Luau component schemas.

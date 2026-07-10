@@ -1,6 +1,7 @@
 package component
 
 import "core:testing"
+import "core:strings"
 import shared "../shared"
 
 @(test)
@@ -66,4 +67,31 @@ test_registry_rejects_unknown_namespaced_scene_components :: proc(t: ^testing.T)
 	scene_component := shared.Custom_Component{name = "scrappyphysics.rigidbody"}
 	err := validate_custom_component(&registry, scene_component)
 	testing.expect(t, err == `scene component "scrappyphysics.rigidbody" is not registered`)
+}
+
+@(test)
+test_luau_types_include_registered_components :: proc(t: ^testing.T) {
+	registry: Registry
+	init_registry(&registry)
+	definition := Definition{name = "autorotate", field_count = 1}
+	definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
+	err := register_project_component(&registry, definition)
+	testing.expect(t, err == "")
+
+	text, generate_err := generate_luau_types(&registry)
+	testing.expect(t, generate_err == "")
+	defer delete(text)
+
+	testing.expect(t, strings.contains(text, "type ScrapbotTransform = {"))
+	testing.expect(t, strings.contains(text, "\tposition: Vec3,"))
+	testing.expect(t, strings.contains(text, "type Autorotate = {"))
+	testing.expect(t, strings.contains(text, "\tvelocity: Vec3,"))
+	testing.expect(t, strings.contains(text, "type AutorotateComponent = ScrapbotComponent<Autorotate>"))
+}
+
+@(test)
+test_luau_component_type_names_use_pascal_case_tokens :: proc(t: ^testing.T) {
+	name := luau_component_type_name("scrappyphysics.rigid_body")
+	defer delete(name)
+	testing.expect(t, name == "ScrappyphysicsRigidBody")
 }

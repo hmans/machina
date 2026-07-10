@@ -64,23 +64,9 @@ velocity = [0, 1.5707963, 0]
 default_script_template :: proc() -> string {
 	return `scrapbot.log("hello from Scrapbot")
 
-type Vec3 = {
-	x: number,
-	y: number,
-	z: number,
-}
-
-type Component<T> = {
-	name: string,
-}
-
-type Autorotate = {
-	velocity: Vec3,
-}
-
 local AutorotateComponent = scrapbot.component("autorotate", {
 	velocity = "vec3",
-}) :: Component<Autorotate>
+}) :: AutorotateComponent
 
 scrapbot.system(function(delta_seconds)
 	scrapbot.query(AutorotateComponent, function(entity, autorotate: Autorotate)
@@ -95,42 +81,15 @@ end)
 }
 
 default_luau_types_template :: proc() -> string {
-	return `--!strict
+	registry: components.Registry
+	components.init_registry(&registry)
+	register_default_project_components(&registry)
 
-type Scrapbot = {
-	log: (message: any) -> (),
-	entity_count: () -> number,
-	renderable_count: () -> number,
-	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T>,
-	system: (system: (delta_seconds: number) -> ()) -> (),
-	query: <T>(component: ScrapbotComponent<T>, callback: (entity: ScrapbotEntity, component: T) -> ()) -> (),
-	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
-	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
-}
-
-type ScrapbotEntity = {
-	index: number,
-	name: string?,
-}
-
-type ScrapbotVec3 = {
-	x: number,
-	y: number,
-	z: number,
-}
-
-type ScrapbotComponent<T> = {
-	name: string,
-}
-
-type ScrapbotComponentSchema = {
-	[string]: ScrapbotComponentFieldType,
-}
-
-type ScrapbotComponentFieldType = "vec3"
-
-declare scrapbot: Scrapbot
-`
+	text, err := components.generate_luau_types(&registry)
+	if err != "" {
+		return components.LUAU_TYPES_PREAMBLE + "declare scrapbot: Scrapbot\n"
+	}
+	return text
 }
 
 default_vscode_settings_template :: proc() -> string {
@@ -228,7 +187,9 @@ init_project :: proc(root, name: string) -> string {
 		return "failed to allocate Luau types path"
 	}
 	defer delete(types_path)
-	if err := os.write_entire_file(types_path, default_luau_types_template()); err != nil {
+	types_text := default_luau_types_template()
+	defer delete(types_text)
+	if err := os.write_entire_file(types_path, types_text); err != nil {
 		return fmt.tprintf("failed to write %s: %v", types_path, err)
 	}
 
@@ -312,6 +273,42 @@ check_project :: proc(root: string) -> string {
 		return loaded.err
 	}
 	return validate_namespaced_scene_components(&loaded.scene)
+}
+
+write_luau_types :: proc(root: string, registry: ^components.Registry) -> string {
+	types_dir, join_types_dir_err := filepath.join({root, "types"})
+	if join_types_dir_err != nil {
+		return "failed to allocate Luau types directory path"
+	}
+	defer delete(types_dir)
+	if !os.exists(types_dir) {
+		if err := os.make_directory_all(types_dir); err != nil {
+			return fmt.tprintf("failed to create Luau types directory: %v", err)
+		}
+	}
+
+	types_path, join_types_path_err := filepath.join({root, DEFAULT_LUAU_TYPES})
+	if join_types_path_err != nil {
+		return "failed to allocate Luau types path"
+	}
+	defer delete(types_path)
+
+	types_text, generate_err := components.generate_luau_types(registry)
+	if generate_err != "" {
+		return generate_err
+	}
+	defer delete(types_text)
+
+	if err := os.write_entire_file(types_path, types_text); err != nil {
+		return fmt.tprintf("failed to write %s: %v", types_path, err)
+	}
+	return ""
+}
+
+register_default_project_components :: proc(registry: ^components.Registry) {
+	definition := components.Definition{name = "autorotate", field_count = 1}
+	definition.fields[0] = components.Field_Definition{name = "velocity", field_type = .Vec3}
+	components.register_project_component(registry, definition)
 }
 
 validate_namespaced_scene_components :: proc(scene: ^Scene) -> string {

@@ -2,23 +2,9 @@ scrapbot.log("hello from examples/minimal")
 scrapbot.log("entities: " .. tostring(scrapbot.entity_count()))
 scrapbot.log("renderables: " .. tostring(scrapbot.renderable_count()))
 
-type Vec3 = {
-	x: number,
-	y: number,
-	z: number,
-}
-
-type Component<T> = {
-	name: string,
-}
-
-type Autorotate = {
-	velocity: Vec3,
-}
-
 local AutorotateComponent = scrapbot.component("autorotate", {
 	velocity = "vec3",
-}) :: Component<Autorotate>
+}) :: AutorotateComponent
 
 scrapbot.system(function(delta_seconds)
 	scrapbot.query(AutorotateComponent, function(entity, autorotate: Autorotate)

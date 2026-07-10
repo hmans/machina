@@ -14,7 +14,7 @@
 
 **Component** - A typed piece of data attached to an entity, such as a transform, camera, or mesh reference. Single-token names like `autorotate` identify project-level components; dotted names like `scrapbot.transform` or `scrappyphysics.rigidbody` identify engine or library components.
 
-**Component registry** - The runtime registry of known component names and simple field schemas. Scrapbot currently registers built-in `scrapbot.*` components and project components declared from Luau.
+**Component registry** - The runtime registry of known component names and simple field schemas. Scrapbot currently registers built-in `scrapbot.*` components and project components declared from Luau, and uses that metadata to generate project Luau type aliases.
 
 **System** - Runtime logic that reads or writes components for matching entities.
 
@@ -49,6 +49,8 @@
 ## Scripting And Editing
 
 **Luau** - Scrapbot's embedded scripting language for project-local code, currently exposed through `scripts/main.luau` and a small `scrapbot` API for logging, systems, component schemas, custom component queries, and transform rotation helpers.
+
+**Generated Luau types** - Project-local type definitions in `types/scrapbot.d.luau`. `scrapbot check` refreshes them from the component registry so editors can see engine and project component payload aliases.
 
 **Native extension** - Planned project-local compiled code that can register fast systems or engine integrations.
 

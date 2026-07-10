@@ -13,7 +13,8 @@ Text-first projects let users run Scrapbot from an ordinary project directory co
 - The manifest names the project and points at a default scene.
 - The default generated scene lives at `scenes/main.scene.toml`.
 - Scene files describe entities and known components in TOML.
-- Project validation rejects missing manifests, unsafe scene paths, malformed project metadata, malformed scene data, and unknown namespaced scene components.
+- Project validation rejects missing manifests, unsafe scene paths, malformed project metadata, malformed scene data, unknown namespaced scene components, and scene data that does not match project Luau component schemas.
+- Project validation refreshes generated Luau type definitions from the component registry.
 - Example project directories live under `examples/` and can be used for smoke verification.
 
 ## Design Decisions
@@ -30,11 +31,11 @@ Text-first projects let users run Scrapbot from an ordinary project directory co
 **Why:** The first slice needed a small project contract without taking a dependency decision on a TOML parser. See ADR-002.
 **Tradeoff:** Hand-authored files that use valid TOML features outside the subset may fail validation.
 
-### 3. Validate namespaced scene components through the registry
+### 3. Validate scene components through the registry
 
-**Decision:** `scrapbot check` validates dotted scene component names against the engine component registry, while project-level component schema validation remains part of `scrapbot run` because it depends on Luau script declarations.
-**Why:** Dotted names are reserved for engine and library components, so silently accepting unknown namespaced scene data would hide misspellings and missing integrations.
-**Tradeoff:** Future third-party libraries need a registration mechanism before their dotted component names can pass project validation.
+**Decision:** `scrapbot check` validates dotted scene component names against the engine component registry and executes `scripts/main.luau` silently to collect project-level component schemas.
+**Why:** Dotted names are reserved for engine and library components, and project component data is only meaningful if the script declares a matching schema.
+**Tradeoff:** Project scripts should keep top-level work limited to registration and other check-safe setup. Future third-party libraries need a registration mechanism before their dotted component names can pass project validation.
 
 ## Related
 
