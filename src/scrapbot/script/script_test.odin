@@ -207,6 +207,86 @@ end)
 }
 
 @(test)
+test_luau_query_system_writes_project_component_payload :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+local Autorotating = scrapbot.query(AutorotateComponent)
+
+scrapbot.system(Autorotating, {
+	writes = { AutorotateComponent },
+}, function(delta_seconds, entity, autorotate)
+	autorotate.velocity.y += 3 * delta_seconds
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 0.5)
+	testing.expect(t, step_err == "")
+
+	autorotate_id := runtime.registry.definitions[3].id
+	autorotate, ok := ecs.custom_component_for_entity(&world, 0, autorotate_id, "autorotate")
+	testing.expect(t, ok)
+	testing.expect(t, autorotate.vec3_fields[0].value.y == 3.5)
+}
+
+@(test)
+test_luau_query_system_rejects_project_component_payload_write_without_access :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+local Autorotating = scrapbot.query(AutorotateComponent)
+
+scrapbot.system(Autorotating, function(delta_seconds, entity, autorotate)
+	autorotate.velocity.y += 3 * delta_seconds
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 0.5)
+	testing.expect(t, step_err == "Luau system: system access declaration does not permit component write")
+
+	autorotate_id := runtime.registry.definitions[3].id
+	autorotate, ok := ecs.custom_component_for_entity(&world, 0, autorotate_id, "autorotate")
+	testing.expect(t, ok)
+	testing.expect(t, autorotate.vec3_fields[0].value.y == 2)
+}
+
+@(test)
 test_luau_query_reuses_cached_object_for_same_component_set :: proc(t: ^testing.T) {
 	scene, parse_result := project.parse_scene(`[[entities]]
 name = "Spinner"

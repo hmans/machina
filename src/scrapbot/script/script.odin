@@ -67,6 +67,24 @@ Transform_Writeback :: struct {
 	can_write: bool,
 }
 
+Project_Component_Writeback :: struct {
+	ref: c.int,
+	entity_index: int,
+	component_id: Component_ID,
+	name: string,
+	can_write: bool,
+}
+
+Prepared_Transform_Writebacks :: struct {
+	transforms: [ecs.MAX_QUERY_TERMS]Transform_Component,
+	changed: [ecs.MAX_QUERY_TERMS]bool,
+}
+
+Prepared_Project_Component_Writebacks :: struct {
+	components: [ecs.MAX_QUERY_TERMS]ecs.Command_Component,
+	changed: [ecs.MAX_QUERY_TERMS]bool,
+}
+
 Component_Reference :: struct {
 	name: string,
 	id:   Component_ID,
@@ -236,6 +254,8 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 			push_entity_table(L, runtime.world, entity_index)
 			writebacks: [ecs.MAX_QUERY_TERMS]Transform_Writeback
 			writeback_count := 0
+			component_writebacks: [ecs.MAX_QUERY_TERMS]Project_Component_Writeback
+			component_writeback_count := 0
 			for term_index in 0..<system.query.term_count {
 				term := system.query.terms[term_index]
 				push_query_component_table(L, runtime.world, entity_index, term)
@@ -250,6 +270,17 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 						}
 						writeback_count += 1
 					}
+				} else if query_term_is_project_component(&runtime.registry, term) {
+					if _, ok := ecs.custom_component_for_entity_ref(runtime.world, entity_index, term.component_id, term.name); ok {
+						component_writebacks[component_writeback_count] = Project_Component_Writeback {
+							ref = lua_ref(L, -1),
+							entity_index = entity_index,
+							component_id = term.component_id,
+							name = term.name,
+							can_write = system_allows_component_access(system.declaration, term.name, .Write),
+						}
+						component_writeback_count += 1
+					}
 				}
 			}
 			status := lua_pcall(L, c.int(system.query.term_count + 2), 0, 0)
@@ -257,11 +288,40 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 				for writeback in writebacks[:writeback_count] {
 					lua_unref(L, writeback.ref)
 				}
+				for writeback in component_writebacks[:component_writeback_count] {
+					lua_unref(L, writeback.ref)
+				}
 				return luau_stack_error(L, "Luau system")
 			}
-			if err := apply_transform_writebacks(L, runtime.world, writebacks[:writeback_count]); err != "" {
-				return err
+			prepared_transforms: Prepared_Transform_Writebacks
+			transform_err := prepare_transform_writebacks(
+				L,
+				writebacks[:writeback_count],
+				&prepared_transforms,
+			)
+			prepared_components: Prepared_Project_Component_Writebacks
+			component_err := prepare_project_component_writebacks(
+				L,
+				runtime,
+				component_writebacks[:component_writeback_count],
+				&prepared_components,
+			)
+			if transform_err != "" {
+				return transform_err
 			}
+			if component_err != "" {
+				return component_err
+			}
+			apply_transform_writebacks(
+				runtime.world,
+				writebacks[:writeback_count],
+				&prepared_transforms,
+			)
+			apply_project_component_writebacks(
+				runtime.world,
+				component_writebacks[:component_writeback_count],
+				&prepared_components,
+			)
 		}
 		return ""
 	}
@@ -275,13 +335,11 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 	return ""
 }
 
-apply_transform_writebacks :: proc "c" (
+prepare_transform_writebacks :: proc "c" (
 	L: Lua_State,
-	world: ^World,
 	writebacks: []Transform_Writeback,
+	prepared: ^Prepared_Transform_Writebacks,
 ) -> string {
-	transforms: [ecs.MAX_QUERY_TERMS]Transform_Component
-	changed: [ecs.MAX_QUERY_TERMS]bool
 	first_err := ""
 
 	for writeback, index in writebacks {
@@ -308,22 +366,99 @@ apply_transform_writebacks :: proc "c" (
 			}
 			continue
 		}
-		transforms[index] = transform
-		changed[index] = true
+		prepared.transforms[index] = transform
+		prepared.changed[index] = true
 	}
 
-	if first_err != "" {
-		return first_err
-	}
+	return first_err
+}
 
+apply_transform_writebacks :: proc "c" (
+	world: ^World,
+	writebacks: []Transform_Writeback,
+	prepared: ^Prepared_Transform_Writebacks,
+) {
 	for writeback, index in writebacks {
 		if world != nil && writeback.transform_index >= 0 && writeback.transform_index < len(world.transforms) {
-			if changed[index] {
-				world.transforms[writeback.transform_index] = transforms[index]
+			if prepared.changed[index] {
+				world.transforms[writeback.transform_index] = prepared.transforms[index]
 			}
 		}
 	}
-	return ""
+}
+
+prepare_project_component_writebacks :: proc(
+	L: Lua_State,
+	runtime: ^Runtime,
+	writebacks: []Project_Component_Writeback,
+	prepared: ^Prepared_Project_Component_Writebacks,
+) -> string {
+	first_err := ""
+
+	for writeback, index in writebacks {
+		lua_rawgeti(L, LUA_REGISTRYINDEX, writeback.ref)
+		component_ref := Component_Reference{name = writeback.name, id = writeback.component_id}
+		component_data: ecs.Command_Component
+		err := read_custom_component_payload(L, runtime, component_ref, -1, &component_data)
+		lua_settop(L, -2)
+		lua_unref(L, writeback.ref)
+
+		if err != "" {
+			if first_err == "" {
+				if !writeback.can_write {
+					first_err = "Luau system: system access declaration does not permit component write"
+				} else {
+					first_err = "Luau system: invalid project component payload"
+				}
+			}
+			continue
+		}
+
+		world_component, ok := ecs.custom_component_for_entity_ref(
+			runtime.world,
+			writeback.entity_index,
+			writeback.component_id,
+			writeback.name,
+		)
+		if !ok {
+			continue
+		}
+		if custom_component_matches_command(world_component^, &component_data) {
+			continue
+		}
+		if !writeback.can_write {
+			if first_err == "" {
+				first_err = "Luau system: system access declaration does not permit component write"
+			}
+			continue
+		}
+		prepared.components[index] = component_data
+		prepared.changed[index] = true
+	}
+
+	return first_err
+}
+
+apply_project_component_writebacks :: proc(
+	world: ^World,
+	writebacks: []Project_Component_Writeback,
+	prepared: ^Prepared_Project_Component_Writebacks,
+) {
+	for writeback, index in writebacks {
+		if !prepared.changed[index] {
+			continue
+		}
+		world_component, ok := ecs.custom_component_for_entity_ref(
+			world,
+			writeback.entity_index,
+			writeback.component_id,
+			writeback.name,
+		)
+		if !ok {
+			continue
+		}
+		apply_custom_component_command(world_component, &prepared.components[index])
+	}
 }
 
 system_allows_component_access :: proc "c" (
@@ -350,6 +485,11 @@ system_allows_component_access :: proc "c" (
 		}
 	}
 	return false
+}
+
+query_term_is_project_component :: proc "c" (registry: ^component.Registry, term: Query_Term) -> bool {
+	definition, ok := component.find_definition_by_id(registry, term.component_id)
+	return ok && definition.name == term.name && definition.owner == .Project
 }
 
 step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> string {
@@ -1247,6 +1387,58 @@ read_custom_component_payload :: proc "c" (
 	}
 
 	return ""
+}
+
+custom_component_matches_command :: proc(
+	world_component: Custom_Component,
+	command_component: ^ecs.Command_Component,
+) -> bool {
+	if world_component.component_id != command_component.component_id ||
+	   world_component.name != ecs.command_component_name(command_component) ||
+	   len(world_component.vec3_fields) != command_component.vec3_field_count {
+		return false
+	}
+
+	for i in 0..<command_component.vec3_field_count {
+		command_field := &command_component.vec3_fields[i]
+		value, ok := custom_component_vec3_field(world_component, ecs.command_field_name(command_field))
+		if !ok || value != command_field.value {
+			return false
+		}
+	}
+
+	return true
+}
+
+custom_component_vec3_field :: proc(
+	world_component: Custom_Component,
+	name: string,
+) -> (value: Vec3, ok: bool) {
+	for field in world_component.vec3_fields {
+		if field.name == name {
+			return field.value, true
+		}
+	}
+	return {}, false
+}
+
+apply_custom_component_command :: proc(
+	world_component: ^Custom_Component,
+	command_component: ^ecs.Command_Component,
+) {
+	if world_component == nil {
+		return
+	}
+	for i in 0..<command_component.vec3_field_count {
+		command_field := &command_component.vec3_fields[i]
+		field_name := ecs.command_field_name(command_field)
+		for &world_field in world_component.vec3_fields {
+			if world_field.name == field_name {
+				world_field.value = command_field.value
+				break
+			}
+		}
+	}
 }
 
 optional_vec3_field :: proc "c" (L: Lua_State, index: c.int, name: cstring) -> (value: Vec3, found, ok: bool) {

@@ -536,14 +536,27 @@ custom_component_for_entity :: proc "c" (
 	component_id: Component_ID,
 	name: string,
 ) -> (component: Custom_Component, ok: bool) {
-	storage := find_custom_component_storage(world, component_id, name)
-	if storage == nil {
+	component_ref, found := custom_component_for_entity_ref(world, entity_index, component_id, name)
+	if !found {
 		return {}, false
 	}
-	for component in storage.components {
+	return component_ref^, true
+}
+
+custom_component_for_entity_ref :: proc "c" (
+	world: ^World,
+	entity_index: int,
+	component_id: Component_ID,
+	name: string,
+) -> (component: ^Custom_Component, ok: bool) {
+	storage := find_custom_component_storage(world, component_id, name)
+	if storage == nil {
+		return nil, false
+	}
+	for &component in storage.components {
 		if component.entity_index == entity_index && entity_is_alive(world, component.entity_index) {
-			return component, true
+			return &component, true
 		}
 	}
-	return {}, false
+	return nil, false
 }

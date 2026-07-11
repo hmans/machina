@@ -33,8 +33,8 @@ Luau scripting lets project directories include fast-iteration game code without
 - Query object construction is order-insensitive: repeated calls with the same component set return the same object, and query payloads use Scrapbot's canonical component order.
 - Query objects can iterate matching entities with `query:each(callback)`. Callback parameters receive the entity followed by component payloads in query order.
 - Scripts can pass a query object to `scrapbot.system(query, options?, callback)` to run the system callback once per matching entity. Query components are declared as system reads automatically.
-- Query-driven systems can mutate `scrapbot.transform` payload tables directly when the system declares a `scrapbot.transform` write.
-- Mutating a `scrapbot.transform` payload table without declared transform write access fails the system step and leaves the world unchanged.
+- Query-driven systems can mutate `scrapbot.transform` and project component payload tables directly when the system declares matching write access.
+- Mutating a query-system payload table without declared write access fails the system step and leaves the world unchanged.
 - Generated Luau types currently provide precise `query:each` callback payload types for one-, two-, and three-component query objects. Query-driven systems are runtime-supported, while Luau analyzer inference is currently most reliable for the common one- and two-component cases.
 - Scripts can request a bulk query result with `scrapbot.view(component_handle)`, which returns alive entity/component items for the component type.
 - Scripts can request a joined bulk query result with `scrapbot.view(query)` or `scrapbot.view({ component_a, component_b })`, which returns alive entities and a component payload array in query order.
@@ -87,7 +87,7 @@ Structural mutations requested by Luau systems are now deferred through an engin
 
 **Decision:** Allow scripts to define project components with `scrapbot.component(name, schema)` and let scene files attach matching data with `[entities.components.<name>]` sections whose initial fields are vec3 values. Single-token component names are owned by the project, while multi-token dotted names are reserved for engine or future library registrations. `scrapbot.component` registers a project component schema and returns a handle that selects the component at runtime, while query callbacks use generated Luau aliases for the component payload type.
 **Why:** This is enough for the first project-owned system, `autorotate.velocity`, while keeping the parser and Luau bridge small.
-**Tradeoff:** Component schemas are still string schemas at runtime, so the schema table is not yet generated from the Luau payload type. Library component registration does not exist yet. Luau receives component tables dynamically, and only transform rotation has mutation helpers.
+**Tradeoff:** Component schemas are still string schemas at runtime, so the schema table is not yet generated from the Luau payload type. Library component registration does not exist yet. Luau receives component tables dynamically, and direct payload write-back is limited to query-driven systems.
 
 ### 6. Use a registry for component ownership and scene validation
 
@@ -107,7 +107,7 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 **Decision:** Let Luau systems declare component reads and writes in an options table before the callback.
 **Why:** The same script API that users write now should produce the scheduling metadata needed for future parallel execution.
-**Tradeoff:** Access declarations are manually maintained for now. The runtime validates component names and enforces writes that go through Scrapbot APIs or query-system transform payload write-back, but it does not yet statically prove that system bodies only touch declared components.
+**Tradeoff:** Access declarations are manually maintained for now. The runtime validates component names and enforces writes that go through Scrapbot APIs or query-system payload write-back, but it does not yet statically prove that system bodies only touch declared components.
 
 ### 9. Expose entity and component lifecycle through deferred commands
 
@@ -137,7 +137,7 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 **Decision:** Expose built-in component handles such as `scrapbot.transform` directly on the Luau API and allow query objects and views to mix those handles with project component handles.
 **Why:** Gameplay systems usually operate over a set of components, not one project component plus ad hoc helper calls. Built-in handles make query code and system access declarations line up.
-**Tradeoff:** Built-in component payloads are still copied into Luau tables, and only transform exposes real fields today. Direct payload write-back is currently limited to query-driven systems that declare `scrapbot.transform` writes; `query:each` and bulk views remain read/copy APIs.
+**Tradeoff:** Built-in component payloads are still copied into Luau tables, and only transform exposes real writable fields today. Direct payload write-back is currently limited to query-driven systems that declare matching writes; `query:each` and bulk views remain read/copy APIs.
 
 ### 14. Make queries reusable values
 
