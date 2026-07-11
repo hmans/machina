@@ -72,6 +72,39 @@ local should_be_number: number = "not a number"
 }
 
 @(test)
+test_check_project_analyzer_accepts_typed_query3 :: proc(t: ^testing.T) {
+	if !luau_analyzer_available() {
+		return
+	}
+
+	root, parent := make_check_project_test_project(t)
+	defer delete(root)
+	defer os.remove_all(parent)
+
+	script_path := join_check_project_path(t, root, DEFAULT_SCRIPT)
+	defer delete(script_path)
+	write_err := os.write_entire_file(script_path, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+}) :: AutorotateComponent
+
+scrapbot.system({
+	reads = { scrapbot.transform, scrapbot.mesh, AutorotateComponent },
+}, function()
+	scrapbot.query3(scrapbot.transform, scrapbot.mesh, AutorotateComponent, function(entity, transform: ScrapbotTransform, mesh: ScrapbotMesh, autorotate: Autorotate)
+		local y: number = transform.rotation.y + autorotate.velocity.y
+		assert(mesh ~= nil)
+		assert(y > -100)
+	end)
+end)
+`)
+	testing.expect(t, write_err == nil)
+
+	check_err := check_project(root)
+	testing.expect(t, check_err == "")
+}
+
+@(test)
 test_luau_analyzer_fixture_declares_scrapbot_as_local :: proc(t: ^testing.T) {
 	fixture, err := luau_analyzer_fixture(
 		`--!strict

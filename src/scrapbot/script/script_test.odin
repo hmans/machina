@@ -161,6 +161,67 @@ end)
 }
 
 @(test)
+test_luau_query3_matches_three_components :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.transform]
+position = [0, 0, 0]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+
+[entities.mesh]
+primitive = "cube"
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+
+[[entities]]
+name = "No Mesh"
+
+[entities.transform]
+position = [0, 0, 0]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+
+[entities.components.autorotate]
+velocity = [0, 3, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+scrapbot.system({
+	reads = { scrapbot.transform, scrapbot.mesh, AutorotateComponent },
+}, function()
+	local count = 0
+	scrapbot.query3(scrapbot.transform, scrapbot.mesh, AutorotateComponent, function(entity, transform, mesh, autorotate)
+		count += 1
+		assert(entity.name == "Spinner")
+		assert(transform.rotation.y == 0)
+		assert(mesh ~= nil)
+		assert(autorotate.velocity.y == 2)
+	end)
+	assert(count == 1)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "")
+}
+
+@(test)
 test_luau_system_accepts_declared_component_access :: proc(t: ^testing.T) {
 	scene, parse_result := project.parse_scene(`[[entities]]
 name = "Spinner"

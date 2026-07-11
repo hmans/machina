@@ -16,6 +16,7 @@ export type Scrapbot = {
 	mesh: ScrapbotMeshComponent,
 	system: ((system: (delta_seconds: number) -> ()) -> ()) & ((options: ScrapbotSystemOptions, system: (delta_seconds: number) -> ()) -> ()),
 	query: (<T>(component: ScrapbotComponent<T>, callback: (entity: ScrapbotEntity, component: T) -> ()) -> ()) & (<A, B>(components: {ScrapbotComponent<A> | ScrapbotComponent<B>}, callback: (entity: ScrapbotEntity, first: A, second: B) -> ()) -> ()),
+	query3: <A, B, C>(first: ScrapbotComponent<A>, second: ScrapbotComponent<B>, third: ScrapbotComponent<C>, callback: (entity: ScrapbotEntity, first: A, second: B, third: C) -> ()) -> (),
 	view: (<T>(component: ScrapbotComponent<T>) -> {ScrapbotQueryItem<T>}) & ((components: {ScrapbotComponent<any>}) -> {ScrapbotQueryComponentsItem}),
 	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
 	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),

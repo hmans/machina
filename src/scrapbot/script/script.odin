@@ -56,6 +56,7 @@ Component_Reference :: struct {
 
 Query_API :: enum {
 	Query,
+	Query3,
 	View,
 }
 
@@ -216,7 +217,7 @@ step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> st
 }
 
 register_scrapbot_api :: proc(L: Lua_State) {
-	lua_createtable(L, 0, 17)
+	lua_createtable(L, 0, 18)
 
 	lua_pushcclosurek(L, scrapbot_log, "scrapbot.log", 0, nil)
 	lua_setfield(L, -2, "log")
@@ -244,6 +245,9 @@ register_scrapbot_api :: proc(L: Lua_State) {
 
 	lua_pushcclosurek(L, scrapbot_query, "scrapbot.query", 0, nil)
 	lua_setfield(L, -2, "query")
+
+	lua_pushcclosurek(L, scrapbot_query3, "scrapbot.query3", 0, nil)
+	lua_setfield(L, -2, "query3")
 
 	lua_pushcclosurek(L, scrapbot_view, "scrapbot.view", 0, nil)
 	lua_setfield(L, -2, "view")
@@ -556,6 +560,30 @@ query_argument :: proc "c" (
 	return query, ""
 }
 
+query_from_component_arguments :: proc "c" (
+	L: Lua_State,
+	runtime: ^Runtime,
+	first_index: c.int,
+	count: int,
+	api: Query_API,
+) -> (query: Query, err: string) {
+	if count <= 0 || count > ecs.MAX_QUERY_TERMS {
+		return {}, query_error(api, .Array_Too_Large)
+	}
+	for i in 0..<count {
+		component_ref, component_err := component_reference_argument(L, runtime, first_index + c.int(i))
+		if component_err != "" {
+			return {}, query_error(api, .Component_Not_Registered)
+		}
+		query.terms[i] = Query_Term {
+			component_id = component_ref.id,
+			name         = component_ref.name,
+		}
+		query.term_count += 1
+	}
+	return query, ""
+}
+
 Query_Error :: enum {
 	Component_Not_Registered,
 	Array_Contains_Non_Handle,
@@ -564,6 +592,16 @@ Query_Error :: enum {
 }
 
 query_error :: proc "c" (api: Query_API, err: Query_Error) -> string {
+	if api == .Query3 {
+		#partial switch err {
+		case .Component_Not_Registered:
+			return "scrapbot.query3 component handle is not registered"
+		case .Array_Too_Large:
+			return "scrapbot.query3 accepts exactly three component handles and callback"
+		case:
+			return "scrapbot.query3 expects three component handles and callback"
+		}
+	}
 	if api == .View {
 		#partial switch err {
 		case .Component_Not_Registered:
@@ -635,7 +673,39 @@ scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 		return luau_push_error(L, err)
 	}
 
-	callback_ref := lua_ref(L, 2)
+	return run_query_callback(L, runtime, query, 2)
+}
+
+scrapbot_query3 :: proc "c" (L: Lua_State) -> c.int {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	if runtime == nil || runtime.world == nil {
+		return 0
+	}
+	if lua_type(L, 1) != LUA_TTABLE ||
+	   lua_type(L, 2) != LUA_TTABLE ||
+	   lua_type(L, 3) != LUA_TTABLE ||
+	   lua_type(L, 4) != LUA_TFUNCTION {
+		return luau_push_error(L, "scrapbot.query3 expects three component handles and callback")
+	}
+
+	query, query_err := query_from_component_arguments(L, runtime, 1, 3, .Query3)
+	if query_err != "" {
+		return luau_push_error(L, query_err)
+	}
+	if err := require_query_access(runtime, query, .Read); err != "" {
+		return luau_push_error(L, err)
+	}
+
+	return run_query_callback(L, runtime, query, 4)
+}
+
+run_query_callback :: proc "c" (
+	L: Lua_State,
+	runtime: ^Runtime,
+	query: Query,
+	callback_index: c.int,
+) -> c.int {
+	callback_ref := lua_ref(L, callback_index)
 	for i in 0..<ecs.query_count(runtime.world, query) {
 		entity_index, entity_ok := ecs.query_entity_at(runtime.world, query, i)
 		if !entity_ok {

@@ -31,6 +31,7 @@ Luau scripting lets project directories include fast-iteration game code without
 - Script system access declarations accept project component handles or registered component-name strings.
 - Scripts can query scene-defined custom components with `scrapbot.query(component_handle, callback)`.
 - Scripts can query entities that have multiple components with `scrapbot.query({ component_a, component_b }, callback)`. Callback parameters receive the entity followed by component payloads in query order.
+- Scripts can query three components with `scrapbot.query3(component_a, component_b, component_c, callback)` when they need precise Luau callback typing without ambiguous array overloads.
 - Scripts can request a bulk query result with `scrapbot.view(component_handle)`, which returns alive entity/component items for the component type.
 - Scripts can request a joined bulk query result with `scrapbot.view({ component_a, component_b })`, which returns alive entities and a component payload array in query order.
 - Runtime queries use component IDs from handles to select one component storage group, while project files and diagnostics remain name-based.
@@ -134,7 +135,13 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 **Why:** Gameplay systems usually operate over a set of components, not one project component plus ad hoc helper calls. Built-in handles make query code and system access declarations line up.
 **Tradeoff:** Built-in component payloads are still copied into Luau tables, and only transform exposes real fields today. Mutating those payload tables does not yet write back automatically.
 
-### 14. Analyze project scripts after type generation
+### 14. Use explicit arity APIs for larger typed queries
+
+**Decision:** Keep `scrapbot.query(component, callback)` and `scrapbot.query({ a, b }, callback)`, then add `scrapbot.query3(a, b, c, callback)` for precise three-component Luau typing.
+**Why:** Luau cannot distinguish heterogeneous array overloads by length, so a typed three-component array overload makes two-component query calls ambiguous. An explicit arity API keeps generated types useful in editors while reusing the same runtime query engine.
+**Tradeoff:** The API surface grows by arity, and queries beyond three components still need less precise `view({ ... })` results or future explicit APIs.
+
+### 15. Analyze project scripts after type generation
 
 **Decision:** Run `luau-analyze` during `scrapbot check` when the analyzer executable is available, using a temporary analyzer fixture built from the refreshed generated types and `scripts/main.luau`.
 **Why:** Runtime script execution cannot catch editor-facing type definition regressions or statically invalid project scripts. Running the analyzer after type generation checks the same type surface users see in their editor.
