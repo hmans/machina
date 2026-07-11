@@ -20,7 +20,7 @@
 
 **Component storage group** - The ECS world storage for all project custom component instances of one component type.
 
-**Query object** - A reusable Luau value created with `scrapbot.query(...)` that represents one component set. Scripts can iterate it, pass it to systems, use it in read declarations, or materialize a bulk view from it.
+**Query object** - A reusable Luau value created with `scrapbot.query(...)` that represents one component set. Query construction is order-insensitive, and repeated calls for the same component set return the same object.
 
 **Query view** - A materialized view over one component or query object that yields alive entity/component results for scripting and future native systems.
 

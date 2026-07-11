@@ -169,6 +169,58 @@ end)
 }
 
 @(test)
+test_luau_query_reuses_cached_object_for_same_component_set :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.transform]
+position = [0, 0, 0]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+local first = scrapbot.query(scrapbot.transform, AutorotateComponent)
+local repeated = scrapbot.query(scrapbot.transform, AutorotateComponent)
+local reversed = scrapbot.query(AutorotateComponent, scrapbot.transform)
+assert(first == repeated)
+assert(first == reversed)
+
+scrapbot.system({
+	reads = { first },
+}, function()
+	local count = 0
+	reversed:each(function(entity, transform, autorotate)
+		count += 1
+		assert(transform.rotation.y == 0)
+		assert(autorotate.velocity.y == 2)
+	end)
+	assert(count == 1)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+	testing.expect(t, runtime.query_object_count == 1)
+
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "")
+}
+
+@(test)
 test_luau_query_matches_three_components :: proc(t: ^testing.T) {
 	scene, parse_result := project.parse_scene(`[[entities]]
 name = "Spinner"

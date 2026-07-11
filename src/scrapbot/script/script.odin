@@ -14,6 +14,7 @@ import shared "../shared"
 DEFAULT_SCRIPT :: shared.DEFAULT_SCRIPT
 DEFAULT_SCRIPT_CHUNK :: "=" + DEFAULT_SCRIPT
 MAX_SCRIPT_SYSTEMS :: schedule.MAX_SYSTEMS
+MAX_QUERY_OBJECTS :: 128
 World :: shared.World
 Vec3 :: shared.Vec3
 Transform_Component :: shared.Transform_Component
@@ -41,6 +42,8 @@ Runtime :: struct {
 	commands: ecs.Command_Buffer,
 	systems: [MAX_SCRIPT_SYSTEMS]Script_System,
 	system_count: int,
+	query_objects: [MAX_QUERY_OBJECTS]Query_Object,
+	query_object_count: int,
 	active_system: schedule.System,
 	has_active_system: bool,
 }
@@ -50,6 +53,11 @@ Script_System :: struct {
 	declaration: schedule.System,
 	query: Query,
 	has_query: bool,
+}
+
+Query_Object :: struct {
+	query: Query,
+	ref: c.int,
 }
 
 Component_Reference :: struct {
@@ -161,6 +169,9 @@ destroy_runtime :: proc(runtime: ^Runtime) {
 	if runtime.L != nil {
 		for system in runtime.systems[:runtime.system_count] {
 			lua_unref(runtime.L, system.callback_ref)
+		}
+		for query_object in runtime.query_objects[:runtime.query_object_count] {
+			lua_unref(runtime.L, query_object.ref)
 		}
 		lua_close(runtime.L)
 	}
@@ -775,8 +786,11 @@ scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 	if query_err != "" {
 		return luau_push_error(L, query_err)
 	}
+	normalize_query(&query)
 
-	push_query_object(L, query)
+	if err := push_cached_query_object(L, runtime, query); err != "" {
+		return luau_push_error(L, err)
+	}
 	return 1
 }
 
@@ -1141,6 +1155,68 @@ push_component_handle :: proc "c" (L: Lua_State, definition: component.Definitio
 	lua_setfield(L, -2, "id")
 	lua_pushlstring(L, cstring(raw_data(definition.name)), c.size_t(len(definition.name)))
 	lua_setfield(L, -2, "name")
+}
+
+normalize_query :: proc "c" (query: ^Query) {
+	for i in 1..<query.term_count {
+		term := query.terms[i]
+		j := i
+		for j > 0 && query.terms[j - 1].component_id > term.component_id {
+			query.terms[j] = query.terms[j - 1]
+			j -= 1
+		}
+		query.terms[j] = term
+	}
+
+	write_index := 0
+	for read_index in 0..<query.term_count {
+		term := query.terms[read_index]
+		if write_index > 0 && query.terms[write_index - 1].component_id == term.component_id {
+			continue
+		}
+		query.terms[write_index] = term
+		write_index += 1
+	}
+	query.term_count = write_index
+}
+
+push_cached_query_object :: proc "c" (L: Lua_State, runtime: ^Runtime, query: Query) -> string {
+	if runtime == nil {
+		lua_pushnil(L)
+		return ""
+	}
+
+	for query_object in runtime.query_objects[:runtime.query_object_count] {
+		if queries_have_same_components(query_object.query, query) {
+			lua_rawgeti(L, LUA_REGISTRYINDEX, query_object.ref)
+			return ""
+		}
+	}
+
+	if runtime.query_object_count >= MAX_QUERY_OBJECTS {
+		return "too many cached query objects"
+	}
+
+	push_query_object(L, query)
+	ref := lua_ref(L, -1)
+	runtime.query_objects[runtime.query_object_count] = Query_Object {
+		query = query,
+		ref = ref,
+	}
+	runtime.query_object_count += 1
+	return ""
+}
+
+queries_have_same_components :: proc "c" (a, b: Query) -> bool {
+	if a.term_count != b.term_count {
+		return false
+	}
+	for i in 0..<a.term_count {
+		if a.terms[i].component_id != b.terms[i].component_id {
+			return false
+		}
+	}
+	return true
 }
 
 push_query_object :: proc "c" (L: Lua_State, query: Query) {
