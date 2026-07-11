@@ -115,6 +115,52 @@ end)
 }
 
 @(test)
+test_luau_system_queries_transform_and_custom_component_together :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.transform]
+position = [0, 0, 0]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+assert(scrapbot.transform.id > 0)
+
+scrapbot.system({
+	reads = { AutorotateComponent },
+	writes = { scrapbot.transform },
+}, function(delta_seconds)
+	scrapbot.query({ scrapbot.transform, AutorotateComponent }, function(entity, transform, autorotate)
+		local rotation = transform.rotation
+		rotation.y += autorotate.velocity.y * delta_seconds
+		scrapbot.set_rotation(entity, rotation)
+	end)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 0.5)
+	testing.expect(t, step_err == "")
+	testing.expect(t, world.transforms[0].rotation.y == 1)
+}
+
+@(test)
 test_luau_system_accepts_declared_component_access :: proc(t: ^testing.T) {
 	scene, parse_result := project.parse_scene(`[[entities]]
 name = "Spinner"
@@ -215,6 +261,55 @@ end)
 }
 
 @(test)
+test_luau_view_returns_multi_component_query_items :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.transform]
+position = [0, 0, 0]
+rotation = [0, 4, 0]
+scale = [1, 1, 1]
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+
+[[entities]]
+name = "Data Only"
+
+[entities.components.autorotate]
+velocity = [0, 3, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+scrapbot.system({
+	reads = { scrapbot.transform, AutorotateComponent },
+}, function()
+	local view = scrapbot.view({ scrapbot.transform, AutorotateComponent })
+	assert(#view == 1)
+	assert(view[1].entity.name == "Spinner")
+	assert(view[1].components[1].rotation.y == 4)
+	assert(view[1].components[2].velocity.y == 2)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "")
+}
+
+@(test)
 test_luau_system_rejects_unregistered_access_components :: proc(t: ^testing.T) {
 	runtime: Runtime
 	defer destroy_runtime(&runtime)
@@ -253,6 +348,45 @@ scrapbot.system({
 	reads = { "scrapbot.transform" },
 }, function()
 	scrapbot.view(AutorotateComponent)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "Luau system: system access declaration does not permit component read")
+}
+
+@(test)
+test_luau_declared_system_rejects_undeclared_multi_query_reads :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.transform]
+position = [0, 0, 0]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+
+[entities.components.autorotate]
+velocity = [0, 1, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+scrapbot.system({
+	reads = { AutorotateComponent },
+}, function()
+	scrapbot.query({ scrapbot.transform, AutorotateComponent }, function() end)
 end)
 `, "=test", &world)
 	testing.expect(t, result.err == "")
@@ -848,5 +982,5 @@ end)
 	testing.expect(t, result.ran)
 
 	step_err := step_runtime(&runtime, &world, 0.5)
-	testing.expect(t, step_err == "Luau system: scrapbot.query expects a component handle and callback")
+	testing.expect(t, step_err == "Luau system: scrapbot.query expects a component handle or component array and callback")
 }

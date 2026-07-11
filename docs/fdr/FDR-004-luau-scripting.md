@@ -24,11 +24,14 @@ Luau scripting lets project directories include fast-iteration game code without
 - Multi-token dotted component names such as `scrapbot.transform` or `scrappyphysics.rigidbody` are reserved for engine or library components and must be registered before scene data can use them.
 - The engine registry currently contains built-in `scrapbot.transform`, `scrapbot.camera`, and `scrapbot.mesh` component names.
 - `scrapbot.component` returns a typed component handle with a runtime component ID and name. Scripts can cast it to a generated component handle type.
+- The `scrapbot` API exposes built-in component handles for `scrapbot.transform`, `scrapbot.camera`, and `scrapbot.mesh`.
 - Scripts can register frame systems with `scrapbot.system(function(delta_seconds) ... end)`.
 - Scripts can declare system component access with `scrapbot.system({ reads = {...}, writes = {...} }, function(delta_seconds) ... end)`.
 - Script system access declarations accept project component handles or registered component-name strings.
 - Scripts can query scene-defined custom components with `scrapbot.query(component_handle, callback)`.
+- Scripts can query entities that have multiple components with `scrapbot.query({ component_a, component_b }, callback)`. Callback parameters receive the entity followed by component payloads in query order.
 - Scripts can request a bulk query result with `scrapbot.view(component_handle)`, which returns alive entity/component items for the component type.
+- Scripts can request a joined bulk query result with `scrapbot.view({ component_a, component_b })`, which returns alive entities and a component payload array in query order.
 - Runtime queries use component IDs from handles to select one component storage group, while project files and diagnostics remain name-based.
 - Project scripts annotate query callback component parameters with generated component payload aliases such as `Autorotate`.
 - Scripts can read and write entity rotation through `scrapbot.get_rotation(entity)` and `scrapbot.set_rotation(entity, rotation)`.
@@ -117,11 +120,17 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 **Why:** Name matching is useful at text/project boundaries but too weak as an execution-time storage key. ID-keyed groups are a better base for bulk query views, native systems, and parallel scheduling.
 **Tradeoff:** Component IDs are runtime-local and must be rebound after scene load and script registration. Names remain the persistent source of truth in project files.
 
-### 12. Expose bulk query views before native iterators
+### 12. Expose bulk and joined query views before native iterators
 
-**Decision:** Add `scrapbot.view(component)` as a table of entity/component query items built from the same internal query view as callback queries.
-**Why:** This gives scripts a batch-shaped API and lets the engine test view semantics before committing to native iterators or multi-component query planners.
-**Tradeoff:** The first view API materializes a Luau table each call. It is ergonomic and testable, but it is not the final zero-allocation iteration path.
+**Decision:** Add `scrapbot.view(component)` and joined `scrapbot.view({ ... })` calls as table results built from the same internal query path as callback queries.
+**Why:** This gives scripts a batch-shaped API and lets the engine test component matching semantics before committing to native iterators or lower-level query planners.
+**Tradeoff:** The first view API materializes Luau tables each call. It is ergonomic and testable, but it is not the final zero-allocation iteration path.
+
+### 13. Make built-in components queryable handles
+
+**Decision:** Expose built-in component handles such as `scrapbot.transform` directly on the Luau API and allow query arrays to mix those handles with project component handles.
+**Why:** Gameplay systems usually operate over a set of components, not one project component plus ad hoc helper calls. Built-in handles make query code and system access declarations line up.
+**Tradeoff:** Built-in component payloads are still copied into Luau tables, and only transform exposes real fields today. Mutating those payload tables does not yet write back automatically.
 
 ## Related
 

@@ -36,6 +36,7 @@
 - [x] Add deferred Luau component add/remove commands.
 - [x] Group project component storage by runtime component ID.
 - [x] Add bulk Luau query views.
+- [x] Add multi-component Luau queries.
 - [x] Enforce declared component access for declared Luau systems.
 - [ ] Add library component registration for dotted component names.
 - [ ] Add a Luau analyzer check for example project scripts.

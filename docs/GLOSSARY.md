@@ -20,7 +20,9 @@
 
 **Component storage group** - The ECS world storage for all project custom component instances of one component type.
 
-**Query view** - A view over one component storage group that yields alive entity/component pairs for scripting and future native systems.
+**Query view** - A view over one component or joined component set that yields alive entity/component results for scripting and future native systems.
+
+**Joined query** - A query that matches only entities that have every requested component, such as `scrapbot.transform` and a project-defined `autorotate` component.
 
 **System** - Runtime logic that reads or writes components for matching entities.
 

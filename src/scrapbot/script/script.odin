@@ -20,6 +20,8 @@ Transform_Component :: shared.Transform_Component
 Custom_Component :: shared.Custom_Component
 Named_Vec3 :: shared.Named_Vec3
 Component_ID :: shared.Component_ID
+Query :: ecs.Query
+Query_Term :: ecs.Query_Term
 
 Run_Result :: struct {
 	ran: bool,
@@ -50,6 +52,11 @@ Script_System :: struct {
 Component_Reference :: struct {
 	name: string,
 	id:   Component_ID,
+}
+
+Query_API :: enum {
+	Query,
+	View,
 }
 
 run_project_script :: proc(runtime: ^Runtime, root: string, world: ^World) -> Run_Result {
@@ -209,7 +216,7 @@ step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> st
 }
 
 register_scrapbot_api :: proc(L: Lua_State) {
-	lua_createtable(L, 0, 14)
+	lua_createtable(L, 0, 17)
 
 	lua_pushcclosurek(L, scrapbot_log, "scrapbot.log", 0, nil)
 	lua_setfield(L, -2, "log")
@@ -222,6 +229,15 @@ register_scrapbot_api :: proc(L: Lua_State) {
 
 	lua_pushcclosurek(L, scrapbot_component, "scrapbot.component", 0, nil)
 	lua_setfield(L, -2, "component")
+
+	push_registered_component_handle_by_name(L, "scrapbot.transform")
+	lua_setfield(L, -2, "transform")
+
+	push_registered_component_handle_by_name(L, "scrapbot.camera")
+	lua_setfield(L, -2, "camera")
+
+	push_registered_component_handle_by_name(L, "scrapbot.mesh")
+	lua_setfield(L, -2, "mesh")
 
 	lua_pushcclosurek(L, scrapbot_system, "scrapbot.system", 0, nil)
 	lua_setfield(L, -2, "system")
@@ -483,6 +499,105 @@ component_reference_argument :: proc "c" (
 	return Component_Reference{name = definition.name, id = definition.id}, ""
 }
 
+query_argument :: proc "c" (
+	L: Lua_State,
+	runtime: ^Runtime,
+	index: c.int,
+	api: Query_API,
+) -> (query: Query, err: string) {
+	if query_argument_is_component_handle(L, index) {
+		component_ref, component_err := component_reference_argument(L, runtime, index)
+		if component_err != "" {
+			return {}, query_error(api, .Component_Not_Registered)
+		}
+		query.terms[0] = Query_Term {
+			component_id = component_ref.id,
+			name         = component_ref.name,
+		}
+		query.term_count = 1
+		return query, ""
+	}
+
+	for i in 0..<ecs.MAX_QUERY_TERMS {
+		lua_rawgeti(L, index, c.int(i + 1))
+		if lua_type(L, -1) == LUA_TNIL {
+			lua_settop(L, -2)
+			break
+		}
+		if lua_type(L, -1) != LUA_TTABLE {
+			lua_settop(L, -2)
+			return {}, query_error(api, .Array_Contains_Non_Handle)
+		}
+
+		component_ref, component_err := component_reference_argument(L, runtime, -1)
+		if component_err != "" {
+			lua_settop(L, -2)
+			return {}, query_error(api, .Component_Not_Registered)
+		}
+		query.terms[query.term_count] = Query_Term {
+			component_id = component_ref.id,
+			name         = component_ref.name,
+		}
+		query.term_count += 1
+		lua_settop(L, -2)
+	}
+
+	if query.term_count == 0 {
+		return {}, query_error(api, .Array_Empty)
+	}
+	if query.term_count == ecs.MAX_QUERY_TERMS {
+		lua_rawgeti(L, index, c.int(ecs.MAX_QUERY_TERMS + 1))
+		if lua_type(L, -1) != LUA_TNIL {
+			lua_settop(L, -2)
+			return {}, query_error(api, .Array_Too_Large)
+		}
+		lua_settop(L, -2)
+	}
+	return query, ""
+}
+
+Query_Error :: enum {
+	Component_Not_Registered,
+	Array_Contains_Non_Handle,
+	Array_Empty,
+	Array_Too_Large,
+}
+
+query_error :: proc "c" (api: Query_API, err: Query_Error) -> string {
+	if api == .View {
+		#partial switch err {
+		case .Component_Not_Registered:
+			return "scrapbot.view component handle is not registered"
+		case .Array_Contains_Non_Handle:
+			return "scrapbot.view component arrays must contain component handles"
+		case .Array_Empty:
+			return "scrapbot.view component arrays must not be empty"
+		case .Array_Too_Large:
+			return "scrapbot.view component arrays are too large"
+		}
+	}
+
+	#partial switch err {
+	case .Component_Not_Registered:
+		return "scrapbot.query component handle is not registered"
+	case .Array_Contains_Non_Handle:
+		return "scrapbot.query component arrays must contain component handles"
+	case .Array_Empty:
+		return "scrapbot.query component arrays must not be empty"
+	case .Array_Too_Large:
+		return "scrapbot.query component arrays are too large"
+	}
+	return "invalid query component argument"
+}
+
+query_argument_is_component_handle :: proc "c" (L: Lua_State, index: c.int) -> bool {
+	name_length: c.size_t
+	lua_getfield(L, index, "name")
+	name_data := lua_tolstring(L, -1, &name_length)
+	lua_settop(L, -2)
+	return name_data != nil
+}
+
 validate_world_components :: proc(runtime: ^Runtime) -> string {
 	if runtime == nil || runtime.world == nil {
 		return ""
@@ -509,29 +624,30 @@ scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 		return 0
 	}
 	if lua_type(L, 1) != LUA_TTABLE || lua_type(L, 2) != LUA_TFUNCTION {
-		return luau_push_error(L, "scrapbot.query expects a component handle and callback")
+		return luau_push_error(L, "scrapbot.query expects a component handle or component array and callback")
 	}
 
-	component_ref, component_err := component_reference_argument(L, runtime, 1)
-	if component_err != "" {
-		return luau_push_error(L, "scrapbot.query component handle is not registered")
+	query, query_err := query_argument(L, runtime, 1, .Query)
+	if query_err != "" {
+		return luau_push_error(L, query_err)
 	}
-	if err := require_system_access(runtime, component_ref.name, .Read); err != "" {
+	if err := require_query_access(runtime, query, .Read); err != "" {
 		return luau_push_error(L, err)
 	}
 
-	view := ecs.query_view(runtime.world, component_ref.id, component_ref.name)
-
 	callback_ref := lua_ref(L, 2)
-	for i in 0..<ecs.query_view_count(runtime.world, view) {
-		component, component_ok := ecs.query_view_component_at(runtime.world, view, i)
-		if !component_ok {
+	for i in 0..<ecs.query_count(runtime.world, query) {
+		entity_index, entity_ok := ecs.query_entity_at(runtime.world, query, i)
+		if !entity_ok {
 			continue
 		}
 		lua_rawgeti(L, LUA_REGISTRYINDEX, callback_ref)
-		push_entity_table(L, runtime.world, component.entity_index)
-		push_component_table(L, component)
-		status := lua_pcall(L, 2, 0, 0)
+		push_entity_table(L, runtime.world, entity_index)
+		for term_index in 0..<query.term_count {
+			term := query.terms[term_index]
+			push_query_component_table(L, runtime.world, entity_index, term)
+		}
+		status := lua_pcall(L, c.int(query.term_count + 1), 0, 0)
 		if status != LUA_OK {
 			lua_unref(L, callback_ref)
 			return lua_error(L)
@@ -548,27 +664,26 @@ scrapbot_view :: proc "c" (L: Lua_State) -> c.int {
 		return 1
 	}
 	if lua_type(L, 1) != LUA_TTABLE {
-		return luau_push_error(L, "scrapbot.view expects a component handle")
+		return luau_push_error(L, "scrapbot.view expects a component handle or component array")
 	}
 
-	component_ref, component_err := component_reference_argument(L, runtime, 1)
-	if component_err != "" {
-		return luau_push_error(L, "scrapbot.view component handle is not registered")
+	query, query_err := query_argument(L, runtime, 1, .View)
+	if query_err != "" {
+		return luau_push_error(L, query_err)
 	}
-	if err := require_system_access(runtime, component_ref.name, .Read); err != "" {
+	if err := require_query_access(runtime, query, .Read); err != "" {
 		return luau_push_error(L, err)
 	}
 
-	view := ecs.query_view(runtime.world, component_ref.id, component_ref.name)
-	count := ecs.query_view_count(runtime.world, view)
+	count := ecs.query_count(runtime.world, query)
 	lua_createtable(L, c.int(count), 0)
 	for i in 0..<count {
-		component, component_ok := ecs.query_view_component_at(runtime.world, view, i)
-		if !component_ok {
+		entity_index, entity_ok := ecs.query_entity_at(runtime.world, query, i)
+		if !entity_ok {
 			continue
 		}
 		lua_pushinteger(L, c.ptrdiff_t(i + 1))
-		push_query_item_table(L, runtime.world, component)
+		push_query_item_table(L, runtime.world, entity_index, query)
 		lua_settable(L, -3)
 	}
 	return 1
@@ -835,6 +950,20 @@ optional_vec3_field :: proc "c" (L: Lua_State, index: c.int, name: cstring) -> (
 	return value, true, ok
 }
 
+push_registered_component_handle_by_name :: proc "c" (L: Lua_State, name: string) {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	if runtime == nil {
+		lua_pushnil(L)
+		return
+	}
+	definition, ok := component.find_definition(&runtime.registry, name)
+	if !ok {
+		lua_pushnil(L)
+		return
+	}
+	push_component_handle(L, definition)
+}
+
 push_component_handle :: proc "c" (L: Lua_State, definition: component.Definition) {
 	lua_createtable(L, 0, 2)
 	lua_pushinteger(L, c.ptrdiff_t(definition.id))
@@ -915,12 +1044,67 @@ push_component_table :: proc "c" (L: Lua_State, component: Custom_Component) {
 	}
 }
 
-push_query_item_table :: proc "c" (L: Lua_State, world: ^World, component: Custom_Component) {
-	lua_createtable(L, 0, 2)
-	push_entity_table(L, world, component.entity_index)
+push_query_item_table :: proc "c" (L: Lua_State, world: ^World, entity_index: int, query: Query) {
+	lua_createtable(L, 0, 3)
+	push_entity_table(L, world, entity_index)
 	lua_setfield(L, -2, "entity")
-	push_component_table(L, component)
-	lua_setfield(L, -2, "component")
+
+	if query.term_count == 1 {
+		push_query_component_table(L, world, entity_index, query.terms[0])
+		lua_setfield(L, -2, "component")
+	}
+
+	lua_createtable(L, c.int(query.term_count), 0)
+	for i in 0..<query.term_count {
+		term := query.terms[i]
+		lua_pushinteger(L, c.ptrdiff_t(i + 1))
+		push_query_component_table(L, world, entity_index, term)
+		lua_settable(L, -3)
+	}
+	lua_setfield(L, -2, "components")
+}
+
+push_query_component_table :: proc "c" (
+	L: Lua_State,
+	world: ^World,
+	entity_index: int,
+	term: Query_Term,
+) {
+	if world == nil || !ecs.entity_is_alive(world, entity_index) {
+		lua_createtable(L, 0, 0)
+		return
+	}
+
+	entity := world.entities[entity_index]
+	switch term.name {
+	case "scrapbot.transform":
+		if entity.transform_index >= 0 && entity.transform_index < len(world.transforms) {
+			push_transform_table(L, world.transforms[entity.transform_index])
+			return
+		}
+	case "scrapbot.camera":
+		lua_createtable(L, 0, 0)
+		return
+	case "scrapbot.mesh":
+		lua_createtable(L, 0, 0)
+		return
+	}
+
+	if custom_component, ok := ecs.custom_component_for_entity(world, entity_index, term.component_id, term.name); ok {
+		push_component_table(L, custom_component)
+		return
+	}
+	lua_createtable(L, 0, 0)
+}
+
+push_transform_table :: proc "c" (L: Lua_State, transform: Transform_Component) {
+	lua_createtable(L, 0, 3)
+	push_vec3_table(L, transform.position)
+	lua_setfield(L, -2, "position")
+	push_vec3_table(L, transform.rotation)
+	lua_setfield(L, -2, "rotation")
+	push_vec3_table(L, transform.scale)
+	lua_setfield(L, -2, "scale")
 }
 
 push_vec3_table :: proc "c" (L: Lua_State, value: Vec3) {
@@ -959,6 +1143,20 @@ require_system_access :: proc "c" (
 		return "system access declaration does not permit component read"
 	}
 	return "system access declaration does not permit component write"
+}
+
+require_query_access :: proc "c" (
+	runtime: ^Runtime,
+	query: Query,
+	mode: schedule.Access_Mode,
+) -> string {
+	for i in 0..<query.term_count {
+		term := query.terms[i]
+		if err := require_system_access(runtime, term.name, mode); err != "" {
+			return err
+		}
+	}
+	return ""
 }
 
 Script_Entity :: struct {

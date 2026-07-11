@@ -11,9 +11,12 @@ export type Scrapbot = {
 	entity_count: () -> number,
 	renderable_count: () -> number,
 	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T>,
+	transform: ScrapbotTransformComponent,
+	camera: ScrapbotCameraComponent,
+	mesh: ScrapbotMeshComponent,
 	system: ((system: (delta_seconds: number) -> ()) -> ()) & ((options: ScrapbotSystemOptions, system: (delta_seconds: number) -> ()) -> ()),
-	query: <T>(component: ScrapbotComponent<T>, callback: (entity: ScrapbotEntity, component: T) -> ()) -> (),
-	view: <T>(component: ScrapbotComponent<T>) -> {ScrapbotQueryItem<T>},
+	query: (<T>(component: ScrapbotComponent<T>, callback: (entity: ScrapbotEntity, component: T) -> ()) -> ()) & (<A, B>(components: {ScrapbotComponent<A> | ScrapbotComponent<B>}, callback: (entity: ScrapbotEntity, first: A, second: B) -> ()) -> ()) & (<A, B, C>(components: {ScrapbotComponent<A> | ScrapbotComponent<B> | ScrapbotComponent<C>}, callback: (entity: ScrapbotEntity, first: A, second: B, third: C) -> ()) -> ()),
+	view: (<T>(component: ScrapbotComponent<T>) -> {ScrapbotQueryItem<T>}) & ((components: {ScrapbotComponent<any>}) -> {ScrapbotQueryComponentsItem}),
 	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
 	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
 	spawn: (options: ScrapbotSpawnOptions?) -> (),
@@ -44,6 +47,12 @@ export type ScrapbotComponent<T> = {
 export type ScrapbotQueryItem<T> = {
 	entity: ScrapbotEntity,
 	component: T,
+	components: {any},
+}
+
+export type ScrapbotQueryComponentsItem = {
+	entity: ScrapbotEntity,
+	components: {any},
 }
 
 export type ScrapbotComponentSchema = {

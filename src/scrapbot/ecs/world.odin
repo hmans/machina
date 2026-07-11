@@ -20,9 +20,20 @@ Named_Vec3 :: shared.Named_Vec3
 Transform_Component :: shared.Transform_Component
 
 INVALID_COMPONENT_INDEX :: -1
+MAX_QUERY_TERMS :: 8
 
 Query_View :: struct {
 	storage: ^Custom_Component_Storage,
+}
+
+Query_Term :: struct {
+	component_id: Component_ID,
+	name:         string,
+}
+
+Query :: struct {
+	terms:      [MAX_QUERY_TERMS]Query_Term,
+	term_count: int,
 }
 
 destroy_world :: proc(world: ^World) {
@@ -436,6 +447,103 @@ query_view_component_at :: proc "c" (
 			return component, true
 		}
 		current += 1
+	}
+	return {}, false
+}
+
+query_count :: proc "c" (world: ^World, query: Query) -> int {
+	if world == nil || query.term_count == 0 {
+		return 0
+	}
+
+	count := 0
+	for entity, entity_index in world.entities {
+		if !entity.alive {
+			continue
+		}
+		if query_matches_entity(world, query, entity_index) {
+			count += 1
+		}
+	}
+	return count
+}
+
+query_entity_at :: proc "c" (
+	world: ^World,
+	query: Query,
+	visible_index: int,
+) -> (entity_index: int, ok: bool) {
+	if world == nil || query.term_count == 0 || visible_index < 0 {
+		return -1, false
+	}
+
+	current := 0
+	for entity, index in world.entities {
+		if !entity.alive {
+			continue
+		}
+		if !query_matches_entity(world, query, index) {
+			continue
+		}
+		if current == visible_index {
+			return index, true
+		}
+		current += 1
+	}
+	return -1, false
+}
+
+query_matches_entity :: proc "c" (world: ^World, query: Query, entity_index: int) -> bool {
+	if !entity_is_alive(world, entity_index) {
+		return false
+	}
+	for i in 0..<query.term_count {
+		term := query.terms[i]
+		if !entity_has_component(world, entity_index, term.component_id, term.name) {
+			return false
+		}
+	}
+	return true
+}
+
+entity_has_component :: proc "c" (
+	world: ^World,
+	entity_index: int,
+	component_id: Component_ID,
+	name: string,
+) -> bool {
+	if !entity_is_alive(world, entity_index) {
+		return false
+	}
+
+	entity := world.entities[entity_index]
+	switch name {
+	case "scrapbot.transform":
+		return entity.transform_index >= 0 && entity.transform_index < len(world.transforms)
+	case "scrapbot.camera":
+		return entity.camera_index >= 0 && entity.camera_index < len(world.cameras)
+	case "scrapbot.mesh":
+		return entity.mesh_index >= 0 && entity.mesh_index < len(world.meshes)
+	}
+
+	_, ok := custom_component_for_entity(world, entity_index, component_id, name)
+	return ok
+}
+
+custom_component_for_entity :: proc "c" (
+	world: ^World,
+	entity_index: int,
+	component_id: Component_ID,
+	name: string,
+) -> (component: Custom_Component, ok: bool) {
+	storage := find_custom_component_storage(world, component_id, name)
+	if storage == nil {
+		return {}, false
+	}
+	for component in storage.components {
+		if component.entity_index == entity_index && entity_is_alive(world, component.entity_index) {
+			return component, true
+		}
 	}
 	return {}, false
 }

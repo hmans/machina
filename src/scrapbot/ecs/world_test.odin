@@ -151,6 +151,37 @@ test_query_view_iterates_one_component_storage_group :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_query_matches_entities_with_all_requested_components :: proc(t: ^testing.T) {
+	scene, result := project.parse_scene(MULTI_CUBE_SCENE)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, result.err == .None)
+
+	world := build_world(&scene)
+	defer destroy_world(&world)
+
+	query: Query
+	query.terms[0] = Query_Term{name = "scrapbot.transform"}
+	query.terms[1] = Query_Term{component_id = shared.INVALID_COMPONENT_ID, name = "autorotate"}
+	query.term_count = 2
+
+	testing.expect(t, query_count(&world, query) == 2)
+
+	entity_index, ok := query_entity_at(&world, query, 0)
+	testing.expect(t, ok)
+	testing.expect(t, world.entities[entity_index].name == "Left Cube")
+
+	remove_transform(&world, 1)
+	testing.expect(t, query_count(&world, query) == 1)
+
+	entity_index, ok = query_entity_at(&world, query, 0)
+	testing.expect(t, ok)
+	testing.expect(t, world.entities[entity_index].name == "Right Cube")
+
+	world.entities[2].alive = false
+	testing.expect(t, query_count(&world, query) == 0)
+}
+
+@(test)
 test_deferred_commands_spawn_entities_when_applied :: proc(t: ^testing.T) {
 	world: World
 	defer destroy_world(&world)

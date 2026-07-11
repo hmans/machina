@@ -18,7 +18,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 - Luau access declarations may reference project component handles or registered component-name strings.
 - Component handles carry runtime component IDs, giving scheduler-facing declarations and runtime query paths a shared component-type identity.
 - Unknown component names in system access declarations fail script loading.
-- Systems with explicit access declarations may only read or write components covered by those declarations. Callback-only systems remain permissive.
+- Systems with explicit access declarations may only read or write components covered by those declarations. Multi-component queries check every requested component against the active system declaration. Callback-only systems remain permissive.
 - Scheduled Luau batches currently execute serially in deterministic batch order.
 - Structural world changes requested from Luau systems are queued in a deferred command buffer and applied after all scheduled systems finish for the frame.
 - Deferred commands currently support spawning named entities with initial transform/project component payloads, despawning entities without shifting existing entity indices, and adding/removing `scrapbot.transform` or project components.
@@ -37,7 +37,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 **Why:** Native systems and future engine systems need the same conflict rules as script systems.
 **Tradeoff:** The Luau bridge must translate script declarations into the engine-level scheduler model.
 
-Component declarations are still stored by name for the scheduler, but handles now carry runtime component IDs that line up with ECS storage. That keeps the user-facing declaration format stable while the runtime moves toward ID-keyed system execution.
+Component declarations are still stored by name for the scheduler, but handles now carry runtime component IDs that line up with ECS storage and query matching. That keeps the user-facing declaration format stable while the runtime moves toward ID-keyed system execution.
 
 ### 3. Preserve callback-only Luau systems
 
