@@ -72,7 +72,7 @@ local should_be_number: number = "not a number"
 }
 
 @(test)
-test_check_project_analyzer_accepts_typed_query3 :: proc(t: ^testing.T) {
+test_check_project_analyzer_accepts_typed_three_component_query :: proc(t: ^testing.T) {
 	if !luau_analyzer_available() {
 		return
 	}
@@ -91,7 +91,7 @@ local AutorotateComponent = scrapbot.component("autorotate", {
 scrapbot.system({
 	reads = { scrapbot.transform, scrapbot.mesh, AutorotateComponent },
 }, function()
-	scrapbot.query3(scrapbot.transform, scrapbot.mesh, AutorotateComponent, function(entity, transform: ScrapbotTransform, mesh: ScrapbotMesh, autorotate: Autorotate)
+	scrapbot.query(scrapbot.transform, scrapbot.mesh, AutorotateComponent, function(entity, transform: ScrapbotTransform, mesh: ScrapbotMesh, autorotate: Autorotate)
 		local y: number = transform.rotation.y + autorotate.velocity.y
 		assert(mesh ~= nil)
 		assert(y > -100)

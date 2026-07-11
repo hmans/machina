@@ -56,7 +56,6 @@ Component_Reference :: struct {
 
 Query_API :: enum {
 	Query,
-	Query3,
 	View,
 }
 
@@ -217,7 +216,7 @@ step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> st
 }
 
 register_scrapbot_api :: proc(L: Lua_State) {
-	lua_createtable(L, 0, 18)
+	lua_createtable(L, 0, 17)
 
 	lua_pushcclosurek(L, scrapbot_log, "scrapbot.log", 0, nil)
 	lua_setfield(L, -2, "log")
@@ -245,9 +244,6 @@ register_scrapbot_api :: proc(L: Lua_State) {
 
 	lua_pushcclosurek(L, scrapbot_query, "scrapbot.query", 0, nil)
 	lua_setfield(L, -2, "query")
-
-	lua_pushcclosurek(L, scrapbot_query3, "scrapbot.query3", 0, nil)
-	lua_setfield(L, -2, "query3")
 
 	lua_pushcclosurek(L, scrapbot_view, "scrapbot.view", 0, nil)
 	lua_setfield(L, -2, "view")
@@ -509,6 +505,9 @@ query_argument :: proc "c" (
 	index: c.int,
 	api: Query_API,
 ) -> (query: Query, err: string) {
+	if lua_type(L, index) != LUA_TTABLE {
+		return {}, query_error(api, .Array_Contains_Non_Handle)
+	}
 	if query_argument_is_component_handle(L, index) {
 		component_ref, component_err := component_reference_argument(L, runtime, index)
 		if component_err != "" {
@@ -571,6 +570,9 @@ query_from_component_arguments :: proc "c" (
 		return {}, query_error(api, .Array_Too_Large)
 	}
 	for i in 0..<count {
+		if lua_type(L, first_index + c.int(i)) != LUA_TTABLE {
+			return {}, query_error(api, .Array_Contains_Non_Handle)
+		}
 		component_ref, component_err := component_reference_argument(L, runtime, first_index + c.int(i))
 		if component_err != "" {
 			return {}, query_error(api, .Component_Not_Registered)
@@ -592,16 +594,6 @@ Query_Error :: enum {
 }
 
 query_error :: proc "c" (api: Query_API, err: Query_Error) -> string {
-	if api == .Query3 {
-		#partial switch err {
-		case .Component_Not_Registered:
-			return "scrapbot.query3 component handle is not registered"
-		case .Array_Too_Large:
-			return "scrapbot.query3 accepts exactly three component handles and callback"
-		case:
-			return "scrapbot.query3 expects three component handles and callback"
-		}
-	}
 	if api == .View {
 		#partial switch err {
 		case .Component_Not_Registered:
@@ -619,16 +611,19 @@ query_error :: proc "c" (api: Query_API, err: Query_Error) -> string {
 	case .Component_Not_Registered:
 		return "scrapbot.query component handle is not registered"
 	case .Array_Contains_Non_Handle:
-		return "scrapbot.query component arrays must contain component handles"
+		return "scrapbot.query component arguments must be component handles"
 	case .Array_Empty:
 		return "scrapbot.query component arrays must not be empty"
 	case .Array_Too_Large:
-		return "scrapbot.query component arrays are too large"
+		return "scrapbot.query accepts at most eight component handles"
 	}
 	return "invalid query component argument"
 }
 
 query_argument_is_component_handle :: proc "c" (L: Lua_State, index: c.int) -> bool {
+	if lua_type(L, index) != LUA_TTABLE {
+		return false
+	}
 	name_length: c.size_t
 	lua_getfield(L, index, "name")
 	name_data := lua_tolstring(L, -1, &name_length)
@@ -661,11 +656,20 @@ scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 	if runtime == nil || runtime.world == nil {
 		return 0
 	}
-	if lua_type(L, 1) != LUA_TTABLE || lua_type(L, 2) != LUA_TFUNCTION {
-		return luau_push_error(L, "scrapbot.query expects a component handle or component array and callback")
+	arg_count := lua_gettop(L)
+	if arg_count < 2 || lua_type(L, arg_count) != LUA_TFUNCTION {
+		return luau_push_error(L, "scrapbot.query expects component handles followed by a callback")
 	}
 
-	query, query_err := query_argument(L, runtime, 1, .Query)
+	query: Query
+	query_err: string
+	callback_index := arg_count
+
+	if arg_count == 2 {
+		query, query_err = query_argument(L, runtime, 1, .Query)
+	} else {
+		query, query_err = query_from_component_arguments(L, runtime, 1, int(arg_count - 1), .Query)
+	}
 	if query_err != "" {
 		return luau_push_error(L, query_err)
 	}
@@ -673,30 +677,7 @@ scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 		return luau_push_error(L, err)
 	}
 
-	return run_query_callback(L, runtime, query, 2)
-}
-
-scrapbot_query3 :: proc "c" (L: Lua_State) -> c.int {
-	runtime := cast(^Runtime)lua_getthreaddata(L)
-	if runtime == nil || runtime.world == nil {
-		return 0
-	}
-	if lua_type(L, 1) != LUA_TTABLE ||
-	   lua_type(L, 2) != LUA_TTABLE ||
-	   lua_type(L, 3) != LUA_TTABLE ||
-	   lua_type(L, 4) != LUA_TFUNCTION {
-		return luau_push_error(L, "scrapbot.query3 expects three component handles and callback")
-	}
-
-	query, query_err := query_from_component_arguments(L, runtime, 1, 3, .Query3)
-	if query_err != "" {
-		return luau_push_error(L, query_err)
-	}
-	if err := require_query_access(runtime, query, .Read); err != "" {
-		return luau_push_error(L, err)
-	}
-
-	return run_query_callback(L, runtime, query, 4)
+	return run_query_callback(L, runtime, query, callback_index)
 }
 
 run_query_callback :: proc "c" (

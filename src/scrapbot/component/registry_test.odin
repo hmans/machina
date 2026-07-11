@@ -101,9 +101,9 @@ test_luau_types_include_registered_components :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(text, "export type Autorotate = {"))
 	testing.expect(t, strings.contains(text, "\tvelocity: Vec3,"))
 	testing.expect(t, strings.contains(text, "export type AutorotateComponent = ScrapbotComponent<Autorotate>"))
-	testing.expect(t, strings.contains(text, "<A, B>(components: {ScrapbotComponent<A> | ScrapbotComponent<B>}"))
-	testing.expect(t, !strings.contains(text, "<A, B, C>(components:"))
-	testing.expect(t, strings.contains(text, "query3: <A, B, C>(first: ScrapbotComponent<A>"))
+	testing.expect(t, strings.contains(text, "<A, B>(first: ScrapbotComponent<A>, second: ScrapbotComponent<B>"))
+	testing.expect(t, strings.contains(text, "<A, B, C>(first: ScrapbotComponent<A>, second: ScrapbotComponent<B>, third: ScrapbotComponent<C>"))
+	testing.expect(t, !strings.contains(text, "query3:"))
 }
 
 @(test)

@@ -145,7 +145,7 @@ scrapbot.system({
 	reads = { AutorotateComponent },
 	writes = { scrapbot.transform },
 }, function(delta_seconds)
-	scrapbot.query({ scrapbot.transform, AutorotateComponent }, function(entity, transform, autorotate)
+	scrapbot.query(scrapbot.transform, AutorotateComponent, function(entity, transform, autorotate)
 		local rotation = transform.rotation
 		rotation.y += autorotate.velocity.y * delta_seconds
 		scrapbot.set_rotation(entity, rotation)
@@ -161,7 +161,7 @@ end)
 }
 
 @(test)
-test_luau_query3_matches_three_components :: proc(t: ^testing.T) {
+test_luau_query_matches_three_components :: proc(t: ^testing.T) {
 	scene, parse_result := project.parse_scene(`[[entities]]
 name = "Spinner"
 
@@ -204,7 +204,7 @@ scrapbot.system({
 	reads = { scrapbot.transform, scrapbot.mesh, AutorotateComponent },
 }, function()
 	local count = 0
-	scrapbot.query3(scrapbot.transform, scrapbot.mesh, AutorotateComponent, function(entity, transform, mesh, autorotate)
+	scrapbot.query(scrapbot.transform, scrapbot.mesh, AutorotateComponent, function(entity, transform, mesh, autorotate)
 		count += 1
 		assert(entity.name == "Spinner")
 		assert(transform.rotation.y == 0)
@@ -447,7 +447,7 @@ local AutorotateComponent = scrapbot.component("autorotate", {
 scrapbot.system({
 	reads = { AutorotateComponent },
 }, function()
-	scrapbot.query({ scrapbot.transform, AutorotateComponent }, function() end)
+	scrapbot.query(scrapbot.transform, AutorotateComponent, function() end)
 end)
 `, "=test", &world)
 	testing.expect(t, result.err == "")
@@ -1043,5 +1043,5 @@ end)
 	testing.expect(t, result.ran)
 
 	step_err := step_runtime(&runtime, &world, 0.5)
-	testing.expect(t, step_err == "Luau system: scrapbot.query expects a component handle or component array and callback")
+	testing.expect(t, step_err == "Luau system: scrapbot.query component arguments must be component handles")
 }

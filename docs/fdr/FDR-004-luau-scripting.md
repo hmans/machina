@@ -30,8 +30,8 @@ Luau scripting lets project directories include fast-iteration game code without
 - Scripts can declare system component access with `scrapbot.system({ reads = {...}, writes = {...} }, function(delta_seconds) ... end)`.
 - Script system access declarations accept project component handles or registered component-name strings.
 - Scripts can query scene-defined custom components with `scrapbot.query(component_handle, callback)`.
-- Scripts can query entities that have multiple components with `scrapbot.query({ component_a, component_b }, callback)`. Callback parameters receive the entity followed by component payloads in query order.
-- Scripts can query three components with `scrapbot.query3(component_a, component_b, component_c, callback)` when they need precise Luau callback typing without ambiguous array overloads.
+- Scripts can query entities that have multiple components with `scrapbot.query(component_a, component_b, callback)` and other positional component-handle forms. Callback parameters receive the entity followed by component payloads in query order.
+- Generated Luau types currently provide precise callback payload types for one-, two-, and three-component `scrapbot.query` calls.
 - Scripts can request a bulk query result with `scrapbot.view(component_handle)`, which returns alive entity/component items for the component type.
 - Scripts can request a joined bulk query result with `scrapbot.view({ component_a, component_b })`, which returns alive entities and a component payload array in query order.
 - Runtime queries use component IDs from handles to select one component storage group, while project files and diagnostics remain name-based.
@@ -135,11 +135,11 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 **Why:** Gameplay systems usually operate over a set of components, not one project component plus ad hoc helper calls. Built-in handles make query code and system access declarations line up.
 **Tradeoff:** Built-in component payloads are still copied into Luau tables, and only transform exposes real fields today. Mutating those payload tables does not yet write back automatically.
 
-### 14. Use explicit arity APIs for larger typed queries
+### 14. Use positional query arguments for typed joins
 
-**Decision:** Keep `scrapbot.query(component, callback)` and `scrapbot.query({ a, b }, callback)`, then add `scrapbot.query3(a, b, c, callback)` for precise three-component Luau typing.
-**Why:** Luau cannot distinguish heterogeneous array overloads by length, so a typed three-component array overload makes two-component query calls ambiguous. An explicit arity API keeps generated types useful in editors while reusing the same runtime query engine.
-**Tradeoff:** The API surface grows by arity, and queries beyond three components still need less precise `view({ ... })` results or future explicit APIs.
+**Decision:** Use one `scrapbot.query` API whose component handles are passed positionally before the callback, with generated type overloads for one-, two-, and three-component callbacks.
+**Why:** Luau cannot distinguish heterogeneous array overloads by length, so typed array overloads make shorter query calls ambiguous. Positional component handles let editor types model common arities without growing the user-facing API by method name.
+**Tradeoff:** The runtime can accept larger joined queries, but generated Luau types only model the first three arities precisely for now. Scripts that need wider bulk results can still use `scrapbot.view({ ... })`, which returns less precise component arrays.
 
 ### 15. Analyze project scripts after type generation
 

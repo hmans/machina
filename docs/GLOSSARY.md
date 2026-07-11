@@ -22,7 +22,7 @@
 
 **Query view** - A view over one component or joined component set that yields alive entity/component results for scripting and future native systems.
 
-**Joined query** - A query that matches only entities that have every requested component, such as `scrapbot.transform` and a project-defined `autorotate` component. Luau uses `scrapbot.query({ a, b }, callback)` for typed two-component joins and `scrapbot.query3(a, b, c, callback)` for typed three-component joins.
+**Joined query** - A query that matches only entities that have every requested component, such as `scrapbot.transform` and a project-defined `autorotate` component. Luau uses positional `scrapbot.query(a, b, callback)` calls for typed callback joins and `scrapbot.view({ a, b })` for bulk joined results.
 
 **System** - Runtime logic that reads or writes components for matching entities.
 

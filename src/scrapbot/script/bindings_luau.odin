@@ -58,6 +58,7 @@ foreign luau {
 	lua_pcall :: proc "c" (L: Lua_State, nargs, nresults, errfunc: c.int) -> c.int ---
 	lua_error :: proc "c" (L: Lua_State) -> c.int ---
 	lua_type :: proc "c" (L: Lua_State, idx: c.int) -> c.int ---
+	lua_gettop :: proc "c" (L: Lua_State) -> c.int ---
 	lua_tolstring :: proc "c" (L: Lua_State, idx: c.int, len: ^c.size_t) -> cstring ---
 	lua_tonumberx :: proc "c" (L: Lua_State, idx: c.int, isnum: ^c.int) -> f64 ---
 	lua_tointegerx :: proc "c" (L: Lua_State, idx: c.int, isnum: ^c.int) -> c.int ---
