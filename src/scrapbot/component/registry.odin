@@ -11,6 +11,7 @@ Component_ID :: shared.Component_ID
 
 Owner :: enum {
 	Engine,
+	Library,
 	Project,
 }
 
@@ -71,6 +72,22 @@ register_project_component :: proc "c" (registry: ^Registry, definition: Definit
 	project_definition := definition
 	project_definition.owner = .Project
 	return register_definition(registry, project_definition)
+}
+
+register_library_component :: proc "c" (registry: ^Registry, definition: Definition) -> string {
+	if !shared.component_name_is_valid(definition.name) {
+		return "component name must be dot-separated identifier tokens"
+	}
+	if !shared.component_name_is_namespaced(definition.name) {
+		return "library components must use dotted component names"
+	}
+	if component_name_uses_scrapbot_namespace(definition.name) {
+		return "library components cannot use the scrapbot namespace"
+	}
+
+	library_definition := definition
+	library_definition.owner = .Library
+	return register_definition(registry, library_definition)
 }
 
 register_definition :: proc "c" (registry: ^Registry, definition: Definition) -> string {
@@ -195,4 +212,9 @@ copy_fields :: proc(definition: ^Definition, fields: []Field_Definition) -> stri
 		definition.fields[i] = field
 	}
 	return ""
+}
+
+component_name_uses_scrapbot_namespace :: proc "c" (name: string) -> bool {
+	prefix: string : "scrapbot."
+	return len(name) > len(prefix) && name[:len(prefix)] == prefix
 }

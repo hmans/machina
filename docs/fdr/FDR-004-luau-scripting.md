@@ -16,25 +16,27 @@ Luau scripting lets project directories include fast-iteration game code without
 - `scrapbot run --hot-reload` periodically checks `scripts/main.luau` and the default scene TOML while renderer frames are advancing.
 - Successful script reload replaces the active Luau runtime; failed script reload keeps the last good runtime.
 - Successful scene reload rebuilds the ECS world and validates `scripts/main.luau` against it before swapping state; failed scene reload keeps the last good world and runtime.
-- `scrapbot check` executes `scripts/main.luau` silently to collect project component schemas, validate scene data, and refresh `types/scrapbot.d.luau`.
+- `scrapbot check` executes `scripts/main.luau` silently to collect project and library component schemas, validate scene data, and refresh `types/scrapbot.d.luau`.
 - When `luau-analyze` is available, `scrapbot check` also statically analyzes `scripts/main.luau` against the refreshed generated types.
 - Scripts can call `scrapbot.log(message)`.
 - Scripts can read `scrapbot.entity_count()` and `scrapbot.renderable_count()`.
 - Scripts can define project components with `scrapbot.component(name, schema)`, where the first supported field marker is `scrapbot.vec3`.
+- Scripts can define library components with `scrapbot.library_component(name, schema)`.
 - Component schemas still accept the legacy `"vec3"` field type string for compatibility.
 - Single-token component names such as `autorotate` are project-level components.
 - Multi-token dotted component names such as `scrapbot.transform` or `scrappyphysics.rigidbody` are reserved for engine or library components and must be registered before scene data can use them.
+- Library component names must be dotted and cannot use the reserved `scrapbot` namespace.
 - The engine registry currently contains built-in `scrapbot.transform`, `scrapbot.camera`, and `scrapbot.mesh` component names.
-- `scrapbot.component` returns a typed component handle with a runtime component ID and name. Scripts can cast it to a generated component handle type.
+- `scrapbot.component` and `scrapbot.library_component` return typed component handles with runtime component IDs and names. Scripts can cast them to generated component handle types.
 - The `scrapbot` API exposes built-in component handles for `scrapbot.transform`, `scrapbot.camera`, and `scrapbot.mesh`.
 - Scripts can register frame systems with `scrapbot.system(function(delta_seconds) ... end)`.
 - Scripts can declare system component access with `scrapbot.system({ reads = {...}, writes = {...} }, function(delta_seconds) ... end)`.
-- Script system access declarations accept project component handles, query objects for reads, or registered component-name strings.
+- Script system access declarations accept component handles, query objects for reads, or registered component-name strings.
 - Scripts can create reusable query objects with `scrapbot.query(component_a, component_b, ...)`.
 - Query object construction is order-insensitive: repeated calls with the same component set return the same object, and query payloads use Scrapbot's canonical component order.
 - Query objects can iterate matching entities with `query:each(callback)`. Callback parameters receive the entity followed by component payloads in query order.
 - Scripts can pass a query object to `scrapbot.system(query, options?, callback)` to run the system callback once per matching entity. Query components are declared as system reads automatically.
-- Query-driven systems can mutate `scrapbot.transform` and project component payload tables directly when the system declares matching write access.
+- Query-driven systems can mutate `scrapbot.transform` and schema-backed project or library component payload tables directly when the system declares matching write access.
 - Mutating a query-system payload table without declared write access fails the system step and leaves the world unchanged.
 - Generated Luau types provide readonly payload aliases for `query:each` and query-driven systems that do not pass options.
 - Generated Luau types validate query-system options and support mutable payload annotations for writable query-driven systems.
@@ -45,12 +47,12 @@ Luau scripting lets project directories include fast-iteration game code without
 - Scripts can read and write entity rotation through `scrapbot.get_rotation(entity)` and `scrapbot.set_rotation(entity, rotation)`, but query-driven systems should prefer direct `scrapbot.transform` payload mutation.
 - Script entity handles include an entity index, generation, and optional name. APIs reject stale handles whose generation no longer matches the world.
 - Scripts can queue entity lifecycle changes with `scrapbot.spawn({ name = "..." })` and `scrapbot.despawn(entity)`.
-- Spawn options may include initial `scrapbot.transform` data and project component payloads.
+- Spawn options may include initial `scrapbot.transform` data and schema-backed project or library component payloads.
 - Scripts can queue component lifecycle changes with `scrapbot.add_component(entity, component, payload)` and `scrapbot.remove_component(entity, component)`.
 - Spawn, despawn, add-component, and remove-component requests are deferred until after all scheduled systems have run for the frame.
 - Scene files can attach simple custom vec3 component data with `[entities.components.<name>]` sections.
-- Scene custom component data must match its registered schema. Project-level component schemas come from `scripts/main.luau`; engine component schemas come from the engine registry.
-- Projects include Luau LSP metadata so editors can type-check the `scrapbot` global, engine component aliases, and project component aliases.
+- Scene custom component data must match its registered schema. Project-level and library component schemas come from `scripts/main.luau`; engine component schemas come from the engine registry.
+- Projects include Luau LSP metadata so editors can type-check the `scrapbot` global, engine component aliases, project component aliases, and script-registered library component aliases.
 - Static analyzer diagnostics fail `scrapbot check` when they include Luau type or syntax errors. Lint-only output does not currently fail the project check.
 
 ## Design Decisions
@@ -83,19 +85,19 @@ Structural mutations requested by Luau systems are now deferred through an engin
 
 **Decision:** Generate `types/scrapbot.d.luau` and `.vscode/settings.json` for new projects, then refresh the type file during `scrapbot check`.
 **Why:** The Luau language server uses `luau-lsp.types.definitionFiles` mappings for custom globals, and project scripts need the `scrapbot` global plus component payload aliases to be known outside the running engine.
-**Tradeoff:** The first editor integration is VS Code-oriented. Other editors may need equivalent Luau LSP settings until Scrapbot has editor-agnostic project metadata generation. `scrapbot check` must execute top-level script registration code to discover project component schemas.
+**Tradeoff:** The first editor integration is VS Code-oriented. Other editors may need equivalent Luau LSP settings until Scrapbot has editor-agnostic project metadata generation. `scrapbot check` must execute top-level script registration code to discover project and library component schemas.
 
 ### 5. Start custom components as simple scene data
 
-**Decision:** Allow scripts to define project components with `scrapbot.component(name, schema)` and let scene files attach matching data with `[entities.components.<name>]` sections whose initial fields are vec3 values. Single-token component names are owned by the project, while multi-token dotted names are reserved for engine or future library registrations. `scrapbot.component` registers a project component schema and returns a handle that selects the component at runtime, while query callbacks use generated Luau aliases for the component payload type.
+**Decision:** Allow scripts to define project components with `scrapbot.component(name, schema)` and library components with `scrapbot.library_component(name, schema)`, then let scene files attach matching data with `[entities.components.<name>]` sections whose initial fields are vec3 values. Single-token component names are owned by the project, while multi-token dotted names are owned by engine or library registrations. Both registration APIs return handles that select the component at runtime, while query callbacks use generated Luau aliases for the component payload type.
 **Why:** This is enough for the first project-owned system, `autorotate.velocity`, while keeping the parser and Luau bridge small.
-**Tradeoff:** Component schemas are still declared separately from payload aliases, so the schema table is not yet generated from the Luau payload type. Library component registration does not exist yet. Luau receives component tables dynamically, and direct payload write-back is limited to query-driven systems. The legacy `"vec3"` string remains accepted, but generated projects use `scrapbot.vec3`.
+**Tradeoff:** Component schemas are still declared separately from payload aliases, so the schema table is not yet generated from the Luau payload type. Library components can be registered explicitly, but there is not yet a module/package loader that scopes registration authority to a real library. Luau receives component tables dynamically, and direct payload write-back is limited to query-driven systems. The legacy `"vec3"` string remains accepted, but generated projects use `scrapbot.vec3`.
 
 ### 6. Use a registry for component ownership and scene validation
 
-**Decision:** Keep a runtime component registry with built-in engine component names and project component schemas registered by Luau.
+**Decision:** Keep a runtime component registry with built-in engine component names plus project and library component schemas registered by Luau.
 **Why:** The registry gives scene validation, script registration, query handles, and generated Luau type aliases one shared source of component ownership and basic field schemas.
-**Tradeoff:** The registry is intentionally small: it supports vec3 schema fields only and does not yet provide a package mechanism for third-party libraries.
+**Tradeoff:** The registry is intentionally small: it supports vec3 schema fields only and has explicit library component registration but not a full package mechanism for third-party libraries.
 
 Registered component definitions also receive runtime-local component IDs. Luau handles carry those IDs, and loaded scene component storage is bound to them after scripts register schemas.
 
@@ -115,7 +117,7 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 **Decision:** Add `scrapbot.spawn`, `scrapbot.despawn`, `scrapbot.add_component`, and `scrapbot.remove_component` as deferred Luau APIs instead of mutating the world immediately.
 **Why:** Project systems need a basic way to create and remove gameplay state, but immediate structural mutation would make queries and future parallel scheduling much harder to reason about.
-**Tradeoff:** Lifecycle changes are visible after the current frame step. Runtime component mutation currently supports `scrapbot.transform` and project vec3 components, not arbitrary engine/library storage.
+**Tradeoff:** Lifecycle changes are visible after the current frame step. Runtime component mutation currently supports `scrapbot.transform` and schema-backed project or library vec3 components, not arbitrary engine storage.
 
 ### 10. Include generations in Luau entity handles
 
@@ -123,9 +125,9 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 **Why:** Stable indices alone are not enough once entities can be despawned. Generation checks prevent stale handles from mutating a different lifetime of the same slot later.
 **Tradeoff:** Scripts cannot fabricate useful entity handles from indices alone; they need handles received from Scrapbot APIs or must know the current generation during low-level tests.
 
-### 11. Query project components by component ID
+### 11. Query custom components by component ID
 
-**Decision:** Group project component instances by component type and use registry-assigned component IDs for runtime query and lifecycle paths.
+**Decision:** Group schema-backed custom component instances by component type and use registry-assigned component IDs for runtime query and lifecycle paths.
 **Why:** Name matching is useful at text/project boundaries but too weak as an execution-time storage key. ID-keyed groups are a better base for bulk query views, native systems, and parallel scheduling.
 **Tradeoff:** Component IDs are runtime-local and must be rebound after scene load and script registration. Names remain the persistent source of truth in project files.
 
@@ -137,8 +139,8 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 ### 13. Make built-in components queryable handles
 
-**Decision:** Expose built-in component handles such as `scrapbot.transform` directly on the Luau API and allow query objects and views to mix those handles with project component handles.
-**Why:** Gameplay systems usually operate over a set of components, not one project component plus ad hoc helper calls. Built-in handles make query code and system access declarations line up.
+**Decision:** Expose built-in component handles such as `scrapbot.transform` directly on the Luau API and allow query objects and views to mix those handles with project and library component handles.
+**Why:** Gameplay systems usually operate over a set of components, not one project component plus ad hoc helper calls. Built-in and library handles make query code and system access declarations line up.
 **Tradeoff:** Built-in component payloads are still copied into Luau tables, and only transform exposes real writable fields today. Direct payload write-back is currently limited to query-driven systems that declare matching writes; `query:each` and bulk views remain read/copy APIs.
 
 ### 14. Make queries reusable values

@@ -1,7 +1,7 @@
 # FDR-002: Text-first projects
 
 **Status:** Active
-**Last reviewed:** 2026-07-10
+**Last reviewed:** 2026-07-11
 
 ## Overview
 
@@ -13,7 +13,7 @@ Text-first projects let users run Scrapbot from an ordinary project directory co
 - The manifest names the project and points at a default scene.
 - The default generated scene lives at `scenes/main.scene.toml`.
 - Scene files describe entities and known components in TOML.
-- Project validation rejects missing manifests, unsafe scene paths, malformed project metadata, malformed scene data, unknown namespaced scene components, and scene data that does not match project Luau component schemas.
+- Project validation rejects missing manifests, unsafe scene paths, malformed project metadata, malformed scene data, unknown scene components, and scene data that does not match registered component schemas.
 - Project validation refreshes generated Luau type definitions from the component registry.
 - Example project directories live under `examples/` and can be used for smoke verification.
 
@@ -33,9 +33,9 @@ Text-first projects let users run Scrapbot from an ordinary project directory co
 
 ### 3. Validate scene components through the registry
 
-**Decision:** `scrapbot check` validates dotted scene component names against the engine component registry and executes `scripts/main.luau` silently to collect project-level component schemas.
-**Why:** Dotted names are reserved for engine and library components, and project component data is only meaningful if the script declares a matching schema.
-**Tradeoff:** Project scripts should keep top-level work limited to registration and other check-safe setup. Future third-party libraries need a registration mechanism before their dotted component names can pass project validation.
+**Decision:** `scrapbot check` executes `scripts/main.luau` silently to collect project-level and library component schemas, then validates all scene custom component data against the resulting registry.
+**Why:** Project and library component data is only meaningful after scripts register matching schemas, while engine components are available from the initial registry.
+**Tradeoff:** Project scripts should keep top-level work limited to registration and other check-safe setup until Scrapbot has a module/package loader for library registration.
 
 ## Related
 

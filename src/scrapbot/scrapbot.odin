@@ -39,9 +39,6 @@ check_project :: proc(root: string) -> string {
 	if loaded.err != "" {
 		return loaded.err
 	}
-	if err := project.validate_namespaced_scene_components(&loaded.scene); err != "" {
-		return err
-	}
 
 	world := ecs.build_world(&loaded.scene)
 	defer ecs.destroy_world(&world)
@@ -54,6 +51,9 @@ check_project :: proc(root: string) -> string {
 	}
 
 	if script_result.ran {
+		if err := project.validate_scene_components(&loaded.scene, &runtime.registry); err != "" {
+			return err
+		}
 		if err := project.write_luau_types(root, &runtime.registry); err != "" {
 			return err
 		}
@@ -62,6 +62,9 @@ check_project :: proc(root: string) -> string {
 
 	fallback_registry: component.Registry
 	component.init_registry(&fallback_registry)
+	if err := project.validate_scene_components(&loaded.scene, &fallback_registry); err != "" {
+		return err
+	}
 	if err := project.write_luau_types(root, &fallback_registry); err != "" {
 		return err
 	}

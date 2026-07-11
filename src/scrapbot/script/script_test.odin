@@ -1,6 +1,7 @@
 package script
 
 import "core:testing"
+import component "../component"
 import ecs "../ecs"
 import project "../project"
 import shared "../shared"
@@ -1211,6 +1212,73 @@ scrapbot.component("scrapbot.transform", {
 
 	testing.expect(t, !result.ran)
 	testing.expect(t, result.err == "=test: project scripts can only define single-token project component names")
+}
+
+@(test)
+test_luau_scripts_can_register_library_components :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Body"
+
+[entities.components.scrappyphysics.rigidbody]
+velocity = [0, 3, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local RigidbodyComponent = scrapbot.library_component("scrappyphysics.rigidbody", {
+	velocity = scrapbot.vec3,
+})
+local Rigidbodies = scrapbot.query(RigidbodyComponent)
+
+scrapbot.system(Rigidbodies, {
+	writes = { RigidbodyComponent },
+}, function(delta_seconds, entity, rigidbody)
+	rigidbody.velocity.y += 2
+end)
+`, "=test", &world)
+
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+	definition, definition_ok := component.find_definition(&runtime.registry, "scrappyphysics.rigidbody")
+	testing.expect(t, definition_ok)
+	testing.expect(t, definition.owner == .Library)
+	testing.expect(t, world.custom_components[0].component_id == definition.id)
+
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "")
+	rigidbody, rigidbody_ok := ecs.custom_component_for_entity(&world, 0, definition.id, "scrappyphysics.rigidbody")
+	testing.expect(t, rigidbody_ok)
+	velocity, velocity_ok := custom_component_vec3_field(rigidbody, "velocity")
+	testing.expect(t, velocity_ok)
+	testing.expect(t, velocity.y == 5)
+}
+
+@(test)
+test_luau_library_components_must_use_dotted_non_engine_names :: proc(t: ^testing.T) {
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+
+	result := run_source(&runtime, `
+scrapbot.library_component("rigidbody", {
+	velocity = scrapbot.vec3,
+})
+`, "=test", nil)
+	testing.expect(t, !result.ran)
+	testing.expect(t, result.err == "=test: library components must use dotted component names")
+
+	result = run_source(&runtime, `
+scrapbot.library_component("scrapbot.rigidbody", {
+	velocity = scrapbot.vec3,
+})
+`, "=test", nil)
+	testing.expect(t, !result.ran)
+	testing.expect(t, result.err == "=test: library components cannot use the scrapbot namespace")
 }
 
 @(test)

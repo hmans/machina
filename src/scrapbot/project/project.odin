@@ -326,3 +326,14 @@ validate_namespaced_scene_components :: proc(scene: ^Scene) -> string {
 	}
 	return ""
 }
+
+validate_scene_components :: proc(scene: ^Scene, registry: ^components.Registry) -> string {
+	for entity in scene.entities {
+		for scene_component in entity.custom_components {
+			if err := components.validate_custom_component(registry, scene_component); err != "" {
+				return err
+			}
+		}
+	}
+	return ""
+}

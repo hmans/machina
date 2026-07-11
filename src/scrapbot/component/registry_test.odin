@@ -50,6 +50,35 @@ test_registry_rejects_project_component_name_collisions :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_registry_registers_library_components :: proc(t: ^testing.T) {
+	registry: Registry
+	init_registry(&registry)
+
+	err := register_library_component(&registry, Definition{name = "rigidbody"})
+	testing.expect(t, err == "library components must use dotted component names")
+
+	err = register_library_component(&registry, Definition{name = "scrapbot.physics"})
+	testing.expect(t, err == "library components cannot use the scrapbot namespace")
+
+	err = register_library_component(&registry, Definition{name = "scrapbot.transform"})
+	testing.expect(t, err == "library components cannot use the scrapbot namespace")
+
+	definition := Definition{name = "scrappyphysics.rigidbody", field_count = 1}
+	definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
+	err = register_library_component(&registry, definition)
+	testing.expect(t, err == "")
+
+	rigidbody, rigidbody_ok := find_definition(&registry, "scrappyphysics.rigidbody")
+	testing.expect(t, rigidbody_ok)
+	testing.expect(t, rigidbody.owner == .Library)
+	testing.expect(t, rigidbody.id != shared.INVALID_COMPONENT_ID)
+	testing.expect(t, rigidbody.field_count == 1)
+
+	err = register_project_component(&registry, Definition{name = "scrappyphysics.rigidbody"})
+	testing.expect(t, err == "project scripts can only define single-token project component names")
+}
+
+@(test)
 test_registry_validates_scene_component_fields :: proc(t: ^testing.T) {
 	registry: Registry
 	init_registry(&registry)
@@ -74,6 +103,30 @@ test_registry_validates_scene_component_fields :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_registry_validates_library_scene_component_fields :: proc(t: ^testing.T) {
+	registry: Registry
+	init_registry(&registry)
+
+	definition := Definition{name = "scrappyphysics.rigidbody", field_count = 1}
+	definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
+	err := register_library_component(&registry, definition)
+	testing.expect(t, err == "")
+
+	scene_component := shared.Custom_Component{name = "scrappyphysics.rigidbody"}
+	append(&scene_component.vec3_fields, shared.Named_Vec3{name = "velocity"})
+	defer delete(scene_component.vec3_fields)
+
+	testing.expect(t, validate_custom_component(&registry, scene_component) == "")
+
+	scene_component.vec3_fields[0].name = "mass"
+	testing.expect(
+		t,
+		validate_custom_component(&registry, scene_component) ==
+			`scene component "scrappyphysics.rigidbody" has field "mass" that is not defined by its registered schema`,
+	)
+}
+
+@(test)
 test_registry_rejects_unknown_namespaced_scene_components :: proc(t: ^testing.T) {
 	registry: Registry
 	init_registry(&registry)
@@ -91,6 +144,10 @@ test_luau_types_include_registered_components :: proc(t: ^testing.T) {
 	definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
 	err := register_project_component(&registry, definition)
 	testing.expect(t, err == "")
+	library_definition := Definition{name = "scrappyphysics.rigidbody", field_count = 1}
+	library_definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
+	library_err := register_library_component(&registry, library_definition)
+	testing.expect(t, library_err == "")
 
 	text, generate_err := generate_luau_types(&registry)
 	testing.expect(t, generate_err == "")
@@ -106,6 +163,9 @@ test_luau_types_include_registered_components :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(text, "export type ReadonlyAutorotate = {"))
 	testing.expect(t, strings.contains(text, "\tread velocity: ReadonlyVec3,"))
 	testing.expect(t, strings.contains(text, "export type AutorotateComponent = ScrapbotComponent<Autorotate, ReadonlyAutorotate>"))
+	testing.expect(t, strings.contains(text, "library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,"))
+	testing.expect(t, strings.contains(text, "export type ScrappyphysicsRigidbody = {"))
+	testing.expect(t, strings.contains(text, "export type ScrappyphysicsRigidbodyComponent = ScrapbotComponent<ScrappyphysicsRigidbody, ReadonlyScrappyphysicsRigidbody>"))
 	testing.expect(t, strings.contains(text, "export type ScrapbotQuery2<A, RA, B, RB> = {"))
 	testing.expect(t, strings.contains(text, "callback: (ScrapbotEntity, RA, RB) -> ()) -> (),"))
 	testing.expect(t, strings.contains(text, "<A, RA, B, RB>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>) -> ScrapbotQuery2<A, RA, B, RB>"))

@@ -48,6 +48,51 @@ test_check_project_validates_project_level_components_with_script_registry :: pr
 }
 
 @(test)
+test_check_project_accepts_script_registered_library_components :: proc(t: ^testing.T) {
+	root, parent := make_check_project_test_project(t)
+	defer delete(root)
+	defer os.remove_all(parent)
+
+	scene_path := join_check_project_path(t, root, DEFAULT_SCENE)
+	defer delete(scene_path)
+	write_scene_err := os.write_entire_file(scene_path, `[[entities]]
+name = "Body"
+
+[entities.components.scrappyphysics.rigidbody]
+velocity = [0, 4, 0]
+`)
+	testing.expect(t, write_scene_err == nil)
+
+	script_path := join_check_project_path(t, root, DEFAULT_SCRIPT)
+	defer delete(script_path)
+	write_script_err := os.write_entire_file(script_path, `
+local RigidbodyComponent = scrapbot.library_component("scrappyphysics.rigidbody", {
+	velocity = scrapbot.vec3,
+}) :: ScrappyphysicsRigidbodyComponent
+
+local Rigidbodies = scrapbot.query(RigidbodyComponent)
+
+scrapbot.system(Rigidbodies, function(delta_seconds: number, entity: ScrapbotEntity, rigidbody: ReadonlyScrappyphysicsRigidbody)
+	local speed: number = rigidbody.velocity.y
+	assert(speed > 0)
+end)
+`)
+	testing.expect(t, write_script_err == nil)
+
+	check_err := check_project(root)
+	testing.expectf(t, check_err == "", "check_project failed: %s", check_err)
+
+	types_path := join_check_project_path(t, root, DEFAULT_LUAU_TYPES)
+	defer delete(types_path)
+	types_bytes, read_err := os.read_entire_file(types_path, context.temp_allocator)
+	testing.expect(t, read_err == nil)
+	types_text := string(types_bytes)
+	testing.expect(t, strings.contains(types_text, "library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,"))
+	testing.expect(t, strings.contains(types_text, "export type ScrappyphysicsRigidbody = {"))
+	testing.expect(t, strings.contains(types_text, "export type ScrappyphysicsRigidbodyComponent = ScrapbotComponent<ScrappyphysicsRigidbody, ReadonlyScrappyphysicsRigidbody>"))
+}
+
+@(test)
 test_check_project_runs_luau_analyzer_when_available :: proc(t: ^testing.T) {
 	if !luau_analyzer_available() {
 		return

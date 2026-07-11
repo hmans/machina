@@ -68,7 +68,7 @@ Transform_Writeback :: struct {
 	can_write: bool,
 }
 
-Project_Component_Writeback :: struct {
+Custom_Component_Writeback :: struct {
 	ref: c.int,
 	entity_index: int,
 	component_id: Component_ID,
@@ -81,7 +81,7 @@ Prepared_Transform_Writebacks :: struct {
 	changed: [ecs.MAX_QUERY_TERMS]bool,
 }
 
-Prepared_Project_Component_Writebacks :: struct {
+Prepared_Custom_Component_Writebacks :: struct {
 	components: [ecs.MAX_QUERY_TERMS]ecs.Command_Component,
 	changed: [ecs.MAX_QUERY_TERMS]bool,
 }
@@ -255,7 +255,7 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 			push_entity_table(L, runtime.world, entity_index)
 			writebacks: [ecs.MAX_QUERY_TERMS]Transform_Writeback
 			writeback_count := 0
-			component_writebacks: [ecs.MAX_QUERY_TERMS]Project_Component_Writeback
+			component_writebacks: [ecs.MAX_QUERY_TERMS]Custom_Component_Writeback
 			component_writeback_count := 0
 			for term_index in 0..<system.query.term_count {
 				term := system.query.terms[term_index]
@@ -271,9 +271,9 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 						}
 						writeback_count += 1
 					}
-				} else if query_term_is_project_component(&runtime.registry, term) {
+				} else if query_term_is_custom_schema_component(&runtime.registry, term) {
 					if _, ok := ecs.custom_component_for_entity_ref(runtime.world, entity_index, term.component_id, term.name); ok {
-						component_writebacks[component_writeback_count] = Project_Component_Writeback {
+						component_writebacks[component_writeback_count] = Custom_Component_Writeback {
 							ref = lua_ref(L, -1),
 							entity_index = entity_index,
 							component_id = term.component_id,
@@ -300,8 +300,8 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 				writebacks[:writeback_count],
 				&prepared_transforms,
 			)
-			prepared_components: Prepared_Project_Component_Writebacks
-			component_err := prepare_project_component_writebacks(
+			prepared_components: Prepared_Custom_Component_Writebacks
+			component_err := prepare_custom_component_writebacks(
 				L,
 				runtime,
 				component_writebacks[:component_writeback_count],
@@ -318,7 +318,7 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 				writebacks[:writeback_count],
 				&prepared_transforms,
 			)
-			apply_project_component_writebacks(
+			apply_custom_component_writebacks(
 				runtime.world,
 				component_writebacks[:component_writeback_count],
 				&prepared_components,
@@ -388,11 +388,11 @@ apply_transform_writebacks :: proc "c" (
 	}
 }
 
-prepare_project_component_writebacks :: proc(
+prepare_custom_component_writebacks :: proc(
 	L: Lua_State,
 	runtime: ^Runtime,
-	writebacks: []Project_Component_Writeback,
-	prepared: ^Prepared_Project_Component_Writebacks,
+	writebacks: []Custom_Component_Writeback,
+	prepared: ^Prepared_Custom_Component_Writebacks,
 ) -> string {
 	first_err := ""
 
@@ -409,7 +409,7 @@ prepare_project_component_writebacks :: proc(
 				if !writeback.can_write {
 					first_err = "Luau system: system access declaration does not permit component write"
 				} else {
-					first_err = "Luau system: invalid project component payload"
+					first_err = "Luau system: invalid custom component payload"
 				}
 			}
 			continue
@@ -440,10 +440,10 @@ prepare_project_component_writebacks :: proc(
 	return first_err
 }
 
-apply_project_component_writebacks :: proc(
+apply_custom_component_writebacks :: proc(
 	world: ^World,
-	writebacks: []Project_Component_Writeback,
-	prepared: ^Prepared_Project_Component_Writebacks,
+	writebacks: []Custom_Component_Writeback,
+	prepared: ^Prepared_Custom_Component_Writebacks,
 ) {
 	for writeback, index in writebacks {
 		if !prepared.changed[index] {
@@ -488,9 +488,17 @@ system_allows_component_access :: proc "c" (
 	return false
 }
 
-query_term_is_project_component :: proc "c" (registry: ^component.Registry, term: Query_Term) -> bool {
+query_term_is_custom_schema_component :: proc "c" (registry: ^component.Registry, term: Query_Term) -> bool {
 	definition, ok := component.find_definition_by_id(registry, term.component_id)
-	return ok && definition.name == term.name && definition.owner == .Project
+	return ok && definition.name == term.name && (definition.owner == .Project || definition.owner == .Library)
+}
+
+component_ref_is_custom_schema_component :: proc "c" (
+	registry: ^component.Registry,
+	component_ref: Component_Reference,
+) -> bool {
+	definition, ok := component.find_definition_by_id(registry, component_ref.id)
+	return ok && definition.name == component_ref.name && (definition.owner == .Project || definition.owner == .Library)
 }
 
 step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> string {
@@ -499,7 +507,7 @@ step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> st
 }
 
 register_scrapbot_api :: proc(L: Lua_State) {
-	lua_createtable(L, 0, 18)
+	lua_createtable(L, 0, 19)
 
 	lua_pushcclosurek(L, scrapbot_log, "scrapbot.log", 0, nil)
 	lua_setfield(L, -2, "log")
@@ -512,6 +520,9 @@ register_scrapbot_api :: proc(L: Lua_State) {
 
 	lua_pushcclosurek(L, scrapbot_component, "scrapbot.component", 0, nil)
 	lua_setfield(L, -2, "component")
+
+	lua_pushcclosurek(L, scrapbot_library_component, "scrapbot.library_component", 0, nil)
+	lua_setfield(L, -2, "library_component")
 
 	push_schema_field_marker(L, "vec3")
 	lua_setfield(L, -2, "vec3")
@@ -592,25 +603,40 @@ scrapbot_renderable_count :: proc "c" (L: Lua_State) -> c.int {
 }
 
 scrapbot_component :: proc "c" (L: Lua_State) -> c.int {
+	return register_luau_component(L, .Project, "scrapbot.component")
+}
+
+scrapbot_library_component :: proc "c" (L: Lua_State) -> c.int {
+	return register_luau_component(L, .Library, "scrapbot.library_component")
+}
+
+register_luau_component :: proc "c" (
+	L: Lua_State,
+	owner: component.Owner,
+	api_name: string,
+) -> c.int {
 	runtime := cast(^Runtime)lua_getthreaddata(L)
 	if runtime == nil || lua_type(L, 1) != LUA_TSTRING || lua_type(L, 2) != LUA_TTABLE {
+		if api_name == "scrapbot.library_component" {
+			return luau_push_error(L, "scrapbot.library_component expects a component name and field schema table")
+		}
 		return luau_push_error(L, "scrapbot.component expects a component name and field schema table")
 	}
 
 	name_length: c.size_t
 	name_data := lua_tolstring(L, 1, &name_length)
 	if name_data == nil {
+		if api_name == "scrapbot.library_component" {
+			return luau_push_error(L, "scrapbot.library_component component name must be a string")
+		}
 		return luau_push_error(L, "scrapbot.component component name must be a string")
 	}
 	component_name := luau_string(name_data, name_length)
 	if !shared.component_name_is_valid(component_name) {
 		return luau_push_error(L, "component name must be dot-separated identifier tokens")
 	}
-	if !shared.component_name_is_project_level(component_name) {
-		return luau_push_error(L, "project scripts can only define single-token project component names")
-	}
 
-	definition := component.Definition{name = component_name, owner = .Project}
+	definition := component.Definition{name = component_name, owner = owner}
 
 	lua_pushnil(L)
 	for lua_next(L, 2) != 0 {
@@ -640,9 +666,21 @@ scrapbot_component :: proc "c" (L: Lua_State) -> c.int {
 		lua_settop(L, -2)
 	}
 
-	if err := component.register_project_component(&runtime.registry, definition); err != "" {
-		return luau_push_error(L, err)
+	switch owner {
+	case .Project:
+		if err := component.register_project_component(&runtime.registry, definition); err != "" {
+			return luau_push_error(L, err)
+		}
+	case .Library:
+		if err := component.register_library_component(&runtime.registry, definition); err != "" {
+			return luau_push_error(L, err)
+		}
+	case .Engine:
+		return luau_push_error(L, "script components cannot register engine-owned component names")
+	case:
+		return luau_push_error(L, "unsupported script component owner")
 	}
+
 	registered, _ := component.find_definition(&runtime.registry, definition.name)
 
 	push_component_handle(L, registered)
@@ -1268,8 +1306,8 @@ scrapbot_remove_component :: proc "c" (L: Lua_State) -> c.int {
 	if component_err != "" {
 		return luau_push_error(L, component_err)
 	}
-	if component_ref.name != "scrapbot.transform" && !shared.component_name_is_project_level(component_ref.name) {
-		return luau_push_error(L, "runtime component removal only supports scrapbot.transform and project components")
+	if component_ref.name != "scrapbot.transform" && !component_ref_is_custom_schema_component(&runtime.registry, component_ref) {
+		return luau_push_error(L, "runtime component removal only supports scrapbot.transform and schema-backed custom components")
 	}
 	if err := require_system_access(runtime, component_ref.name, .Write); err != "" {
 		return luau_push_error(L, err)
@@ -1404,8 +1442,8 @@ read_custom_component_payload :: proc "c" (
 	if definition.name != component_ref.name {
 		return "runtime component payload references an unregistered component"
 	}
-	if definition.owner != .Project {
-		return "runtime component mutation only supports scrapbot.transform and project components"
+	if definition.owner != .Project && definition.owner != .Library {
+		return "runtime component mutation only supports scrapbot.transform and schema-backed custom components"
 	}
 	if err := ecs.init_command_component(command_component, component_ref.id, component_ref.name); err != "" {
 		return err
