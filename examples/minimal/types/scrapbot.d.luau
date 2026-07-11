@@ -7,6 +7,7 @@ export type Scrapbot = {
 	renderable_count: () -> number,
 	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,
 	library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,
+	component_handle: <T, R>(name: string) -> ScrapbotComponent<T, R>,
 	vec3: ScrapbotComponentField<Vec3, ReadonlyVec3>,
 	transform: ScrapbotTransformComponent,
 	camera: ScrapbotCameraComponent,
@@ -143,16 +144,6 @@ export type ReadonlyScrapbotMesh = {
 
 export type ScrapbotMeshComponent = ScrapbotComponent<ScrapbotMesh, ReadonlyScrapbotMesh>
 
-export type Autorotate = {
-	velocity: Vec3,
-}
-
-export type ReadonlyAutorotate = {
-	read velocity: ReadonlyVec3,
-}
-
-export type AutorotateComponent = ScrapbotComponent<Autorotate, ReadonlyAutorotate>
-
 export type ScrappyphysicsRigidbody = {
 	velocity: Vec3,
 }
@@ -162,5 +153,15 @@ export type ReadonlyScrappyphysicsRigidbody = {
 }
 
 export type ScrappyphysicsRigidbodyComponent = ScrapbotComponent<ScrappyphysicsRigidbody, ReadonlyScrappyphysicsRigidbody>
+
+export type Autorotate = {
+	velocity: Vec3,
+}
+
+export type ReadonlyAutorotate = {
+	read velocity: ReadonlyVec3,
+}
+
+export type AutorotateComponent = ScrapbotComponent<Autorotate, ReadonlyAutorotate>
 
 declare scrapbot: Scrapbot

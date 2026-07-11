@@ -1,3 +1,4 @@
 .context/
 .scrapbot/
 bin/
+examples/*/build/

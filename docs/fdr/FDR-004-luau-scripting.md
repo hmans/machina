@@ -22,12 +22,14 @@ Luau scripting lets project directories include fast-iteration game code without
 - Scripts can read `scrapbot.entity_count()` and `scrapbot.renderable_count()`.
 - Scripts can define project components with `scrapbot.component(name, schema)`, where the first supported field marker is `scrapbot.vec3`.
 - Scripts can define library components with `scrapbot.library_component(name, schema)`.
+- Scripts can retrieve already registered engine, library, or native-extension component handles with `scrapbot.component_handle(name)`.
 - Component schemas still accept the legacy `"vec3"` field type string for compatibility.
 - Single-token component names such as `autorotate` are project-level components.
 - Multi-token dotted component names such as `scrapbot.transform` or `scrappyphysics.rigidbody` are reserved for engine or library components and must be registered before scene data can use them.
 - Library component names must be dotted and cannot use the reserved `scrapbot` namespace.
 - The engine registry currently contains built-in `scrapbot.transform`, `scrapbot.camera`, and `scrapbot.mesh` component names.
 - `scrapbot.component` and `scrapbot.library_component` return typed component handles with runtime component IDs and names. Scripts can cast them to generated component handle types.
+- `scrapbot.component_handle` returns the same handle shape for components registered before script execution, including native extension schemas.
 - The `scrapbot` API exposes built-in component handles for `scrapbot.transform`, `scrapbot.camera`, and `scrapbot.mesh`.
 - Scripts can register frame systems with `scrapbot.system(function(delta_seconds) ... end)`.
 - Scripts can declare system component access with `scrapbot.system({ reads = {...}, writes = {...} }, function(delta_seconds) ... end)`.
@@ -155,10 +157,16 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 **Why:** Runtime script execution cannot catch editor-facing type definition regressions or statically invalid project scripts. Running the analyzer after type generation checks the same type surface users see in their editor.
 **Tradeoff:** The first implementation is optional when `luau-analyze` is not on `PATH`, and diagnostics point at a temporary combined file rather than original project paths. This should be replaced by analyzer support that consumes project-local definition files directly.
 
+### 16. Let Luau use pre-registered component handles
+
+**Decision:** Add `scrapbot.component_handle(name)` for components that already exist in the runtime registry before the script runs.
+**Why:** Native extensions and future engine libraries can register component schemas before Luau executes, and scripts still need typed handles for queries, systems, access declarations, and lifecycle commands.
+**Tradeoff:** The call is dynamic and errors at runtime when a name is not registered. Generated types can describe the payload shape after `scrapbot check`, but the name-to-type cast remains explicit in script code.
+
 ## Related
 
-- **ADRs:** ADR-001, ADR-002, ADR-006, ADR-007
-- **FDRs:** FDR-001, FDR-002, FDR-005
+- **ADRs:** ADR-001, ADR-002, ADR-006, ADR-007, ADR-008
+- **FDRs:** FDR-001, FDR-002, FDR-005, FDR-006
 
 ## Open Questions
 

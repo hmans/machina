@@ -46,7 +46,8 @@
 - [x] Add typed Luau schema markers for project component declarations.
 - [x] Add library component registration for dotted component names.
 - [x] Add a Luau analyzer check for example project scripts.
-- [ ] Add native Odin extension loading and hot reload.
+- [x] Add native Odin extension loading and hot reload.
+- [ ] Add native ECS systems that participate in scheduling.
 
 ## Editor
 

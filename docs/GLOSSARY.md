@@ -16,13 +16,13 @@
 
 **Component ID** - A runtime-local identifier assigned by the component registry. Luau component handles include both name and ID; project files remain name-based.
 
-**Component registry** - The runtime registry of known component names, IDs, owners, and simple field schemas. Scrapbot registers built-in `scrapbot.*` components plus project and library components declared from Luau, and uses that metadata to validate scenes and generate project Luau type aliases.
+**Component registry** - The runtime registry of known component names, IDs, owners, and simple field schemas. Scrapbot registers built-in `scrapbot.*` components plus project components declared from Luau and library components declared from Luau or native extensions, then uses that metadata to validate scenes and generate project Luau type aliases.
 
 **Component schema marker** - A typed Luau value such as `scrapbot.vec3` used in `scrapbot.component` and `scrapbot.library_component` schema tables to describe custom component fields.
 
 **Component storage group** - The ECS world storage for all schema-backed custom component instances of one component type.
 
-**Library component** - A dotted, non-`scrapbot` component name registered from Luau with `scrapbot.library_component`, representing data owned by an engine library rather than by a single project.
+**Library component** - A dotted, non-`scrapbot` component name registered from Luau with `scrapbot.library_component` or from a native extension, representing data owned by an engine library rather than by a single project.
 
 **Query object** - A reusable Luau value created with `scrapbot.query(...)` that represents one component set. Query construction is order-insensitive, and repeated calls for the same component set return the same object. Query-driven systems can write back supported payloads when they declare matching write access.
 
@@ -72,8 +72,8 @@
 
 **Luau analyzer** - The external `luau-analyze` static checker. `scrapbot check` runs it when available to catch script type and syntax errors against generated Scrapbot types.
 
-**Native extension** - Planned project-local compiled code that can register fast systems or engine integrations.
+**Native extension** - Project-local compiled code loaded from `build/extensions` through Scrapbot's C ABI. The first extension API lets native libraries register dotted library component schemas before Luau runs.
 
-**Hot reload** - Runtime behavior where changed project files are reloaded without restarting the engine. Scrapbot currently supports periodic reload checks for the default scene TOML and `scripts/main.luau`.
+**Hot reload** - Runtime behavior where changed project files are reloaded without restarting the engine. Scrapbot currently supports periodic reload checks for the default scene TOML, `scripts/main.luau`, and native libraries in `build/extensions`.
 
 **Editor GUI** - The planned in-engine editor interface toggled from a running project.

@@ -33,6 +33,7 @@ Run_Result :: struct {
 
 Source_Options :: struct {
 	log_enabled: bool,
+	registry: ^component.Registry,
 }
 
 Runtime :: struct {
@@ -104,6 +105,27 @@ run_project_script_for_check :: proc(runtime: ^Runtime, root: string, world: ^Wo
 	return run_project_script_with_options(runtime, root, world, Source_Options{})
 }
 
+run_project_script_with_registry :: proc(
+	runtime: ^Runtime,
+	root: string,
+	world: ^World,
+	registry: ^component.Registry,
+	options: Source_Options,
+) -> Run_Result {
+	registry_options := options
+	registry_options.registry = registry
+	return run_project_script_with_options(runtime, root, world, registry_options)
+}
+
+run_project_script_for_check_with_registry :: proc(
+	runtime: ^Runtime,
+	root: string,
+	world: ^World,
+	registry: ^component.Registry,
+) -> Run_Result {
+	return run_project_script_with_registry(runtime, root, world, registry, Source_Options{})
+}
+
 run_project_script_with_options :: proc(runtime: ^Runtime, root: string, world: ^World, options: Source_Options) -> Run_Result {
 	result: Run_Result
 
@@ -133,6 +155,18 @@ run_source :: proc(runtime: ^Runtime, source, chunk_name: string, world: ^World)
 	return run_source_with_options(runtime, source, chunk_name, world, Source_Options{log_enabled = true})
 }
 
+run_source_with_registry :: proc(
+	runtime: ^Runtime,
+	source, chunk_name: string,
+	world: ^World,
+	registry: ^component.Registry,
+	options: Source_Options,
+) -> Run_Result {
+	registry_options := options
+	registry_options.registry = registry
+	return run_source_with_options(runtime, source, chunk_name, world, registry_options)
+}
+
 run_source_with_options :: proc(runtime: ^Runtime, source, chunk_name: string, world: ^World, options: Source_Options) -> Run_Result {
 	result: Run_Result
 	destroy_runtime(runtime)
@@ -140,7 +174,11 @@ run_source_with_options :: proc(runtime: ^Runtime, source, chunk_name: string, w
 	ecs.init_command_buffer(&runtime.commands)
 	runtime.world = world
 	runtime.log_enabled = options.log_enabled
-	component.init_registry(&runtime.registry)
+	if options.registry != nil {
+		runtime.registry = options.registry^
+	} else {
+		component.init_registry(&runtime.registry)
+	}
 
 	L := luaL_newstate()
 	if L == nil {
@@ -507,7 +545,7 @@ step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> st
 }
 
 register_scrapbot_api :: proc(L: Lua_State) {
-	lua_createtable(L, 0, 19)
+	lua_createtable(L, 0, 20)
 
 	lua_pushcclosurek(L, scrapbot_log, "scrapbot.log", 0, nil)
 	lua_setfield(L, -2, "log")
@@ -523,6 +561,9 @@ register_scrapbot_api :: proc(L: Lua_State) {
 
 	lua_pushcclosurek(L, scrapbot_library_component, "scrapbot.library_component", 0, nil)
 	lua_setfield(L, -2, "library_component")
+
+	lua_pushcclosurek(L, scrapbot_component_handle, "scrapbot.component_handle", 0, nil)
+	lua_setfield(L, -2, "component_handle")
 
 	push_schema_field_marker(L, "vec3")
 	lua_setfield(L, -2, "vec3")
@@ -608,6 +649,28 @@ scrapbot_component :: proc "c" (L: Lua_State) -> c.int {
 
 scrapbot_library_component :: proc "c" (L: Lua_State) -> c.int {
 	return register_luau_component(L, .Library, "scrapbot.library_component")
+}
+
+scrapbot_component_handle :: proc "c" (L: Lua_State) -> c.int {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	if runtime == nil || lua_type(L, 1) != LUA_TSTRING {
+		return luau_push_error(L, "scrapbot.component_handle expects a registered component name")
+	}
+
+	name_length: c.size_t
+	name_data := lua_tolstring(L, 1, &name_length)
+	if name_data == nil {
+		return luau_push_error(L, "scrapbot.component_handle component name must be a string")
+	}
+
+	component_name := luau_string(name_data, name_length)
+	definition, ok := component.find_definition(&runtime.registry, component_name)
+	if !ok {
+		return luau_push_error(L, "scrapbot.component_handle references an unregistered component")
+	}
+
+	push_component_handle(L, definition)
+	return 1
 }
 
 register_luau_component :: proc "c" (

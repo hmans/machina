@@ -12,6 +12,7 @@ export type Scrapbot = {
 	renderable_count: () -> number,
 	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,
 	library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,
+	component_handle: <T, R>(name: string) -> ScrapbotComponent<T, R>,
 	vec3: ScrapbotComponentField<Vec3, ReadonlyVec3>,
 	transform: ScrapbotTransformComponent,
 	camera: ScrapbotCameraComponent,

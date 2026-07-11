@@ -1,5 +1,7 @@
 package scrapbot
 
+import "core:dynlib"
+import "core:fmt"
 import "core:os"
 import "core:path/filepath"
 import "core:strings"
@@ -90,6 +92,50 @@ end)
 	testing.expect(t, strings.contains(types_text, "library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,"))
 	testing.expect(t, strings.contains(types_text, "export type ScrappyphysicsRigidbody = {"))
 	testing.expect(t, strings.contains(types_text, "export type ScrappyphysicsRigidbodyComponent = ScrapbotComponent<ScrappyphysicsRigidbody, ReadonlyScrappyphysicsRigidbody>"))
+}
+
+@(test)
+test_check_project_accepts_native_extension_registered_components :: proc(t: ^testing.T) {
+	root, parent := make_check_project_test_project(t)
+	defer delete(root)
+	defer os.remove_all(parent)
+
+	build_check_project_native_extension(t, root)
+
+	scene_path := join_check_project_path(t, root, DEFAULT_SCENE)
+	defer delete(scene_path)
+	write_scene_err := os.write_entire_file(scene_path, `[[entities]]
+name = "Native Body"
+
+[entities.components.scrapbotnative.body]
+velocity = [0, 4, 0]
+`)
+	testing.expect(t, write_scene_err == nil)
+
+	script_path := join_check_project_path(t, root, DEFAULT_SCRIPT)
+	defer delete(script_path)
+	write_script_err := os.write_entire_file(script_path, `
+local BodyComponent = scrapbot.component_handle("scrapbotnative.body") :: ScrapbotnativeBodyComponent
+local Bodies = scrapbot.query(BodyComponent)
+
+scrapbot.system(Bodies, function(delta_seconds: number, entity: ScrapbotEntity, body: ReadonlyScrapbotnativeBody)
+	local speed: number = body.velocity.y
+	assert(speed > 0)
+end)
+`)
+	testing.expect(t, write_script_err == nil)
+
+	check_err := check_project(root)
+	testing.expectf(t, check_err == "", "check_project failed: %s", check_err)
+
+	types_path := join_check_project_path(t, root, DEFAULT_LUAU_TYPES)
+	defer delete(types_path)
+	types_bytes, read_err := os.read_entire_file(types_path, context.temp_allocator)
+	testing.expect(t, read_err == nil)
+	types_text := string(types_bytes)
+	testing.expect(t, strings.contains(types_text, "component_handle: <T, R>(name: string) -> ScrapbotComponent<T, R>,"))
+	testing.expect(t, strings.contains(types_text, "export type ScrapbotnativeBody = {"))
+	testing.expect(t, strings.contains(types_text, "export type ScrapbotnativeBodyComponent = ScrapbotComponent<ScrapbotnativeBody, ReadonlyScrapbotnativeBody>"))
 }
 
 @(test)
@@ -262,4 +308,95 @@ join_check_project_path :: proc(t: ^testing.T, root, path: string) -> string {
 	out, join_err := filepath.join({root, path})
 	testing.expect(t, join_err == nil)
 	return out
+}
+
+build_check_project_native_extension :: proc(t: ^testing.T, root: string) {
+	source_dir, source_dir_err := filepath.join({root, "native", "scrapbotnative"})
+	if !testing.expect(t, source_dir_err == nil) {
+		testing.fail_now(t)
+	}
+	defer delete(source_dir)
+	make_source_dir_err := os.make_directory_all(source_dir)
+	if !testing.expect(t, make_source_dir_err == nil) {
+		testing.fail_now(t)
+	}
+
+	source_path, source_path_err := filepath.join({source_dir, "scrapbotnative.odin"})
+	if !testing.expect(t, source_path_err == nil) {
+		testing.fail_now(t)
+	}
+	defer delete(source_path)
+	write_source_err := os.write_entire_file(source_path, `package scrapbotnative
+
+import c "core:c"
+import api "scrapbot:extension_api"
+
+@(export)
+scrapbot_extension_register :: proc "c" (scrapbot: ^api.API) -> cstring {
+	if scrapbot == nil {
+		return "Scrapbot API is not available"
+	}
+	if scrapbot.abi_version != api.ABI_VERSION {
+		return "unsupported Scrapbot extension ABI"
+	}
+
+	fields := [?]api.Field_Definition {
+		{name = "velocity", field_type = .Vec3},
+	}
+	definition := api.Component_Definition {
+		name = "scrapbotnative.body",
+		fields = raw_data(fields[:]),
+		field_count = c.int(len(fields)),
+	}
+	return scrapbot.register_library_component(scrapbot, &definition)
+}
+`)
+	if !testing.expect(t, write_source_err == nil) {
+		testing.fail_now(t)
+	}
+
+	extensions_dir, extensions_dir_err := filepath.join({root, "build", "extensions"})
+	if !testing.expect(t, extensions_dir_err == nil) {
+		testing.fail_now(t)
+	}
+	defer delete(extensions_dir)
+	make_extensions_err := os.make_directory_all(extensions_dir)
+	if !testing.expect(t, make_extensions_err == nil) {
+		testing.fail_now(t)
+	}
+
+	extension_file := fmt.tprintf("scrapbotnative.%s", dynlib.LIBRARY_FILE_EXTENSION)
+	extension_path, extension_path_err := filepath.join({extensions_dir, extension_file})
+	if !testing.expect(t, extension_path_err == nil) {
+		testing.fail_now(t)
+	}
+	defer delete(extension_path)
+
+	out_arg := fmt.tprintf("-out:%s", extension_path)
+	command := []string{
+		"odin",
+		"build",
+		source_dir,
+		"-build-mode:shared",
+		out_arg,
+		"-collection:scrapbot=src/scrapbot",
+	}
+	state, stdout, stderr, exec_err := os.process_exec(os.Process_Desc{command = command}, context.allocator)
+	if len(stdout) > 0 {
+		defer delete(stdout)
+	}
+	if len(stderr) > 0 {
+		defer delete(stderr)
+	}
+	if !testing.expectf(
+		t,
+		exec_err == nil && state.success,
+		"failed to build native extension: exec_err=%v exit=%d stdout=%s stderr=%s",
+		exec_err,
+		state.exit_code,
+		string(stdout),
+		string(stderr),
+	) {
+		testing.fail_now(t)
+	}
 }

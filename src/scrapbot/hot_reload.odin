@@ -5,7 +5,9 @@ import "core:os"
 import "core:path/filepath"
 import "core:strings"
 import "core:time"
+import component "./component"
 import ecs "./ecs"
+import native "./native"
 import project "./project"
 import script "./script"
 import shared "./shared"
@@ -25,6 +27,7 @@ Hot_Reload_State :: struct {
 	scene_stamp:  File_Stamp,
 	script_stamp: File_Stamp,
 	runtime:      script.Runtime,
+	native_extensions: native.Extension_Set,
 	last_good_script_source: string,
 	has_last_good_script:    bool,
 	seconds_until_next_check: f32,
@@ -32,6 +35,7 @@ Hot_Reload_State :: struct {
 
 Script_Load :: struct {
 	runtime:    script.Runtime,
+	native_extensions: native.Extension_Set,
 	source:     string,
 	has_source: bool,
 	err:        string,
@@ -69,6 +73,7 @@ init_hot_reload_state :: proc(
 
 destroy_hot_reload_state :: proc(state: ^Hot_Reload_State) {
 	script.destroy_runtime(&state.runtime)
+	native.destroy_extension_set(&state.native_extensions)
 	delete(state.last_good_script_source)
 	delete(state.scene_path)
 	delete(state.script_path)
@@ -99,18 +104,19 @@ poll_hot_reload :: proc(state: ^Hot_Reload_State, world: ^shared.World) {
 	next_script_stamp := file_stamp(state.script_path)
 	scene_changed := !file_stamps_equal(state.scene_stamp, next_scene_stamp)
 	script_changed := !file_stamps_equal(state.script_stamp, next_script_stamp)
-	if !scene_changed && !script_changed {
+	extensions_changed := native.project_extensions_changed(&state.native_extensions, state.root)
+	if !scene_changed && !script_changed && !extensions_changed {
 		return
 	}
 
-	if scene_changed {
+	if scene_changed || extensions_changed {
 		state.scene_stamp = next_scene_stamp
 		state.script_stamp = next_script_stamp
 		if err := reload_project_world_and_script(state, world); err != "" {
-			fmt.eprintf("[hot-reload] failed to reload scene: %s\n", err)
+			fmt.eprintf("[hot-reload] failed to reload project: %s\n", err)
 			return
 		}
-		fmt.eprintf("[hot-reload] reloaded %s and %s\n", state.scene_path, state.script_path)
+		fmt.eprintf("[hot-reload] reloaded %s, %s, and native extensions\n", state.scene_path, state.script_path)
 		return
 	}
 
@@ -130,7 +136,7 @@ reload_project_world_and_script :: proc(state: ^Hot_Reload_State, world: ^shared
 	}
 
 	next_world := ecs.build_world(&loaded.scene)
-	script_load := load_script_from_path(state.script_path, &next_world)
+	script_load := load_script_from_path(state.root, state.script_path, &next_world)
 	if script_load.err != "" {
 		reload_err := script_load.err
 		ecs.destroy_world(&next_world)
@@ -145,8 +151,10 @@ reload_project_world_and_script :: proc(state: ^Hot_Reload_State, world: ^shared
 	world^ = next_world
 
 	script.destroy_runtime(&state.runtime)
+	native.destroy_extension_set(&state.native_extensions)
 	delete(state.last_good_script_source)
 	state.runtime = script_load.runtime
+	state.native_extensions = script_load.native_extensions
 	script.rebind_runtime(&state.runtime)
 	state.last_good_script_source = script_load.source
 	state.has_last_good_script = script_load.has_source
@@ -157,7 +165,7 @@ reload_project_world_and_script :: proc(state: ^Hot_Reload_State, world: ^shared
 }
 
 load_script_runtime :: proc(state: ^Hot_Reload_State, world: ^shared.World) -> string {
-	script_load := load_script_from_path(state.script_path, world)
+	script_load := load_script_from_path(state.root, state.script_path, world)
 	if script_load.err != "" {
 		reload_err := script_load.err
 		destroy_script_load(&script_load)
@@ -168,16 +176,25 @@ load_script_runtime :: proc(state: ^Hot_Reload_State, world: ^shared.World) -> s
 	}
 
 	script.destroy_runtime(&state.runtime)
+	native.destroy_extension_set(&state.native_extensions)
 	delete(state.last_good_script_source)
 	state.runtime = script_load.runtime
+	state.native_extensions = script_load.native_extensions
 	script.rebind_runtime(&state.runtime)
 	state.last_good_script_source = script_load.source
 	state.has_last_good_script = script_load.has_source
 	return ""
 }
 
-load_script_from_path :: proc(path: string, world: ^shared.World) -> Script_Load {
+load_script_from_path :: proc(root, path: string, world: ^shared.World) -> Script_Load {
 	result: Script_Load
+	registry: component.Registry
+	component.init_registry(&registry)
+	if extension_load := native.load_project_extensions(&result.native_extensions, root, &registry); extension_load.err != "" {
+		result.err = extension_load.err
+		return result
+	}
+
 	if !os.exists(path) {
 		return result
 	}
@@ -188,15 +205,24 @@ load_script_from_path :: proc(path: string, world: ^shared.World) -> Script_Load
 		return result
 	}
 
-	run_result := script.run_source(&result.runtime, string(source), script.DEFAULT_SCRIPT_CHUNK, world)
+	run_result := script.run_source_with_registry(
+		&result.runtime,
+		string(source),
+		script.DEFAULT_SCRIPT_CHUNK,
+		world,
+		&registry,
+		script.Source_Options{log_enabled = true},
+	)
 	if run_result.err != "" {
 		result.err = run_result.err
+		native.destroy_extension_set(&result.native_extensions)
 		return result
 	}
 
 	cloned_source, clone_err := strings.clone(string(source))
 	if clone_err != nil {
 		script.destroy_runtime(&result.runtime)
+		native.destroy_extension_set(&result.native_extensions)
 		result.err = "failed to retain last good Luau source"
 		return result
 	}
@@ -207,6 +233,7 @@ load_script_from_path :: proc(path: string, world: ^shared.World) -> Script_Load
 
 destroy_script_load :: proc(load: ^Script_Load) {
 	script.destroy_runtime(&load.runtime)
+	native.destroy_extension_set(&load.native_extensions)
 	delete(load.source)
 	load^ = {}
 }
@@ -216,17 +243,44 @@ restore_last_good_script_runtime :: proc(state: ^Hot_Reload_State, world: ^share
 		return ""
 	}
 
-	restored: script.Runtime
-	result := script.run_source(&restored, state.last_good_script_source, script.DEFAULT_SCRIPT_CHUNK, world)
-	if result.err != "" {
-		script.destroy_runtime(&restored)
-		return result.err
+	script_load := load_script_from_source(state.root, state.last_good_script_source, world)
+	if script_load.err != "" {
+		destroy_script_load(&script_load)
+		return script_load.err
 	}
 
 	script.destroy_runtime(&state.runtime)
-	state.runtime = restored
+	native.destroy_extension_set(&state.native_extensions)
+	state.runtime = script_load.runtime
+	state.native_extensions = script_load.native_extensions
 	script.rebind_runtime(&state.runtime)
 	return ""
+}
+
+load_script_from_source :: proc(root, source: string, world: ^shared.World) -> Script_Load {
+	result: Script_Load
+	registry: component.Registry
+	component.init_registry(&registry)
+	if extension_load := native.load_project_extensions(&result.native_extensions, root, &registry); extension_load.err != "" {
+		result.err = extension_load.err
+		return result
+	}
+
+	run_result := script.run_source_with_registry(
+		&result.runtime,
+		source,
+		script.DEFAULT_SCRIPT_CHUNK,
+		world,
+		&registry,
+		script.Source_Options{log_enabled = true},
+	)
+	if run_result.err != "" {
+		result.err = run_result.err
+		native.destroy_extension_set(&result.native_extensions)
+		return result
+	}
+
+	return result
 }
 
 file_stamp :: proc(path: string) -> File_Stamp {

@@ -6,6 +6,7 @@ import "core:path/filepath"
 import "core:strings"
 import ecs "./ecs"
 import component "./component"
+import native "./native"
 import project "./project"
 import render "./render"
 import script "./script"
@@ -43,9 +44,17 @@ check_project :: proc(root: string) -> string {
 	world := ecs.build_world(&loaded.scene)
 	defer ecs.destroy_world(&world)
 
+	registry: component.Registry
+	component.init_registry(&registry)
+	extensions: native.Extension_Set
+	defer native.destroy_extension_set(&extensions)
+	if extension_load := native.load_project_extensions(&extensions, root, &registry); extension_load.err != "" {
+		return extension_load.err
+	}
+
 	runtime: script.Runtime
 	defer script.destroy_runtime(&runtime)
-	script_result := script.run_project_script_for_check(&runtime, root, &world)
+	script_result := script.run_project_script_for_check_with_registry(&runtime, root, &world, &registry)
 	if script_result.err != "" {
 		return script_result.err
 	}
@@ -60,12 +69,10 @@ check_project :: proc(root: string) -> string {
 		return analyze_project_luau(root)
 	}
 
-	fallback_registry: component.Registry
-	component.init_registry(&fallback_registry)
-	if err := project.validate_scene_components(&loaded.scene, &fallback_registry); err != "" {
+	if err := project.validate_scene_components(&loaded.scene, &registry); err != "" {
 		return err
 	}
-	if err := project.write_luau_types(root, &fallback_registry); err != "" {
+	if err := project.write_luau_types(root, &registry); err != "" {
 		return err
 	}
 	return analyze_project_luau(root)
@@ -250,9 +257,24 @@ run_project :: proc(root: string, config: Run_Config) -> Runtime_Result {
 		return result
 	}
 
+	registry: component.Registry
+	component.init_registry(&registry)
+	extensions: native.Extension_Set
+	defer native.destroy_extension_set(&extensions)
+	if extension_load := native.load_project_extensions(&extensions, root, &registry); extension_load.err != "" {
+		result.err = extension_load.err
+		return result
+	}
+
 	script_runtime: script.Runtime
 	defer script.destroy_runtime(&script_runtime)
-	script_result := script.run_project_script(&script_runtime, root, &world)
+	script_result := script.run_project_script_with_registry(
+		&script_runtime,
+		root,
+		&world,
+		&registry,
+		script.Source_Options{log_enabled = true},
+	)
 	if script_result.err != "" {
 		result.err = script_result.err
 		return result

@@ -1260,6 +1260,45 @@ end)
 }
 
 @(test)
+test_luau_scripts_can_get_pre_registered_component_handles :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Body"
+
+[entities.components.scrappyphysics.rigidbody]
+velocity = [0, 3, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	registry: component.Registry
+	component.init_registry(&registry)
+	definition := component.Definition{name = "scrappyphysics.rigidbody", field_count = 1}
+	definition.fields[0] = component.Field_Definition{name = "velocity", field_type = .Vec3}
+	register_err := component.register_library_component(&registry, definition)
+	testing.expect(t, register_err == "")
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source_with_registry(&runtime, `
+local RigidbodyComponent = scrapbot.component_handle("scrappyphysics.rigidbody")
+assert(RigidbodyComponent.name == "scrappyphysics.rigidbody")
+
+local Rigidbodies = scrapbot.query(RigidbodyComponent)
+scrapbot.system(Rigidbodies, function(delta_seconds, entity, rigidbody)
+	assert(rigidbody.velocity.y == 3)
+end)
+`, "=test", &world, &registry, Source_Options{})
+
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "")
+}
+
+@(test)
 test_luau_library_components_must_use_dotted_non_engine_names :: proc(t: ^testing.T) {
 	runtime: Runtime
 	defer destroy_runtime(&runtime)
