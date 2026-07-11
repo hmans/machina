@@ -8,3 +8,4 @@
 | [ADR-004](ADR-004-use-core-flags-for-command-options.md) | Use core:flags for command options | 2026-07-07 |
 | [ADR-005](ADR-005-use-sdl3-for-platform-windows.md) | Use SDL3 for platform windows | 2026-07-07 |
 | [ADR-006](ADR-006-use-luau-for-project-scripting.md) | Use Luau for project scripting | 2026-07-08 |
+| [ADR-007](ADR-007-use-id-keyed-component-storage.md) | Use ID-keyed component storage | 2026-07-11 |

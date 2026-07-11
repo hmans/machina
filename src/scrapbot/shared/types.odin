@@ -46,6 +46,9 @@ Entity :: struct {
 	generation: u32,
 }
 
+Component_ID :: int
+INVALID_COMPONENT_ID :: Component_ID(0)
+
 Transform_Component :: struct {
 	position: Vec3,
 	rotation: Vec3,
@@ -69,8 +72,15 @@ Named_Vec3 :: struct {
 
 Custom_Component :: struct {
 	entity_index: int,
+	component_id: Component_ID,
 	name:         string,
 	vec3_fields: [dynamic]Named_Vec3,
+}
+
+Custom_Component_Storage :: struct {
+	component_id: Component_ID,
+	name:         string,
+	components:   [dynamic]Custom_Component,
 }
 
 World_Entity :: struct {
@@ -112,7 +122,7 @@ World :: struct {
 	cameras:    [dynamic]Camera_Component,
 	meshes:     [dynamic]Mesh_Component,
 	renderables: [dynamic]Renderable,
-	custom_components: [dynamic]Custom_Component,
+	custom_components: [dynamic]Custom_Component_Storage,
 }
 
 Render_Frame :: struct {

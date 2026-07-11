@@ -23,11 +23,12 @@ Luau scripting lets project directories include fast-iteration game code without
 - Single-token component names such as `autorotate` are project-level components.
 - Multi-token dotted component names such as `scrapbot.transform` or `scrappyphysics.rigidbody` are reserved for engine or library components and must be registered before scene data can use them.
 - The engine registry currently contains built-in `scrapbot.transform`, `scrapbot.camera`, and `scrapbot.mesh` component names.
-- `scrapbot.component` returns a typed component handle that scripts can cast to a generated component handle type.
+- `scrapbot.component` returns a typed component handle with a runtime component ID and name. Scripts can cast it to a generated component handle type.
 - Scripts can register frame systems with `scrapbot.system(function(delta_seconds) ... end)`.
 - Scripts can declare system component access with `scrapbot.system({ reads = {...}, writes = {...} }, function(delta_seconds) ... end)`.
 - Script system access declarations accept project component handles or registered component-name strings.
 - Scripts can query scene-defined custom components with `scrapbot.query(component_handle, callback)`.
+- Runtime queries use component IDs from handles to select one component storage group, while project files and diagnostics remain name-based.
 - Project scripts annotate query callback component parameters with generated component payload aliases such as `Autorotate`.
 - Scripts can read and write entity rotation through `scrapbot.get_rotation(entity)` and `scrapbot.set_rotation(entity, rotation)`.
 - Script entity handles include an entity index, generation, and optional name. APIs reject stale handles whose generation no longer matches the world.
@@ -83,6 +84,8 @@ Structural mutations requested by Luau systems are now deferred through an engin
 **Why:** The registry gives scene validation, script registration, query handles, and generated Luau type aliases one shared source of component ownership and basic field schemas.
 **Tradeoff:** The registry is intentionally small: it supports vec3 schema fields only and does not yet provide a package mechanism for third-party libraries.
 
+Registered component definitions also receive runtime-local component IDs. Luau handles carry those IDs, and loaded scene component storage is bound to them after scripts register schemas.
+
 ### 7. Check project files periodically for first hot reload
 
 **Decision:** `--hot-reload` checks file modification stamps on a short interval while renderer frames are advancing.
@@ -107,9 +110,15 @@ Structural mutations requested by Luau systems are now deferred through an engin
 **Why:** Stable indices alone are not enough once entities can be despawned. Generation checks prevent stale handles from mutating a different lifetime of the same slot later.
 **Tradeoff:** Scripts cannot fabricate useful entity handles from indices alone; they need handles received from Scrapbot APIs or must know the current generation during low-level tests.
 
+### 11. Query project components by component ID
+
+**Decision:** Group project component instances by component type and use registry-assigned component IDs for runtime query and lifecycle paths.
+**Why:** Name matching is useful at text/project boundaries but too weak as an execution-time storage key. ID-keyed groups are a better base for bulk query views, native systems, and parallel scheduling.
+**Tradeoff:** Component IDs are runtime-local and must be rebound after scene load and script registration. Names remain the persistent source of truth in project files.
+
 ## Related
 
-- **ADRs:** ADR-001, ADR-002, ADR-006
+- **ADRs:** ADR-001, ADR-002, ADR-006, ADR-007
 - **FDRs:** FDR-001, FDR-002, FDR-005
 
 ## Open Questions

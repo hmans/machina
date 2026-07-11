@@ -16,6 +16,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 - Luau systems may still use the legacy callback-only registration form.
 - Luau systems may use an options table with `reads` and `writes` arrays before the callback.
 - Luau access declarations may reference project component handles or registered component-name strings.
+- Component handles carry runtime component IDs, giving scheduler-facing declarations and runtime query paths a shared component-type identity.
 - Unknown component names in system access declarations fail script loading.
 - Scheduled Luau batches currently execute serially in deterministic batch order.
 - Structural world changes requested from Luau systems are queued in a deferred command buffer and applied after all scheduled systems finish for the frame.
@@ -35,6 +36,8 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 **Why:** Native systems and future engine systems need the same conflict rules as script systems.
 **Tradeoff:** The Luau bridge must translate script declarations into the engine-level scheduler model.
 
+Component declarations are still stored by name for the scheduler, but handles now carry runtime component IDs that line up with ECS storage. That keeps the user-facing declaration format stable while the runtime moves toward ID-keyed system execution.
+
 ### 3. Preserve callback-only Luau systems
 
 **Decision:** Keep `scrapbot.system(function)` as shorthand for a system with no declared access.
@@ -49,7 +52,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 
 ## Related
 
-- **ADRs:** ADR-001, ADR-006
+- **ADRs:** ADR-001, ADR-006, ADR-007
 - **FDRs:** FDR-004
 
 ## Open Questions

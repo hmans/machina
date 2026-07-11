@@ -67,8 +67,9 @@ test_scene_builds_world_with_soa_transforms :: proc(t: ^testing.T) {
 	testing.expect(t, world.entities[1].transform_index == 1)
 	testing.expect(t, world.entities[1].mesh_index == 0)
 	testing.expect(t, world.renderables[0].entity_index == 1)
-	testing.expect(t, world.custom_components[0].entity_index == 1)
 	testing.expect(t, world.custom_components[0].name == "autorotate")
+	testing.expect(t, len(world.custom_components[0].components) == 1)
+	testing.expect(t, world.custom_components[0].components[0].entity_index == 1)
 	testing.expect(t, world.transforms[1].position == shared.Vec3{0, 0, 0})
 }
 
@@ -87,7 +88,8 @@ test_render_list_includes_multiple_cube_renderables :: proc(t: ^testing.T) {
 	testing.expect(t, len(world.transforms) == 3)
 	testing.expect(t, len(world.meshes) == 2)
 	testing.expect(t, len(world.renderables) == 2)
-	testing.expect(t, len(world.custom_components) == 2)
+	testing.expect(t, len(world.custom_components) == 1)
+	testing.expect(t, len(world.custom_components[0].components) == 2)
 
 	render_list := build_render_list(&world)
 	defer destroy_render_list(&render_list)
@@ -108,14 +110,15 @@ test_world_preserves_project_custom_components :: proc(t: ^testing.T) {
 	world := build_world(&scene)
 	defer destroy_world(&world)
 
-	testing.expect(t, len(world.custom_components) == 2)
-	testing.expect(t, world.custom_components[0].entity_index == 1)
+	testing.expect(t, len(world.custom_components) == 1)
 	testing.expect(t, world.custom_components[0].name == "autorotate")
-	testing.expect(t, len(world.custom_components[0].vec3_fields) == 1)
-	testing.expect(t, world.custom_components[0].vec3_fields[0].name == "velocity")
-	testing.expect(t, world.custom_components[0].vec3_fields[0].value.y > 0)
-	testing.expect(t, world.custom_components[1].entity_index == 2)
-	testing.expect(t, world.custom_components[1].vec3_fields[0].value.y < 0)
+	testing.expect(t, len(world.custom_components[0].components) == 2)
+	testing.expect(t, world.custom_components[0].components[0].entity_index == 1)
+	testing.expect(t, len(world.custom_components[0].components[0].vec3_fields) == 1)
+	testing.expect(t, world.custom_components[0].components[0].vec3_fields[0].name == "velocity")
+	testing.expect(t, world.custom_components[0].components[0].vec3_fields[0].value.y > 0)
+	testing.expect(t, world.custom_components[0].components[1].entity_index == 2)
+	testing.expect(t, world.custom_components[0].components[1].vec3_fields[0].value.y < 0)
 
 	camera, camera_ok := first_camera_instance(&world)
 	testing.expect(t, camera_ok)

@@ -7,6 +7,7 @@ MAX_COMPONENTS :: 128
 MAX_COMPONENT_FIELDS :: 16
 
 Custom_Component :: shared.Custom_Component
+Component_ID :: shared.Component_ID
 
 Owner :: enum {
 	Engine,
@@ -23,6 +24,7 @@ Field_Definition :: struct {
 }
 
 Definition :: struct {
+	id: Component_ID,
 	name: string,
 	owner: Owner,
 	fields: [MAX_COMPONENT_FIELDS]Field_Definition,
@@ -84,7 +86,9 @@ register_definition :: proc "c" (registry: ^Registry, definition: Definition) ->
 		if existing.owner != definition.owner {
 			return "component is already registered"
 		}
-		registry.definitions[index] = definition
+		registered := definition
+		registered.id = existing.id
+		registry.definitions[index] = registered
 		return ""
 	}
 
@@ -92,7 +96,9 @@ register_definition :: proc "c" (registry: ^Registry, definition: Definition) ->
 		return "too many component definitions"
 	}
 
-	registry.definitions[registry.definition_count] = definition
+	registered := definition
+	registered.id = Component_ID(registry.definition_count + 1)
+	registry.definitions[registry.definition_count] = registered
 	registry.definition_count += 1
 	return ""
 }
@@ -103,6 +109,18 @@ find_definition :: proc "c" (registry: ^Registry, name: string) -> (definition: 
 		return {}, false
 	}
 	return registry.definitions[index], true
+}
+
+find_definition_by_id :: proc "c" (registry: ^Registry, id: Component_ID) -> (definition: Definition, ok: bool) {
+	if registry == nil || id == shared.INVALID_COMPONENT_ID {
+		return {}, false
+	}
+	for definition in registry.definitions[:registry.definition_count] {
+		if definition.id == id {
+			return definition, true
+		}
+	}
+	return {}, false
 }
 
 find_definition_index :: proc "c" (registry: ^Registry, name: string) -> (index: int, ok: bool) {

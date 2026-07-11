@@ -13,6 +13,8 @@ Render_Instance :: shared.Render_Instance
 Camera_Instance :: shared.Camera_Instance
 Render_List :: shared.Render_List
 Custom_Component :: shared.Custom_Component
+Custom_Component_Storage :: shared.Custom_Component_Storage
+Component_ID :: shared.Component_ID
 Vec3 :: shared.Vec3
 Named_Vec3 :: shared.Named_Vec3
 Transform_Component :: shared.Transform_Component
@@ -26,12 +28,16 @@ destroy_world :: proc(world: ^World) {
 	for mesh in world.meshes {
 		delete(mesh.primitive)
 	}
-	for &component in world.custom_components {
-		delete(component.name)
-		for field in component.vec3_fields {
-			delete(field.name)
+	for &storage in world.custom_components {
+		delete(storage.name)
+		for &component in storage.components {
+			delete(component.name)
+			for field in component.vec3_fields {
+				delete(field.name)
+			}
+			delete(component.vec3_fields)
 		}
-		delete(component.vec3_fields)
+		delete(storage.components)
 	}
 	delete(world.entities)
 	delete(world.transforms)
@@ -70,16 +76,7 @@ build_world :: proc(scene: ^Scene) -> World {
 			append(&world.meshes, mesh)
 		}
 		for component in entity.custom_components {
-			world_component := Custom_Component {
-				entity_index = int(id.index),
-				name         = clone_world_string(component.name),
-			}
-			for field in component.vec3_fields {
-				world_field := field
-				world_field.name = clone_world_string(field.name)
-				append(&world_component.vec3_fields, world_field)
-			}
-			append(&world.custom_components, world_component)
+			add_scene_custom_component(&world, int(id.index), component)
 		}
 
 		append(&world.entities, world_entity)
@@ -276,10 +273,12 @@ add_custom_component :: proc(world: ^World, entity_index: int, command_component
 	}
 
 	name := command_component_name(command_component)
-	remove_custom_component(world, entity_index, name)
+	component_id := command_component.component_id
+	remove_custom_component(world, entity_index, component_id, name)
 
 	world_component := Custom_Component {
 		entity_index = entity_index,
+		component_id = component_id,
 		name         = clone_world_string(name),
 	}
 	for i in 0..<command_component.vec3_field_count {
@@ -292,21 +291,103 @@ add_custom_component :: proc(world: ^World, entity_index: int, command_component
 			},
 		)
 	}
-	append(&world.custom_components, world_component)
+	storage := ensure_custom_component_storage(world, component_id, name)
+	append(&storage.components, world_component)
 }
 
-remove_custom_component :: proc(world: ^World, entity_index: int, name: string) {
-	for &world_component in world.custom_components {
-		if world_component.entity_index != entity_index || world_component.name != name {
+remove_custom_component :: proc(world: ^World, entity_index: int, component_id: Component_ID, name: string) {
+	storage := find_custom_component_storage(world, component_id, name)
+	if storage == nil {
+		return
+	}
+	for &world_component in storage.components {
+		if world_component.entity_index != entity_index {
 			continue
 		}
 		delete(world_component.name)
 		world_component.name = ""
 		world_component.entity_index = INVALID_COMPONENT_INDEX
+		world_component.component_id = shared.INVALID_COMPONENT_ID
 		for field in world_component.vec3_fields {
 			delete(field.name)
 		}
 		delete(world_component.vec3_fields)
 		world_component.vec3_fields = nil
+	}
+}
+
+add_scene_custom_component :: proc(world: ^World, entity_index: int, scene_component: Custom_Component) {
+	storage := ensure_custom_component_storage(world, shared.INVALID_COMPONENT_ID, scene_component.name)
+	world_component := Custom_Component {
+		entity_index = entity_index,
+		component_id = shared.INVALID_COMPONENT_ID,
+		name         = clone_world_string(scene_component.name),
+	}
+	for field in scene_component.vec3_fields {
+		world_field := field
+		world_field.name = clone_world_string(field.name)
+		append(&world_component.vec3_fields, world_field)
+	}
+	append(&storage.components, world_component)
+}
+
+ensure_custom_component_storage :: proc(
+	world: ^World,
+	component_id: Component_ID,
+	name: string,
+) -> ^Custom_Component_Storage {
+	storage := find_custom_component_storage(world, component_id, name)
+	if storage != nil {
+		if storage.component_id == shared.INVALID_COMPONENT_ID && component_id != shared.INVALID_COMPONENT_ID {
+			storage.component_id = component_id
+			for &component in storage.components {
+				component.component_id = component_id
+			}
+		}
+		return storage
+	}
+
+	append(
+		&world.custom_components,
+		Custom_Component_Storage {
+			component_id = component_id,
+			name         = clone_world_string(name),
+		},
+	)
+	return &world.custom_components[len(world.custom_components) - 1]
+}
+
+find_custom_component_storage :: proc "c" (
+	world: ^World,
+	component_id: Component_ID,
+	name: string,
+) -> ^Custom_Component_Storage {
+	if world == nil {
+		return nil
+	}
+	if component_id != shared.INVALID_COMPONENT_ID {
+		for &storage in world.custom_components {
+			if storage.component_id == component_id {
+				return &storage
+			}
+		}
+	}
+	for &storage in world.custom_components {
+		if storage.name == name {
+			return &storage
+		}
+	}
+	return nil
+}
+
+bind_custom_component_storage :: proc(
+	world: ^World,
+	name: string,
+	component_id: Component_ID,
+) {
+	storage := ensure_custom_component_storage(world, component_id, name)
+	storage.component_id = component_id
+	for &component in storage.components {
+		component.component_id = component_id
 	}
 }

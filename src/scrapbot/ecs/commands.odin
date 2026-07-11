@@ -13,6 +13,7 @@ Command_Kind :: enum {
 }
 
 Command_Component :: struct {
+	component_id:      Component_ID,
 	name:             [MAX_COMMAND_NAME_BYTES]u8,
 	name_len:         int,
 	vec3_fields:      [MAX_COMMAND_FIELDS]Command_Vec3_Field,
@@ -45,6 +46,7 @@ Add_Component_Command :: struct {
 Remove_Component_Command :: struct {
 	entity_index: int,
 	generation:   u32,
+	component_id: Component_ID,
 	name:         [MAX_COMMAND_NAME_BYTES]u8,
 	name_len:     int,
 }
@@ -113,11 +115,16 @@ spawn_add_custom_component :: proc "c" (spawn: ^Spawn_Command, command_component
 	return ""
 }
 
-init_command_component :: proc "c" (command_component: ^Command_Component, name: string) -> string {
+init_command_component :: proc "c" (
+	command_component: ^Command_Component,
+	component_id: Component_ID,
+	name: string,
+) -> string {
 	if command_component == nil {
 		return "component command is not available"
 	}
 	command_component^ = {}
+	command_component.component_id = component_id
 	if err := copy_command_string(command_component.name[:], &command_component.name_len, name, "component name"); err != "" {
 		return err
 	}
@@ -239,6 +246,7 @@ queue_remove_component :: proc "c" (
 	buffer: ^Command_Buffer,
 	entity_index: int,
 	generation: u32,
+	component_id: Component_ID,
 	name: string,
 ) -> string {
 	if buffer == nil {
@@ -254,6 +262,7 @@ queue_remove_component :: proc "c" (
 	remove: Remove_Component_Command
 	remove.entity_index = entity_index
 	remove.generation = generation
+	remove.component_id = component_id
 	if err := copy_command_string(remove.name[:], &remove.name_len, name, "component name"); err != "" {
 		return err
 	}
@@ -359,7 +368,7 @@ apply_remove_component :: proc(world: ^World, command: ^Remove_Component_Command
 		remove_transform(world, command.entity_index)
 		return
 	}
-	remove_custom_component(world, command.entity_index, name)
+	remove_custom_component(world, command.entity_index, command.component_id, name)
 }
 
 spawn_command_name :: proc(spawn: ^Spawn_Command) -> string {

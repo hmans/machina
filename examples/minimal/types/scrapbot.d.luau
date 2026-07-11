@@ -31,6 +31,7 @@ export type ScrapbotVec3 = {
 export type Vec3 = ScrapbotVec3
 
 export type ScrapbotComponent<T> = {
+	id: number,
 	name: string,
 }
 

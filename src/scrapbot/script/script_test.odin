@@ -139,6 +139,7 @@ velocity = [0, 2, 0]
 local AutorotateComponent = scrapbot.component("autorotate", {
 	velocity = "vec3",
 })
+assert(AutorotateComponent.id > 0)
 
 scrapbot.system({
 	reads = { AutorotateComponent },
@@ -159,6 +160,9 @@ end)
 	testing.expect(t, runtime.systems[0].declaration.accesses[0].mode == .Read)
 	testing.expect(t, runtime.systems[0].declaration.accesses[1].component == "scrapbot.transform")
 	testing.expect(t, runtime.systems[0].declaration.accesses[1].mode == .Write)
+	testing.expect(t, len(world.custom_components) == 1)
+	testing.expect(t, world.custom_components[0].component_id != shared.INVALID_COMPONENT_ID)
+	testing.expect(t, world.custom_components[0].component_id == runtime.registry.definitions[3].id)
 
 	step_err := step_runtime(&runtime, &world, 0.5)
 	testing.expect(t, step_err == "")

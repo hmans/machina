@@ -11,13 +11,16 @@ test_registry_contains_engine_components :: proc(t: ^testing.T) {
 
 	transform, transform_ok := find_definition(&registry, "scrapbot.transform")
 	testing.expect(t, transform_ok)
+	testing.expect(t, transform.id != shared.INVALID_COMPONENT_ID)
 	testing.expect(t, transform.owner == .Engine)
 	testing.expect(t, transform.field_count == 3)
 
-	_, camera_ok := find_definition(&registry, "scrapbot.camera")
+	camera, camera_ok := find_definition(&registry, "scrapbot.camera")
 	testing.expect(t, camera_ok)
-	_, mesh_ok := find_definition(&registry, "scrapbot.mesh")
+	testing.expect(t, camera.id != transform.id)
+	mesh, mesh_ok := find_definition(&registry, "scrapbot.mesh")
 	testing.expect(t, mesh_ok)
+	testing.expect(t, mesh.id != camera.id)
 }
 
 @(test)
@@ -33,6 +36,17 @@ test_registry_rejects_project_component_name_collisions :: proc(t: ^testing.T) {
 	autorotate, autorotate_ok := find_definition(&registry, "autorotate")
 	testing.expect(t, autorotate_ok)
 	testing.expect(t, autorotate.owner == .Project)
+	testing.expect(t, autorotate.id != shared.INVALID_COMPONENT_ID)
+	by_id, by_id_ok := find_definition_by_id(&registry, autorotate.id)
+	testing.expect(t, by_id_ok)
+	testing.expect(t, by_id.name == "autorotate")
+
+	err = register_project_component(&registry, Definition{name = "autorotate", field_count = 1})
+	testing.expect(t, err == "")
+	updated, updated_ok := find_definition(&registry, "autorotate")
+	testing.expect(t, updated_ok)
+	testing.expect(t, updated.id == autorotate.id)
+	testing.expect(t, updated.field_count == 1)
 }
 
 @(test)

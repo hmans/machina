@@ -19,6 +19,7 @@ Vec3 :: shared.Vec3
 Transform_Component :: shared.Transform_Component
 Custom_Component :: shared.Custom_Component
 Named_Vec3 :: shared.Named_Vec3
+Component_ID :: shared.Component_ID
 
 Run_Result :: struct {
 	ran: bool,
@@ -42,6 +43,11 @@ Runtime :: struct {
 Script_System :: struct {
 	callback_ref: c.int,
 	declaration: schedule.System,
+}
+
+Component_Reference :: struct {
+	name: string,
+	id:   Component_ID,
 }
 
 run_project_script :: proc(runtime: ^Runtime, root: string, world: ^World) -> Run_Result {
@@ -327,8 +333,9 @@ scrapbot_component :: proc "c" (L: Lua_State) -> c.int {
 	if err := component.register_project_component(&runtime.registry, definition); err != "" {
 		return luau_push_error(L, err)
 	}
+	registered, _ := component.find_definition(&runtime.registry, definition.name)
 
-	push_component_handle(L, definition.name)
+	push_component_handle(L, registered)
 	return 1
 }
 
@@ -395,15 +402,18 @@ read_system_access_list :: proc "c" (
 
 	lua_pushnil(L)
 	for lua_next(L, -2) != 0 {
-		name, err := component_reference_argument(L, runtime, -1)
+		component_ref, err := component_reference_argument(L, runtime, -1)
 		if err != "" {
+			if err == "component access declaration references unregistered component" {
+				return "system access declaration references unregistered component"
+			}
 			return err
 		}
 		if declaration.access_count >= schedule.MAX_SYSTEM_ACCESSES {
 			return "too many system component access declarations"
 		}
 		declaration.accesses[declaration.access_count] = schedule.Access {
-			component = name,
+			component = component_ref.name,
 			mode      = mode,
 		}
 		declaration.access_count += 1
@@ -417,12 +427,14 @@ component_reference_argument :: proc "c" (
 	L: Lua_State,
 	runtime: ^Runtime,
 	index: c.int,
-) -> (name: string, err: string) {
+) -> (component_ref: Component_Reference, err: string) {
+	id := shared.INVALID_COMPONENT_ID
+	name := ""
 	if lua_type(L, index) == LUA_TSTRING {
 		name_length: c.size_t
 		name_data := lua_tolstring(L, index, &name_length)
 		if name_data == nil {
-			return "", "component access declaration must be a component handle or registered component name"
+			return {}, "component access declaration must be a component handle or registered component name"
 		}
 		name = luau_string(name_data, name_length)
 	} else if lua_type(L, index) == LUA_TTABLE {
@@ -431,18 +443,35 @@ component_reference_argument :: proc "c" (
 		name_data := lua_tolstring(L, -1, &name_length)
 		if name_data == nil {
 			lua_settop(L, -2)
-			return "", "component access declaration handle must contain a name"
+			return {}, "component access declaration handle must contain a name"
 		}
 		name = luau_string(name_data, name_length)
 		lua_settop(L, -2)
+
+		is_number: c.int
+		lua_getfield(L, index, "id")
+		id_value := lua_tointegerx(L, -1, &is_number)
+		lua_settop(L, -2)
+		if is_number != 0 {
+			id = Component_ID(id_value)
+		}
 	} else {
-		return "", "component access declaration must be a component handle or registered component name"
+		return {}, "component access declaration must be a component handle or registered component name"
 	}
 
-	if _, registered := component.find_definition(&runtime.registry, name); !registered {
-		return "", "system access declaration references unregistered component"
+	if id != shared.INVALID_COMPONENT_ID {
+		definition, registered := component.find_definition_by_id(&runtime.registry, id)
+		if !registered || definition.name != name {
+			return {}, "component access declaration references unregistered component"
+		}
+		return Component_Reference{name = definition.name, id = definition.id}, ""
 	}
-	return name, ""
+
+	definition, registered := component.find_definition(&runtime.registry, name)
+	if !registered {
+		return {}, "component access declaration references unregistered component"
+	}
+	return Component_Reference{name = definition.name, id = definition.id}, ""
 }
 
 validate_world_components :: proc(runtime: ^Runtime) -> string {
@@ -450,9 +479,15 @@ validate_world_components :: proc(runtime: ^Runtime) -> string {
 		return ""
 	}
 
-	for scene_component in runtime.world.custom_components {
-		if err := component.validate_custom_component(&runtime.registry, scene_component); err != "" {
-			return err
+	for &storage in runtime.world.custom_components {
+		definition, found := component.find_definition(&runtime.registry, storage.name)
+		if found {
+			ecs.bind_custom_component_storage(runtime.world, storage.name, definition.id)
+		}
+		for scene_component in storage.components {
+			if err := component.validate_custom_component(&runtime.registry, scene_component); err != "" {
+				return err
+			}
 		}
 	}
 
@@ -468,25 +503,19 @@ scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 		return luau_push_error(L, "scrapbot.query expects a component handle and callback")
 	}
 
-	name_length: c.size_t
-	lua_getfield(L, 1, "name")
-	name_data := lua_tolstring(L, -1, &name_length)
-	if name_data == nil {
-		lua_settop(L, -2)
-		return luau_push_error(L, "scrapbot.query component handle must contain a name")
-	}
-	component_name := luau_string(name_data, name_length)
-	lua_settop(L, -2)
-	if _, registered := component.find_definition(&runtime.registry, component_name); !registered {
+	component_ref, component_err := component_reference_argument(L, runtime, 1)
+	if component_err != "" {
 		return luau_push_error(L, "scrapbot.query component handle is not registered")
 	}
 
+	storage := ecs.find_custom_component_storage(runtime.world, component_ref.id, component_ref.name)
+	if storage == nil {
+		return 0
+	}
+
 	callback_ref := lua_ref(L, 2)
-	for component in runtime.world.custom_components {
+	for component in storage.components {
 		if !ecs.entity_is_alive(runtime.world, component.entity_index) {
-			continue
-		}
-		if component.name != component_name {
 			continue
 		}
 
@@ -563,7 +592,7 @@ scrapbot_add_component :: proc "c" (L: Lua_State) -> c.int {
 	if !entity_ok {
 		return luau_push_error(L, "scrapbot.add_component expects an entity")
 	}
-	component_name, component_err := component_reference_argument(L, runtime, 2)
+	component_ref, component_err := component_reference_argument(L, runtime, 2)
 	if component_err != "" {
 		return luau_push_error(L, component_err)
 	}
@@ -571,7 +600,7 @@ scrapbot_add_component :: proc "c" (L: Lua_State) -> c.int {
 		return luau_push_error(L, "scrapbot.add_component expects a component payload table")
 	}
 
-	if component_name == "scrapbot.transform" {
+	if component_ref.name == "scrapbot.transform" {
 		transform, err := read_transform_payload(L, 3)
 		if err != "" {
 			return luau_push_error(L, err)
@@ -583,7 +612,7 @@ scrapbot_add_component :: proc "c" (L: Lua_State) -> c.int {
 	}
 
 	command_component: ecs.Command_Component
-	if err := read_custom_component_payload(L, runtime, component_name, 3, &command_component); err != "" {
+	if err := read_custom_component_payload(L, runtime, component_ref, 3, &command_component); err != "" {
 		return luau_push_error(L, err)
 	}
 	if err := ecs.queue_add_custom_component(&runtime.commands, entity.index, entity.generation, command_component); err != "" {
@@ -601,14 +630,14 @@ scrapbot_remove_component :: proc "c" (L: Lua_State) -> c.int {
 	if !entity_ok {
 		return luau_push_error(L, "scrapbot.remove_component expects an entity")
 	}
-	component_name, component_err := component_reference_argument(L, runtime, 2)
+	component_ref, component_err := component_reference_argument(L, runtime, 2)
 	if component_err != "" {
 		return luau_push_error(L, component_err)
 	}
-	if component_name != "scrapbot.transform" && !shared.component_name_is_project_level(component_name) {
+	if component_ref.name != "scrapbot.transform" && !shared.component_name_is_project_level(component_ref.name) {
 		return luau_push_error(L, "runtime component removal only supports scrapbot.transform and project components")
 	}
-	if err := ecs.queue_remove_component(&runtime.commands, entity.index, entity.generation, component_name); err != "" {
+	if err := ecs.queue_remove_component(&runtime.commands, entity.index, entity.generation, component_ref.id, component_ref.name); err != "" {
 		return luau_push_error(L, err)
 	}
 	return 0
@@ -651,7 +680,12 @@ read_spawn_components :: proc "c" (
 			}
 		} else {
 			command_component: ecs.Command_Component
-			if err := read_custom_component_payload(L, runtime, component_name, -1, &command_component); err != "" {
+			definition, registered := component.find_definition(&runtime.registry, component_name)
+			if !registered {
+				return "runtime component payload references an unregistered component"
+			}
+			component_ref := Component_Reference{name = definition.name, id = definition.id}
+			if err := read_custom_component_payload(L, runtime, component_ref, -1, &command_component); err != "" {
 				return err
 			}
 			if err := ecs.spawn_add_custom_component(spawn, command_component); err != "" {
@@ -692,21 +726,24 @@ read_transform_payload :: proc "c" (L: Lua_State, payload_index: c.int) -> (tran
 read_custom_component_payload :: proc "c" (
 	L: Lua_State,
 	runtime: ^Runtime,
-	component_name: string,
+	component_ref: Component_Reference,
 	payload_index: c.int,
 	command_component: ^ecs.Command_Component,
 ) -> string {
-	definition, registered := component.find_definition(&runtime.registry, component_name)
+	definition, registered := component.find_definition_by_id(&runtime.registry, component_ref.id)
 	if !registered {
-		if shared.component_name_is_project_level(component_name) {
+		if shared.component_name_is_project_level(component_ref.name) {
 			return "runtime component payload references an unregistered project component"
 		}
+		return "runtime component payload references an unregistered component"
+	}
+	if definition.name != component_ref.name {
 		return "runtime component payload references an unregistered component"
 	}
 	if definition.owner != .Project {
 		return "runtime component mutation only supports scrapbot.transform and project components"
 	}
-	if err := ecs.init_command_component(command_component, component_name); err != "" {
+	if err := ecs.init_command_component(command_component, component_ref.id, component_ref.name); err != "" {
 		return err
 	}
 
@@ -741,9 +778,11 @@ optional_vec3_field :: proc "c" (L: Lua_State, index: c.int, name: cstring) -> (
 	return value, true, ok
 }
 
-push_component_handle :: proc "c" (L: Lua_State, name: string) {
-	lua_createtable(L, 0, 1)
-	lua_pushlstring(L, cstring(raw_data(name)), c.size_t(len(name)))
+push_component_handle :: proc "c" (L: Lua_State, definition: component.Definition) {
+	lua_createtable(L, 0, 2)
+	lua_pushinteger(L, c.ptrdiff_t(definition.id))
+	lua_setfield(L, -2, "id")
+	lua_pushlstring(L, cstring(raw_data(definition.name)), c.size_t(len(definition.name)))
 	lua_setfield(L, -2, "name")
 }
 
