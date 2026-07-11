@@ -10,19 +10,19 @@ export type Scrapbot = {
 	log: (message: any) -> (),
 	entity_count: () -> number,
 	renderable_count: () -> number,
-	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T>,
+	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,
 	transform: ScrapbotTransformComponent,
 	camera: ScrapbotCameraComponent,
 	mesh: ScrapbotMeshComponent,
-	system: ((system: (delta_seconds: number) -> ()) -> ()) & ((options: ScrapbotSystemOptions, system: (delta_seconds: number) -> ()) -> ()) & (<T...>(query: ScrapbotQuery<T...>, system: (delta_seconds: number, entity: ScrapbotEntity, T...) -> ()) -> ()) & (<T...>(query: ScrapbotQuery<T...>, options: any, system: (delta_seconds: number, entity: ScrapbotEntity, T...) -> ()) -> ()),
-	query: (<A>(first: ScrapbotComponent<A>) -> ScrapbotQuery<A>) & (<A, B>(first: ScrapbotComponent<A>, second: ScrapbotComponent<B>) -> ScrapbotQuery<A, B>) & (<A, B, C>(first: ScrapbotComponent<A>, second: ScrapbotComponent<B>, third: ScrapbotComponent<C>) -> ScrapbotQuery<A, B, C>),
-	view: (<T>(component: ScrapbotComponent<T>) -> {ScrapbotQueryItem<T>}) & ((components: {ScrapbotComponent<any>}) -> {ScrapbotQueryComponentsItem}) & ((query: ScrapbotAnyQuery) -> {ScrapbotQueryComponentsItem}),
+	system: ((system: (delta_seconds: number) -> ()) -> ()) & ((options: ScrapbotSystemOptions, system: (delta_seconds: number) -> ()) -> ()) & (<A, RA>(query: ScrapbotQuery1<A, RA>, system: (delta_seconds: number, entity: ScrapbotEntity, RA) -> ()) -> ()) & (<A, RA, B, RB>(query: ScrapbotQuery2<A, RA, B, RB>, system: (delta_seconds: number, entity: ScrapbotEntity, RA, RB) -> ()) -> ()) & (<A, RA, B, RB, C, RC>(query: ScrapbotQuery3<A, RA, B, RB, C, RC>, system: (delta_seconds: number, entity: ScrapbotEntity, RA, RB, RC) -> ()) -> ()) & ((query: ScrapbotAnyQuery, options: ScrapbotSystemOptions, system: (...any) -> ()) -> ()),
+	query: (<A, RA>(first: ScrapbotComponent<A, RA>) -> ScrapbotQuery1<A, RA>) & (<A, RA, B, RB>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>) -> ScrapbotQuery2<A, RA, B, RB>) & (<A, RA, B, RB, C, RC>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>, third: ScrapbotComponent<C, RC>) -> ScrapbotQuery3<A, RA, B, RB, C, RC>),
+	view: (<T, R>(component: ScrapbotComponent<T, R>) -> {ScrapbotQueryItem<R>}) & ((components: {ScrapbotComponent<any, any>}) -> {ScrapbotQueryComponentsItem}) & ((query: ScrapbotAnyQuery) -> {ScrapbotQueryComponentsItem}),
 	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
 	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
 	spawn: (options: ScrapbotSpawnOptions?) -> (),
 	despawn: (entity: ScrapbotEntity) -> (),
-	add_component: (<T>(entity: ScrapbotEntity, component: ScrapbotComponent<T>, payload: T) -> ()) & ((entity: ScrapbotEntity, component: string, payload: any) -> ()),
-	remove_component: (entity: ScrapbotEntity, component: ScrapbotComponent<any> | string) -> (),
+	add_component: (<T>(entity: ScrapbotEntity, component: ScrapbotComponent<T, any>, payload: T) -> ()) & ((entity: ScrapbotEntity, component: string, payload: any) -> ()),
+	remove_component: (entity: ScrapbotEntity, component: ScrapbotComponent<any, any> | string) -> (),
 }
 
 export type ScrapbotEntity = {
@@ -39,17 +39,40 @@ export type ScrapbotVec3 = {
 
 export type Vec3 = ScrapbotVec3
 
-export type ScrapbotComponent<T> = {
+export type ScrapbotReadonlyVec3 = {
+	read x: number,
+	read y: number,
+	read z: number,
+}
+
+export type ReadonlyVec3 = ScrapbotReadonlyVec3
+
+export type ScrapbotComponent<T, R> = {
 	id: number,
 	name: string,
 	_type: T?,
+	_read_type: R?,
 }
 
-export type ScrapbotQuery<T...> = {
-	each: (ScrapbotQuery<T...>, callback: (ScrapbotEntity, T...) -> ()) -> (),
+export type ScrapbotQuery1<A, RA> = {
+	_type_a: A?,
+	each: (ScrapbotQuery1<A, RA>, callback: (ScrapbotEntity, RA) -> ()) -> (),
 }
 
-export type ScrapbotAnyQuery = ScrapbotQuery<...any>
+export type ScrapbotQuery2<A, RA, B, RB> = {
+	_type_a: A?,
+	_type_b: B?,
+	each: (ScrapbotQuery2<A, RA, B, RB>, callback: (ScrapbotEntity, RA, RB) -> ()) -> (),
+}
+
+export type ScrapbotQuery3<A, RA, B, RB, C, RC> = {
+	_type_a: A?,
+	_type_b: B?,
+	_type_c: C?,
+	each: (ScrapbotQuery3<A, RA, B, RB, C, RC>, callback: (ScrapbotEntity, RA, RB, RC) -> ()) -> (),
+}
+
+export type ScrapbotAnyQuery = ScrapbotQuery1<any, any> | ScrapbotQuery2<any, any, any, any> | ScrapbotQuery3<any, any, any, any, any, any>
 
 export type ScrapbotQueryItem<T> = {
 	entity: ScrapbotEntity,
@@ -68,9 +91,18 @@ export type ScrapbotComponentSchema = {
 
 export type ScrapbotComponentFieldType = "vec3"
 
+export type ScrapbotComponentAccess = {
+	id: number,
+	name: string,
+}
+
+export type ScrapbotReadAccess = ScrapbotComponentAccess | ScrapbotAnyQuery | string
+
+export type ScrapbotWriteAccess = ScrapbotComponentAccess | string
+
 export type ScrapbotSystemOptions = {
-	reads: {[number]: any}?,
-	writes: {[number]: any}?,
+	reads: {ScrapbotReadAccess}?,
+	writes: {ScrapbotWriteAccess}?,
 }
 
 export type ScrapbotSpawnOptions = {
@@ -100,6 +132,7 @@ generate_luau_types :: proc(registry: ^Registry) -> (text: string, err: string) 
 write_luau_component_type :: proc(builder: ^strings.Builder, definition: Definition) {
 	type_name := luau_component_type_name(definition.name)
 	defer delete(type_name)
+	readonly_type_name := fmt.tprintf("Readonly%s", type_name)
 
 	fmt.sbprintf(builder, "export type %s = ", type_name)
 	strings.write_string(builder, "{\n")
@@ -108,13 +141,36 @@ write_luau_component_type :: proc(builder: ^strings.Builder, definition: Definit
 		fmt.sbprintf(builder, "\t%s: %s,\n", field.name, luau_field_type_name(field.field_type))
 	}
 	strings.write_string(builder, "}\n\n")
-	fmt.sbprintf(builder, "export type %sComponent = ScrapbotComponent<%s>\n\n", type_name, type_name)
+
+	fmt.sbprintf(builder, "export type %s = ", readonly_type_name)
+	strings.write_string(builder, "{\n")
+	for i in 0..<definition.field_count {
+		field := definition.fields[i]
+		fmt.sbprintf(builder, "\tread %s: %s,\n", field.name, luau_readonly_field_type_name(field.field_type))
+	}
+	strings.write_string(builder, "}\n\n")
+
+	fmt.sbprintf(
+		builder,
+		"export type %sComponent = ScrapbotComponent<%s, %s>\n\n",
+		type_name,
+		type_name,
+		readonly_type_name,
+	)
 }
 
 luau_field_type_name :: proc(field_type: Field_Type) -> string {
 	#partial switch field_type {
 	case .Vec3:
 		return "Vec3"
+	}
+	return "any"
+}
+
+luau_readonly_field_type_name :: proc(field_type: Field_Type) -> string {
+	#partial switch field_type {
+	case .Vec3:
+		return "ReadonlyVec3"
 	}
 	return "any"
 }

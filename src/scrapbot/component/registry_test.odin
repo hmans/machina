@@ -98,12 +98,16 @@ test_luau_types_include_registered_components :: proc(t: ^testing.T) {
 
 	testing.expect(t, strings.contains(text, "export type ScrapbotTransform = {"))
 	testing.expect(t, strings.contains(text, "\tposition: Vec3,"))
+	testing.expect(t, strings.contains(text, "export type ReadonlyScrapbotTransform = {"))
+	testing.expect(t, strings.contains(text, "\tread position: ReadonlyVec3,"))
 	testing.expect(t, strings.contains(text, "export type Autorotate = {"))
 	testing.expect(t, strings.contains(text, "\tvelocity: Vec3,"))
-	testing.expect(t, strings.contains(text, "export type AutorotateComponent = ScrapbotComponent<Autorotate>"))
-	testing.expect(t, strings.contains(text, "export type ScrapbotQuery<T...> = {"))
-	testing.expect(t, strings.contains(text, "each: (ScrapbotQuery<T...>, callback: (ScrapbotEntity, T...) -> ()) -> (),"))
-	testing.expect(t, strings.contains(text, "<A, B>(first: ScrapbotComponent<A>, second: ScrapbotComponent<B>) -> ScrapbotQuery<A, B>"))
+	testing.expect(t, strings.contains(text, "export type ReadonlyAutorotate = {"))
+	testing.expect(t, strings.contains(text, "\tread velocity: ReadonlyVec3,"))
+	testing.expect(t, strings.contains(text, "export type AutorotateComponent = ScrapbotComponent<Autorotate, ReadonlyAutorotate>"))
+	testing.expect(t, strings.contains(text, "export type ScrapbotQuery2<A, RA, B, RB> = {"))
+	testing.expect(t, strings.contains(text, "callback: (ScrapbotEntity, RA, RB) -> ()) -> (),"))
+	testing.expect(t, strings.contains(text, "<A, RA, B, RB>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>) -> ScrapbotQuery2<A, RA, B, RB>"))
 	testing.expect(t, !strings.contains(text, "query3:"))
 }
 

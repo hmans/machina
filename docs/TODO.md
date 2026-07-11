@@ -42,6 +42,7 @@
 - [x] Enforce declared component access for declared Luau systems.
 - [x] Add write-back for declared `scrapbot.transform` payload mutation in Luau query systems.
 - [x] Add write-back for declared project component payload mutation in Luau query systems.
+- [x] Add readonly generated Luau payload types for query snapshots.
 - [ ] Add library component registration for dotted component names.
 - [x] Add a Luau analyzer check for example project scripts.
 - [ ] Add native Odin extension loading and hot reload.

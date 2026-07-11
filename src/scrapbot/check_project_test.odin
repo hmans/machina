@@ -24,7 +24,9 @@ test_check_project_refreshes_luau_types_from_script_registry :: proc(t: ^testing
 	types_text := string(types_bytes)
 	testing.expect(t, strings.contains(types_text, "export type Autorotate = {"))
 	testing.expect(t, strings.contains(types_text, "\tvelocity: Vec3,"))
-	testing.expect(t, strings.contains(types_text, "export type AutorotateComponent = ScrapbotComponent<Autorotate>"))
+	testing.expect(t, strings.contains(types_text, "export type ReadonlyAutorotate = {"))
+	testing.expect(t, strings.contains(types_text, "\tread velocity: ReadonlyVec3,"))
+	testing.expect(t, strings.contains(types_text, "export type AutorotateComponent = ScrapbotComponent<Autorotate, ReadonlyAutorotate>"))
 }
 
 @(test)
@@ -90,11 +92,75 @@ local AutorotateComponent = scrapbot.component("autorotate", {
 
 scrapbot.system(function()
 	local RenderedAutorotating = scrapbot.query(scrapbot.transform, scrapbot.mesh, AutorotateComponent)
-	RenderedAutorotating:each(function(entity, transform: ScrapbotTransform, mesh: ScrapbotMesh, autorotate: Autorotate)
+	RenderedAutorotating:each(function(entity, transform: ReadonlyScrapbotTransform, mesh: ReadonlyScrapbotMesh, autorotate: ReadonlyAutorotate)
 		local y: number = transform.rotation.y + autorotate.velocity.y
 		assert(mesh ~= nil)
 		assert(y > -100)
 	end)
+end)
+`)
+	testing.expect(t, write_err == nil)
+
+	check_err := check_project(root)
+	testing.expectf(t, check_err == "", "check_project failed: %s", check_err)
+}
+
+@(test)
+test_check_project_analyzer_rejects_query_each_payload_mutation :: proc(t: ^testing.T) {
+	if !luau_analyzer_available() {
+		return
+	}
+
+	root, parent := make_check_project_test_project(t)
+	defer delete(root)
+	defer os.remove_all(parent)
+
+	script_path := join_check_project_path(t, root, DEFAULT_SCRIPT)
+	defer delete(script_path)
+	write_err := os.write_entire_file(script_path, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+}) :: AutorotateComponent
+
+scrapbot.system(function()
+	local Autorotating = scrapbot.query(AutorotateComponent)
+	Autorotating:each(function(entity, autorotate)
+		autorotate.velocity.y += 1
+	end)
+end)
+`)
+	testing.expect(t, write_err == nil)
+
+	check_err := check_project(root)
+	testing.expect(t, strings.contains(check_err, "Luau analyzer failed:"))
+	testing.expect(t, strings.contains(check_err, "Property y of table"))
+	testing.expect(t, strings.contains(check_err, "is read-only"))
+}
+
+@(test)
+test_check_project_analyzer_accepts_typed_writable_query_system :: proc(t: ^testing.T) {
+	if !luau_analyzer_available() {
+		return
+	}
+
+	root, parent := make_check_project_test_project(t)
+	defer delete(root)
+	defer os.remove_all(parent)
+
+	script_path := join_check_project_path(t, root, DEFAULT_SCRIPT)
+	defer delete(script_path)
+	write_err := os.write_entire_file(script_path, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+}) :: AutorotateComponent
+
+local Autorotating = scrapbot.query(scrapbot.transform, AutorotateComponent)
+
+scrapbot.system(Autorotating, {
+	writes = { scrapbot.transform, AutorotateComponent },
+}, function(delta_seconds: number, entity: ScrapbotEntity, transform: ScrapbotTransform, autorotate: Autorotate)
+	transform.rotation.y += autorotate.velocity.y * delta_seconds
+	autorotate.velocity.y += 1
 end)
 `)
 	testing.expect(t, write_err == nil)

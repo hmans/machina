@@ -64,7 +64,7 @@
 
 **Luau** - Scrapbot's embedded scripting language for project-local code, currently exposed through `scripts/main.luau` and a small `scrapbot` API for logging, systems, component schemas, custom component queries, and transform rotation helpers.
 
-**Generated Luau types** - Project-local type definitions in `types/scrapbot.d.luau`. `scrapbot check` refreshes them from the component registry so editors can see engine and project component payload aliases.
+**Generated Luau types** - Project-local type definitions in `types/scrapbot.d.luau`. `scrapbot check` refreshes them from the component registry so editors can see engine and project component payload aliases, including readonly aliases for query snapshot payloads.
 
 **Luau analyzer** - The external `luau-analyze` static checker. `scrapbot check` runs it when available to catch script type and syntax errors against generated Scrapbot types.
 

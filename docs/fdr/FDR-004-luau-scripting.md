@@ -35,7 +35,8 @@ Luau scripting lets project directories include fast-iteration game code without
 - Scripts can pass a query object to `scrapbot.system(query, options?, callback)` to run the system callback once per matching entity. Query components are declared as system reads automatically.
 - Query-driven systems can mutate `scrapbot.transform` and project component payload tables directly when the system declares matching write access.
 - Mutating a query-system payload table without declared write access fails the system step and leaves the world unchanged.
-- Generated Luau types currently provide precise `query:each` callback payload types for one-, two-, and three-component query objects. Query-driven systems are runtime-supported, while Luau analyzer inference is currently most reliable for the common one- and two-component cases.
+- Generated Luau types provide readonly payload aliases for `query:each` and query-driven systems that do not pass options.
+- Generated Luau types validate query-system options and support mutable payload annotations for writable query-driven systems.
 - Scripts can request a bulk query result with `scrapbot.view(component_handle)`, which returns alive entity/component items for the component type.
 - Scripts can request a joined bulk query result with `scrapbot.view(query)` or `scrapbot.view({ component_a, component_b })`, which returns alive entities and a component payload array in query order.
 - Runtime queries use component IDs from handles to select one component storage group, while project files and diagnostics remain name-based.
@@ -143,7 +144,7 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 **Decision:** Make `scrapbot.query` construct reusable query objects instead of immediately iterating, and let query objects drive `query:each`, bulk views, access declarations, and query systems.
 **Why:** Queries are first-class ECS concepts. Reusable query values give scripts one object to use for iteration, scheduling metadata, tests, and future editor/native-system integration.
-**Tradeoff:** Query objects are component sets, so construction order is not a semantic part of the query. Luau's analyzer still has limits around type-pack inference through overloaded system declarations. Generated types keep `query:each` precise for the first three arities, while query-driven systems are runtime-supported and best typed in simpler query shapes for now.
+**Tradeoff:** Query objects are component sets, so construction order is not a semantic part of the query. Luau's analyzer still has limits around generic overloaded callbacks. Generated types keep `query:each` and read-only query systems precise for the first three arities; writable query systems type-check their options and rely on explicit callback parameter annotations for mutable payloads.
 
 ### 15. Analyze project scripts after type generation
 
