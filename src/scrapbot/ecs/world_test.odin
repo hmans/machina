@@ -126,6 +126,31 @@ test_world_preserves_project_custom_components :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_query_view_iterates_one_component_storage_group :: proc(t: ^testing.T) {
+	scene, result := project.parse_scene(MULTI_CUBE_SCENE)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, result.err == .None)
+
+	world := build_world(&scene)
+	defer destroy_world(&world)
+
+	view := query_view(&world, shared.INVALID_COMPONENT_ID, "autorotate")
+	testing.expect(t, query_view_count(&world, view) == 2)
+
+	component, ok := query_view_component_at(&world, view, 0)
+	testing.expect(t, ok)
+	testing.expect(t, component.entity_index == 1)
+	testing.expect(t, component.vec3_fields[0].value.y > 0)
+
+	remove_custom_component(&world, 1, shared.INVALID_COMPONENT_ID, "autorotate")
+	testing.expect(t, query_view_count(&world, view) == 1)
+
+	component, ok = query_view_component_at(&world, view, 0)
+	testing.expect(t, ok)
+	testing.expect(t, component.entity_index == 2)
+}
+
+@(test)
 test_deferred_commands_spawn_entities_when_applied :: proc(t: ^testing.T) {
 	world: World
 	defer destroy_world(&world)

@@ -28,6 +28,7 @@ Luau scripting lets project directories include fast-iteration game code without
 - Scripts can declare system component access with `scrapbot.system({ reads = {...}, writes = {...} }, function(delta_seconds) ... end)`.
 - Script system access declarations accept project component handles or registered component-name strings.
 - Scripts can query scene-defined custom components with `scrapbot.query(component_handle, callback)`.
+- Scripts can request a bulk query result with `scrapbot.view(component_handle)`, which returns alive entity/component items for the component type.
 - Runtime queries use component IDs from handles to select one component storage group, while project files and diagnostics remain name-based.
 - Project scripts annotate query callback component parameters with generated component payload aliases such as `Autorotate`.
 - Scripts can read and write entity rotation through `scrapbot.get_rotation(entity)` and `scrapbot.set_rotation(entity, rotation)`.
@@ -115,6 +116,12 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 **Decision:** Group project component instances by component type and use registry-assigned component IDs for runtime query and lifecycle paths.
 **Why:** Name matching is useful at text/project boundaries but too weak as an execution-time storage key. ID-keyed groups are a better base for bulk query views, native systems, and parallel scheduling.
 **Tradeoff:** Component IDs are runtime-local and must be rebound after scene load and script registration. Names remain the persistent source of truth in project files.
+
+### 12. Expose bulk query views before native iterators
+
+**Decision:** Add `scrapbot.view(component)` as a table of entity/component query items built from the same internal query view as callback queries.
+**Why:** This gives scripts a batch-shaped API and lets the engine test view semantics before committing to native iterators or multi-component query planners.
+**Tradeoff:** The first view API materializes a Luau table each call. It is ergonomic and testable, but it is not the final zero-allocation iteration path.
 
 ## Related
 

@@ -8,6 +8,7 @@ export type Scrapbot = {
 	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T>,
 	system: ((system: (delta_seconds: number) -> ()) -> ()) & ((options: ScrapbotSystemOptions, system: (delta_seconds: number) -> ()) -> ()),
 	query: <T>(component: ScrapbotComponent<T>, callback: (entity: ScrapbotEntity, component: T) -> ()) -> (),
+	view: <T>(component: ScrapbotComponent<T>) -> {ScrapbotQueryItem<T>},
 	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
 	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
 	spawn: (options: ScrapbotSpawnOptions?) -> (),
@@ -33,6 +34,11 @@ export type Vec3 = ScrapbotVec3
 export type ScrapbotComponent<T> = {
 	id: number,
 	name: string,
+}
+
+export type ScrapbotQueryItem<T> = {
+	entity: ScrapbotEntity,
+	component: T,
 }
 
 export type ScrapbotComponentSchema = {

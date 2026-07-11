@@ -14,6 +14,6 @@ Luau component handles expose both `name` and `id`. Systems may still declare ac
 
 ## Consequences
 
-Queries no longer need to scan every project component instance and compare names. The runtime now has a clearer component-type boundary for future bulk query views, native systems, and parallel scheduling.
+Queries no longer need to scan every project component instance and compare names. The runtime now has a clearer component-type boundary for bulk query views, native systems, and parallel scheduling.
 
 Scene loading still works before script registration because names remain the text-first interchange format. The cost is an extra binding step after Luau schemas are loaded, and component IDs are runtime-local rather than serialized identities.

@@ -18,6 +18,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 - Luau access declarations may reference project component handles or registered component-name strings.
 - Component handles carry runtime component IDs, giving scheduler-facing declarations and runtime query paths a shared component-type identity.
 - Unknown component names in system access declarations fail script loading.
+- Systems with explicit access declarations may only read or write components covered by those declarations. Callback-only systems remain permissive.
 - Scheduled Luau batches currently execute serially in deterministic batch order.
 - Structural world changes requested from Luau systems are queued in a deferred command buffer and applied after all scheduled systems finish for the frame.
 - Deferred commands currently support spawning named entities with initial transform/project component payloads, despawning entities without shifting existing entity indices, and adding/removing `scrapbot.transform` or project components.
@@ -43,6 +44,8 @@ Component declarations are still stored by name for the scheduler, but handles n
 **Decision:** Keep `scrapbot.system(function)` as shorthand for a system with no declared access.
 **Why:** This avoids making every small script declare access before the scheduler has visible parallel execution benefits.
 **Tradeoff:** Undeclared systems are less informative to the scheduler and may need stricter rules once true parallel execution arrives.
+
+Declared systems now enforce their declared component access at the Luau API boundary. Callback-only systems remain valid and permissive during the early scripting phase.
 
 ### 4. Defer structural world mutation until the frame boundary
 

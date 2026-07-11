@@ -38,6 +38,8 @@ Runtime :: struct {
 	commands: ecs.Command_Buffer,
 	systems: [MAX_SCRIPT_SYSTEMS]Script_System,
 	system_count: int,
+	active_system: schedule.System,
+	has_active_system: bool,
 }
 
 Script_System :: struct {
@@ -178,7 +180,7 @@ step_runtime :: proc(runtime: ^Runtime, world: ^World, delta_seconds: f32) -> st
 		for i in 0..<batch.system_count {
 			system_index := batch.system_indices[i]
 			system := runtime.systems[system_index]
-			if err := run_script_system(L, system, delta_seconds); err != "" {
+			if err := run_script_system(runtime, L, system, delta_seconds); err != "" {
 				ecs.clear_commands(&runtime.commands)
 				return err
 			}
@@ -187,10 +189,14 @@ step_runtime :: proc(runtime: ^Runtime, world: ^World, delta_seconds: f32) -> st
 	return ecs.apply_commands(world, &runtime.commands)
 }
 
-run_script_system :: proc(L: Lua_State, system: Script_System, delta_seconds: f32) -> string {
+run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System, delta_seconds: f32) -> string {
+	runtime.active_system = system.declaration
+	runtime.has_active_system = true
 	lua_rawgeti(L, LUA_REGISTRYINDEX, system.callback_ref)
 	lua_pushnumber(L, f64(delta_seconds))
 	status := lua_pcall(L, 1, 0, 0)
+	runtime.has_active_system = false
+	runtime.active_system = {}
 	if status != LUA_OK {
 		return luau_stack_error(L, "Luau system")
 	}
@@ -203,7 +209,7 @@ step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> st
 }
 
 register_scrapbot_api :: proc(L: Lua_State) {
-	lua_createtable(L, 0, 13)
+	lua_createtable(L, 0, 14)
 
 	lua_pushcclosurek(L, scrapbot_log, "scrapbot.log", 0, nil)
 	lua_setfield(L, -2, "log")
@@ -222,6 +228,9 @@ register_scrapbot_api :: proc(L: Lua_State) {
 
 	lua_pushcclosurek(L, scrapbot_query, "scrapbot.query", 0, nil)
 	lua_setfield(L, -2, "query")
+
+	lua_pushcclosurek(L, scrapbot_view, "scrapbot.view", 0, nil)
+	lua_setfield(L, -2, "view")
 
 	lua_pushcclosurek(L, scrapbot_get_rotation, "scrapbot.get_rotation", 0, nil)
 	lua_setfield(L, -2, "get_rotation")
@@ -507,18 +516,18 @@ scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 	if component_err != "" {
 		return luau_push_error(L, "scrapbot.query component handle is not registered")
 	}
-
-	storage := ecs.find_custom_component_storage(runtime.world, component_ref.id, component_ref.name)
-	if storage == nil {
-		return 0
+	if err := require_system_access(runtime, component_ref.name, .Read); err != "" {
+		return luau_push_error(L, err)
 	}
 
+	view := ecs.query_view(runtime.world, component_ref.id, component_ref.name)
+
 	callback_ref := lua_ref(L, 2)
-	for component in storage.components {
-		if !ecs.entity_is_alive(runtime.world, component.entity_index) {
+	for i in 0..<ecs.query_view_count(runtime.world, view) {
+		component, component_ok := ecs.query_view_component_at(runtime.world, view, i)
+		if !component_ok {
 			continue
 		}
-
 		lua_rawgeti(L, LUA_REGISTRYINDEX, callback_ref)
 		push_entity_table(L, runtime.world, component.entity_index)
 		push_component_table(L, component)
@@ -530,6 +539,39 @@ scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
 	}
 	lua_unref(L, callback_ref)
 	return 0
+}
+
+scrapbot_view :: proc "c" (L: Lua_State) -> c.int {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	if runtime == nil || runtime.world == nil {
+		lua_createtable(L, 0, 0)
+		return 1
+	}
+	if lua_type(L, 1) != LUA_TTABLE {
+		return luau_push_error(L, "scrapbot.view expects a component handle")
+	}
+
+	component_ref, component_err := component_reference_argument(L, runtime, 1)
+	if component_err != "" {
+		return luau_push_error(L, "scrapbot.view component handle is not registered")
+	}
+	if err := require_system_access(runtime, component_ref.name, .Read); err != "" {
+		return luau_push_error(L, err)
+	}
+
+	view := ecs.query_view(runtime.world, component_ref.id, component_ref.name)
+	count := ecs.query_view_count(runtime.world, view)
+	lua_createtable(L, c.int(count), 0)
+	for i in 0..<count {
+		component, component_ok := ecs.query_view_component_at(runtime.world, view, i)
+		if !component_ok {
+			continue
+		}
+		lua_pushinteger(L, c.ptrdiff_t(i + 1))
+		push_query_item_table(L, runtime.world, component)
+		lua_settable(L, -3)
+	}
+	return 1
 }
 
 scrapbot_spawn :: proc "c" (L: Lua_State) -> c.int {
@@ -601,6 +643,9 @@ scrapbot_add_component :: proc "c" (L: Lua_State) -> c.int {
 	}
 
 	if component_ref.name == "scrapbot.transform" {
+		if err := require_system_access(runtime, component_ref.name, .Write); err != "" {
+			return luau_push_error(L, err)
+		}
 		transform, err := read_transform_payload(L, 3)
 		if err != "" {
 			return luau_push_error(L, err)
@@ -611,6 +656,9 @@ scrapbot_add_component :: proc "c" (L: Lua_State) -> c.int {
 		return 0
 	}
 
+	if err := require_system_access(runtime, component_ref.name, .Write); err != "" {
+		return luau_push_error(L, err)
+	}
 	command_component: ecs.Command_Component
 	if err := read_custom_component_payload(L, runtime, component_ref, 3, &command_component); err != "" {
 		return luau_push_error(L, err)
@@ -636,6 +684,9 @@ scrapbot_remove_component :: proc "c" (L: Lua_State) -> c.int {
 	}
 	if component_ref.name != "scrapbot.transform" && !shared.component_name_is_project_level(component_ref.name) {
 		return luau_push_error(L, "runtime component removal only supports scrapbot.transform and project components")
+	}
+	if err := require_system_access(runtime, component_ref.name, .Write); err != "" {
+		return luau_push_error(L, err)
 	}
 	if err := ecs.queue_remove_component(&runtime.commands, entity.index, entity.generation, component_ref.id, component_ref.name); err != "" {
 		return luau_push_error(L, err)
@@ -671,6 +722,9 @@ read_spawn_components :: proc "c" (
 		component_name := luau_string(name_data, name_length)
 
 		if component_name == "scrapbot.transform" {
+			if err := require_system_access(runtime, component_name, .Write); err != "" {
+				return err
+			}
 			transform, err := read_transform_payload(L, -1)
 			if err != "" {
 				return err
@@ -683,6 +737,9 @@ read_spawn_components :: proc "c" (
 			definition, registered := component.find_definition(&runtime.registry, component_name)
 			if !registered {
 				return "runtime component payload references an unregistered component"
+			}
+			if err := require_system_access(runtime, definition.name, .Write); err != "" {
+				return err
 			}
 			component_ref := Component_Reference{name = definition.name, id = definition.id}
 			if err := read_custom_component_payload(L, runtime, component_ref, -1, &command_component); err != "" {
@@ -792,6 +849,9 @@ scrapbot_get_rotation :: proc "c" (L: Lua_State) -> c.int {
 		lua_pushnil(L)
 		return 1
 	}
+	if err := require_system_access(runtime, "scrapbot.transform", .Read); err != "" {
+		return luau_push_error(L, err)
+	}
 	entity, ok := entity_argument(L, 1, runtime.world)
 	if !ok {
 		lua_pushnil(L)
@@ -812,6 +872,9 @@ scrapbot_set_rotation :: proc "c" (L: Lua_State) -> c.int {
 	runtime := cast(^Runtime)lua_getthreaddata(L)
 	if runtime == nil || runtime.world == nil {
 		return 0
+	}
+	if err := require_system_access(runtime, "scrapbot.transform", .Write); err != "" {
+		return luau_push_error(L, err)
 	}
 	entity, entity_ok := entity_argument(L, 1, runtime.world)
 	rotation, rotation_ok := vec3_argument(L, 2)
@@ -852,6 +915,14 @@ push_component_table :: proc "c" (L: Lua_State, component: Custom_Component) {
 	}
 }
 
+push_query_item_table :: proc "c" (L: Lua_State, world: ^World, component: Custom_Component) {
+	lua_createtable(L, 0, 2)
+	push_entity_table(L, world, component.entity_index)
+	lua_setfield(L, -2, "entity")
+	push_component_table(L, component)
+	lua_setfield(L, -2, "component")
+}
+
 push_vec3_table :: proc "c" (L: Lua_State, value: Vec3) {
 	lua_createtable(L, 0, 3)
 	lua_pushnumber(L, f64(value.x))
@@ -860,6 +931,34 @@ push_vec3_table :: proc "c" (L: Lua_State, value: Vec3) {
 	lua_setfield(L, -2, "y")
 	lua_pushnumber(L, f64(value.z))
 	lua_setfield(L, -2, "z")
+}
+
+require_system_access :: proc "c" (
+	runtime: ^Runtime,
+	component_name: string,
+	mode: schedule.Access_Mode,
+) -> string {
+	if runtime == nil || !runtime.has_active_system {
+		return ""
+	}
+	declaration := runtime.active_system
+	if declaration.access_count == 0 {
+		return ""
+	}
+
+	for access in declaration.accesses[:declaration.access_count] {
+		if access.component != component_name {
+			continue
+		}
+		if access.mode == mode || access.mode == .Write {
+			return ""
+		}
+	}
+
+	if mode == .Read {
+		return "system access declaration does not permit component read"
+	}
+	return "system access declaration does not permit component write"
 }
 
 Script_Entity :: struct {

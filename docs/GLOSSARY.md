@@ -20,6 +20,8 @@
 
 **Component storage group** - The ECS world storage for all project custom component instances of one component type.
 
+**Query view** - A view over one component storage group that yields alive entity/component pairs for scripting and future native systems.
+
 **System** - Runtime logic that reads or writes components for matching entities.
 
 **Scheduled system** - A system with declared component reads and writes. Scrapbot batches scheduled systems by access conflicts before executing them serially.

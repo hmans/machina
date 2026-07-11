@@ -21,6 +21,10 @@ Transform_Component :: shared.Transform_Component
 
 INVALID_COMPONENT_INDEX :: -1
 
+Query_View :: struct {
+	storage: ^Custom_Component_Storage,
+}
+
 destroy_world :: proc(world: ^World) {
 	for entity in world.entities {
 		delete(entity.name)
@@ -390,4 +394,48 @@ bind_custom_component_storage :: proc(
 	for &component in storage.components {
 		component.component_id = component_id
 	}
+}
+
+query_view :: proc "c" (
+	world: ^World,
+	component_id: Component_ID,
+	name: string,
+) -> Query_View {
+	return Query_View{storage = find_custom_component_storage(world, component_id, name)}
+}
+
+query_view_count :: proc "c" (world: ^World, view: Query_View) -> int {
+	if view.storage == nil {
+		return 0
+	}
+
+	count := 0
+	for component in view.storage.components {
+		if entity_is_alive(world, component.entity_index) {
+			count += 1
+		}
+	}
+	return count
+}
+
+query_view_component_at :: proc "c" (
+	world: ^World,
+	view: Query_View,
+	visible_index: int,
+) -> (component: Custom_Component, ok: bool) {
+	if view.storage == nil || visible_index < 0 {
+		return {}, false
+	}
+
+	current := 0
+	for component in view.storage.components {
+		if !entity_is_alive(world, component.entity_index) {
+			continue
+		}
+		if current == visible_index {
+			return component, true
+		}
+		current += 1
+	}
+	return {}, false
 }

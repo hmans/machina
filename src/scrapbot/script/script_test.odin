@@ -170,6 +170,51 @@ end)
 }
 
 @(test)
+test_luau_view_returns_query_items_from_component_storage :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "First"
+
+[entities.components.autorotate]
+velocity = [0, 1, 0]
+
+[[entities]]
+name = "Second"
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+scrapbot.system({
+	reads = { AutorotateComponent },
+}, function()
+	local view = scrapbot.view(AutorotateComponent)
+	assert(#view == 2)
+	assert(view[1].entity.name == "First")
+	assert(view[1].component.velocity.y == 1)
+	assert(view[2].entity.name == "Second")
+	assert(view[2].component.velocity.y == 2)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "")
+}
+
+@(test)
 test_luau_system_rejects_unregistered_access_components :: proc(t: ^testing.T) {
 	runtime: Runtime
 	defer destroy_runtime(&runtime)
@@ -181,6 +226,115 @@ scrapbot.system({
 
 	testing.expect(t, !result.ran)
 	testing.expect(t, result.err == "=test: system access declaration references unregistered component")
+}
+
+@(test)
+test_luau_declared_system_rejects_undeclared_component_reads :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.components.autorotate]
+velocity = [0, 1, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+scrapbot.system({
+	reads = { "scrapbot.transform" },
+}, function()
+	scrapbot.view(AutorotateComponent)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "Luau system: system access declaration does not permit component read")
+}
+
+@(test)
+test_luau_declared_system_rejects_undeclared_component_writes :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.components.autorotate]
+velocity = [0, 1, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+scrapbot.system({
+	reads = { AutorotateComponent },
+}, function()
+	scrapbot.query(AutorotateComponent, function(entity)
+		scrapbot.remove_component(entity, AutorotateComponent)
+	end)
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "Luau system: system access declaration does not permit component write")
+}
+
+@(test)
+test_luau_declared_system_rejects_undeclared_spawn_component_writes :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Source"
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+scrapbot.system({
+	reads = { AutorotateComponent },
+}, function()
+	scrapbot.spawn({
+		name = "Bad Spawn",
+		components = {
+			autorotate = {
+				velocity = { x = 0, y = 1, z = 0 },
+			},
+		},
+	})
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 1.0)
+	testing.expect(t, step_err == "Luau system: system access declaration does not permit component write")
+	testing.expect(t, ecs.alive_entity_count(&world) == 1)
 }
 
 @(test)
