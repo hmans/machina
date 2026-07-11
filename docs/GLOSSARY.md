@@ -10,7 +10,7 @@
 
 **ECS (Entity Component System)** - Scrapbot's runtime world model, where entities are identifiers, components hold data, and systems operate over matching component sets.
 
-**Entity** - A generation-aware identifier for one object in a Scrapbot world.
+**Entity** - A generation-aware identifier for one object in a Scrapbot world. Luau receives entity handles with both index and generation so stale handles can be rejected.
 
 **Component** - A typed piece of data attached to an entity, such as a transform, camera, or mesh reference. Single-token names like `autorotate` identify project-level components; dotted names like `scrapbot.transform` or `scrappyphysics.rigidbody` identify engine or library components.
 
@@ -20,7 +20,7 @@
 
 **Scheduled system** - A system with declared component reads and writes. Scrapbot batches scheduled systems by access conflicts before executing them serially.
 
-**Deferred command buffer** - A per-runtime queue of structural ECS mutations requested while systems are running. Scrapbot currently applies queued spawn and despawn commands after the scheduled frame step.
+**Deferred command buffer** - A per-runtime queue of structural ECS mutations requested while systems are running. Scrapbot currently applies queued entity and component lifecycle commands after the scheduled frame step.
 
 **SoA (Structure of Arrays)** - A data layout used for hot component storage, taking advantage of Odin's `#soa` support.
 

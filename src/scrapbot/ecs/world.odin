@@ -13,6 +13,9 @@ Render_Instance :: shared.Render_Instance
 Camera_Instance :: shared.Camera_Instance
 Render_List :: shared.Render_List
 Custom_Component :: shared.Custom_Component
+Vec3 :: shared.Vec3
+Named_Vec3 :: shared.Named_Vec3
+Transform_Component :: shared.Transform_Component
 
 INVALID_COMPONENT_INDEX :: -1
 
@@ -122,6 +125,10 @@ entity_is_alive :: proc "c" (world: ^World, entity_index: int) -> bool {
 	return world.entities[entity_index].alive
 }
 
+entity_is_current :: proc "c" (world: ^World, entity_index: int, generation: u32) -> bool {
+	return entity_is_alive(world, entity_index) && world.entities[entity_index].id.generation == generation
+}
+
 alive_entity_count :: proc "c" (world: ^World) -> int {
 	count := 0
 	for entity in world.entities {
@@ -132,10 +139,10 @@ alive_entity_count :: proc "c" (world: ^World) -> int {
 	return count
 }
 
-alive_renderable_count :: proc(world: ^World) -> int {
+alive_renderable_count :: proc "c" (world: ^World) -> int {
 	count := 0
 	for renderable in world.renderables {
-		if entity_is_alive(world, renderable.entity_index) {
+		if _, ok := render_instance_from_renderable(world, renderable); ok {
 			count += 1
 		}
 	}
@@ -185,11 +192,15 @@ destroy_render_list :: proc(list: ^Render_List) {
 	list^ = {}
 }
 
-render_instance_from_renderable :: proc(world: ^World, renderable: Renderable) -> (instance: Render_Instance, ok: bool) {
+render_instance_from_renderable :: proc "c" (world: ^World, renderable: Renderable) -> (instance: Render_Instance, ok: bool) {
 	if renderable.entity_index < 0 || renderable.entity_index >= len(world.entities) {
 		return {}, false
 	}
 	if !world.entities[renderable.entity_index].alive {
+		return {}, false
+	}
+	if world.entities[renderable.entity_index].transform_index != renderable.transform_index ||
+	   world.entities[renderable.entity_index].mesh_index != renderable.mesh_index {
 		return {}, false
 	}
 	if renderable.transform_index < 0 || renderable.transform_index >= len(world.transforms) {
@@ -225,4 +236,77 @@ first_camera_instance :: proc(world: ^World) -> (instance: Camera_Instance, ok: 
 		}, true
 	}
 	return {}, false
+}
+
+add_transform :: proc(world: ^World, entity_index: int, transform: Transform_Component) {
+	if !entity_is_alive(world, entity_index) {
+		return
+	}
+
+	entity := &world.entities[entity_index]
+	if entity.transform_index >= 0 && entity.transform_index < len(world.transforms) {
+		world.transforms[entity.transform_index] = transform
+		return
+	}
+
+	entity.transform_index = len(world.transforms)
+	append_soa(&world.transforms, transform)
+	if entity.mesh_index >= 0 {
+		append(
+			&world.renderables,
+			Renderable {
+				entity_index    = entity_index,
+				transform_index = entity.transform_index,
+				mesh_index      = entity.mesh_index,
+			},
+		)
+	}
+}
+
+remove_transform :: proc(world: ^World, entity_index: int) {
+	if !entity_is_alive(world, entity_index) {
+		return
+	}
+	world.entities[entity_index].transform_index = INVALID_COMPONENT_INDEX
+}
+
+add_custom_component :: proc(world: ^World, entity_index: int, command_component: ^Command_Component) {
+	if !entity_is_alive(world, entity_index) {
+		return
+	}
+
+	name := command_component_name(command_component)
+	remove_custom_component(world, entity_index, name)
+
+	world_component := Custom_Component {
+		entity_index = entity_index,
+		name         = clone_world_string(name),
+	}
+	for i in 0..<command_component.vec3_field_count {
+		command_field := &command_component.vec3_fields[i]
+		append(
+			&world_component.vec3_fields,
+			Named_Vec3 {
+				name  = clone_world_string(command_field_name(command_field)),
+				value = command_field.value,
+			},
+		)
+	}
+	append(&world.custom_components, world_component)
+}
+
+remove_custom_component :: proc(world: ^World, entity_index: int, name: string) {
+	for &world_component in world.custom_components {
+		if world_component.entity_index != entity_index || world_component.name != name {
+			continue
+		}
+		delete(world_component.name)
+		world_component.name = ""
+		world_component.entity_index = INVALID_COMPONENT_INDEX
+		for field in world_component.vec3_fields {
+			delete(field.name)
+		}
+		delete(world_component.vec3_fields)
+		world_component.vec3_fields = nil
+	}
 }

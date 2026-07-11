@@ -1,62 +1,266 @@
 package ecs
 
 MAX_COMMANDS :: 128
-MAX_SPAWN_NAME_BYTES :: 64
+MAX_COMMAND_NAME_BYTES :: 64
+MAX_COMMAND_COMPONENTS :: 8
+MAX_COMMAND_FIELDS :: 16
 
 Command_Kind :: enum {
 	Spawn,
 	Despawn,
+	Add_Component,
+	Remove_Component,
+}
+
+Command_Component :: struct {
+	name:             [MAX_COMMAND_NAME_BYTES]u8,
+	name_len:         int,
+	vec3_fields:      [MAX_COMMAND_FIELDS]Command_Vec3_Field,
+	vec3_field_count: int,
+}
+
+Command_Vec3_Field :: struct {
+	name:     [MAX_COMMAND_NAME_BYTES]u8,
+	name_len: int,
+	value:    Vec3,
 }
 
 Spawn_Command :: struct {
-	name:     [MAX_SPAWN_NAME_BYTES]u8,
-	name_len: int,
+	name:                   [MAX_COMMAND_NAME_BYTES]u8,
+	name_len:               int,
+	has_transform:          bool,
+	transform:              Transform_Component,
+	custom_components:      [MAX_COMMAND_COMPONENTS]Command_Component,
+	custom_component_count: int,
+}
+
+Add_Component_Command :: struct {
+	entity_index:  int,
+	generation:    u32,
+	has_transform: bool,
+	transform:     Transform_Component,
+	component:     Command_Component,
+}
+
+Remove_Component_Command :: struct {
+	entity_index: int,
+	generation:   u32,
+	name:         [MAX_COMMAND_NAME_BYTES]u8,
+	name_len:     int,
 }
 
 Command :: struct {
-	kind: Command_Kind,
-	spawn: Spawn_Command,
-	entity_index: int,
+	kind:             Command_Kind,
+	spawn:            Spawn_Command,
+	entity_index:     int,
+	generation:       u32,
+	add_component:    Add_Component_Command,
+	remove_component: Remove_Component_Command,
 }
 
 Command_Buffer :: struct {
-	commands: [MAX_COMMANDS]Command,
+	commands: []Command,
 	command_count: int,
 }
 
+init_command_buffer :: proc(buffer: ^Command_Buffer) {
+	buffer^ = {}
+	buffer.commands = make([]Command, MAX_COMMANDS)
+}
+
+destroy_command_buffer :: proc(buffer: ^Command_Buffer) {
+	delete(buffer.commands)
+	buffer^ = {}
+}
+
 queue_spawn :: proc "c" (buffer: ^Command_Buffer, name: string) -> string {
+	spawn: Spawn_Command
+	if err := init_spawn_command(&spawn, name); err != "" {
+		return err
+	}
+	return queue_spawn_command(buffer, spawn)
+}
+
+init_spawn_command :: proc "c" (spawn: ^Spawn_Command, name: string) -> string {
+	if spawn == nil {
+		return "spawn command is not available"
+	}
+	spawn^ = {}
+	if err := copy_command_string(spawn.name[:], &spawn.name_len, name, "spawn name"); err != "" {
+		return err
+	}
+	return ""
+}
+
+spawn_set_transform :: proc "c" (spawn: ^Spawn_Command, transform: Transform_Component) -> string {
+	if spawn == nil {
+		return "spawn command is not available"
+	}
+	spawn.has_transform = true
+	spawn.transform = transform
+	return ""
+}
+
+spawn_add_custom_component :: proc "c" (spawn: ^Spawn_Command, command_component: Command_Component) -> string {
+	if spawn == nil {
+		return "spawn command is not available"
+	}
+	if spawn.custom_component_count >= MAX_COMMAND_COMPONENTS {
+		return "too many spawn components"
+	}
+	spawn.custom_components[spawn.custom_component_count] = command_component
+	spawn.custom_component_count += 1
+	return ""
+}
+
+init_command_component :: proc "c" (command_component: ^Command_Component, name: string) -> string {
+	if command_component == nil {
+		return "component command is not available"
+	}
+	command_component^ = {}
+	if err := copy_command_string(command_component.name[:], &command_component.name_len, name, "component name"); err != "" {
+		return err
+	}
+	return ""
+}
+
+command_component_add_vec3 :: proc "c" (command_component: ^Command_Component, name: string, value: Vec3) -> string {
+	if command_component == nil {
+		return "component command is not available"
+	}
+	if command_component.vec3_field_count >= MAX_COMMAND_FIELDS {
+		return "too many component fields"
+	}
+
+	field := &command_component.vec3_fields[command_component.vec3_field_count]
+	if err := copy_command_string(field.name[:], &field.name_len, name, "component field name"); err != "" {
+		return err
+	}
+	field.value = value
+	command_component.vec3_field_count += 1
+	return ""
+}
+
+queue_spawn_command :: proc "c" (buffer: ^Command_Buffer, spawn: Spawn_Command) -> string {
 	if buffer == nil {
 		return "command buffer is not available"
 	}
-	if buffer.command_count >= MAX_COMMANDS {
-		return "too many deferred world commands"
+	if buffer.commands == nil {
+		return "command buffer is not initialized"
 	}
-	if len(name) >= MAX_SPAWN_NAME_BYTES {
-		return "spawn name is too long"
+	if buffer.command_count >= len(buffer.commands) {
+		return "too many deferred world commands"
 	}
 
 	command := &buffer.commands[buffer.command_count]
-	command^ = Command{kind = .Spawn}
-	command.spawn.name_len = len(name)
-	name_bytes := (cast([^]u8)raw_data(name))[:len(name)]
-	for byte_value, index in name_bytes {
-		command.spawn.name[index] = byte_value
-	}
+	command^ = Command{kind = .Spawn, spawn = spawn}
 	buffer.command_count += 1
 	return ""
 }
 
-queue_despawn :: proc "c" (buffer: ^Command_Buffer, entity_index: int) -> string {
+queue_despawn :: proc "c" (buffer: ^Command_Buffer, entity_index: int, generation: u32) -> string {
 	if buffer == nil {
 		return "command buffer is not available"
 	}
-	if buffer.command_count >= MAX_COMMANDS {
+	if buffer.commands == nil {
+		return "command buffer is not initialized"
+	}
+	if buffer.command_count >= len(buffer.commands) {
 		return "too many deferred world commands"
 	}
 
 	buffer.commands[buffer.command_count] = Command {
 		kind         = .Despawn,
 		entity_index = entity_index,
+		generation   = generation,
+	}
+	buffer.command_count += 1
+	return ""
+}
+
+queue_add_transform :: proc "c" (
+	buffer: ^Command_Buffer,
+	entity_index: int,
+	generation: u32,
+	transform: Transform_Component,
+) -> string {
+	if buffer == nil {
+		return "command buffer is not available"
+	}
+	if buffer.commands == nil {
+		return "command buffer is not initialized"
+	}
+	if buffer.command_count >= len(buffer.commands) {
+		return "too many deferred world commands"
+	}
+
+	buffer.commands[buffer.command_count] = Command {
+		kind = .Add_Component,
+		add_component = Add_Component_Command {
+			entity_index  = entity_index,
+			generation    = generation,
+			has_transform = true,
+			transform     = transform,
+		},
+	}
+	buffer.command_count += 1
+	return ""
+}
+
+queue_add_custom_component :: proc "c" (
+	buffer: ^Command_Buffer,
+	entity_index: int,
+	generation: u32,
+	command_component: Command_Component,
+) -> string {
+	if buffer == nil {
+		return "command buffer is not available"
+	}
+	if buffer.commands == nil {
+		return "command buffer is not initialized"
+	}
+	if buffer.command_count >= len(buffer.commands) {
+		return "too many deferred world commands"
+	}
+
+	buffer.commands[buffer.command_count] = Command {
+		kind = .Add_Component,
+		add_component = Add_Component_Command {
+			entity_index = entity_index,
+			generation   = generation,
+			component    = command_component,
+		},
+	}
+	buffer.command_count += 1
+	return ""
+}
+
+queue_remove_component :: proc "c" (
+	buffer: ^Command_Buffer,
+	entity_index: int,
+	generation: u32,
+	name: string,
+) -> string {
+	if buffer == nil {
+		return "command buffer is not available"
+	}
+	if buffer.commands == nil {
+		return "command buffer is not initialized"
+	}
+	if buffer.command_count >= len(buffer.commands) {
+		return "too many deferred world commands"
+	}
+
+	remove: Remove_Component_Command
+	remove.entity_index = entity_index
+	remove.generation = generation
+	if err := copy_command_string(remove.name[:], &remove.name_len, name, "component name"); err != "" {
+		return err
+	}
+
+	buffer.commands[buffer.command_count] = Command {
+		kind             = .Remove_Component,
+		remove_component = remove,
 	}
 	buffer.command_count += 1
 	return ""
@@ -66,14 +270,21 @@ apply_commands :: proc(world: ^World, buffer: ^Command_Buffer) -> string {
 	if world == nil || buffer == nil {
 		return ""
 	}
+	if buffer.commands == nil {
+		return ""
+	}
 
 	for command_index in 0..<buffer.command_count {
 		command := &buffer.commands[command_index]
 		switch command.kind {
 		case .Spawn:
-			spawn_entity(world, spawn_command_name(&command.spawn))
+			spawn_entity(world, &command.spawn)
 		case .Despawn:
-			despawn_entity(world, command.entity_index)
+			despawn_entity(world, command.entity_index, command.generation)
+		case .Add_Component:
+			apply_add_component(world, &command.add_component)
+		case .Remove_Component:
+			apply_remove_component(world, &command.remove_component)
 		}
 	}
 	buffer.command_count = 0
@@ -86,25 +297,35 @@ clear_commands :: proc "c" (buffer: ^Command_Buffer) {
 	}
 }
 
-spawn_entity :: proc(world: ^World, name: string) -> int {
+spawn_entity :: proc(world: ^World, spawn: ^Spawn_Command) -> int {
 	entity_index := len(world.entities)
 	id := Entity{index = u32(entity_index), generation = 1}
+	transform_index := INVALID_COMPONENT_INDEX
+	if spawn.has_transform {
+		transform_index = len(world.transforms)
+		append_soa(&world.transforms, spawn.transform)
+	}
+
 	append(
 		&world.entities,
 		World_Entity {
 			id              = id,
 			alive           = true,
-			name            = clone_world_string(name),
-			transform_index = INVALID_COMPONENT_INDEX,
+			name            = clone_world_string(spawn_command_name(spawn)),
+			transform_index = transform_index,
 			camera_index    = INVALID_COMPONENT_INDEX,
 			mesh_index      = INVALID_COMPONENT_INDEX,
 		},
 	)
+
+	for i in 0..<spawn.custom_component_count {
+		add_custom_component(world, entity_index, &spawn.custom_components[i])
+	}
 	return entity_index
 }
 
-despawn_entity :: proc(world: ^World, entity_index: int) {
-	if !entity_is_alive(world, entity_index) {
+despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
+	if !entity_is_current(world, entity_index, generation) {
 		return
 	}
 
@@ -118,6 +339,56 @@ despawn_entity :: proc(world: ^World, entity_index: int) {
 	entity.mesh_index = INVALID_COMPONENT_INDEX
 }
 
+apply_add_component :: proc(world: ^World, command: ^Add_Component_Command) {
+	if !entity_is_current(world, command.entity_index, command.generation) {
+		return
+	}
+	if command.has_transform {
+		add_transform(world, command.entity_index, command.transform)
+		return
+	}
+	add_custom_component(world, command.entity_index, &command.component)
+}
+
+apply_remove_component :: proc(world: ^World, command: ^Remove_Component_Command) {
+	if !entity_is_current(world, command.entity_index, command.generation) {
+		return
+	}
+	name := remove_component_name(command)
+	if name == "scrapbot.transform" {
+		remove_transform(world, command.entity_index)
+		return
+	}
+	remove_custom_component(world, command.entity_index, name)
+}
+
 spawn_command_name :: proc(spawn: ^Spawn_Command) -> string {
 	return string(spawn.name[:spawn.name_len])
+}
+
+command_component_name :: proc(command_component: ^Command_Component) -> string {
+	return string(command_component.name[:command_component.name_len])
+}
+
+command_field_name :: proc(field: ^Command_Vec3_Field) -> string {
+	return string(field.name[:field.name_len])
+}
+
+remove_component_name :: proc(command: ^Remove_Component_Command) -> string {
+	return string(command.name[:command.name_len])
+}
+
+copy_command_string :: proc "c" (dest: []u8, out_len: ^int, value: string, label: string) -> string {
+	if len(value) >= len(dest) {
+		return "command string is too long"
+	}
+	out_len^ = len(value)
+	if len(value) == 0 {
+		return ""
+	}
+	value_bytes := (cast([^]u8)raw_data(value))[:len(value)]
+	for byte_value, index in value_bytes {
+		dest[index] = byte_value
+	}
+	return ""
 }

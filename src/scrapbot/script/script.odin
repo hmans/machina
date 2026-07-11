@@ -83,7 +83,9 @@ run_source :: proc(runtime: ^Runtime, source, chunk_name: string, world: ^World)
 
 run_source_with_options :: proc(runtime: ^Runtime, source, chunk_name: string, world: ^World, options: Source_Options) -> Run_Result {
 	result: Run_Result
+	destroy_runtime(runtime)
 	runtime^ = {}
+	ecs.init_command_buffer(&runtime.commands)
 	runtime.world = world
 	runtime.log_enabled = options.log_enabled
 	component.init_registry(&runtime.registry)
@@ -144,6 +146,7 @@ destroy_runtime :: proc(runtime: ^Runtime) {
 		}
 		lua_close(runtime.L)
 	}
+	ecs.destroy_command_buffer(&runtime.commands)
 	runtime^ = {}
 }
 
@@ -194,7 +197,7 @@ step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> st
 }
 
 register_scrapbot_api :: proc(L: Lua_State) {
-	lua_createtable(L, 0, 11)
+	lua_createtable(L, 0, 13)
 
 	lua_pushcclosurek(L, scrapbot_log, "scrapbot.log", 0, nil)
 	lua_setfield(L, -2, "log")
@@ -225,6 +228,12 @@ register_scrapbot_api :: proc(L: Lua_State) {
 
 	lua_pushcclosurek(L, scrapbot_despawn, "scrapbot.despawn", 0, nil)
 	lua_setfield(L, -2, "despawn")
+
+	lua_pushcclosurek(L, scrapbot_add_component, "scrapbot.add_component", 0, nil)
+	lua_setfield(L, -2, "add_component")
+
+	lua_pushcclosurek(L, scrapbot_remove_component, "scrapbot.remove_component", 0, nil)
+	lua_setfield(L, -2, "remove_component")
 
 	lua_setfield(L, LUA_GLOBALSINDEX, "scrapbot")
 }
@@ -259,7 +268,7 @@ scrapbot_renderable_count :: proc "c" (L: Lua_State) -> c.int {
 	runtime := cast(^Runtime)lua_getthreaddata(L)
 	count := 0
 	if runtime != nil && runtime.world != nil {
-		count = len(runtime.world.renderables)
+		count = ecs.alive_renderable_count(runtime.world)
 	}
 	lua_pushinteger(L, c.ptrdiff_t(count))
 	return 1
@@ -500,20 +509,30 @@ scrapbot_spawn :: proc "c" (L: Lua_State) -> c.int {
 		return 0
 	}
 
-	name := ""
+	spawn: ecs.Spawn_Command
+	if err := ecs.init_spawn_command(&spawn, ""); err != "" {
+		return luau_push_error(L, err)
+	}
 	if lua_type(L, 1) == LUA_TTABLE {
 		name_length: c.size_t
 		lua_getfield(L, 1, "name")
 		name_data := lua_tolstring(L, -1, &name_length)
 		if name_data != nil {
-			name = luau_string(name_data, name_length)
+			if err := ecs.init_spawn_command(&spawn, luau_string(name_data, name_length)); err != "" {
+				lua_settop(L, -2)
+				return luau_push_error(L, err)
+			}
 		}
 		lua_settop(L, -2)
+
+		if err := read_spawn_components(L, runtime, 1, &spawn); err != "" {
+			return luau_push_error(L, err)
+		}
 	} else if lua_type(L, 1) != LUA_TNONE && lua_type(L, 1) != LUA_TNIL {
 		return luau_push_error(L, "scrapbot.spawn expects an optional entity options table")
 	}
 
-	if err := ecs.queue_spawn(&runtime.commands, name); err != "" {
+	if err := ecs.queue_spawn_command(&runtime.commands, spawn); err != "" {
 		return luau_push_error(L, err)
 	}
 	return 0
@@ -521,15 +540,205 @@ scrapbot_spawn :: proc "c" (L: Lua_State) -> c.int {
 
 scrapbot_despawn :: proc "c" (L: Lua_State) -> c.int {
 	runtime := cast(^Runtime)lua_getthreaddata(L)
-	entity_index, ok := entity_index_argument(L, 1)
-	if runtime == nil || !ok {
+	if runtime == nil {
+		return 0
+	}
+	entity, ok := entity_argument(L, 1, runtime.world)
+	if !ok {
 		return luau_push_error(L, "scrapbot.despawn expects an entity")
 	}
 
-	if err := ecs.queue_despawn(&runtime.commands, entity_index); err != "" {
+	if err := ecs.queue_despawn(&runtime.commands, entity.index, entity.generation); err != "" {
 		return luau_push_error(L, err)
 	}
 	return 0
+}
+
+scrapbot_add_component :: proc "c" (L: Lua_State) -> c.int {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	if runtime == nil {
+		return 0
+	}
+	entity, entity_ok := entity_argument(L, 1, runtime.world)
+	if !entity_ok {
+		return luau_push_error(L, "scrapbot.add_component expects an entity")
+	}
+	component_name, component_err := component_reference_argument(L, runtime, 2)
+	if component_err != "" {
+		return luau_push_error(L, component_err)
+	}
+	if lua_type(L, 3) != LUA_TTABLE {
+		return luau_push_error(L, "scrapbot.add_component expects a component payload table")
+	}
+
+	if component_name == "scrapbot.transform" {
+		transform, err := read_transform_payload(L, 3)
+		if err != "" {
+			return luau_push_error(L, err)
+		}
+		if err = ecs.queue_add_transform(&runtime.commands, entity.index, entity.generation, transform); err != "" {
+			return luau_push_error(L, err)
+		}
+		return 0
+	}
+
+	command_component: ecs.Command_Component
+	if err := read_custom_component_payload(L, runtime, component_name, 3, &command_component); err != "" {
+		return luau_push_error(L, err)
+	}
+	if err := ecs.queue_add_custom_component(&runtime.commands, entity.index, entity.generation, command_component); err != "" {
+		return luau_push_error(L, err)
+	}
+	return 0
+}
+
+scrapbot_remove_component :: proc "c" (L: Lua_State) -> c.int {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	if runtime == nil {
+		return 0
+	}
+	entity, entity_ok := entity_argument(L, 1, runtime.world)
+	if !entity_ok {
+		return luau_push_error(L, "scrapbot.remove_component expects an entity")
+	}
+	component_name, component_err := component_reference_argument(L, runtime, 2)
+	if component_err != "" {
+		return luau_push_error(L, component_err)
+	}
+	if component_name != "scrapbot.transform" && !shared.component_name_is_project_level(component_name) {
+		return luau_push_error(L, "runtime component removal only supports scrapbot.transform and project components")
+	}
+	if err := ecs.queue_remove_component(&runtime.commands, entity.index, entity.generation, component_name); err != "" {
+		return luau_push_error(L, err)
+	}
+	return 0
+}
+
+read_spawn_components :: proc "c" (
+	L: Lua_State,
+	runtime: ^Runtime,
+	options_index: c.int,
+	spawn: ^ecs.Spawn_Command,
+) -> string {
+	lua_getfield(L, options_index, "components")
+	defer lua_settop(L, -2)
+	if lua_type(L, -1) == LUA_TNIL {
+		return ""
+	}
+	if lua_type(L, -1) != LUA_TTABLE {
+		return "spawn components must be a table"
+	}
+
+	lua_pushnil(L)
+	for lua_next(L, -2) != 0 {
+		if lua_type(L, -2) != LUA_TSTRING || lua_type(L, -1) != LUA_TTABLE {
+			return "spawn components must map component names to payload tables"
+		}
+		name_length: c.size_t
+		name_data := lua_tolstring(L, -2, &name_length)
+		if name_data == nil {
+			return "spawn component names must be strings"
+		}
+		component_name := luau_string(name_data, name_length)
+
+		if component_name == "scrapbot.transform" {
+			transform, err := read_transform_payload(L, -1)
+			if err != "" {
+				return err
+			}
+			if err = ecs.spawn_set_transform(spawn, transform); err != "" {
+				return err
+			}
+		} else {
+			command_component: ecs.Command_Component
+			if err := read_custom_component_payload(L, runtime, component_name, -1, &command_component); err != "" {
+				return err
+			}
+			if err := ecs.spawn_add_custom_component(spawn, command_component); err != "" {
+				return err
+			}
+		}
+
+		lua_settop(L, -2)
+	}
+	return ""
+}
+
+read_transform_payload :: proc "c" (L: Lua_State, payload_index: c.int) -> (transform: Transform_Component, err: string) {
+	transform.scale = Vec3{1, 1, 1}
+
+	if value, found, ok := optional_vec3_field(L, payload_index, "position"); found {
+		if !ok {
+			return transform, "scrapbot.transform.position must be a vec3"
+		}
+		transform.position = value
+	}
+	if value, found, ok := optional_vec3_field(L, payload_index, "rotation"); found {
+		if !ok {
+			return transform, "scrapbot.transform.rotation must be a vec3"
+		}
+		transform.rotation = value
+	}
+	if value, found, ok := optional_vec3_field(L, payload_index, "scale"); found {
+		if !ok {
+			return transform, "scrapbot.transform.scale must be a vec3"
+		}
+		transform.scale = value
+	}
+
+	return transform, ""
+}
+
+read_custom_component_payload :: proc "c" (
+	L: Lua_State,
+	runtime: ^Runtime,
+	component_name: string,
+	payload_index: c.int,
+	command_component: ^ecs.Command_Component,
+) -> string {
+	definition, registered := component.find_definition(&runtime.registry, component_name)
+	if !registered {
+		if shared.component_name_is_project_level(component_name) {
+			return "runtime component payload references an unregistered project component"
+		}
+		return "runtime component payload references an unregistered component"
+	}
+	if definition.owner != .Project {
+		return "runtime component mutation only supports scrapbot.transform and project components"
+	}
+	if err := ecs.init_command_component(command_component, component_name); err != "" {
+		return err
+	}
+
+	for i in 0..<definition.field_count {
+		field := definition.fields[i]
+		if field.field_type != component.Field_Type.Vec3 {
+			return "unsupported component field type"
+		}
+		value, found, ok := optional_vec3_field(L, payload_index, cstring(raw_data(field.name)))
+		if !found {
+			return "component payload is missing a required field"
+		}
+		if !ok {
+			return "component payload field must be a vec3"
+		}
+		if err := ecs.command_component_add_vec3(command_component, field.name, value); err != "" {
+			return err
+		}
+	}
+
+	return ""
+}
+
+optional_vec3_field :: proc "c" (L: Lua_State, index: c.int, name: cstring) -> (value: Vec3, found, ok: bool) {
+	lua_getfield(L, index, name)
+	if lua_type(L, -1) == LUA_TNIL {
+		lua_settop(L, -2)
+		return {}, false, true
+	}
+	value, ok = vec3_argument(L, -1)
+	lua_settop(L, -2)
+	return value, true, ok
 }
 
 push_component_handle :: proc "c" (L: Lua_State, name: string) {
@@ -540,13 +749,17 @@ push_component_handle :: proc "c" (L: Lua_State, name: string) {
 
 scrapbot_get_rotation :: proc "c" (L: Lua_State) -> c.int {
 	runtime := cast(^Runtime)lua_getthreaddata(L)
-	entity_index, ok := entity_index_argument(L, 1)
-	if !ok || runtime == nil || runtime.world == nil || !ecs.entity_is_alive(runtime.world, entity_index) {
+	if runtime == nil || runtime.world == nil {
+		lua_pushnil(L)
+		return 1
+	}
+	entity, ok := entity_argument(L, 1, runtime.world)
+	if !ok {
 		lua_pushnil(L)
 		return 1
 	}
 
-	transform_index := runtime.world.entities[entity_index].transform_index
+	transform_index := runtime.world.entities[entity.index].transform_index
 	if transform_index < 0 || transform_index >= len(runtime.world.transforms) {
 		lua_pushnil(L)
 		return 1
@@ -558,14 +771,16 @@ scrapbot_get_rotation :: proc "c" (L: Lua_State) -> c.int {
 
 scrapbot_set_rotation :: proc "c" (L: Lua_State) -> c.int {
 	runtime := cast(^Runtime)lua_getthreaddata(L)
-	entity_index, entity_ok := entity_index_argument(L, 1)
+	if runtime == nil || runtime.world == nil {
+		return 0
+	}
+	entity, entity_ok := entity_argument(L, 1, runtime.world)
 	rotation, rotation_ok := vec3_argument(L, 2)
-	if !entity_ok || !rotation_ok || runtime == nil || runtime.world == nil ||
-	   !ecs.entity_is_alive(runtime.world, entity_index) {
+	if !entity_ok || !rotation_ok {
 		return 0
 	}
 
-	transform_index := runtime.world.entities[entity_index].transform_index
+	transform_index := runtime.world.entities[entity.index].transform_index
 	if transform_index < 0 || transform_index >= len(runtime.world.transforms) {
 		return 0
 	}
@@ -577,10 +792,12 @@ scrapbot_set_rotation :: proc "c" (L: Lua_State) -> c.int {
 }
 
 push_entity_table :: proc "c" (L: Lua_State, world: ^World, entity_index: int) {
-	lua_createtable(L, 0, 2)
+	lua_createtable(L, 0, 3)
 	lua_pushinteger(L, c.ptrdiff_t(entity_index + 1))
 	lua_setfield(L, -2, "index")
 	if ecs.entity_is_alive(world, entity_index) {
+		lua_pushinteger(L, c.ptrdiff_t(world.entities[entity_index].id.generation))
+		lua_setfield(L, -2, "generation")
 		name := world.entities[entity_index].name
 		lua_pushlstring(L, cstring(raw_data(name)), c.size_t(len(name)))
 		lua_setfield(L, -2, "name")
@@ -606,18 +823,36 @@ push_vec3_table :: proc "c" (L: Lua_State, value: Vec3) {
 	lua_setfield(L, -2, "z")
 }
 
-entity_index_argument :: proc "c" (L: Lua_State, index: c.int) -> (entity_index: int, ok: bool) {
+Script_Entity :: struct {
+	index:      int,
+	generation: u32,
+}
+
+entity_argument :: proc "c" (L: Lua_State, index: c.int, world: ^World) -> (entity: Script_Entity, ok: bool) {
 	if lua_type(L, index) != LUA_TTABLE {
-		return -1, false
+		return {}, false
 	}
 	is_number: c.int
 	lua_getfield(L, index, "index")
 	value := lua_tointegerx(L, -1, &is_number)
 	lua_settop(L, -2)
 	if is_number == 0 {
-		return -1, false
+		return {}, false
 	}
-	return int(value) - 1, true
+
+	generation_number: c.int
+	lua_getfield(L, index, "generation")
+	generation := lua_tointegerx(L, -1, &generation_number)
+	lua_settop(L, -2)
+	if generation_number == 0 {
+		return {}, false
+	}
+
+	entity = Script_Entity{index = int(value) - 1, generation = u32(generation)}
+	if !ecs.entity_is_current(world, entity.index, entity.generation) {
+		return {}, false
+	}
+	return entity, true
 }
 
 vec3_argument :: proc "c" (L: Lua_State, index: c.int) -> (value: Vec3, ok: bool) {

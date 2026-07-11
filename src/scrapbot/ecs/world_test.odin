@@ -128,6 +128,8 @@ test_deferred_commands_spawn_entities_when_applied :: proc(t: ^testing.T) {
 	defer destroy_world(&world)
 
 	commands: Command_Buffer
+	init_command_buffer(&commands)
+	defer destroy_command_buffer(&commands)
 	err := queue_spawn(&commands, "Spawned")
 	testing.expect(t, err == "")
 	testing.expect(t, alive_entity_count(&world) == 0)
@@ -149,7 +151,9 @@ test_deferred_commands_despawn_entities_without_shifting_indices :: proc(t: ^tes
 	defer destroy_world(&world)
 
 	commands: Command_Buffer
-	err := queue_despawn(&commands, 1)
+	init_command_buffer(&commands)
+	defer destroy_command_buffer(&commands)
+	err := queue_despawn(&commands, 1, world.entities[1].id.generation)
 	testing.expect(t, err == "")
 	testing.expect(t, alive_entity_count(&world) == 3)
 	testing.expect(t, render_frame_from_world(&world).renderable_count == 2)

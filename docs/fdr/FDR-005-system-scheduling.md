@@ -19,7 +19,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 - Unknown component names in system access declarations fail script loading.
 - Scheduled Luau batches currently execute serially in deterministic batch order.
 - Structural world changes requested from Luau systems are queued in a deferred command buffer and applied after all scheduled systems finish for the frame.
-- Deferred commands currently support spawning named entities and despawning entities without shifting existing entity indices.
+- Deferred commands currently support spawning named entities with initial transform/project component payloads, despawning entities without shifting existing entity indices, and adding/removing `scrapbot.transform` or project components.
 
 ## Design Decisions
 
@@ -43,9 +43,9 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 
 ### 4. Defer structural world mutation until the frame boundary
 
-**Decision:** Queue Luau `spawn` and `despawn` requests during system execution, then apply them after the scheduled frame step completes.
+**Decision:** Queue Luau entity/component lifecycle requests during system execution, then apply them after the scheduled frame step completes.
 **Why:** Queries and future parallel system batches need stable entity/component storage while systems are running.
-**Tradeoff:** Script code observes structural changes on the next frame, and the first command buffer has a fixed capacity and only supports basic entity lifecycle commands.
+**Tradeoff:** Script code observes structural changes on the next frame, and the first command buffer has a fixed capacity and only supports basic transform/project-component mutation.
 
 ## Related
 
