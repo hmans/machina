@@ -146,9 +146,7 @@ local Autorotating = scrapbot.query(scrapbot.transform, AutorotateComponent)
 scrapbot.system(Autorotating, {
 	writes = { scrapbot.transform },
 }, function(delta_seconds, entity, transform, autorotate)
-	local rotation = transform.rotation
-	rotation.y += autorotate.velocity.y * delta_seconds
-	scrapbot.set_rotation(entity, rotation)
+	transform.rotation.y += autorotate.velocity.y * delta_seconds
 end)
 `, "=test", &world)
 	testing.expect(t, result.err == "")
@@ -166,6 +164,46 @@ end)
 	step_err := step_runtime(&runtime, &world, 0.5)
 	testing.expect(t, step_err == "")
 	testing.expect(t, world.transforms[0].rotation.y == 1)
+}
+
+@(test)
+test_luau_query_system_rejects_transform_payload_write_without_access :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(`[[entities]]
+name = "Spinner"
+
+[entities.transform]
+position = [0, 0, 0]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+
+[entities.components.autorotate]
+velocity = [0, 2, 0]
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(&runtime, `
+local AutorotateComponent = scrapbot.component("autorotate", {
+	velocity = "vec3",
+})
+
+local Autorotating = scrapbot.query(scrapbot.transform, AutorotateComponent)
+
+scrapbot.system(Autorotating, function(delta_seconds, entity, transform, autorotate)
+	transform.rotation.y += autorotate.velocity.y * delta_seconds
+end)
+`, "=test", &world)
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+
+	step_err := step_runtime(&runtime, &world, 0.5)
+	testing.expect(t, step_err == "Luau system: system access declaration does not permit component write")
+	testing.expect(t, world.transforms[0].rotation.y == 0)
 }
 
 @(test)

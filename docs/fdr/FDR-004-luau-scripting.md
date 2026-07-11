@@ -33,12 +33,14 @@ Luau scripting lets project directories include fast-iteration game code without
 - Query object construction is order-insensitive: repeated calls with the same component set return the same object, and query payloads use Scrapbot's canonical component order.
 - Query objects can iterate matching entities with `query:each(callback)`. Callback parameters receive the entity followed by component payloads in query order.
 - Scripts can pass a query object to `scrapbot.system(query, options?, callback)` to run the system callback once per matching entity. Query components are declared as system reads automatically.
+- Query-driven systems can mutate `scrapbot.transform` payload tables directly when the system declares a `scrapbot.transform` write.
+- Mutating a `scrapbot.transform` payload table without declared transform write access fails the system step and leaves the world unchanged.
 - Generated Luau types currently provide precise `query:each` callback payload types for one-, two-, and three-component query objects. Query-driven systems are runtime-supported, while Luau analyzer inference is currently most reliable for the common one- and two-component cases.
 - Scripts can request a bulk query result with `scrapbot.view(component_handle)`, which returns alive entity/component items for the component type.
 - Scripts can request a joined bulk query result with `scrapbot.view(query)` or `scrapbot.view({ component_a, component_b })`, which returns alive entities and a component payload array in query order.
 - Runtime queries use component IDs from handles to select one component storage group, while project files and diagnostics remain name-based.
 - Project scripts annotate query callback component parameters with generated component payload aliases such as `Autorotate`.
-- Scripts can read and write entity rotation through `scrapbot.get_rotation(entity)` and `scrapbot.set_rotation(entity, rotation)`.
+- Scripts can read and write entity rotation through `scrapbot.get_rotation(entity)` and `scrapbot.set_rotation(entity, rotation)`, but query-driven systems should prefer direct `scrapbot.transform` payload mutation.
 - Script entity handles include an entity index, generation, and optional name. APIs reject stale handles whose generation no longer matches the world.
 - Scripts can queue entity lifecycle changes with `scrapbot.spawn({ name = "..." })` and `scrapbot.despawn(entity)`.
 - Spawn options may include initial `scrapbot.transform` data and project component payloads.
@@ -105,7 +107,7 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 **Decision:** Let Luau systems declare component reads and writes in an options table before the callback.
 **Why:** The same script API that users write now should produce the scheduling metadata needed for future parallel execution.
-**Tradeoff:** Access declarations are manually maintained for now. The runtime validates component names, but it does not yet enforce that system bodies only touch declared components.
+**Tradeoff:** Access declarations are manually maintained for now. The runtime validates component names and enforces writes that go through Scrapbot APIs or query-system transform payload write-back, but it does not yet statically prove that system bodies only touch declared components.
 
 ### 9. Expose entity and component lifecycle through deferred commands
 
@@ -135,7 +137,7 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 **Decision:** Expose built-in component handles such as `scrapbot.transform` directly on the Luau API and allow query objects and views to mix those handles with project component handles.
 **Why:** Gameplay systems usually operate over a set of components, not one project component plus ad hoc helper calls. Built-in handles make query code and system access declarations line up.
-**Tradeoff:** Built-in component payloads are still copied into Luau tables, and only transform exposes real fields today. Mutating those payload tables does not yet write back automatically.
+**Tradeoff:** Built-in component payloads are still copied into Luau tables, and only transform exposes real fields today. Direct payload write-back is currently limited to query-driven systems that declare `scrapbot.transform` writes; `query:each` and bulk views remain read/copy APIs.
 
 ### 14. Make queries reusable values
 

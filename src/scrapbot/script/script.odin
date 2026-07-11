@@ -60,6 +60,13 @@ Query_Object :: struct {
 	ref: c.int,
 }
 
+Transform_Writeback :: struct {
+	ref: c.int,
+	transform_index: int,
+	original: Transform_Component,
+	can_write: bool,
+}
+
 Component_Reference :: struct {
 	name: string,
 	id:   Component_ID,
@@ -227,13 +234,33 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 			lua_rawgeti(L, LUA_REGISTRYINDEX, system.callback_ref)
 			lua_pushnumber(L, f64(delta_seconds))
 			push_entity_table(L, runtime.world, entity_index)
+			writebacks: [ecs.MAX_QUERY_TERMS]Transform_Writeback
+			writeback_count := 0
 			for term_index in 0..<system.query.term_count {
 				term := system.query.terms[term_index]
 				push_query_component_table(L, runtime.world, entity_index, term)
+				if term.name == "scrapbot.transform" {
+					transform_index := runtime.world.entities[entity_index].transform_index
+					if transform_index >= 0 && transform_index < len(runtime.world.transforms) {
+						writebacks[writeback_count] = Transform_Writeback {
+							ref = lua_ref(L, -1),
+							transform_index = transform_index,
+							original = runtime.world.transforms[transform_index],
+							can_write = system_allows_component_access(system.declaration, "scrapbot.transform", .Write),
+						}
+						writeback_count += 1
+					}
+				}
 			}
 			status := lua_pcall(L, c.int(system.query.term_count + 2), 0, 0)
 			if status != LUA_OK {
+				for writeback in writebacks[:writeback_count] {
+					lua_unref(L, writeback.ref)
+				}
 				return luau_stack_error(L, "Luau system")
+			}
+			if err := apply_transform_writebacks(L, runtime.world, writebacks[:writeback_count]); err != "" {
+				return err
 			}
 		}
 		return ""
@@ -246,6 +273,83 @@ run_script_system :: proc(runtime: ^Runtime, L: Lua_State, system: Script_System
 		return luau_stack_error(L, "Luau system")
 	}
 	return ""
+}
+
+apply_transform_writebacks :: proc "c" (
+	L: Lua_State,
+	world: ^World,
+	writebacks: []Transform_Writeback,
+) -> string {
+	transforms: [ecs.MAX_QUERY_TERMS]Transform_Component
+	changed: [ecs.MAX_QUERY_TERMS]bool
+	first_err := ""
+
+	for writeback, index in writebacks {
+		lua_rawgeti(L, LUA_REGISTRYINDEX, writeback.ref)
+		transform, err := read_full_transform_table(L, -1)
+		lua_settop(L, -2)
+		lua_unref(L, writeback.ref)
+		if err != "" {
+			if first_err == "" {
+				if !writeback.can_write {
+					first_err = "Luau system: system access declaration does not permit component write"
+				} else {
+					first_err = "Luau system: invalid scrapbot.transform payload"
+				}
+			}
+			continue
+		}
+		if transform == writeback.original {
+			continue
+		}
+		if !writeback.can_write {
+			if first_err == "" {
+				first_err = "Luau system: system access declaration does not permit component write"
+			}
+			continue
+		}
+		transforms[index] = transform
+		changed[index] = true
+	}
+
+	if first_err != "" {
+		return first_err
+	}
+
+	for writeback, index in writebacks {
+		if world != nil && writeback.transform_index >= 0 && writeback.transform_index < len(world.transforms) {
+			if changed[index] {
+				world.transforms[writeback.transform_index] = transforms[index]
+			}
+		}
+	}
+	return ""
+}
+
+system_allows_component_access :: proc "c" (
+	declaration: schedule.System,
+	component_name: string,
+	mode: schedule.Access_Mode,
+) -> bool {
+	if declaration.access_count == 0 {
+		return true
+	}
+	for i in 0..<declaration.access_count {
+		access := declaration.accesses[i]
+		if access.component != component_name {
+			continue
+		}
+		if mode == .Read {
+			if access.mode == .Read || access.mode == .Write {
+				return true
+			}
+			continue
+		}
+		if access.mode == .Write {
+			return true
+		}
+	}
+	return false
 }
 
 step_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32) -> string {
@@ -1080,6 +1184,27 @@ read_transform_payload :: proc "c" (L: Lua_State, payload_index: c.int) -> (tran
 	return transform, ""
 }
 
+read_full_transform_table :: proc "c" (L: Lua_State, payload_index: c.int) -> (transform: Transform_Component, err: string) {
+	value, ok := required_vec3_field(L, payload_index, "position")
+	if !ok {
+		return transform, "scrapbot.transform.position must be a vec3"
+	}
+	transform.position = value
+
+	value, ok = required_vec3_field(L, payload_index, "rotation")
+	if !ok {
+		return transform, "scrapbot.transform.rotation must be a vec3"
+	}
+	transform.rotation = value
+
+	value, ok = required_vec3_field(L, payload_index, "scale")
+	if !ok {
+		return transform, "scrapbot.transform.scale must be a vec3"
+	}
+	transform.scale = value
+	return transform, ""
+}
+
 read_custom_component_payload :: proc "c" (
 	L: Lua_State,
 	runtime: ^Runtime,
@@ -1133,6 +1258,13 @@ optional_vec3_field :: proc "c" (L: Lua_State, index: c.int, name: cstring) -> (
 	value, ok = vec3_argument(L, -1)
 	lua_settop(L, -2)
 	return value, true, ok
+}
+
+required_vec3_field :: proc "c" (L: Lua_State, index: c.int, name: cstring) -> (value: Vec3, ok: bool) {
+	lua_getfield(L, index, name)
+	value, ok = vec3_argument(L, -1)
+	lua_settop(L, -2)
+	return value, ok
 }
 
 push_registered_component_handle_by_name :: proc "c" (L: Lua_State, name: string) {
