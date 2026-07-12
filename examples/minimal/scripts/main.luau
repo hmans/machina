@@ -3,23 +3,26 @@ scrapbot.log("entities: " .. tostring(scrapbot.entity_count()))
 scrapbot.log("renderables: " .. tostring(scrapbot.renderable_count()))
 
 -- Luau-defined project component and system.
-local DriftComponent = scrapbot.component("drift", {
-	velocity = scrapbot.vec3,
-}) :: DriftComponent
+-- wave stores phase, angular speed, and amplitude.
+local FloatComponent = scrapbot.component("float", {
+	origin = scrapbot.vec3,
+	wave = scrapbot.vec3,
+}) :: FloatComponent
 
 local SpinComponent = scrapbot.component_handle("scrappyphysics.spin") :: ScrappyphysicsSpinComponent
 local RigidbodyComponent = scrapbot.component_handle("scrappyphysics.rigidbody") :: ScrappyphysicsRigidbodyComponent
 
-local Drifting = scrapbot.query(scrapbot.transform, DriftComponent)
+local Floating = scrapbot.query(scrapbot.transform, FloatComponent)
 local Spinners = scrapbot.query(SpinComponent)
 local Rigidbodies = scrapbot.query(RigidbodyComponent)
 
-scrapbot.system(Drifting, {
-	writes = { scrapbot.transform },
-}, function(delta_seconds: number, entity: ScrapbotEntity, transform: ScrapbotTransform, drift: Drift)
-	transform.position.x += drift.velocity.x * delta_seconds
-	transform.position.y += drift.velocity.y * delta_seconds
-	transform.position.z += drift.velocity.z * delta_seconds
+scrapbot.system(Floating, {
+	writes = { scrapbot.transform, FloatComponent },
+}, function(delta_seconds: number, entity: ScrapbotEntity, transform: ScrapbotTransform, float: Float)
+	float.wave.x += float.wave.y * delta_seconds
+	transform.position.x = float.origin.x
+	transform.position.y = float.origin.y + math.sin(float.wave.x) * float.wave.z
+	transform.position.z = float.origin.z
 end)
 
 -- Scheduling metadata: this system reads native extension component data.

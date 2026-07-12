@@ -24,7 +24,7 @@ mise scrapbot -- run examples/minimal
 
 `run` builds declared native extensions, loads the scene into the ECS world, executes `scripts/main.luau`, steps registered native and Luau systems, and renders through the selected backend.
 
-The minimal example intentionally contains both sides of the current ECS authoring model: Luau registers a project-level `drift` component and movement system, while the project-local Odin extension registers `scrappyphysics.*` components and native systems.
+The minimal example intentionally contains both sides of the current ECS authoring model: Luau registers a project-level `float` component and bounded floating system, while the project-local Odin extension registers `scrappyphysics.*` components and native systems.
 
 ## Create a new project
 

@@ -26,10 +26,11 @@ primitive = "cube"
 angular_velocity = [0, 1.5707963, 0]
 
 [entities.components.scrappyphysics.rigidbody]
-velocity = [0.15, 0, 0]
+velocity = [0, 0, 0]
 
-[entities.components.drift]
-velocity = [0, 0.2, 0]
+[entities.components.float]
+origin = [-2.25, 0, 0]
+wave = [0, 1.4, 0.35]
 
 [[entities]]
 name = "Right Cube"
@@ -46,7 +47,8 @@ primitive = "cube"
 angular_velocity = [0, -1.5707963, 0]
 
 [entities.components.scrappyphysics.rigidbody]
-velocity = [-0.1, 0, 0]
+velocity = [0, 0, 0]
 
-[entities.components.drift]
-velocity = [0, -0.15, 0]
+[entities.components.float]
+origin = [1.25, 0, 0]
+wave = [3.1415927, 1.15, 0.3]
