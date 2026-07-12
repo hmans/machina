@@ -26,11 +26,24 @@ Project_Load_Result :: project.Project_Load_Result
 Runtime_Result :: struct {
 	frame: shared.Render_Frame,
 	err:   string,
+	scheduler_workers: int,
+	parallel_stages:   int,
+	max_parallel_width: int,
 }
 
 Frame_Runtime :: struct {
 	script_runtime: script.Runtime,
 	native_extensions: native.Extension_Set,
+	executor: schedule.Executor,
+}
+
+Native_Work_Context :: struct {
+	system:         ^native.Native_System,
+	world:          ^shared.World,
+	commands:       ecs.Command_Buffer,
+	registry:       ^component.Registry,
+	delta_seconds:  f32,
+	err:            string,
 }
 
 init_project :: project.init_project
@@ -277,6 +290,9 @@ run_project :: proc(root: string, config: Run_Config) -> Runtime_Result {
 		run_config.frame_system = hot_reload_frame_system
 		run_config.frame_system_data = &hot_reload
 		result.frame, result.err = render.run_renderer(run_config, &world)
+		result.scheduler_workers = hot_reload.executor.worker_count
+		result.parallel_stages = hot_reload.executor.parallel_stages
+		result.max_parallel_width = hot_reload.executor.max_parallel_width
 		return result
 	}
 
@@ -292,6 +308,7 @@ run_project :: proc(root: string, config: Run_Config) -> Runtime_Result {
 	frame_runtime: Frame_Runtime
 	defer script.destroy_runtime(&frame_runtime.script_runtime)
 	defer native.destroy_extension_set(&frame_runtime.native_extensions)
+	defer schedule.destroy_executor(&frame_runtime.executor)
 	script_result := script.run_project_script_with_registry(
 		&frame_runtime.script_runtime,
 		root,
@@ -311,6 +328,9 @@ run_project :: proc(root: string, config: Run_Config) -> Runtime_Result {
 	}
 
 	result.frame, result.err = render.run_renderer(run_config, &world)
+	result.scheduler_workers = frame_runtime.executor.worker_count
+	result.parallel_stages = frame_runtime.executor.parallel_stages
+	result.max_parallel_width = frame_runtime.executor.max_parallel_width
 	return result
 }
 
@@ -326,16 +346,17 @@ step_frame_runtime :: proc(runtime: ^Frame_Runtime, world: ^shared.World, delta_
 	if runtime == nil {
 		return ""
 	}
-	return step_frame_runtime_parts(&runtime.script_runtime, &runtime.native_extensions, world, delta_seconds)
+	return step_frame_runtime_parts(&runtime.script_runtime, &runtime.native_extensions, &runtime.executor, world, delta_seconds)
 }
 
 step_frame_runtime_parts :: proc(
 	script_runtime: ^script.Runtime,
 	native_extensions: ^native.Extension_Set,
+	executor: ^schedule.Executor,
 	world: ^shared.World,
 	delta_seconds: f32,
 ) -> string {
-	if script_runtime == nil || native_extensions == nil {
+	if script_runtime == nil || native_extensions == nil || executor == nil {
 		return ""
 	}
 	if script_runtime.L != nil {
@@ -362,24 +383,70 @@ step_frame_runtime_parts :: proc(
 	}
 
 	plan := schedule.build_plan(scheduled_systems[:system_count])
+	if !executor.initialized {
+		max_native_width := 0
+		for batch in plan.batches[:plan.batch_count] {
+			native_width := 0
+			for i in 0..<batch.system_count {
+				if batch.system_indices[i] < native_extensions.system_count {
+					native_width += 1
+				}
+			}
+			max_native_width = max(max_native_width, native_width)
+		}
+		if max_native_width > 1 {
+			schedule.init_executor(executor, max_native_width)
+		}
+	}
 	for batch in plan.batches[:plan.batch_count] {
+		native_work: [schedule.MAX_SYSTEMS]schedule.Work
+		native_contexts: [schedule.MAX_SYSTEMS]Native_Work_Context
+		native_count := 0
 		for i in 0..<batch.system_count {
 			system_index := batch.system_indices[i]
 			if system_index < native_extensions.system_count {
-				system := &native_extensions.systems[system_index]
-				if err := native.step_system(
-					system,
-					world,
-					&script_runtime.commands,
-					&script_runtime.registry,
-					delta_seconds,
-				); err != "" {
-					ecs.clear_commands(&script_runtime.commands)
-					return err
+				work_context := &native_contexts[native_count]
+				ecs.init_command_buffer(&work_context.commands)
+				work_context.system = &native_extensions.systems[system_index]
+				work_context.world = world
+				work_context.registry = &script_runtime.registry
+				work_context.delta_seconds = delta_seconds
+				native_work[native_count] = schedule.Work {
+					procedure = run_native_work,
+					data = work_context,
 				}
+				native_count += 1
 				continue
 			}
+		}
 
+		schedule.run_parallel(executor, native_work[:native_count])
+		for i in 0..<native_count {
+			work_context := &native_contexts[i]
+			if work_context.err != "" {
+				for j in 0..<native_count {
+					ecs.destroy_command_buffer(&native_contexts[j].commands)
+				}
+				ecs.clear_commands(&script_runtime.commands)
+				return work_context.err
+			}
+			if err := ecs.append_commands(&script_runtime.commands, &work_context.commands); err != "" {
+				for j in 0..<native_count {
+					ecs.destroy_command_buffer(&native_contexts[j].commands)
+				}
+				ecs.clear_commands(&script_runtime.commands)
+				return err
+			}
+		}
+		for i in 0..<native_count {
+			ecs.destroy_command_buffer(&native_contexts[i].commands)
+		}
+
+		for i in 0..<batch.system_count {
+			system_index := batch.system_indices[i]
+			if system_index < native_extensions.system_count {
+				continue
+			}
 			script_index := system_index - native_extensions.system_count
 			system := script_runtime.systems[script_index]
 			if err := script.run_script_system(script_runtime, script_runtime.L, system, delta_seconds); err != "" {
@@ -390,6 +457,17 @@ step_frame_runtime_parts :: proc(
 	}
 
 	return ecs.apply_commands(world, &script_runtime.commands)
+}
+
+run_native_work :: proc(data: rawptr) {
+	work := cast(^Native_Work_Context)data
+	work.err = native.step_system(
+		work.system,
+		work.world,
+		&work.commands,
+		work.registry,
+		work.delta_seconds,
+	)
 }
 
 build_native_extensions :: proc(root: string, config: ^shared.Project_Config) -> string {

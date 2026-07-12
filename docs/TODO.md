@@ -50,6 +50,7 @@
 - [x] Add project-declared native extension builds.
 - [x] Rebuild native extension sources during hot reload.
 - [x] Add native ECS systems that participate in scheduling.
+- [x] Execute conflict-free native systems in parallel.
 
 ## Editor
 

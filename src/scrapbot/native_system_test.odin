@@ -7,6 +7,7 @@ import component "./component"
 import ecs "./ecs"
 import native "./native"
 import project "./project"
+import schedule "./schedule"
 import script "./script"
 
 @(test)
@@ -42,6 +43,7 @@ test_native_extension_system_steps_world :: proc(t: ^testing.T) {
 	frame_runtime: Frame_Runtime
 	defer script.destroy_runtime(&frame_runtime.script_runtime)
 	defer native.destroy_extension_set(&frame_runtime.native_extensions)
+	defer schedule.destroy_executor(&frame_runtime.executor)
 	frame_runtime.native_extensions = extensions
 	extensions = {}
 

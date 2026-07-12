@@ -10,3 +10,4 @@
 | [ADR-006](ADR-006-use-luau-for-project-scripting.md) | Use Luau for project scripting | 2026-07-08 |
 | [ADR-007](ADR-007-use-id-keyed-component-storage.md) | Use ID-keyed component storage | 2026-07-11 |
 | [ADR-008](ADR-008-use-a-small-c-abi-for-native-extensions.md) | Use a small C ABI for native extensions | 2026-07-12 |
+| [ADR-009](ADR-009-parallelize-access-declared-native-systems.md) | Parallelize access-declared native systems | 2026-07-12 |

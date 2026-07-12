@@ -1,7 +1,7 @@
 # FDR-001: Runtime CLI
 
 **Status:** Active
-**Last reviewed:** 2026-07-11
+**Last reviewed:** 2026-07-12
 
 ## Overview
 
@@ -17,6 +17,7 @@ The runtime CLI is the entry point for creating, validating, and running Scrapbo
 - Users can request a platform window for renderer runs and limit windowed runs with `--frames`.
 - Users can request a headless WGPU PNG framegrab with `--framegrab`.
 - Users can pass `--hot-reload` to periodically check `project.toml`, the default scene TOML, `scripts/main.luau`, native extension libraries, and declared native extension source directories while the renderer is running.
+- Users can pass `--scheduler-trace` to report native worker count, parallel stage count, and maximum parallel width after a run.
 - Users can ask for top-level help or command-specific help.
 - During development, `mise scrapbot` builds and runs the CLI with forwarded arguments.
 

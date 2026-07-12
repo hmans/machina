@@ -5,14 +5,14 @@
 
 ## Overview
 
-System scheduling lets Scrapbot reason about which systems can run together by comparing declared component reads and writes. The first implementation computes conflict-free batches for Luau and native systems but still executes them serially.
+System scheduling lets Scrapbot reason about which systems can run together by comparing declared component reads and writes. Conflict-free native systems execute concurrently, while Luau and undeclared systems remain serial barriers.
 
 ## Behavior
 
 - Systems may declare component reads and writes.
 - Systems with only read/read overlap can share a batch.
 - Systems with read/write or write/write overlap are placed in separate batches.
-- Systems without access declarations remain valid and can batch with any other system.
+- Systems without access declarations remain valid but execute exclusively because their data access is unknown.
 - Luau systems may still use the legacy callback-only registration form.
 - Luau systems may use an options table with `reads` and `writes` arrays before the callback.
 - Luau access declarations may reference project component handles or registered component-name strings.
@@ -20,17 +20,21 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 - Component handles carry runtime component IDs, giving scheduler-facing declarations and runtime query paths a shared component-type identity.
 - Unknown component names in system access declarations fail script loading.
 - Systems with explicit access declarations may only read or write components covered by those declarations. Multi-component queries check every requested component against the active system declaration. Callback-only systems remain permissive.
-- Scheduled Luau and native batches currently execute serially in deterministic batch order.
+- Conflict-free native systems execute concurrently on a persistent worker pool.
+- Conflicting systems preserve registration order across scheduler stages.
+- Luau systems execute serially on the calling thread and act as barriers between native stages.
+- Each parallel native system receives a private deferred-command buffer; commands merge deterministically in system order after the stage completes.
+- `scrapbot run --scheduler-trace` reports worker count, parallel stage count, and maximum parallel width for the run.
 - Structural world changes requested from Luau systems are queued in a deferred command buffer and applied after all scheduled systems finish for the frame.
 - Deferred commands currently support spawning named entities with initial transform/project component payloads, despawning entities without shifting existing entity indices, and adding/removing `scrapbot.transform` or project components.
 
 ## Design Decisions
 
-### 1. Start with access declarations before parallelism
+### 1. Use access declarations for parallelism
 
-**Decision:** Add declared reads/writes and conflict-free batching before introducing worker threads.
-**Why:** Parallel execution needs a trustworthy data-access contract first. Batching gives us a testable scheduling boundary while the ECS storage model is still evolving.
-**Tradeoff:** The scheduler can identify parallelism, but the runtime does not use extra CPU cores yet.
+**Decision:** Execute access-declared native systems in parallel when their reads and writes do not conflict, as established by ADR-009.
+**Why:** The existing access contract provides a deterministic boundary for safe component-level parallelism.
+**Tradeoff:** Incomplete declarations can cause data races inside native extensions, so undeclared systems execute exclusively and runtime access checks remain important.
 
 ### 2. Keep scheduling engine-level
 
@@ -44,7 +48,7 @@ Component declarations are still stored by name for the scheduler, but handles n
 
 **Decision:** Keep `scrapbot.system(function)` as shorthand for a system with no declared access.
 **Why:** This avoids making every small script declare access before the scheduler has visible parallel execution benefits.
-**Tradeoff:** Undeclared systems are less informative to the scheduler and may need stricter rules once true parallel execution arrives.
+**Tradeoff:** Callback-only systems are exclusive scheduler barriers and cannot benefit from parallel execution.
 
 Declared systems now enforce their declared component access at the Luau API boundary and through the native system callback context. Callback-only Luau systems remain valid and permissive during the early scripting phase.
 
@@ -54,13 +58,25 @@ Declared systems now enforce their declared component access at the Luau API bou
 **Why:** Queries and future parallel system batches need stable entity/component storage while systems are running.
 **Tradeoff:** Script code observes structural changes on the next frame, and the first command buffer has a fixed capacity and only supports basic transform/project-component mutation.
 
+### 5. Keep Luau on the calling thread
+
+**Decision:** Run Luau systems serially after native work in each scheduler stage.
+**Why:** Project scripts share one Luau VM, which is not a safe concurrent callback target. Native systems still gain parallelism without introducing multiple-VM state semantics.
+**Tradeoff:** Luau-heavy frames remain mostly serial, and a future parallel script model would need isolated VMs or a different execution contract.
+
+### 6. Merge native commands deterministically
+
+**Decision:** Give parallel native systems private deferred-command buffers and merge them in scheduler order after all native work in the stage completes.
+**Why:** A shared command buffer would race even when component accesses do not conflict, and completion-order merging would make lifecycle effects nondeterministic.
+**Tradeoff:** Parallel stages allocate fixed-capacity temporary command buffers and cannot expose one system's structural changes to another system in the same frame.
+
 ## Related
 
-- **ADRs:** ADR-001, ADR-006, ADR-007
+- **ADRs:** ADR-001, ADR-006, ADR-007, ADR-009
 - **FDRs:** FDR-004, FDR-006
 
 ## Open Questions
 
 - When should undeclared systems become warnings or errors?
-- Should Luau systems remain main-thread-only once scheduler batches execute on worker threads?
+- Should Luau eventually gain isolated worker VMs for parallel systems?
 - Should deferred commands eventually flush between independent schedule batches, or only at frame boundaries?

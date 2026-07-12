@@ -201,6 +201,23 @@ test_deferred_commands_spawn_entities_when_applied :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_deferred_command_buffers_merge_in_source_order :: proc(t: ^testing.T) {
+	destination, source: Command_Buffer
+	init_command_buffer(&destination)
+	defer destroy_command_buffer(&destination)
+	init_command_buffer(&source)
+	defer destroy_command_buffer(&source)
+
+	testing.expect(t, queue_spawn(&destination, "First") == "")
+	testing.expect(t, queue_spawn(&source, "Second") == "")
+	testing.expect(t, append_commands(&destination, &source) == "")
+	testing.expect(t, destination.command_count == 2)
+	testing.expect(t, source.command_count == 0)
+	testing.expect(t, spawn_command_name(&destination.commands[0].spawn) == "First")
+	testing.expect(t, spawn_command_name(&destination.commands[1].spawn) == "Second")
+}
+
+@(test)
 test_deferred_commands_despawn_entities_without_shifting_indices :: proc(t: ^testing.T) {
 	scene, result := project.parse_scene(MULTI_CUBE_SCENE)
 	defer project.destroy_scene(&scene)

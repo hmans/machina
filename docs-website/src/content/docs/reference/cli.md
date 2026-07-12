@@ -47,7 +47,7 @@ Performs project validation:
 ## `scrapbot run`
 
 ```sh
-scrapbot run [path] [--backend null|wgpu] [--window] [--hot-reload] [--frames n] [--framegrab out.png]
+scrapbot run [path] [--backend null|wgpu] [--window] [--hot-reload] [--scheduler-trace] [--frames n] [--framegrab out.png]
 ```
 
 Runs a project through the selected renderer backend after stepping registered native and Luau systems.
@@ -61,6 +61,7 @@ Options:
 | `--window` | Open a platform window. |
 | `--headless` | Force headless mode. |
 | `--hot-reload` | Poll project files, scripts, and native extension source/output changes while running. |
+| `--scheduler-trace` | Print native worker count, parallel stage count, and maximum stage width. |
 | `--frames n` | Limit renderer frames. |
 | `--framegrab out.png` | Write the final headless WGPU frame to a PNG. |
 

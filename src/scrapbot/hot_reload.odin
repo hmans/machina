@@ -9,6 +9,7 @@ import component "./component"
 import ecs "./ecs"
 import native "./native"
 import project "./project"
+import schedule "./schedule"
 import script "./script"
 import shared "./shared"
 
@@ -30,6 +31,7 @@ Hot_Reload_State :: struct {
 	script_stamp: File_Stamp,
 	runtime:      script.Runtime,
 	native_extensions: native.Extension_Set,
+	executor:          schedule.Executor,
 	native_sources: native.Source_Set,
 	last_good_script_source: string,
 	has_last_good_script:    bool,
@@ -98,6 +100,7 @@ init_hot_reload_state :: proc(
 destroy_hot_reload_state :: proc(state: ^Hot_Reload_State) {
 	script.destroy_runtime(&state.runtime)
 	native.destroy_extension_set(&state.native_extensions)
+	schedule.destroy_executor(&state.executor)
 	native.destroy_source_set(&state.native_sources)
 	delete(state.last_good_script_source)
 	delete(state.project_path)
@@ -113,7 +116,7 @@ hot_reload_frame_system :: proc(data: rawptr, world: ^shared.World, delta_second
 	}
 
 	maybe_poll_hot_reload(state, world, delta_seconds)
-	return step_frame_runtime_parts(&state.runtime, &state.native_extensions, world, delta_seconds)
+	return step_frame_runtime_parts(&state.runtime, &state.native_extensions, &state.executor, world, delta_seconds)
 }
 
 maybe_poll_hot_reload :: proc(state: ^Hot_Reload_State, world: ^shared.World, delta_seconds: f32) {

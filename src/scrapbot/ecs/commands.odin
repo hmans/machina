@@ -358,6 +358,24 @@ clear_commands :: proc "c" (buffer: ^Command_Buffer) {
 	}
 }
 
+append_commands :: proc(destination, source: ^Command_Buffer) -> string {
+	if destination == nil || source == nil || source.command_count == 0 {
+		return ""
+	}
+	if destination.commands == nil || source.commands == nil {
+		return "command buffer is not initialized"
+	}
+	if destination.command_count + source.command_count > len(destination.commands) {
+		return "too many deferred world commands"
+	}
+	for i in 0..<source.command_count {
+		destination.commands[destination.command_count] = source.commands[i]
+		destination.command_count += 1
+	}
+	source.command_count = 0
+	return ""
+}
+
 spawn_entity :: proc(world: ^World, spawn: ^Spawn_Command) -> int {
 	entity_index := len(world.entities)
 	id := Entity{index = u32(entity_index), generation = 1}

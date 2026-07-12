@@ -26,6 +26,7 @@ Run_Options :: struct {
 	window:  bool   `usage:"Open a platform window for renderer runs."`,
 	headless: bool   `usage:"Force headless mode. This is the default unless --window is passed."`,
 	hot_reload: bool `name:"hot-reload" usage:"Reload the default scene TOML and scripts/main.luau while the renderer is running."`,
+	scheduler_trace: bool `name:"scheduler-trace" usage:"Print native scheduler worker and parallel-stage statistics."`,
 	frames:  u32    `usage:"Limit renderer frames. Windowed 0 runs until close; headless 0 captures one frame."`,
 	framegrab: string `usage:"Write the final headless WGPU frame to this PNG path."`,
 }
@@ -137,6 +138,14 @@ run_project :: proc(args: []string) -> int {
 		fmt.eprintln(result.err)
 		return 1
 	}
+	if opt.scheduler_trace {
+		fmt.printf(
+			"scheduler: %d workers, %d parallel stages, max width %d\n",
+			result.scheduler_workers,
+			result.parallel_stages,
+			result.max_parallel_width,
+		)
+	}
 	fmt.printf(
 		"%s frame: %d entities, %d cameras, %d meshes, %d renderables\n",
 		scrapbot.renderer_backend_name(backend),
@@ -185,7 +194,7 @@ print_help :: proc() {
   scrapbot init [path] [name]    Create project.toml and scenes/main.scene.toml
   scrapbot check [path]          Validate project.toml and the default scene
   scrapbot build [path]          Build project native extensions
-  scrapbot run [path] [--backend null|wgpu] [--window] [--hot-reload] [--frames n] [--framegrab out.png]
+  scrapbot run [path] [--backend null|wgpu] [--window] [--hot-reload] [--scheduler-trace] [--frames n] [--framegrab out.png]
                                   Load the project and render
   scrapbot help <command>         Print command-specific options
   scrapbot --version             Print the engine version`)
