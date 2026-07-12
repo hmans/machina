@@ -1,5 +1,6 @@
 package showcase
 
+import "core:math"
 import scrapbot "scrapbot:extension"
 
 Spin_Component :: scrapbot.Component{name = "showcase.spin"}
@@ -8,11 +9,11 @@ Spin_Angular_Velocity :: scrapbot.Vec3_Field{component = Spin_Component, name = 
 Lifetime_Component :: scrapbot.Component{name = "showcase.lifetime"}
 Lifetime_Timer :: scrapbot.Vec3_Field{component = Lifetime_Component, name = "timer"}
 
-Promote_Component :: scrapbot.Component{name = "showcase.promote"}
-Promote_Value :: scrapbot.Vec3_Field{component = Promote_Component, name = "value"}
+Velocity_Component :: scrapbot.Component{name = "showcase.velocity"}
+Velocity_Value :: scrapbot.Vec3_Field{component = Velocity_Component, name = "value"}
 
-Spawn_Once_Component :: scrapbot.Component{name = "showcase.spawn_once"}
-Spawn_Once_Value :: scrapbot.Vec3_Field{component = Spawn_Once_Component, name = "value"}
+Emitter_Component :: scrapbot.Component{name = "showcase.emitter"}
+Emitter_State :: scrapbot.Vec3_Field{component = Emitter_Component, name = "state"}
 
 @(export)
 scrapbot_extension_register :: proc "c" (api: ^scrapbot.API) -> cstring {
@@ -32,18 +33,17 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	}
 	scrapbot.component(&reg, Lifetime_Component, lifetime_fields[:])
 
-	promote_fields := [?]scrapbot.Field {
-		scrapbot.vec3(Promote_Value),
+	velocity_fields := [?]scrapbot.Field {
+		scrapbot.vec3(Velocity_Value),
 	}
-	scrapbot.component(&reg, Promote_Component, promote_fields[:])
+	scrapbot.component(&reg, Velocity_Component, velocity_fields[:])
 
-	spawn_once_fields := [?]scrapbot.Field {
-		scrapbot.vec3(Spawn_Once_Value),
+	emitter_fields := [?]scrapbot.Field {
+		scrapbot.vec3(Emitter_State),
 	}
-	scrapbot.component(&reg, Spawn_Once_Component, spawn_once_fields[:])
+	scrapbot.component(&reg, Emitter_Component, emitter_fields[:])
 
 	spin_accesses := [?]scrapbot.Access {
-		scrapbot.read(scrapbot.Transform_Component),
 		scrapbot.write(scrapbot.Transform_Component),
 		scrapbot.read(Spin_Component),
 	}
@@ -55,20 +55,24 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	}
 	scrapbot.system(&reg, "showcase.lifetime", lifetime_accesses[:], lifetime_system)
 
-	promote_accesses := [?]scrapbot.Access {
-		scrapbot.read(Promote_Component),
-		scrapbot.write(Promote_Component),
-		scrapbot.write(Lifetime_Component),
-	}
-	scrapbot.system(&reg, "showcase.promote", promote_accesses[:], promote_system)
-
-	spawn_accesses := [?]scrapbot.Access {
-		scrapbot.read(Spawn_Once_Component),
-		scrapbot.write(Spawn_Once_Component),
+	velocity_accesses := [?]scrapbot.Access {
 		scrapbot.write(scrapbot.Transform_Component),
-		scrapbot.write(Lifetime_Component),
+		scrapbot.read(Lifetime_Component),
+		scrapbot.read(Velocity_Component),
+		scrapbot.write(Velocity_Component),
 	}
-	scrapbot.system(&reg, "showcase.spawn_once", spawn_accesses[:], spawn_once_system)
+	scrapbot.system(&reg, "showcase.velocity", velocity_accesses[:], velocity_system)
+
+	emitter_accesses := [?]scrapbot.Access {
+		scrapbot.write(scrapbot.Transform_Component),
+		scrapbot.write(scrapbot.Mesh_Component),
+		scrapbot.read(Emitter_Component),
+		scrapbot.write(Emitter_Component),
+		scrapbot.write(Lifetime_Component),
+		scrapbot.write(Velocity_Component),
+		scrapbot.write(Spin_Component),
+	}
+	scrapbot.system(&reg, "showcase.fountain", emitter_accesses[:], fountain_system)
 
 	return scrapbot.err(&reg)
 }
@@ -149,73 +153,149 @@ lifetime_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 	return nil
 }
 
-promote_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+velocity_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
-		Promote_Component,
+		scrapbot.Transform_Component,
+		Velocity_Component,
+		Lifetime_Component,
 	}
-	promote_query := scrapbot.query(components[:])
+	velocity_query := scrapbot.query(components[:])
 
-	count := scrapbot.count(ctx, promote_query)
+	count := scrapbot.count(ctx, velocity_query)
 	if count < 0 {
-		return "failed to query promoted entities"
+		return "failed to query fountain bodies"
 	}
 	for i in 0..<count {
-		entity, entity_ok := scrapbot.entity_at(ctx, promote_query, i)
+		entity, entity_ok := scrapbot.entity_at(ctx, velocity_query, i)
 		if !entity_ok {
 			continue
 		}
 
-		fields := [?]scrapbot.Component_Vec3_Field {
-			scrapbot.vec3_value(Lifetime_Timer, {0, 8, 0}),
+		transform, transform_ok := scrapbot.get(ctx, entity, scrapbot.Transform_Component)
+		if !transform_ok {
+			return "failed to read transform"
 		}
-		payload := scrapbot.payload(Lifetime_Component, fields[:])
-		if err := scrapbot.add(ctx, entity, &payload); err != nil {
-			return err
+
+		velocity, velocity_ok := scrapbot.get(ctx, entity, Velocity_Value)
+		if !velocity_ok {
+			return "failed to read velocity"
 		}
-		if err := scrapbot.remove(ctx, entity, Promote_Component); err != nil {
-			return err
+
+		transform.position.x += velocity.x * ctx.delta_seconds
+		transform.position.y += velocity.y * ctx.delta_seconds
+		transform.position.z += velocity.z * ctx.delta_seconds
+
+		velocity.y -= 4.8 * ctx.delta_seconds
+		velocity.x *= 0.996
+		velocity.z *= 0.996
+
+		if transform.position.y < -1.6 {
+			if err := scrapbot.despawn(ctx, entity); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if !scrapbot.set(ctx, entity, transform) {
+			return "failed to write transform"
+		}
+		if !scrapbot.set(ctx, entity, Velocity_Value, velocity) {
+			return "failed to write velocity"
 		}
 	}
 
 	return nil
 }
 
-spawn_once_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+fountain_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
-		Spawn_Once_Component,
+		scrapbot.Transform_Component,
+		Emitter_Component,
 	}
-	spawn_query := scrapbot.query(components[:])
+	emitter_query := scrapbot.query(components[:])
 
-	count := scrapbot.count(ctx, spawn_query)
+	count := scrapbot.count(ctx, emitter_query)
 	if count < 0 {
-		return "failed to query spawn-once entities"
+		return "failed to query fountain emitters"
 	}
 	for i in 0..<count {
-		entity, entity_ok := scrapbot.entity_at(ctx, spawn_query, i)
+		entity, entity_ok := scrapbot.entity_at(ctx, emitter_query, i)
 		if !entity_ok {
 			continue
 		}
 
-		transform := scrapbot.Transform {
-			position = {0, -1.4, 0},
-			rotation = {},
-			scale = {1, 1, 1},
+		transform, transform_ok := scrapbot.get(ctx, entity, scrapbot.Transform_Component)
+		if !transform_ok {
+			return "failed to read emitter transform"
 		}
-		lifetime_fields := [?]scrapbot.Component_Vec3_Field {
-			scrapbot.vec3_value(Lifetime_Timer, {0, 2, 0}),
+
+		state, state_ok := scrapbot.get(ctx, entity, Emitter_State)
+		if !state_ok {
+			return "failed to read emitter state"
 		}
-		lifetime_payload := scrapbot.payload(Lifetime_Component, lifetime_fields[:])
-		payloads := [?]scrapbot.Component_Payload {
-			lifetime_payload,
+
+		state.x += ctx.delta_seconds
+		spawn_count := 0
+		for state.x >= state.y && spawn_count < 4 {
+			state.x -= state.y
+			if err := spawn_fountain_cube(ctx, transform, i32(state.z)); err != nil {
+				return err
+			}
+			state.z += 1
+			spawn_count += 1
 		}
-		spawn := scrapbot.spawn_options("Native Spawned Event", &transform, payloads[:])
-		if err := scrapbot.spawn(ctx, &spawn); err != nil {
-			return err
-		}
-		if err := scrapbot.remove(ctx, entity, Spawn_Once_Component); err != nil {
-			return err
+
+		if !scrapbot.set(ctx, entity, Emitter_State, state) {
+			return "failed to write emitter state"
 		}
 	}
 
 	return nil
+}
+
+spawn_fountain_cube :: proc "contextless" (
+	ctx: ^scrapbot.System_Context,
+	emitter: scrapbot.Transform,
+	sequence: i32,
+) -> cstring {
+	angle := f32(sequence) * 2.3999631
+	ring := f32(sequence % 7) / 6.0
+	speed := 0.9 + ring * 0.55
+	lifetime := 2.4 + ring * 0.7
+	scale := 0.16 + ring * 0.08
+
+	transform := scrapbot.Transform {
+		position = emitter.position,
+		rotation = {angle, angle * 0.5, 0},
+		scale = {scale, scale, scale},
+	}
+	velocity := scrapbot.Vec3 {
+		x = math.cos(angle) * speed,
+		y = 3.2 + ring * 0.9,
+		z = math.sin(angle) * speed,
+	}
+	spin := scrapbot.Vec3 {
+		x = 1.4 + ring,
+		y = 2.2 + ring * 1.3,
+		z = 0.8 + ring * 0.7,
+	}
+
+	lifetime_fields := [?]scrapbot.Component_Vec3_Field {
+		scrapbot.vec3_value(Lifetime_Timer, {0, lifetime, 0}),
+	}
+	velocity_fields := [?]scrapbot.Component_Vec3_Field {
+		scrapbot.vec3_value(Velocity_Value, velocity),
+	}
+	spin_fields := [?]scrapbot.Component_Vec3_Field {
+		scrapbot.vec3_value(Spin_Angular_Velocity, spin),
+	}
+
+	payloads := [?]scrapbot.Component_Payload {
+		scrapbot.payload(Lifetime_Component, lifetime_fields[:]),
+		scrapbot.payload(Velocity_Component, velocity_fields[:]),
+		scrapbot.payload(Spin_Component, spin_fields[:]),
+	}
+	mesh := scrapbot.mesh("cube")
+	spawn := scrapbot.spawn_options("Fountain Cube", &transform, &mesh, payloads[:])
+	return scrapbot.spawn(ctx, &spawn)
 }

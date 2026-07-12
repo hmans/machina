@@ -7,16 +7,15 @@ local FloatComponent = scrapbot.component("float", {
 	wave = scrapbot.vec3,
 }) :: FloatComponent
 
+local EmitterComponent = scrapbot.component_handle("showcase.emitter") :: ShowcaseEmitterComponent
 local LifetimeComponent = scrapbot.component_handle("showcase.lifetime") :: ShowcaseLifetimeComponent
 local SpinComponent = scrapbot.component_handle("showcase.spin") :: ShowcaseSpinComponent
-local PromoteComponent = scrapbot.component_handle("showcase.promote") :: ShowcasePromoteComponent
-local SpawnOnceComponent = scrapbot.component_handle("showcase.spawn_once") :: ShowcaseSpawnOnceComponent
+local VelocityComponent = scrapbot.component_handle("showcase.velocity") :: ShowcaseVelocityComponent
 
 local Floating = scrapbot.query(scrapbot.transform, FloatComponent)
-local Lifetimes = scrapbot.query(LifetimeComponent)
+local Emitters = scrapbot.query(scrapbot.transform, EmitterComponent)
+local FountainBodies = scrapbot.query(scrapbot.transform, LifetimeComponent, VelocityComponent)
 local Spinners = scrapbot.query(SpinComponent)
-local Promotions = scrapbot.query(PromoteComponent)
-local SpawnOnce = scrapbot.query(SpawnOnceComponent)
 
 scrapbot.system(Floating, {
 	writes = { scrapbot.transform, FloatComponent },
@@ -27,18 +26,16 @@ scrapbot.system(Floating, {
 	transform.position.z = float.origin.z
 end)
 
-scrapbot.system(Lifetimes, function(delta_seconds: number, entity: ScrapbotEntity, lifetime: ReadonlyShowcaseLifetime)
+scrapbot.system(Emitters, function(delta_seconds: number, entity: ScrapbotEntity, transform: ReadonlyScrapbotTransform, emitter: ReadonlyShowcaseEmitter)
+	assert(emitter.state.y > 0)
+	assert(transform.position.y < 0)
+end)
+
+scrapbot.system(FountainBodies, function(delta_seconds: number, entity: ScrapbotEntity, transform: ReadonlyScrapbotTransform, lifetime: ReadonlyShowcaseLifetime, velocity: ReadonlyShowcaseVelocity)
 	assert(lifetime.timer.y > 0)
+	assert(velocity.value.y < 5)
 end)
 
 scrapbot.system(Spinners, function(delta_seconds: number, entity: ScrapbotEntity, spin: ReadonlyShowcaseSpin)
 	assert(spin.angular_velocity.y ~= 0)
-end)
-
-scrapbot.system(Promotions, function(delta_seconds: number, entity: ScrapbotEntity, promote: ReadonlyShowcasePromote)
-	assert(promote.value.x == 0)
-end)
-
-scrapbot.system(SpawnOnce, function(delta_seconds: number, entity: ScrapbotEntity, spawn_once: ReadonlyShowcaseSpawnOnce)
-	assert(spawn_once.value.x == 0)
 end)

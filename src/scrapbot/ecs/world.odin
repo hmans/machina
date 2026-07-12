@@ -18,6 +18,7 @@ Component_ID :: shared.Component_ID
 Vec3 :: shared.Vec3
 Named_Vec3 :: shared.Named_Vec3
 Transform_Component :: shared.Transform_Component
+Mesh_Component :: shared.Mesh_Component
 
 INVALID_COMPONENT_INDEX :: -1
 MAX_QUERY_TERMS :: 8
@@ -280,6 +281,38 @@ remove_transform :: proc(world: ^World, entity_index: int) {
 		return
 	}
 	world.entities[entity_index].transform_index = INVALID_COMPONENT_INDEX
+}
+
+add_mesh :: proc(world: ^World, entity_index: int, primitive: string) {
+	if !entity_is_alive(world, entity_index) {
+		return
+	}
+
+	entity := &world.entities[entity_index]
+	entity.mesh_index = len(world.meshes)
+	append(
+		&world.meshes,
+		shared.Mesh_Component {
+			primitive = clone_world_string(primitive),
+		},
+	)
+	if entity.transform_index >= 0 {
+		append(
+			&world.renderables,
+			Renderable {
+				entity_index    = entity_index,
+				transform_index = entity.transform_index,
+				mesh_index      = entity.mesh_index,
+			},
+		)
+	}
+}
+
+remove_mesh :: proc(world: ^World, entity_index: int) {
+	if !entity_is_alive(world, entity_index) {
+		return
+	}
+	world.entities[entity_index].mesh_index = INVALID_COMPONENT_INDEX
 }
 
 add_custom_component :: proc(world: ^World, entity_index: int, command_component: ^Command_Component) {

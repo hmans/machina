@@ -2,7 +2,7 @@ package extension_api
 
 import c "core:c"
 
-ABI_VERSION :: u32(3)
+ABI_VERSION :: u32(4)
 MAX_COMPONENT_FIELDS :: 16
 MAX_SYSTEM_ACCESSES :: 16
 MAX_QUERY_TERMS :: 8
@@ -47,6 +47,10 @@ Transform :: struct {
 	scale:    Vec3,
 }
 
+Mesh_Payload :: struct {
+	primitive: cstring,
+}
+
 Component_Vec3_Field :: struct {
 	name: cstring,
 	value: Vec3,
@@ -61,6 +65,7 @@ Component_Payload :: struct {
 Spawn_Options :: struct {
 	name: cstring,
 	transform: ^Transform,
+	mesh: ^Mesh_Payload,
 	components: [^]Component_Payload,
 	component_count: c.int,
 }
@@ -84,6 +89,7 @@ System_Context :: struct {
 	spawn: Spawn_Proc,
 	despawn: Despawn_Proc,
 	add_transform: Add_Transform_Proc,
+	add_mesh: Add_Mesh_Proc,
 	add_component: Add_Component_Proc,
 	remove_component: Remove_Component_Proc,
 }
@@ -163,6 +169,12 @@ Add_Transform_Proc :: #type proc "c" (
 	ctx: ^System_Context,
 	entity: Entity,
 	transform: ^Transform,
+) -> cstring
+
+Add_Mesh_Proc :: #type proc "c" (
+	ctx: ^System_Context,
+	entity: Entity,
+	mesh: ^Mesh_Payload,
 ) -> cstring
 
 Add_Component_Proc :: #type proc "c" (

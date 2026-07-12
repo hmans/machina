@@ -5,6 +5,7 @@ import raw "scrapbot:extension_api"
 
 ABI_VERSION :: raw.ABI_VERSION
 TRANSFORM :: "scrapbot.transform"
+MESH :: "scrapbot.mesh"
 
 Context :: struct {
 	api: ^raw.API,
@@ -39,12 +40,14 @@ Query_Term :: raw.Query_Term
 System_Context :: raw.System_Context
 System_Proc :: raw.System_Proc
 Transform :: raw.Transform
+Mesh_Payload :: raw.Mesh_Payload
 Vec3 :: raw.Vec3
 Component_Vec3_Field :: raw.Component_Vec3_Field
 Component_Payload :: raw.Component_Payload
 Spawn_Options :: raw.Spawn_Options
 
 Transform_Component :: Component{name = TRANSFORM}
+Mesh_Component :: Component{name = MESH}
 MAX_QUERY_TERMS :: 16
 
 register :: proc "contextless" (api: ^raw.API, callback: Register_Proc) -> cstring {
@@ -115,6 +118,10 @@ payload_by_descriptor :: proc "contextless" (component: Component, fields: []Com
 payload :: proc {
 	payload_by_name,
 	payload_by_descriptor,
+}
+
+mesh :: proc "contextless" (primitive: cstring) -> Mesh_Payload {
+	return Mesh_Payload{primitive = primitive}
 }
 
 component_by_name :: proc "contextless" (ctx: ^Context, name: cstring, fields: []Field) -> cstring {
@@ -368,10 +375,20 @@ set :: proc {
 	set_vec3_field,
 }
 
-spawn_options :: proc "contextless" (
+spawn_options_basic :: proc "contextless" (
 	name: cstring,
 	transform: ^Transform = nil,
-	components: []Component_Payload = nil,
+) -> Spawn_Options {
+	return Spawn_Options {
+		name = name,
+		transform = transform,
+	}
+}
+
+spawn_options_with_components :: proc "contextless" (
+	name: cstring,
+	transform: ^Transform,
+	components: []Component_Payload,
 ) -> Spawn_Options {
 	return Spawn_Options {
 		name = name,
@@ -379,6 +396,27 @@ spawn_options :: proc "contextless" (
 		components = raw_data(components),
 		component_count = c.int(len(components)),
 	}
+}
+
+spawn_options_with_mesh :: proc "contextless" (
+	name: cstring,
+	transform: ^Transform,
+	mesh: ^Mesh_Payload,
+	components: []Component_Payload = nil,
+) -> Spawn_Options {
+	return Spawn_Options {
+		name = name,
+		transform = transform,
+		mesh = mesh,
+		components = raw_data(components),
+		component_count = c.int(len(components)),
+	}
+}
+
+spawn_options :: proc {
+	spawn_options_basic,
+	spawn_options_with_components,
+	spawn_options_with_mesh,
 }
 
 spawn :: proc "contextless" (ctx: ^System_Context, options: ^Spawn_Options) -> cstring {
@@ -403,6 +441,14 @@ add_transform :: proc "contextless" (ctx: ^System_Context, entity: Entity, trans
 	return ctx.add_transform(ctx, entity, &next)
 }
 
+add_mesh :: proc "contextless" (ctx: ^System_Context, entity: Entity, mesh: Mesh_Payload) -> cstring {
+	if ctx == nil || ctx.add_mesh == nil {
+		return "Scrapbot add mesh API is not available"
+	}
+	next := mesh
+	return ctx.add_mesh(ctx, entity, &next)
+}
+
 add_payload :: proc "contextless" (ctx: ^System_Context, entity: Entity, component: ^Component_Payload) -> cstring {
 	if ctx == nil || ctx.add_component == nil {
 		return "Scrapbot add component API is not available"
@@ -412,6 +458,7 @@ add_payload :: proc "contextless" (ctx: ^System_Context, entity: Entity, compone
 
 add :: proc {
 	add_transform,
+	add_mesh,
 	add_payload,
 }
 

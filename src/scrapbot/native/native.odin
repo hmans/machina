@@ -502,6 +502,7 @@ step_system :: proc(
 		spawn = system_spawn,
 		despawn = system_despawn,
 		add_transform = system_add_transform,
+		add_mesh = system_add_mesh,
 		add_component = system_add_component,
 		remove_component = system_remove_component,
 	}
@@ -676,6 +677,17 @@ system_spawn :: proc "c" (ctx: ^api.System_Context, options: ^api.Spawn_Options)
 			return cstring(raw_data(err))
 		}
 	}
+	if options.mesh != nil {
+		if !system_allows_component_access(step.system.declaration, "scrapbot.mesh", .Write) {
+			return "native system does not have write access to scrapbot.mesh"
+		}
+		if options.mesh.primitive == nil {
+			return "native mesh primitive is not available"
+		}
+		if err := ecs.spawn_set_mesh(&spawn, string(options.mesh.primitive)); err != "" {
+			return cstring(raw_data(err))
+		}
+	}
 
 	if options.component_count < 0 || options.component_count > ecs.MAX_COMMAND_COMPONENTS {
 		return "invalid spawn component count"
@@ -745,6 +757,30 @@ system_add_transform :: proc "c" (
 	return nil
 }
 
+system_add_mesh :: proc "c" (
+	ctx: ^api.System_Context,
+	entity: api.Entity,
+	mesh: ^api.Mesh_Payload,
+) -> cstring {
+	step, ok := system_step_context(ctx)
+	if !ok || step.commands == nil {
+		return "native command buffer is not available"
+	}
+	if mesh == nil || mesh.primitive == nil {
+		return "native mesh payload is not available"
+	}
+	if !system_allows_component_access(step.system.declaration, "scrapbot.mesh", .Write) {
+		return "native system does not have write access to scrapbot.mesh"
+	}
+	if !ecs.entity_is_current(step.world, int(entity.index), entity.generation) {
+		return "native add component entity is stale"
+	}
+	if err := ecs.queue_add_mesh(step.commands, int(entity.index), entity.generation, string(mesh.primitive)); err != "" {
+		return cstring(raw_data(err))
+	}
+	return nil
+}
+
 system_add_component :: proc "c" (
 	ctx: ^api.System_Context,
 	entity: api.Entity,
@@ -795,10 +831,10 @@ system_remove_component :: proc "c" (
 	}
 
 	component_id := shared.INVALID_COMPONENT_ID
-	if name != "scrapbot.transform" {
+	if name != "scrapbot.transform" && name != "scrapbot.mesh" {
 		definition, found := component.find_definition(step.registry, name)
 		if !found || (definition.owner != .Project && definition.owner != .Library) {
-			return "native component removal only supports scrapbot.transform and schema-backed custom components"
+			return "native component removal only supports built-in and schema-backed custom components"
 		}
 		component_id = definition.id
 	}

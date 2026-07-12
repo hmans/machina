@@ -123,7 +123,7 @@ if err := scrapbot.add(ctx, entity, &payload); err != nil {
 	return err
 }
 
-if err := scrapbot.remove(ctx, entity, Promote_Component); err != nil {
+if err := scrapbot.remove(ctx, entity, Source_Component); err != nil {
 	return err
 }
 
@@ -133,13 +133,14 @@ spawn_transform := scrapbot.Transform {
 	scale = {1, 1, 1},
 }
 payloads := [?]scrapbot.Component_Payload {payload}
-spawn := scrapbot.spawn_options("Native Spawned", &spawn_transform, payloads[:])
+spawn_mesh := scrapbot.mesh("cube")
+spawn := scrapbot.spawn_options("Native Spawned", &spawn_transform, &spawn_mesh, payloads[:])
 if err := scrapbot.spawn(ctx, &spawn); err != nil {
 	return err
 }
 ```
 
-Lifecycle writes must be declared in the system access list. For example, adding or removing `Lifetime_Component` requires `scrapbot.write(Lifetime_Component)`.
+Lifecycle writes must be declared in the system access list. For example, adding or removing `Lifetime_Component` requires `scrapbot.write(Lifetime_Component)`, and spawning a cube renderable requires `scrapbot.write(scrapbot.Transform_Component)` plus `scrapbot.write(scrapbot.Mesh_Component)`.
 
 ## Build it
 

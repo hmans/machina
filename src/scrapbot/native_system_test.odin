@@ -37,7 +37,7 @@ test_native_extension_system_steps_world :: proc(t: ^testing.T) {
 	extension_load := native.load_project_extensions(&extensions, root, &registry)
 	testing.expectf(t, extension_load.err == "", "load_project_extensions failed: %s", extension_load.err)
 	testing.expect(t, extensions.system_count == 2)
-	testing.expect(t, extensions.systems[0].declaration.access_count == 5)
+	testing.expect(t, extensions.systems[0].declaration.access_count == 6)
 
 	frame_runtime: Frame_Runtime
 	defer script.destroy_runtime(&frame_runtime.script_runtime)
@@ -63,6 +63,8 @@ test_native_extension_system_steps_world :: proc(t: ^testing.T) {
 	testing.expect(t, !world.entities[2].alive)
 	testing.expect(t, world.entities[3].alive)
 	testing.expect(t, ecs.entity_has_component(&world, 3, ecs.Component_ID(0), "nativespin.marker"))
+	testing.expect(t, ecs.entity_has_component(&world, 3, ecs.Component_ID(0), "scrapbot.mesh"))
+	testing.expect(t, ecs.alive_renderable_count(&world) == 2)
 }
 
 make_native_system_test_project :: proc(t: ^testing.T) -> (string, string) {
@@ -210,6 +212,7 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	accesses := [?]scrapbot.Access {
 		scrapbot.read(scrapbot.Transform_Component),
 		scrapbot.write(scrapbot.Transform_Component),
+		scrapbot.write(scrapbot.Mesh_Component),
 		scrapbot.read(Spin_Component),
 		scrapbot.write(Spin_Component),
 		scrapbot.write(Marker_Component),
@@ -275,7 +278,8 @@ spin_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 		spawn_payloads := [?]scrapbot.Component_Payload {
 			marker_payload,
 		}
-		spawn := scrapbot.spawn_options("Native Spawned", &spawn_transform, spawn_payloads[:])
+		spawn_mesh := scrapbot.mesh("cube")
+		spawn := scrapbot.spawn_options("Native Spawned", &spawn_transform, &spawn_mesh, spawn_payloads[:])
 		if err := scrapbot.spawn(ctx, &spawn); err != nil {
 			return err
 		}

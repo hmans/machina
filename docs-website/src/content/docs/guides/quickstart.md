@@ -33,7 +33,7 @@ mise scrapbot -- check examples/ecs-showcase
 mise scrapbot -- run examples/ecs-showcase --backend null --frames 540
 ```
 
-The ECS showcase is a denser project for exercising the runtime. It combines a Luau-defined floating component and system with Odin-defined `showcase.*` components, scheduled native systems, component add/remove commands, despawn, and native entity spawning.
+The ECS showcase is a denser project for exercising the runtime. It combines a Luau-defined floating marker with an Odin-driven object fountain that spawns visible cube renderables, moves them through native velocity systems, spins them, and despawns them after their lifetimes expire.
 
 ## Create a new project
 

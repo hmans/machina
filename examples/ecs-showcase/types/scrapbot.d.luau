@@ -164,25 +164,25 @@ export type ReadonlyShowcaseLifetime = {
 
 export type ShowcaseLifetimeComponent = ScrapbotComponent<ShowcaseLifetime, ReadonlyShowcaseLifetime>
 
-export type ShowcasePromote = {
+export type ShowcaseVelocity = {
 	value: Vec3,
 }
 
-export type ReadonlyShowcasePromote = {
+export type ReadonlyShowcaseVelocity = {
 	read value: ReadonlyVec3,
 }
 
-export type ShowcasePromoteComponent = ScrapbotComponent<ShowcasePromote, ReadonlyShowcasePromote>
+export type ShowcaseVelocityComponent = ScrapbotComponent<ShowcaseVelocity, ReadonlyShowcaseVelocity>
 
-export type ShowcaseSpawnOnce = {
-	value: Vec3,
+export type ShowcaseEmitter = {
+	state: Vec3,
 }
 
-export type ReadonlyShowcaseSpawnOnce = {
-	read value: ReadonlyVec3,
+export type ReadonlyShowcaseEmitter = {
+	read state: ReadonlyVec3,
 }
 
-export type ShowcaseSpawnOnceComponent = ScrapbotComponent<ShowcaseSpawnOnce, ReadonlyShowcaseSpawnOnce>
+export type ShowcaseEmitterComponent = ScrapbotComponent<ShowcaseEmitter, ReadonlyShowcaseEmitter>
 
 export type Float = {
 	wave: Vec3,

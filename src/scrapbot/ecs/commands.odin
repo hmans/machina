@@ -26,11 +26,18 @@ Command_Vec3_Field :: struct {
 	value:    Vec3,
 }
 
+Command_Mesh :: struct {
+	primitive:     [MAX_COMMAND_NAME_BYTES]u8,
+	primitive_len: int,
+}
+
 Spawn_Command :: struct {
 	name:                   [MAX_COMMAND_NAME_BYTES]u8,
 	name_len:               int,
 	has_transform:          bool,
 	transform:              Transform_Component,
+	has_mesh:               bool,
+	mesh:                   Command_Mesh,
 	custom_components:      [MAX_COMMAND_COMPONENTS]Command_Component,
 	custom_component_count: int,
 }
@@ -40,6 +47,8 @@ Add_Component_Command :: struct {
 	generation:    u32,
 	has_transform: bool,
 	transform:     Transform_Component,
+	has_mesh:      bool,
+	mesh:          Command_Mesh,
 	component:     Command_Component,
 }
 
@@ -100,6 +109,17 @@ spawn_set_transform :: proc "c" (spawn: ^Spawn_Command, transform: Transform_Com
 	}
 	spawn.has_transform = true
 	spawn.transform = transform
+	return ""
+}
+
+spawn_set_mesh :: proc "c" (spawn: ^Spawn_Command, primitive: string) -> string {
+	if spawn == nil {
+		return "spawn command is not available"
+	}
+	spawn.has_mesh = true
+	if err := copy_command_string(spawn.mesh.primitive[:], &spawn.mesh.primitive_len, primitive, "mesh primitive"); err != "" {
+		return err
+	}
 	return ""
 }
 
@@ -214,6 +234,38 @@ queue_add_transform :: proc "c" (
 	return ""
 }
 
+queue_add_mesh :: proc "c" (
+	buffer: ^Command_Buffer,
+	entity_index: int,
+	generation: u32,
+	primitive: string,
+) -> string {
+	if buffer == nil {
+		return "command buffer is not available"
+	}
+	if buffer.commands == nil {
+		return "command buffer is not initialized"
+	}
+	if buffer.command_count >= len(buffer.commands) {
+		return "too many deferred world commands"
+	}
+
+	add: Add_Component_Command
+	add.entity_index = entity_index
+	add.generation = generation
+	add.has_mesh = true
+	if err := copy_command_string(add.mesh.primitive[:], &add.mesh.primitive_len, primitive, "mesh primitive"); err != "" {
+		return err
+	}
+
+	buffer.commands[buffer.command_count] = Command {
+		kind          = .Add_Component,
+		add_component = add,
+	}
+	buffer.command_count += 1
+	return ""
+}
+
 queue_add_custom_component :: proc "c" (
 	buffer: ^Command_Buffer,
 	entity_index: int,
@@ -314,6 +366,16 @@ spawn_entity :: proc(world: ^World, spawn: ^Spawn_Command) -> int {
 		transform_index = len(world.transforms)
 		append_soa(&world.transforms, spawn.transform)
 	}
+	mesh_index := INVALID_COMPONENT_INDEX
+	if spawn.has_mesh {
+		mesh_index = len(world.meshes)
+		append(
+			&world.meshes,
+			Mesh_Component {
+				primitive = clone_world_string(command_mesh_primitive(&spawn.mesh)),
+			},
+		)
+	}
 
 	append(
 		&world.entities,
@@ -323,9 +385,19 @@ spawn_entity :: proc(world: ^World, spawn: ^Spawn_Command) -> int {
 			name            = clone_world_string(spawn_command_name(spawn)),
 			transform_index = transform_index,
 			camera_index    = INVALID_COMPONENT_INDEX,
-			mesh_index      = INVALID_COMPONENT_INDEX,
+			mesh_index      = mesh_index,
 		},
 	)
+	if transform_index != INVALID_COMPONENT_INDEX && mesh_index != INVALID_COMPONENT_INDEX {
+		append(
+			&world.renderables,
+			Renderable {
+				entity_index    = entity_index,
+				transform_index = transform_index,
+				mesh_index      = mesh_index,
+			},
+		)
+	}
 
 	for i in 0..<spawn.custom_component_count {
 		add_custom_component(world, entity_index, &spawn.custom_components[i])
@@ -356,6 +428,10 @@ apply_add_component :: proc(world: ^World, command: ^Add_Component_Command) {
 		add_transform(world, command.entity_index, command.transform)
 		return
 	}
+	if command.has_mesh {
+		add_mesh(world, command.entity_index, command_mesh_primitive(&command.mesh))
+		return
+	}
 	add_custom_component(world, command.entity_index, &command.component)
 }
 
@@ -366,6 +442,10 @@ apply_remove_component :: proc(world: ^World, command: ^Remove_Component_Command
 	name := remove_component_name(command)
 	if name == "scrapbot.transform" {
 		remove_transform(world, command.entity_index)
+		return
+	}
+	if name == "scrapbot.mesh" {
+		remove_mesh(world, command.entity_index)
 		return
 	}
 	remove_custom_component(world, command.entity_index, command.component_id, name)
@@ -381,6 +461,10 @@ command_component_name :: proc(command_component: ^Command_Component) -> string 
 
 command_field_name :: proc(field: ^Command_Vec3_Field) -> string {
 	return string(field.name[:field.name_len])
+}
+
+command_mesh_primitive :: proc(mesh: ^Command_Mesh) -> string {
+	return string(mesh.primitive[:mesh.primitive_len])
 }
 
 remove_component_name :: proc(command: ^Remove_Component_Command) -> string {

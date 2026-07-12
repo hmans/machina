@@ -72,7 +72,7 @@
 
 **Luau analyzer** - The external `luau-analyze` static checker. `scrapbot check` runs it when available to catch script type and syntax errors against generated Scrapbot types.
 
-**Native extension** - Project-local compiled code declared in `project.toml`, built into versioned dynamic libraries under `build/extensions`, and loaded through Scrapbot's C ABI. The extension API lets native libraries register dotted library component schemas, scheduled native systems, and deferred lifecycle commands before Luau runs.
+**Native extension** - Project-local compiled code declared in `project.toml`, built into versioned dynamic libraries under `build/extensions`, and loaded through Scrapbot's C ABI. The extension API lets native libraries register dotted library component schemas, scheduled native systems, and deferred lifecycle commands, including spawning simple renderables, before Luau runs.
 
 **Odin extension helper** - The `scrapbot:extension` package that wraps Scrapbot's raw native extension ABI with Odin-friendly component and field descriptors, registration accumulation, access declaration, query, transform, vec3 field, and lifecycle command helpers.
 

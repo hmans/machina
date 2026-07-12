@@ -42,8 +42,14 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 	run_config := config
 	switch run_config.backend {
 	case .Null:
-		if err = run_frame_system(&run_config, world, 1.0 / 60.0); err != "" {
-			return
+		frame_count := run_config.max_frames
+		if frame_count == 0 {
+			frame_count = 1
+		}
+		for i in 0..<frame_count {
+			if err = run_frame_system(&run_config, world, 1.0 / 60.0); err != "" {
+				return
+			}
 		}
 		if run_config.window {
 			window_err := platform.open_runtime_window("Scrapbot", 1280, 720)

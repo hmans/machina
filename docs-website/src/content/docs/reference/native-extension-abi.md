@@ -8,7 +8,7 @@ The native extension ABI lives in `src/scrapbot/extension_api`. Odin extension a
 ## Versioning
 
 ```odin
-ABI_VERSION :: u32(3)
+ABI_VERSION :: u32(4)
 ```
 
 Extensions should reject unknown ABI versions during registration.
@@ -105,7 +105,7 @@ The context includes:
 - query helpers for component-name terms;
 - `get_transform` and `set_transform`;
 - `get_vec3_field` and `set_vec3_field` for schema-backed custom components;
-- deferred lifecycle helpers for spawn, despawn, add transform, add schema-backed component payload, and remove component.
+- deferred lifecycle helpers for spawn, despawn, add transform, add mesh, add schema-backed component payload, and remove component.
 
 Return `nil` on success or a static error string on failure. The host enforces declared access through the callback context.
 
@@ -115,5 +115,4 @@ Native extensions cannot yet:
 
 - access ECS storage directly;
 - access non-vec3 custom fields;
-- spawn renderable mesh components;
 - allocate through a host allocator.
