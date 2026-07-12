@@ -14,6 +14,7 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 - Users can select a renderer backend from the CLI.
 - The `wgpu` backend renders full indexed geometry with shared base-color materials, a perspective camera, and ambient, directional, and point lighting.
 - Lights are ECS components extracted into a bounded backend-neutral frame packet: accumulated ambient light, four directional lights, and sixteen point lights.
+- Base colors are decoded to linear space before lighting, high-dynamic-range light accumulation is tone mapped, and WGPU renders to an sRGB target.
 - Eligible entities receive internal render-instance components automatically.
 - Shared geometry/material pairs use one instanced draw batch, and geometry uploads are cached by handle and version.
 - The `wgpu` backend can also render a headless final-frame PNG with `--framegrab`.
@@ -71,6 +72,12 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 **Decision:** Ambient, directional, and point lights are public ECS components. ECS extraction accumulates ambient light and copies up to four directional and sixteen point lights into each render list, following ADR-011.
 **Why:** Lights remain scriptable scene state without exposing ECS storage to renderer backends, and fixed limits keep the first uniform layout predictable.
 **Tradeoff:** Excess lights are ignored in entity order until a future light-selection or clustered-lighting path replaces the fixed packet.
+
+### 9. Accumulate lighting in linear space and tone map the result
+
+**Decision:** Treat authored material colors as sRGB, decode them before lighting, apply an ACES-style curve to the HDR result, and prefer sRGB render targets for presentation and framegrabs.
+**Why:** Directly adding strong light contributions to display-space colors clips channels independently, washes out saturated lights, and produces inconsistent output across UNORM and sRGB targets.
+**Tradeoff:** The first shader uses fixed exposure and a compact approximation rather than a configurable camera exposure and complete color-management pipeline.
 
 ## Related
 

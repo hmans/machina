@@ -70,7 +70,15 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 			lighting += render.point_color_intensity[i].rgb * render.point_color_intensity[i].w * diffuse * attenuation;
 		}
 	}
-	return vec4<f32>(input.color * lighting, 1.0);
+	let base_color = pow(max(input.color, vec3<f32>(0.0)), vec3<f32>(2.2));
+	let hdr = base_color * lighting;
+	let mapped = clamp(
+		(hdr * (2.51 * hdr + vec3<f32>(0.03))) /
+		(hdr * (2.43 * hdr + vec3<f32>(0.59)) + vec3<f32>(0.14)),
+		vec3<f32>(0.0),
+		vec3<f32>(1.0),
+	);
+	return vec4<f32>(mapped, 1.0);
 }
 `
 
@@ -232,7 +240,7 @@ wgpu_wait_for_buffer_map :: proc(instance: wgpu.Instance, state: ^WGPU_Buffer_Ma
 	return false
 }
 
-wgpu_init_renderer :: proc(use_surface: bool, offscreen_format := wgpu.TextureFormat.RGBA8Unorm) -> (renderer: WGPU_Renderer, err: string) {
+wgpu_init_renderer :: proc(use_surface: bool, offscreen_format := wgpu.TextureFormat.RGBA8UnormSrgb) -> (renderer: WGPU_Renderer, err: string) {
 	if use_surface && platform.runtime_window == nil {
 		return renderer, "wgpu renderer requires an SDL3 window"
 	}
@@ -314,6 +322,13 @@ wgpu_init_renderer :: proc(use_surface: bool, offscreen_format := wgpu.TextureFo
 		defer wgpu.SurfaceCapabilitiesFreeMembers(capabilities)
 
 		renderer.format = capabilities.formats[0]
+		for i in 0..<int(capabilities.formatCount) {
+			candidate := capabilities.formats[i]
+			if candidate == .BGRA8UnormSrgb || candidate == .RGBA8UnormSrgb {
+				renderer.format = candidate
+				break
+			}
+		}
 		renderer.present_mode = capabilities.presentModes[0]
 		renderer.alpha_mode = capabilities.alphaModes[0]
 	} else {
