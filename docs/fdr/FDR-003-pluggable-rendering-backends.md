@@ -1,7 +1,7 @@
 # FDR-003: Pluggable rendering backends
 
 **Status:** Active
-**Last reviewed:** 2026-07-07
+**Last reviewed:** 2026-07-12
 
 ## Overview
 
@@ -57,9 +57,15 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 **Why:** Backends need coherent scene instances, not just global component counts, and this keeps GPU code out of ECS storage.
 **Tradeoff:** The render list is deliberately narrow and will need to evolve into a fuller render packet or view once materials, lights, multiple mesh types, and culling exist.
 
+### 7. Share geometry and material resources by handle
+
+**Decision:** Keep full geometry and material descriptions outside entity storage and let ECS components reference them with generational handles, as established by ADR-010. Primitive helpers produce ordinary indexed geometry rather than backend-specific primitive markers.
+**Why:** Many entities should share one CPU description and one backend GPU allocation without putting GPU ownership into the ECS.
+**Tradeoff:** Rendering needs an explicit reconciliation step and backend resource caches before the current cube-only path can be retired.
+
 ## Related
 
-- **ADRs:** ADR-003, ADR-005
+- **ADRs:** ADR-003, ADR-005, ADR-010
 - **FDRs:** FDR-001, FDR-002
 
 ## Open Questions
