@@ -16,6 +16,8 @@ Project_Config :: shared.Project_Config
 Scene :: shared.Scene
 Scene_Entity :: shared.Scene_Entity
 Vec3 :: shared.Vec3
+Vec2 :: shared.Vec2
+Vec4 :: shared.Vec4
 Custom_Component :: shared.Custom_Component
 Named_Vec3 :: shared.Named_Vec3
 

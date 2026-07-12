@@ -204,3 +204,48 @@ test_init_project_writes_luau_lsp_metadata :: proc(t: ^testing.T) {
 	testing.expect(t, settings_err == nil)
 	testing.expect(t, string(settings_bytes) == default_vscode_settings_template())
 }
+@(test)
+test_scene_parses_ecs_ui_hierarchy :: proc(t:^testing.T) {
+	scene,result:=parse_scene(`[[entities]]
+name = "HUD"
+[entities.ui_layout]
+direction = "column"
+position = [20, 30]
+size = [400, 200]
+padding = 12
+gap = 8
+background = [0.1, 0.2, 0.3, 0.9]
+[[entities]]
+name = "Title"
+[entities.ui_layout]
+parent = "HUD"
+size = [300, 40]
+[entities.ui_text]
+text = "HELLO"
+color = [1, 0.8, 0.2, 1]
+size = 24
+`)
+	defer destroy_scene(&scene)
+	testing.expectf(t,result.err==.None,"parse failed: %s",result.message)
+	testing.expect(t,len(scene.entities)==2)
+	testing.expect(t,scene.entities[0].ui_layout.direction==.Column)
+	testing.expect(t,scene.entities[1].ui_layout.parent=="HUD")
+	testing.expect(t,scene.entities[1].ui_text.text=="HELLO")
+}
+
+@(test)
+test_scene_rejects_ui_parent_cycles :: proc(t:^testing.T) {
+	scene,result:=parse_scene(`[[entities]]
+name = "A"
+[entities.ui_layout]
+parent = "B"
+size = [10, 10]
+[[entities]]
+name = "B"
+[entities.ui_layout]
+parent = "A"
+size = [10, 10]
+`)
+	defer destroy_scene(&scene)
+	testing.expect(t,result.err==.Invalid_Field)
+}

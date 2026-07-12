@@ -284,36 +284,4 @@ export type ReadonlyScrapbotInternalRenderInstance = {
 
 export type ScrapbotInternalRenderInstanceComponent = ScrapbotComponent<ScrapbotInternalRenderInstance, ReadonlyScrapbotInternalRenderInstance>
 
-export type ScrappyphysicsSpin = {
-	angular_velocity: Vec3,
-}
-
-export type ReadonlyScrappyphysicsSpin = {
-	read angular_velocity: ReadonlyVec3,
-}
-
-export type ScrappyphysicsSpinComponent = ScrapbotComponent<ScrappyphysicsSpin, ReadonlyScrappyphysicsSpin>
-
-export type ScrappyphysicsRigidbody = {
-	velocity: Vec3,
-}
-
-export type ReadonlyScrappyphysicsRigidbody = {
-	read velocity: ReadonlyVec3,
-}
-
-export type ScrappyphysicsRigidbodyComponent = ScrapbotComponent<ScrappyphysicsRigidbody, ReadonlyScrappyphysicsRigidbody>
-
-export type Float = {
-	wave: Vec3,
-	origin: Vec3,
-}
-
-export type ReadonlyFloat = {
-	read wave: ReadonlyVec3,
-	read origin: ReadonlyVec3,
-}
-
-export type FloatComponent = ScrapbotComponent<Float, ReadonlyFloat>
-
 declare scrapbot: Scrapbot

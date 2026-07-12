@@ -122,13 +122,15 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			continue
 		}
 
-		if line == "[entities.transform]" || line == "[entities.camera]" || line == "[entities.mesh]" || line == "[entities.geometry]" || line == "[entities.material]" || line == "[entities.ambient_light]" || line == "[entities.directional_light]" || line == "[entities.point_light]" || line == "[entities.shadow_caster]" || line == "[entities.shadow_receiver]" {
+		if line == "[entities.transform]" || line == "[entities.camera]" || line == "[entities.mesh]" || line == "[entities.geometry]" || line == "[entities.material]" || line == "[entities.ambient_light]" || line == "[entities.directional_light]" || line == "[entities.point_light]" || line == "[entities.shadow_caster]" || line == "[entities.shadow_receiver]" || line == "[entities.ui_layout]" || line == "[entities.ui_text]" {
 			if current == nil {
 				return scene, fail(.Invalid_Syntax, fmt.tprintf("%s appears before [[entities]]", line))
 			}
 			section = line[10:len(line) - 1]
 			if section == "shadow_caster" {current.has_shadow_caster = true}
 			if section == "shadow_receiver" {current.has_shadow_receiver = true}
+			if section == "ui_layout" {current.has_ui_layout=true}
+			if section == "ui_text" {current.has_ui_text=true; current.ui_text.color={1,1,1,1}; current.ui_text.size=16}
 			current_component = nil
 			continue
 		}
@@ -228,6 +230,25 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			if !found || current.material_resource == "" {return scene, fail(.Invalid_Field, "material.resource must be a non-empty basic string")}
 		case "shadow_caster", "shadow_receiver":
 			return scene, fail(.Invalid_Field, fmt.tprintf("%s is a marker component and has no fields", section))
+		case "ui_layout":
+			current.has_ui_layout=true
+			switch key {
+			case "parent": current.ui_layout.parent,found=parse_basic_string(value)
+			case "direction":
+				direction:string; direction,found=parse_basic_string(value)
+				if found {switch direction {case "overlay":current.ui_layout.direction=.Overlay; case "row":current.ui_layout.direction=.Row; case "column":current.ui_layout.direction=.Column; case:found=false}}
+			case "position": current.ui_layout.position,found=parse_vec2(value)
+			case "size": current.ui_layout.size,found=parse_vec2(value)
+			case "padding": current.ui_layout.padding,found=parse_f32(value)
+			case "gap": current.ui_layout.gap,found=parse_f32(value)
+			case "background": current.ui_layout.background,found=parse_vec4(value)
+			case: return scene,fail(.Invalid_Field,fmt.tprintf("unknown ui_layout field '%s'",key))
+			}
+			if !found {return scene,fail(.Invalid_Field,fmt.tprintf("invalid ui_layout.%s",key))}
+		case "ui_text":
+			current.has_ui_text=true
+			switch key {case "text":current.ui_text.text,found=parse_basic_string(value); case "color":current.ui_text.color,found=parse_vec4(value); case "size":current.ui_text.size,found=parse_f32(value); case:return scene,fail(.Invalid_Field,fmt.tprintf("unknown ui_text field '%s'",key))}
+			if !found {return scene,fail(.Invalid_Field,fmt.tprintf("invalid ui_text.%s",key))}
 		case "component":
 			if current_component == nil {
 				return scene, fail(.Invalid_Syntax, "component fields must appear under [entities.components.<name>]")
@@ -256,7 +277,19 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 		if entity.has_transform && entity.transform.scale == (Vec3{}) {
 			scene.entities[index].transform.scale = Vec3{1, 1, 1}
 		}
+		if entity.has_ui_text && !entity.has_ui_layout {return scene,fail(.Invalid_Field,fmt.tprintf("UI text entity '%s' requires ui_layout",entity.name))}
+		if entity.has_ui_layout && (entity.ui_layout.size.x<=0 || entity.ui_layout.size.y<=0 || entity.ui_layout.padding<0 || entity.ui_layout.gap<0) {return scene,fail(.Invalid_Field,fmt.tprintf("UI entity '%s' requires positive size and non-negative padding/gap",entity.name))}
+		if entity.has_ui_text && (entity.ui_text.text=="" || entity.ui_text.size<=0) {return scene,fail(.Invalid_Field,fmt.tprintf("UI text entity '%s' requires text and positive size",entity.name))}
 	}
+	for entity in scene.entities {if entity.has_ui_layout && entity.ui_layout.parent!="" {
+		found_parent:=false; for candidate in scene.entities {if candidate.name==entity.ui_layout.parent && candidate.has_ui_layout {found_parent=true;break}}
+		if !found_parent {return scene,fail(.Invalid_Field,fmt.tprintf("UI parent '%s' for '%s' does not exist",entity.ui_layout.parent,entity.name))}
+		if entity.ui_layout.parent==entity.name {return scene,fail(.Invalid_Field,fmt.tprintf("UI entity '%s' cannot parent itself",entity.name))}
+	}}
+	for entity in scene.entities {if entity.has_ui_layout {
+		parent:=entity.ui_layout.parent;steps:=0
+		for parent!="" {steps+=1;if steps>len(scene.entities){return scene,fail(.Invalid_Field,fmt.tprintf("UI hierarchy containing '%s' has a cycle",entity.name))};next:="";for candidate in scene.entities{if candidate.name==parent&&candidate.has_ui_layout{next=candidate.ui_layout.parent;break}};parent=next}
+	}}
 
 	return scene, ok()
 }
@@ -331,6 +364,18 @@ parse_vec3 :: proc(value: string) -> (out: Vec3, ok: bool) {
 	}
 	return out, true
 }
+
+parse_vec2 :: proc(value: string) -> (out: Vec2, ok: bool) {
+	parts, valid := parse_number_array(value,2); if !valid{return out,false}; defer delete(parts)
+	out.x,ok=parse_f32(parts[0]); if !ok{return out,false}; out.y,ok=parse_f32(parts[1]); return out,ok
+}
+
+parse_vec4 :: proc(value: string) -> (out: Vec4, ok: bool) {
+	parts, valid := parse_number_array(value,4); if !valid{return out,false}; defer delete(parts)
+	out.x,ok=parse_f32(parts[0]); if !ok{return out,false}; out.y,ok=parse_f32(parts[1]); if !ok{return out,false}; out.z,ok=parse_f32(parts[2]); if !ok{return out,false}; out.w,ok=parse_f32(parts[3]); return out,ok
+}
+
+parse_number_array :: proc(value:string,count:int)->([]string,bool){text:=strings.trim_space(value);if len(text)<3||text[0]!='['||text[len(text)-1]!=']'{return nil,false};parts:=strings.split(text[1:len(text)-1],",");if len(parts)!=count{delete(parts);return nil,false};return parts,true}
 
 parse_f32 :: proc(value: string) -> (out: f32, ok: bool) {
 	return strconv.parse_f32(strings.trim_space(value))

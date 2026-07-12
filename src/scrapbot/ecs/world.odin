@@ -28,6 +28,8 @@ Material_Handle :: shared.Material_Handle
 Ambient_Light_Component :: shared.Ambient_Light_Component
 Directional_Light_Component :: shared.Directional_Light_Component
 Point_Light_Component :: shared.Point_Light_Component
+UI_Layout_Component :: shared.UI_Layout_Component
+UI_Text_Component :: shared.UI_Text_Component
 
 INVALID_COMPONENT_INDEX :: -1
 MAX_QUERY_TERMS :: 8
@@ -55,6 +57,8 @@ destroy_world :: proc(world: ^World) {
 	for mesh in world.meshes {
 		delete(mesh.primitive)
 	}
+	for layout in world.ui_layouts {delete(layout.parent)}
+	for text in world.ui_texts {delete(text.text)}
 	for &storage in world.custom_components {
 		delete(storage.name)
 		for &component in storage.components {
@@ -77,6 +81,8 @@ destroy_world :: proc(world: ^World) {
 	delete(world.geometries)
 	delete(world.materials)
 	delete(world.render_instances)
+	delete(world.ui_layouts)
+	delete(world.ui_texts)
 	delete(world.custom_components)
 	world^ = {}
 }
@@ -98,6 +104,8 @@ build_world :: proc(scene: ^Scene) -> World {
 			geometry_index  = INVALID_COMPONENT_INDEX,
 			material_index  = INVALID_COMPONENT_INDEX,
 			render_instance_index = INVALID_COMPONENT_INDEX,
+			ui_layout_index = INVALID_COMPONENT_INDEX,
+			ui_text_index = INVALID_COMPONENT_INDEX,
 			geometry_resource = clone_world_string(entity.geometry_resource),
 			material_resource = clone_world_string(entity.material_resource),
 			has_shadow_caster = entity.has_shadow_caster,
@@ -115,6 +123,8 @@ build_world :: proc(scene: ^Scene) -> World {
 		if entity.has_ambient_light {world_entity.ambient_light_index=len(world.ambient_lights); append(&world.ambient_lights,entity.ambient_light)}
 		if entity.has_directional_light {world_entity.directional_light_index=len(world.directional_lights); append(&world.directional_lights,entity.directional_light)}
 		if entity.has_point_light {world_entity.point_light_index=len(world.point_lights); append(&world.point_lights,entity.point_light)}
+		if entity.has_ui_layout {world_entity.ui_layout_index=len(world.ui_layouts); layout:=entity.ui_layout; layout.parent=clone_world_string(layout.parent); append(&world.ui_layouts,layout)}
+		if entity.has_ui_text {world_entity.ui_text_index=len(world.ui_texts); text:=entity.ui_text; text.text=clone_world_string(text.text); append(&world.ui_texts,text)}
 		if entity.has_mesh {
 			world_entity.mesh_index = len(world.meshes)
 			mesh := entity.mesh
@@ -713,6 +723,8 @@ entity_has_component :: proc "c" (
 	case "scrapbot.point_light": return entity.point_light_index >= 0 && entity.point_light_index < len(world.point_lights)
 	case "scrapbot.shadow_caster": return entity.has_shadow_caster
 	case "scrapbot.shadow_receiver": return entity.has_shadow_receiver
+	case "scrapbot.ui_layout": return entity.ui_layout_index>=0&&entity.ui_layout_index<len(world.ui_layouts)
+	case "scrapbot.ui_text": return entity.ui_text_index>=0&&entity.ui_text_index<len(world.ui_texts)
 	case "scrapbot.mesh":
 		return entity.mesh_index >= 0 && entity.mesh_index < len(world.meshes)
 	case "scrapbot.geometry":

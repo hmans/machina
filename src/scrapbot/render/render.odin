@@ -4,6 +4,7 @@ import ecs "../ecs"
 import platform "../platform"
 import shared "../shared"
 import resources "../resources"
+import ui "../ui"
 
 Renderer_Backend :: shared.Renderer_Backend
 Frame_System_Proc :: #type proc(data: rawptr, world: ^World, delta_seconds: f32) -> string
@@ -19,6 +20,7 @@ Run_Config :: struct {
 	resource_registry: ^resources.Registry,
 	stats: ^Render_Stats,
 	log_enabled: bool,
+	ui_state: ^ui.State,
 }
 World :: shared.World
 Render_Frame :: shared.Render_Frame
@@ -109,7 +111,7 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 run_frame_system :: proc(config: ^Run_Config, world: ^World, delta_seconds: f32) -> string {
 	if config.frame_system == nil {
 		ecs.advance_time(&world.time, delta_seconds)
-		return ""
-	}
-	return config.frame_system(config.frame_system_data, world, delta_seconds)
+	} else if err:=config.frame_system(config.frame_system_data, world, delta_seconds);err!=""{return err}
+	if config.ui_state!=nil {return ui.reconcile(config.ui_state,world,1280,720)}
+	return ""
 }

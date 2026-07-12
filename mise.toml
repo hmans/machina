@@ -58,7 +58,9 @@ odin check src/scrapbot -no-entry-point
 odin test src/scrapbot -all-packages -extra-linker-flags:"$LUAU_LINK_FLAGS"
 bin/scrapbot --version
 bin/scrapbot check examples/minimal
+bin/scrapbot check examples/ui-showcase
 bin/scrapbot run examples/minimal
+bin/scrapbot run examples/ui-showcase
 CHECK_JSON="$(bin/scrapbot check examples/minimal --json)"
 case "$CHECK_JSON" in
   '{"schema_version":1,"command":"check","ok":true,'*) ;;

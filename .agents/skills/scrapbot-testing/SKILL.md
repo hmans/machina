@@ -49,12 +49,14 @@ Keep `run` bounded with `--frames`. Structured success confirms command and runt
 
 - Use `examples/minimal` for fast CLI, project loading, scheduling, Luau/Odin integration, null backend, and basic WGPU smoke tests.
 - Use `examples/ecs-showcase` for geometry, materials, render reconciliation, batching, lighting, lifecycle-heavy ECS behavior, and visual renderer changes.
+- Use `examples/ui-showcase` for retained ECS UI hierarchy, row/column layout, panels, bitmap text, and overlay/framegrab changes.
 
 Validate an example with:
 
 ```sh
 bin/scrapbot check examples/minimal
 bin/scrapbot check examples/ecs-showcase
+bin/scrapbot check examples/ui-showcase
 bin/scrapbot run examples/minimal
 ```
 
@@ -77,6 +79,7 @@ Headless framegrab renders the same resource-backed ECS path into an offscreen t
 ```sh
 bin/scrapbot run examples/minimal --backend wgpu --headless --frames 2 --framegrab /tmp/scrapbot-framegrab.png
 bin/scrapbot run examples/ecs-showcase --backend wgpu --headless --frames 20 --framegrab /tmp/scrapbot-showcase.png
+bin/scrapbot run examples/ui-showcase --backend wgpu --headless --frames 2 --framegrab /tmp/scrapbot-ui.png
 ```
 
 On macOS, this still creates a hidden SDL3 window internally for Metal adapter bootstrap. It therefore needs the same window-system approval as visible SDL runs. Do not add this command to the default `mise test` unless the environment can run it without GUI approval.

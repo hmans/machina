@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:time"
 import platform "../platform"
 import resources "../resources"
+import ui "../ui"
 import wgpu_sdl3 "vendor:wgpu/sdl3glue"
 import "vendor:wgpu"
 
@@ -80,7 +81,7 @@ wgpu_wait_for_buffer_map :: proc(instance: wgpu.Instance, state: ^WGPU_Buffer_Ma
 	return false
 }
 
-wgpu_init_renderer :: proc(use_surface: bool, offscreen_format := wgpu.TextureFormat.RGBA8UnormSrgb) -> (renderer: WGPU_Renderer, err: string) {
+wgpu_init_renderer :: proc(use_surface: bool, ui_state:^ui.State=nil, offscreen_format := wgpu.TextureFormat.RGBA8UnormSrgb) -> (renderer: WGPU_Renderer, err: string) {
 	if use_surface && platform.runtime_window == nil {
 		return renderer, "wgpu renderer requires an SDL3 window"
 	}
@@ -178,6 +179,7 @@ wgpu_init_renderer :: proc(use_surface: bool, offscreen_format := wgpu.TextureFo
 	if err = wgpu_create_render_pipeline(&renderer); err != "" {
 		return renderer, err
 	}
+	if ui_state!=nil {if err=wgpu_create_ui_pipeline(&renderer,ui_state);err!=""{return renderer,err}}
 
 	return renderer, ""
 }
@@ -189,6 +191,14 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	if renderer.pipeline != nil {
 		wgpu.RenderPipelineRelease(renderer.pipeline)
 	}
+	if renderer.ui_pipeline!=nil{wgpu.RenderPipelineRelease(renderer.ui_pipeline)}
+	if renderer.ui_shader!=nil{wgpu.ShaderModuleRelease(renderer.ui_shader)}
+	if renderer.ui_bind_group!=nil{wgpu.BindGroupRelease(renderer.ui_bind_group)}
+	if renderer.ui_font_sampler!=nil{wgpu.SamplerRelease(renderer.ui_font_sampler)}
+	if renderer.ui_font_view!=nil{wgpu.TextureViewRelease(renderer.ui_font_view)}
+	if renderer.ui_font_texture!=nil{wgpu.TextureRelease(renderer.ui_font_texture)}
+	if renderer.ui_pipeline_layout!=nil{wgpu.PipelineLayoutRelease(renderer.ui_pipeline_layout)}
+	if renderer.ui_bind_group_layout!=nil{wgpu.BindGroupLayoutRelease(renderer.ui_bind_group_layout)}
 	if renderer.shadow_pipeline != nil {wgpu.RenderPipelineRelease(renderer.shadow_pipeline)}
 	if renderer.shadow_bind_group != nil {wgpu.BindGroupRelease(renderer.shadow_bind_group)}
 	if renderer.shadow_bind_group_layout != nil {wgpu.BindGroupLayoutRelease(renderer.shadow_bind_group_layout)}
@@ -426,6 +436,26 @@ wgpu_create_render_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 	if renderer.shadow_pipeline == nil {return "failed to create wgpu shadow pipeline"}
 
 	return ""
+}
+
+wgpu_create_ui_pipeline :: proc(renderer:^WGPU_Renderer,state:^ui.State)->string {
+	chain:=wgpu.ShaderSourceWGSL{chain={sType=.ShaderSourceWGSL},code=WGPU_UI_SHADER}
+	renderer.ui_shader=wgpu.DeviceCreateShaderModule(renderer.device,&wgpu.ShaderModuleDescriptor{nextInChain=&chain,label="Scrapbot UI Shader"});if renderer.ui_shader==nil{return "failed to create UI shader"}
+	layout_entries:=[?]wgpu.BindGroupLayoutEntry{{binding=0,visibility={.Fragment},texture={sampleType=.Float,viewDimension=._2D}},{binding=1,visibility={.Fragment},sampler={type=.Filtering}}}
+	renderer.ui_bind_group_layout=wgpu.DeviceCreateBindGroupLayout(renderer.device,&wgpu.BindGroupLayoutDescriptor{label="Scrapbot UI Bind Group Layout",entryCount=uint(len(layout_entries)),entries=raw_data(layout_entries[:])});if renderer.ui_bind_group_layout==nil{return "failed to create UI bind group layout"}
+	renderer.ui_pipeline_layout=wgpu.DeviceCreatePipelineLayout(renderer.device,&wgpu.PipelineLayoutDescriptor{label="Scrapbot UI Pipeline Layout",bindGroupLayoutCount=1,bindGroupLayouts=&renderer.ui_bind_group_layout});if renderer.ui_pipeline_layout==nil{return "failed to create UI pipeline layout"}
+	renderer.ui_font_texture=wgpu.DeviceCreateTexture(renderer.device,&wgpu.TextureDescriptor{label="Scrapbot UI Font Atlas",usage={.TextureBinding,.CopyDst},dimension=._2D,size={width=ui.FONT_ATLAS_SIZE,height=ui.FONT_ATLAS_SIZE,depthOrArrayLayers=1},format=.R8Unorm,mipLevelCount=1,sampleCount=1});if renderer.ui_font_texture==nil{return "failed to create UI font texture"}
+	wgpu.QueueWriteTexture(renderer.queue,&wgpu.TexelCopyTextureInfo{texture=renderer.ui_font_texture,aspect=.All},raw_data(state.font.pixels[:]),uint(len(state.font.pixels)),&wgpu.TexelCopyBufferLayout{bytesPerRow=ui.FONT_ATLAS_SIZE,rowsPerImage=ui.FONT_ATLAS_SIZE},&wgpu.Extent3D{width=ui.FONT_ATLAS_SIZE,height=ui.FONT_ATLAS_SIZE,depthOrArrayLayers=1})
+	renderer.ui_font_view=wgpu.TextureCreateView(renderer.ui_font_texture);if renderer.ui_font_view==nil{return "failed to create UI font view"}
+	renderer.ui_font_sampler=wgpu.DeviceCreateSampler(renderer.device,&wgpu.SamplerDescriptor{label="Scrapbot UI Font Sampler",addressModeU=.ClampToEdge,addressModeV=.ClampToEdge,addressModeW=.ClampToEdge,magFilter=.Nearest,minFilter=.Nearest,mipmapFilter=.Nearest,maxAnisotropy=1});if renderer.ui_font_sampler==nil{return "failed to create UI font sampler"}
+	bind_entries:=[?]wgpu.BindGroupEntry{{binding=0,textureView=renderer.ui_font_view},{binding=1,sampler=renderer.ui_font_sampler}}
+	renderer.ui_bind_group=wgpu.DeviceCreateBindGroup(renderer.device,&wgpu.BindGroupDescriptor{label="Scrapbot UI Bind Group",layout=renderer.ui_bind_group_layout,entryCount=uint(len(bind_entries)),entries=raw_data(bind_entries[:])});if renderer.ui_bind_group==nil{return "failed to create UI bind group"}
+	attributes:=[?]wgpu.VertexAttribute{{format=.Float32x2,offset=0,shaderLocation=0},{format=.Float32x2,offset=8,shaderLocation=1},{format=.Float32x4,offset=16,shaderLocation=2},{format=.Float32,offset=32,shaderLocation=3}}
+	buffer_layout:=wgpu.VertexBufferLayout{arrayStride=u64(size_of(WGPU_UI_Vertex)),stepMode=.Vertex,attributeCount=uint(len(attributes)),attributes=raw_data(attributes[:])}
+	blend:=wgpu.BlendState{color={operation=.Add,srcFactor=.SrcAlpha,dstFactor=.OneMinusSrcAlpha},alpha={operation=.Add,srcFactor=.One,dstFactor=.OneMinusSrcAlpha}}
+	color_target:=wgpu.ColorTargetState{format=renderer.format,blend=&blend,writeMask=wgpu.ColorWriteMaskFlags_All};fragment:=wgpu.FragmentState{module=renderer.ui_shader,entryPoint="ui_fs",targetCount=1,targets=&color_target}
+	renderer.ui_pipeline=wgpu.DeviceCreateRenderPipeline(renderer.device,&wgpu.RenderPipelineDescriptor{label="Scrapbot UI Pipeline",layout=renderer.ui_pipeline_layout,vertex={module=renderer.ui_shader,entryPoint="ui_vs",bufferCount=1,buffers=&buffer_layout},primitive={topology=.TriangleList,frontFace=.CCW,cullMode=.None},depthStencil=&wgpu.DepthStencilState{format=.Depth24Plus,depthWriteEnabled=.False,depthCompare=.Always},multisample={count=1,mask=0xFFFF_FFFF},fragment=&fragment})
+	if renderer.ui_pipeline==nil{return "failed to create UI pipeline"};return ""
 }
 
 wgpu_release_surface_depth :: proc(renderer: ^WGPU_Renderer) {

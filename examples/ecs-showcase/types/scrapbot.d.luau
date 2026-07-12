@@ -16,6 +16,8 @@ export type Scrapbot = {
 	point_light: ScrapbotPointLightComponent,
 	shadow_caster: ScrapbotShadowCasterComponent,
 	shadow_receiver: ScrapbotShadowReceiverComponent,
+	ui_layout: ScrapbotUiLayoutComponent,
+	ui_text: ScrapbotUiTextComponent,
 	mesh: ScrapbotMeshComponent,
 	geometry_component: ScrapbotGeometryComponent,
 	material_component: ScrapbotMaterialComponent,
@@ -257,6 +259,22 @@ export type ReadonlyScrapbotShadowReceiver = {
 }
 
 export type ScrapbotShadowReceiverComponent = ScrapbotComponent<ScrapbotShadowReceiver, ReadonlyScrapbotShadowReceiver>
+
+export type ScrapbotUiLayout = {
+}
+
+export type ReadonlyScrapbotUiLayout = {
+}
+
+export type ScrapbotUiLayoutComponent = ScrapbotComponent<ScrapbotUiLayout, ReadonlyScrapbotUiLayout>
+
+export type ScrapbotUiText = {
+}
+
+export type ReadonlyScrapbotUiText = {
+}
+
+export type ScrapbotUiTextComponent = ScrapbotComponent<ScrapbotUiText, ReadonlyScrapbotUiText>
 
 export type ScrapbotInternalRenderInstance = {
 }

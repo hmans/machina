@@ -21,6 +21,8 @@ export type Scrapbot = {
 	point_light: ScrapbotPointLightComponent,
 	shadow_caster: ScrapbotShadowCasterComponent,
 	shadow_receiver: ScrapbotShadowReceiverComponent,
+	ui_layout: ScrapbotUiLayoutComponent,
+	ui_text: ScrapbotUiTextComponent,
 	mesh: ScrapbotMeshComponent,
 	geometry_component: ScrapbotGeometryComponent,
 	material_component: ScrapbotMaterialComponent,

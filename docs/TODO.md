@@ -18,6 +18,16 @@
 - [ ] Add light selection or clustered lighting beyond the initial fixed limits.
 - [ ] Add visual comparison for offscreen render output.
 
+## ECS UI
+
+- [x] Add scene-defined UI layout and text components.
+- [x] Reconcile appearing and disappearing UI entities into retained state.
+- [x] Render panel and bitmap-text paint commands after world geometry.
+- [x] Add row, column, and overlay hierarchy layout.
+- [ ] Expose UI creation and mutation through Luau and native extensions.
+- [ ] Add pointer input, hit testing, button state, and command events.
+- [ ] Add clipping, scrolling, canvas scaling, and richer sizing/alignment.
+
 ## Project Runtime
 
 - [ ] Add a real TOML parser or formalize the supported scene subset.

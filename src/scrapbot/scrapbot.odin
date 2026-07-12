@@ -13,6 +13,7 @@ import resources "./resources"
 import schedule "./schedule"
 import script "./script"
 import shared "./shared"
+import ui "./ui"
 
 VERSION :: "0.1.0-dev"
 
@@ -296,6 +297,11 @@ run_project_internal :: proc(root: string, config: Run_Config, extensions_prebui
 
 	world := ecs.build_world(&loaded.scene)
 	defer ecs.destroy_world(&world)
+	ui_state:=new(ui.State)
+	defer free(ui_state)
+	if ui_err:=ui.init(ui_state);ui_err!=""{result.err=ui_err;return result}
+	defer ui.destroy(ui_state)
+	run_config.ui_state=ui_state
 
 	if run_config.hot_reload {
 		hot_reload: Hot_Reload_State

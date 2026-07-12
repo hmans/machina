@@ -11,6 +11,8 @@ VERSION :: "0.1.0-dev"
 Vec3 :: struct {
 	x, y, z: f32,
 }
+Vec2 :: struct {x,y: f32}
+Vec4 :: struct {x,y,z,w: f32}
 
 Renderer_Backend :: enum {
 	Null,
@@ -55,6 +57,10 @@ Scene_Entity :: struct {
 	material_resource: string,
 	has_shadow_caster: bool,
 	has_shadow_receiver: bool,
+	has_ui_layout: bool,
+	ui_layout: UI_Layout_Component,
+	has_ui_text: bool,
+	ui_text: UI_Text_Component,
 
 	custom_components: [dynamic]Custom_Component,
 }
@@ -92,6 +98,18 @@ Camera_Component :: struct {
 Ambient_Light_Component :: struct {color: Vec3, intensity: f32}
 Directional_Light_Component :: struct {direction, color: Vec3, intensity: f32}
 Point_Light_Component :: struct {color: Vec3, intensity, range: f32}
+
+UI_Direction :: enum {Overlay, Row, Column}
+UI_Layout_Component :: struct {
+	parent: string,
+	direction: UI_Direction,
+	position: Vec2,
+	size: Vec2,
+	padding: f32,
+	gap: f32,
+	background: Vec4,
+}
+UI_Text_Component :: struct {text: string, color: Vec4, size: f32}
 
 Mesh_Component :: struct {
 	primitive: string,
@@ -137,6 +155,8 @@ World_Entity :: struct {
 	render_instance_index: int,
 	has_shadow_caster: bool,
 	has_shadow_receiver: bool,
+	ui_layout_index: int,
+	ui_text_index: int,
 	geometry_resource: string,
 	material_resource: string,
 }
@@ -193,6 +213,8 @@ World :: struct {
 	geometries: [dynamic]Geometry_Component,
 	materials: [dynamic]Material_Component,
 	render_instances: [dynamic]Render_Instance_Component,
+	ui_layouts: [dynamic]UI_Layout_Component,
+	ui_texts: [dynamic]UI_Text_Component,
 	custom_components: [dynamic]Custom_Component_Storage,
 }
 

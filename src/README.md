@@ -12,6 +12,7 @@ Scrapbot keeps `src/scrapbot` as the public runtime facade imported by the CLI. 
 - `scrapbot/script` - Luau runtime lifecycle, API bindings, component and system registration, queries, commands, and value marshaling.
 - `scrapbot/native` - Native extension builds and discovery, dynamic loading, ABI registration, and system execution.
 - `scrapbot/resources` - Geometry, PNG texture, and material resource ownership plus generated primitive geometry.
+- `scrapbot/ui` - Retained ECS UI reconciliation, layout, paint lists, and embedded bitmap text.
 - `scrapbot/extension_api` - The stable C-compatible contract exposed to native extensions.
 - `scrapbot/extension` - The higher-level Odin wrapper used by extension authors.
 - `scrapbot/platform` - Platform window and event integration.

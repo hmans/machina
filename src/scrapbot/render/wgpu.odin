@@ -6,6 +6,7 @@ import ecs "../ecs"
 import platform "../platform"
 import shared "../shared"
 import resources "../resources"
+import ui "../ui"
 import "vendor:wgpu"
 
 Vec3 :: shared.Vec3
@@ -56,6 +57,8 @@ WGPU_Material_Cache :: struct {
 	bind_group: wgpu.BindGroup,
 	valid: bool,
 }
+WGPU_UI_Vertex :: struct {position:[2]f32,uv:[2]f32,color:[4]f32,kind:f32}
+#assert(size_of(WGPU_UI_Vertex)==36)
 
 WGPU_Request_Adapter_State :: struct {
 	completed: bool,
@@ -88,6 +91,14 @@ WGPU_Renderer :: struct {
 	bind_group:        wgpu.BindGroup,
 	material_bind_group_layout: wgpu.BindGroupLayout,
 	material_sampler: wgpu.Sampler,
+	ui_bind_group_layout: wgpu.BindGroupLayout,
+	ui_bind_group: wgpu.BindGroup,
+	ui_pipeline_layout: wgpu.PipelineLayout,
+	ui_shader: wgpu.ShaderModule,
+	ui_pipeline: wgpu.RenderPipeline,
+	ui_font_texture: wgpu.Texture,
+	ui_font_view: wgpu.TextureView,
+	ui_font_sampler: wgpu.Sampler,
 	shadow_bind_group_layout: wgpu.BindGroupLayout,
 	shadow_bind_group: wgpu.BindGroup,
 	shadow_pipeline_layout: wgpu.PipelineLayout,
@@ -226,6 +237,7 @@ wgpu_encode_render_pass :: proc(
 	depth_view: wgpu.TextureView,
 	batches: []WGPU_Draw_Batch,
 	registry: ^resources.Registry,
+	ui_state: ^ui.State,
 	label: string,
 ) -> string {
 	color_attachment := wgpu.RenderPassColorAttachment {
@@ -270,6 +282,19 @@ wgpu_encode_render_pass :: proc(
 			wgpu.RenderPassEncoderSetIndexBuffer(render_pass, cached.index_buffer, .Uint32, 0, wgpu.WHOLE_SIZE)
 			wgpu.RenderPassEncoderDrawIndexed(render_pass, cached.index_count, batch.instance_count, 0, 0, batch.first_instance)
 		}
+	}
+	if ui_state!=nil&&ui_state.paint_count>0 {
+		vertices:=make([dynamic]WGPU_UI_Vertex,0,ui_state.paint_count*6);defer delete(vertices)
+		for command in ui_state.paint[:ui_state.paint_count] {
+			x0:=command.rect.x/1280*2-1;x1:=(command.rect.x+command.rect.width)/1280*2-1
+			y0:=1-command.rect.y/720*2;y1:=1-(command.rect.y+command.rect.height)/720*2
+			u0,v0,u1,v1:=command.uv.x,command.uv.y,command.uv.z,command.uv.w
+			kind:=f32(0);if command.kind==.Glyph{kind=1}
+			color:=[4]f32{command.color.x,command.color.y,command.color.z,command.color.w}
+			append(&vertices,WGPU_UI_Vertex{position={x0,y0},uv={u0,v0},color=color,kind=kind},WGPU_UI_Vertex{position={x1,y0},uv={u1,v0},color=color,kind=kind},WGPU_UI_Vertex{position={x1,y1},uv={u1,v1},color=color,kind=kind},WGPU_UI_Vertex{position={x0,y0},uv={u0,v0},color=color,kind=kind},WGPU_UI_Vertex{position={x1,y1},uv={u1,v1},color=color,kind=kind},WGPU_UI_Vertex{position={x0,y1},uv={u0,v1},color=color,kind=kind})
+		}
+		buffer:=wgpu.DeviceCreateBufferWithData(renderer.device,&wgpu.BufferWithDataDescriptor{label="Scrapbot UI Vertices",usage={.Vertex}},vertices[:]);if buffer==nil{return "failed to upload UI vertices"};defer wgpu.BufferRelease(buffer)
+		wgpu.RenderPassEncoderSetPipeline(render_pass,renderer.ui_pipeline);wgpu.RenderPassEncoderSetBindGroup(render_pass,0,renderer.ui_bind_group);wgpu.RenderPassEncoderSetVertexBuffer(render_pass,0,buffer,0,wgpu.WHOLE_SIZE);wgpu.RenderPassEncoderDraw(render_pass,u32(len(vertices)),1,0,0)
 	}
 
 	wgpu.RenderPassEncoderEnd(render_pass)
@@ -352,7 +377,7 @@ wgpu_draw_frame :: proc(renderer: ^WGPU_Renderer, world: ^World, config: ^Run_Co
 	defer wgpu.CommandEncoderRelease(encoder)
 
 	if err = wgpu_encode_shadow_pass(renderer, encoder, batches[:batch_count], config.resource_registry); err != "" {return false, false, err}
-	if err = wgpu_encode_render_pass(renderer, encoder, view, renderer.depth_view, batches[:batch_count], config.resource_registry, "Scrapbot Geometry Pass"); err != "" {
+	if err = wgpu_encode_render_pass(renderer, encoder, view, renderer.depth_view, batches[:batch_count], config.resource_registry, config.ui_state, "Scrapbot Geometry Pass"); err != "" {
 		return false, false, err
 	}
 
@@ -399,7 +424,7 @@ wgpu_render_offscreen_frame :: proc(
 	defer wgpu.CommandEncoderRelease(encoder)
 
 	if err := wgpu_encode_shadow_pass(renderer, encoder, batches[:batch_count], config.resource_registry); err != "" {return err}
-	if err := wgpu_encode_render_pass(renderer, encoder, view, depth_view, batches[:batch_count], config.resource_registry, "Scrapbot Headless Geometry Pass"); err != "" {
+	if err := wgpu_encode_render_pass(renderer, encoder, view, depth_view, batches[:batch_count], config.resource_registry, config.ui_state, "Scrapbot Headless Geometry Pass"); err != "" {
 		return err
 	}
 
@@ -436,7 +461,7 @@ wgpu_render_offscreen_frame :: proc(
 }
 
 wgpu_run_headless :: proc(world: ^World, config: ^Run_Config) -> string {
-	renderer, init_err := wgpu_init_renderer(true)
+	renderer, init_err := wgpu_init_renderer(true,config.ui_state)
 	defer wgpu_destroy_renderer(&renderer)
 	if init_err != "" {
 		return init_err
@@ -570,7 +595,7 @@ align_to :: proc(value, alignment: u32) -> u32 {
 }
 
 wgpu_run_window :: proc(world: ^World, config: ^Run_Config) -> string {
-	renderer, init_err := wgpu_init_renderer(true)
+	renderer, init_err := wgpu_init_renderer(true,config.ui_state)
 	defer wgpu_destroy_renderer(&renderer)
 	if init_err != "" {
 		return init_err

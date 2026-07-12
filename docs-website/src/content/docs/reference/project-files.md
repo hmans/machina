@@ -100,6 +100,35 @@ Directional shadow markers have no fields:
 
 Casters write to the first directional light's shadow map. Receivers sample it. The markers are independent, so geometry may cast without receiving or receive without casting.
 
+Screen-space UI entities use a retained layout component and may add bitmap text:
+
+```toml
+[[entities]]
+name = "HUD"
+
+[entities.ui_layout]
+direction = "column"
+position = [40, 40]
+size = [460, 280]
+padding = 24
+gap = 14
+background = [0.035, 0.055, 0.105, 0.96]
+
+[[entities]]
+name = "Title"
+
+[entities.ui_layout]
+parent = "HUD"
+size = [412, 52]
+
+[entities.ui_text]
+text = "SCRAPBOT UI"
+color = [0.15, 0.95, 0.82, 1]
+size = 32
+```
+
+Positions and sizes are screen pixels from the top-left. `direction` accepts `overlay`, `row`, or `column`; row and column parents apply `padding` and `gap` in scene entity order. Parent names must resolve to another UI layout entity, and cycles are rejected.
+
 ## Custom component sections
 
 ```toml
