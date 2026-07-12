@@ -19,6 +19,8 @@ The runtime CLI is the entry point for creating, validating, and running Scrapbo
 - Users can pass `--hot-reload` to periodically check `project.toml`, the default scene TOML, `scripts/main.luau`, native extension libraries, and declared native extension source directories while the renderer is running.
 - Users can pass `--scheduler-trace` to report native worker count, parallel stage count, and maximum parallel width after a run.
 - Users can ask for top-level help or command-specific help.
+- `init`, `check`, `build`, and `run` accept `--json` and emit one versioned JSON document with structured diagnostics and command result data.
+- JSON diagnostics have stable codes, severity, messages, and optional paths. Project logging is suppressed so machine-readable stdout is not contaminated.
 - During development, `mise scrapbot` builds and runs the CLI with forwarded arguments.
 
 ## Design Decisions
@@ -35,6 +37,12 @@ The runtime CLI is the entry point for creating, validating, and running Scrapbo
 **Why:** The CLI is expected to grow, and typed option structs are easier to extend than ad hoc argument indexing. See ADR-004.
 **Tradeoff:** Command-specific help is generated from struct tags, which may not always match the exact prose style we want.
 
+### 3. Keep machine output singular and versioned
+
+**Decision:** Emit exactly one JSON envelope per command invocation with a schema version, command name, success flag, diagnostic array, and typed result.
+**Why:** Agents and automation need deterministic parsing without scraping human prose or combining log streams.
+**Tradeoff:** Command result schemas and diagnostic codes become public contracts that must evolve deliberately.
+
 ## Related
 
 - **ADRs:** ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-008
@@ -43,4 +51,4 @@ The runtime CLI is the entry point for creating, validating, and running Scrapbo
 ## Open Questions
 
 - Should top-level command metadata move into a command table once the CLI has more commands?
-- Should `scrapbot check` gain machine-readable diagnostics before more validators are added?
+- Which validators should gain precise source ranges after the first path-level diagnostic slice?

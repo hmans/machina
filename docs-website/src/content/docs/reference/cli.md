@@ -5,10 +5,33 @@ description: Current Scrapbot command-line interface.
 
 All commands run against a project directory. When omitted, the project path defaults to the current directory.
 
+## Machine-readable output
+
+`init`, `check`, `build`, and `run` accept `--json`. JSON mode emits exactly one document to stdout and suppresses project log lines:
+
+```json
+{
+  "schema_version": 1,
+  "command": "check",
+  "ok": false,
+  "diagnostics": [
+    {
+      "code": "SCRAPBOT_CHECK_FAILED",
+      "severity": "error",
+      "message": "failed to read project.toml",
+      "path": "my-game"
+    }
+  ],
+  "result": {}
+}
+```
+
+Diagnostic codes are stable automation identifiers. Messages remain human-readable context. Successful command envelopes have an empty diagnostics array and command-specific result fields.
+
 ## `scrapbot init`
 
 ```sh
-scrapbot init [path] [name]
+scrapbot init [path] [name] [--json]
 ```
 
 Creates a project with:
@@ -22,7 +45,7 @@ Creates a project with:
 ## `scrapbot build`
 
 ```sh
-scrapbot build [path]
+scrapbot build [path] [--json]
 ```
 
 Builds native extension targets declared in `project.toml` into `build/extensions`.
@@ -30,7 +53,7 @@ Builds native extension targets declared in `project.toml` into `build/extension
 ## `scrapbot check`
 
 ```sh
-scrapbot check [path]
+scrapbot check [path] [--json]
 ```
 
 Performs project validation:
@@ -47,7 +70,7 @@ Performs project validation:
 ## `scrapbot run`
 
 ```sh
-scrapbot run [path] [--backend null|wgpu] [--window] [--hot-reload] [--scheduler-trace] [--frames n] [--framegrab out.png]
+scrapbot run [path] [--backend null|wgpu] [--window] [--hot-reload] [--scheduler-trace] [--frames n] [--framegrab out.png] [--json]
 ```
 
 Runs a project through the selected renderer backend after stepping registered native and Luau systems.
@@ -64,6 +87,7 @@ Options:
 | `--scheduler-trace` | Print native worker count, parallel stage count, and maximum stage width. |
 | `--frames n` | Limit renderer frames. |
 | `--framegrab out.png` | Write the final headless WGPU frame to a PNG. |
+| `--json` | Emit one versioned machine-readable result. |
 
 ## `scrapbot help`
 

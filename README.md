@@ -18,9 +18,9 @@ The high-level roadmap is below. Active follow-up work lives in [`docs/TODO.md`]
 Scrapbot currently has a small Odin CLI and runtime skeleton:
 
 - `scrapbot init [path] [name]` creates a text-first project with `project.toml`, `scenes/main.scene.toml`, `scripts/main.luau`, and Luau LSP metadata.
-- `scrapbot check [path]` builds declared native extensions, validates the project manifest, default scene, and project Luau component schemas, refreshes generated Luau LSP types, and runs Luau static analysis when `luau-analyze` is available.
-- `scrapbot build [path]` builds declared native extensions without running or validating the scene.
-- `scrapbot run [path] [--backend null|wgpu] [--window] [--hot-reload] [--scheduler-trace] [--frames n] [--framegrab out.png]` builds declared native extensions, loads the scene into a tiny native ECS world, executes `scripts/main.luau` if present, runs registered native and script systems, and submits the world through the selected renderer backend. Scheduler tracing reports native worker utilization for the run.
+- `scrapbot check [path] [--json]` builds declared native extensions, validates the project manifest, default scene, and project Luau component schemas, refreshes generated Luau LSP types, and runs Luau static analysis when `luau-analyze` is available.
+- `scrapbot build [path] [--json]` builds declared native extensions without running or validating the scene.
+- `scrapbot run [path] [--backend null|wgpu] [--window] [--hot-reload] [--scheduler-trace] [--frames n] [--framegrab out.png] [--json]` builds declared native extensions, loads the scene into a tiny native ECS world, executes `scripts/main.luau` if present, runs registered native and script systems, and submits the world through the selected renderer backend. Scheduler tracing reports native worker utilization for the run.
 - `scrapbot help <command>` prints command-specific options parsed by Odin's `core:flags`.
 
 During development, use `mise build` to compile the CLI and `mise scrapbot -- [args...]` to compile and run it with arguments forwarded to Scrapbot.
@@ -192,10 +192,10 @@ Run the full local test suite with `mise test`.
 ### Testing And Tooling
 
 - Commands
-  - [ ] Project validation
+  - [x] Project validation
   - [ ] Deterministic stepping
   - [ ] Benchmark runner
-  - [ ] JSON command output
+  - [x] JSON command output
 - Verification
   - [ ] Gameplay test fixtures
   - [ ] Offscreen render verification

@@ -12,6 +12,7 @@ The `src/scrapbot` package is the public runtime facade used by the CLI. Most im
 | `ecs` | World state, queries, and deferred world commands |
 | `component` | Component schemas, validation, and generated Luau types |
 | `schedule` | Access declarations and conflict-free batch planning |
+| `diagnostic` | Stable machine-readable diagnostic records for tools and commands |
 | `script` | Luau lifecycle, bindings, systems, queries, commands, and value marshaling |
 | `native` | Extension builds, discovery, loading, ABI registration, and native system execution |
 | `resources` | Geometry and material resource ownership and primitive generation |

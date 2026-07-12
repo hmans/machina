@@ -326,7 +326,7 @@ run_project :: proc(root: string, config: Run_Config) -> Runtime_Result {
 		root,
 		&world,
 		&registry,
-		script.Source_Options{log_enabled = true, resource_registry = &frame_runtime.resources},
+		script.Source_Options{log_enabled = config.log_enabled, resource_registry = &frame_runtime.resources},
 	)
 	if script_result.err != "" {
 		result.err = script_result.err

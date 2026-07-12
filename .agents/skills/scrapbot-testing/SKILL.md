@@ -31,6 +31,20 @@ bin/scrapbot help run
 
 Use `mise test` for `src/scrapbot/script` or the full package tree because Luau tests require the native linker flags from `mise.toml`.
 
+## Structured Diagnostics
+
+Prefer `--json` for agent-driven CLI checks:
+
+```sh
+bin/scrapbot check examples/minimal --json
+bin/scrapbot build examples/minimal --json
+bin/scrapbot run examples/minimal --frames 1 --json
+```
+
+JSON mode emits one versioned document on stdout. Use `ok`, diagnostic `code`, and documented `result` fields for assertions and branching. Treat diagnostic messages as human-readable context; do not match their exact text. Check `schema_version` before consuming the envelope, and fall back to human output only when the command has no structured mode.
+
+Keep `run` bounded with `--frames`. Structured success confirms command and runtime behavior, but renderer changes still require the WGPU smoke or framegrab checks described below.
+
 ## Choose An Example
 
 - Use `examples/minimal` for fast CLI, project loading, scheduling, Luau/Odin integration, null backend, and basic WGPU smoke tests.
@@ -127,6 +141,7 @@ pnpm run build
 ## Notes For Future Agents
 
 - Prefer `mise test` over reconstructing the suite manually.
+- Prefer versioned `--json` output over parsing human-readable CLI output.
 - Keep GPU commands out of the default suite while they require GUI/window-system approval.
 - Use `/tmp` for generated framegrabs and temporary test artifacts unless the user asks to keep them.
 - If a WGPU command fails in the sandbox with SDL display, XPC, or window-system errors, rerun it with approval rather than changing renderer code.

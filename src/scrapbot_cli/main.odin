@@ -3,21 +3,26 @@ package main
 import "core:flags"
 import "core:fmt"
 import "core:os"
+import "core:encoding/json"
 import scrapbot "../scrapbot"
+import diagnostic "../scrapbot/diagnostic"
 
 PARSING_STYLE :: flags.Parsing_Style.Unix
 
 Init_Options :: struct {
 	path: string `args:"pos=0" usage:"Project directory to create."`,
 	name: string `args:"pos=1" usage:"Project display name."`,
+	json: bool `usage:"Emit one machine-readable JSON result."`,
 }
 
 Check_Options :: struct {
 	path: string `args:"pos=0" usage:"Project directory to validate."`,
+	json: bool `usage:"Emit one machine-readable JSON result."`,
 }
 
 Build_Options :: struct {
 	path: string `args:"pos=0" usage:"Project directory whose native extensions should be built."`,
+	json: bool `usage:"Emit one machine-readable JSON result."`,
 }
 
 Run_Options :: struct {
@@ -29,7 +34,25 @@ Run_Options :: struct {
 	scheduler_trace: bool `name:"scheduler-trace" usage:"Print native scheduler worker and parallel-stage statistics."`,
 	frames:  u32    `usage:"Limit renderer frames. Windowed 0 runs until close; headless 0 captures one frame."`,
 	framegrab: string `usage:"Write the final headless WGPU frame to this PNG path."`,
+	json: bool `usage:"Emit one machine-readable JSON result."`,
 }
+
+Json_Envelope :: struct($T: typeid) {
+	schema_version: int,
+	command: string,
+	ok: bool,
+	diagnostics: []diagnostic.Diagnostic,
+	result: T,
+}
+
+Path_Result :: struct {path: string}
+Check_Result :: struct {project_file, path: string}
+Run_Result :: struct {
+	backend: string,
+	entities, cameras, geometries, renderables, draw_batches: int,
+	scheduler_workers, parallel_stages, max_parallel_width: int,
+}
+Error_Result :: struct {}
 
 main :: proc() {
 	code := run()
@@ -76,9 +99,11 @@ run_init :: proc(args: []string) -> int {
 	}
 
 	if err := scrapbot.init_project(opt.path, opt.name); err != "" {
+		if opt.json {emit_json_error("init", "SCRAPBOT_INIT_FAILED", err, opt.path); return 1}
 		fmt.eprintln(err)
 		return 1
 	}
+	if opt.json {emit_json_success("init", Path_Result{path=opt.path}); return 0}
 	fmt.printf("initialized Scrapbot project in %s\n", opt.path)
 	return 0
 }
@@ -91,9 +116,11 @@ run_check :: proc(args: []string) -> int {
 	}
 
 	if err := scrapbot.check_project(opt.path); err != "" {
+		if opt.json {emit_json_error("check", "SCRAPBOT_CHECK_FAILED", err, opt.path); return 1}
 		fmt.eprintln(err)
 		return 1
 	}
+	if opt.json {emit_json_success("check", Check_Result{project_file=scrapbot.PROJECT_FILE,path=opt.path}); return 0}
 	fmt.printf("%s is valid\n", scrapbot.PROJECT_FILE)
 	return 0
 }
@@ -106,9 +133,11 @@ run_build :: proc(args: []string) -> int {
 	}
 
 	if err := scrapbot.build_project(opt.path); err != "" {
+		if opt.json {emit_json_error("build", "SCRAPBOT_BUILD_FAILED", err, opt.path); return 1}
 		fmt.eprintln(err)
 		return 1
 	}
+	if opt.json {emit_json_success("build", Path_Result{path=opt.path}); return 0}
 	fmt.printf("built native extensions for %s\n", opt.path)
 	return 0
 }
@@ -122,6 +151,7 @@ run_project :: proc(args: []string) -> int {
 
 	backend, backend_ok := scrapbot.parse_renderer_backend(opt.backend)
 	if !backend_ok {
+		if opt.json {emit_json_error("run", "SCRAPBOT_UNKNOWN_RENDERER", fmt.tprintf("unknown renderer backend: %s", opt.backend), opt.path); return 1}
 		fmt.eprintf("unknown renderer backend: %s\n", opt.backend)
 		return 1
 	}
@@ -132,11 +162,23 @@ run_project :: proc(args: []string) -> int {
 		hot_reload     = opt.hot_reload,
 		max_frames     = opt.frames,
 		framegrab_path = opt.framegrab,
+		log_enabled    = !opt.json,
 	}
 	result := scrapbot.run_project(opt.path, config)
 	if result.err != "" {
+		if opt.json {emit_json_error("run", "SCRAPBOT_RUN_FAILED", result.err, opt.path); return 1}
 		fmt.eprintln(result.err)
 		return 1
+	}
+	if opt.json {
+		emit_json_success("run", Run_Result {
+			backend=scrapbot.renderer_backend_name(backend), entities=result.frame.entity_count,
+			cameras=result.frame.camera_count, geometries=result.frame.mesh_count,
+			renderables=result.frame.renderable_count, draw_batches=result.draw_batches,
+			scheduler_workers=result.scheduler_workers, parallel_stages=result.parallel_stages,
+			max_parallel_width=result.max_parallel_width,
+		})
+		return 0
 	}
 	if opt.scheduler_trace {
 		fmt.printf(
@@ -164,11 +206,38 @@ parse_command_args :: proc(opt: ^$T, args: []string, program: string) -> (code: 
 		return 0, true
 	}
 
-	flags.print_errors(T, err, program, PARSING_STYLE)
+	if json_requested(args) {
+		emit_json_error(program[len("scrapbot "):], "SCRAPBOT_ARGUMENT_ERROR", fmt.tprintf("%v", err), "")
+	} else {
+		flags.print_errors(T, err, program, PARSING_STYLE)
+	}
 	if _, is_help := err.(flags.Help_Request); is_help {
 		return 0, false
 	}
 	return 1, false
+}
+
+json_requested :: proc(args: []string) -> bool {
+	for arg in args {if arg == "--json" {return true}}
+	return false
+}
+
+emit_json_success :: proc(command: string, result: $T) {
+	diagnostics := make([]diagnostic.Diagnostic, 0)
+	defer delete(diagnostics)
+	emit_json(Json_Envelope(T){schema_version=1,command=command,ok=true,diagnostics=diagnostics,result=result})
+}
+
+emit_json_error :: proc(command, code, message, path: string) {
+	diagnostics := []diagnostic.Diagnostic{diagnostic.error(code, message, path)}
+	emit_json(Json_Envelope(Error_Result){schema_version=1,command=command,ok=false,diagnostics=diagnostics,result={}})
+}
+
+emit_json :: proc(envelope: $T) {
+	data, err := json.marshal(envelope)
+	if err != nil {fmt.eprintf("failed to encode diagnostic JSON: %v\n", err); return}
+	defer delete(data)
+	fmt.println(string(data))
 }
 
 print_command_help :: proc(command: string) -> int {

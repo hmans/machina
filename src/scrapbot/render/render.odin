@@ -18,6 +18,7 @@ Run_Config :: struct {
 	frame_system_data: rawptr,
 	resource_registry: ^resources.Registry,
 	stats: ^Render_Stats,
+	log_enabled: bool,
 }
 World :: shared.World
 Render_Frame :: shared.Render_Frame
