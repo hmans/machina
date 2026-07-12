@@ -25,7 +25,7 @@ Scrapbot currently has a small Odin CLI and runtime skeleton:
 
 During development, use `mise build` to compile the CLI and `mise scrapbot -- [args...]` to compile and run it with arguments forwarded to Scrapbot.
 
-This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Rendering is pluggable at the runtime boundary. The `null` backend supports headless smoke tests, while the `wgpu` backend renders full indexed geometry with shared base-color and PNG-textured materials, ECS ambient/directional/point lights, backend-owned GPU caches, automatic instanced batching, and a retained ECS UI overlay with panels and bitmap text. Headless WGPU can write a final-frame PNG with `--framegrab`. Luau scripting is embedded from a pinned source dependency and exposes the ECS, full geometry/material resource creation, scheduled systems, deferred lifecycle commands, generated types, native extension integration, and hot reload.
+This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Rendering is pluggable at the runtime boundary. The `null` backend supports headless smoke tests, while the `wgpu` backend renders full indexed geometry with shared base-color and PNG-textured materials, ECS ambient/directional/point lights, backend-owned GPU caches, automatic instanced batching, and a retained ECS UI overlay with panels and MTSDF text. Headless WGPU can write a final-frame PNG with `--framegrab`. Luau scripting is embedded from a pinned source dependency and exposes the ECS, full geometry/material resource creation, scheduled systems, deferred lifecycle commands, generated types, native extension integration, and hot reload.
 
 Example projects live in [`examples/`](examples/). The minimal example demonstrates Luau-defined and Odin-defined components and systems, and can be verified with `mise scrapbot run examples/minimal`. The ECS showcase runs a native object fountain with visible spawned cube renderables, velocity, lifetime, spin, despawn, animated point lights, and Luau typed queries.
 
@@ -144,8 +144,8 @@ Run the full local test suite with `mise test`.
   - [ ] UI command events
   - [ ] UI scrolling
   - [ ] Canvas scaling
-  - [x] Built-in bitmap UI text
-  - [ ] SDF-based font rendering
+  - [x] Built-in scalable UI text
+  - [x] MTSDF-based font rendering
   - [x] UI gallery
 - Controls
   - [ ] Reusable editor controls

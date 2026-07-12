@@ -107,5 +107,6 @@ WGPU_UI_SHADER :: `
 struct Input {@location(0) position:vec2<f32>,@location(1) uv:vec2<f32>,@location(2) color:vec4<f32>,@location(3) kind:f32};
 struct Output {@builtin(position) position:vec4<f32>,@location(0) uv:vec2<f32>,@location(1) color:vec4<f32>,@location(2) kind:f32};
 @vertex fn ui_vs(input:Input)->Output {var output:Output;output.position=vec4<f32>(input.position,0.0,1.0);output.uv=input.uv;output.color=input.color;output.kind=input.kind;return output;}
-@fragment fn ui_fs(input:Output)->@location(0) vec4<f32>{if input.kind>0.5 {let coverage=textureSample(font_texture,font_sampler,input.uv).r;return vec4<f32>(input.color.rgb,input.color.a*coverage);}return input.color;}
+fn median(value:vec3<f32>)->f32{return max(min(value.r,value.g),min(max(value.r,value.g),value.b));}
+@fragment fn ui_fs(input:Output)->@location(0) vec4<f32>{if input.kind>0.5 {let distance=median(textureSample(font_texture,font_sampler,input.uv).rgb);let smoothing=max(fwidth(distance)*0.75,0.001);let coverage=smoothstep(0.5-smoothing,0.5+smoothing,distance);return vec4<f32>(input.color.rgb,input.color.a*coverage);}return input.color;}
 `

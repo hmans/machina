@@ -5,6 +5,16 @@ import shared "../shared"
 import "core:testing"
 
 @(test)
+test_embedded_mtsdf_font_has_expected_atlas_and_proportional_metrics :: proc(t:^testing.T) {
+	testing.expect(t,len(FONT_ATLAS_DATA)==FONT_ATLAS_SIZE*FONT_ATLAS_SIZE*4)
+	i:=FONT_GLYPHS[int('I')-FONT_FIRST_CHAR]
+	w:=FONT_GLYPHS[int('W')-FONT_FIRST_CHAR]
+	testing.expect(t,i.advance>0)
+	testing.expect(t,w.advance>i.advance)
+	testing.expect(t,w.uv.z>w.uv.x&&w.uv.w>w.uv.y)
+}
+
+@(test)
 test_reconcile_tracks_ui_entity_appearance_and_disappearance :: proc(t:^testing.T) {
 	scene:=shared.Scene{}
 	defer delete(scene.entities)

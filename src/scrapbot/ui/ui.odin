@@ -1,21 +1,20 @@
 package ui
 
-import c "core:c"
 import shared "../shared"
-import stb "vendor:stb/truetype"
 
 MAX_NODES :: 256
 MAX_PAINT_COMMANDS :: 4096
 FONT_FIRST_CHAR :: 32
 FONT_CHAR_COUNT :: 95
-FONT_ATLAS_SIZE :: 256
-FONT_BAKE_SIZE :: f32(16)
-FONT_DATA :: #load("assets/monogram.ttf")
+FONT_ATLAS_SIZE :: 512
+FONT_ASCENDER :: f32(0.96875)
+FONT_ATLAS_DATA :: #load("assets/inter_mtsdf.bin")
 
 Rect :: struct {x,y,width,height:f32}
 Paint_Kind :: enum {Panel,Glyph}
 Paint_Command :: struct {kind:Paint_Kind,rect:Rect,color:shared.Vec4,uv:shared.Vec4}
-Font_Atlas :: struct {pixels:[FONT_ATLAS_SIZE*FONT_ATLAS_SIZE]u8,glyphs:[FONT_CHAR_COUNT]stb.bakedchar,ready:bool}
+Font_Glyph :: struct {advance:f32,plane,uv:shared.Vec4}
+Font_Atlas :: struct {glyphs:[FONT_CHAR_COUNT]Font_Glyph,ready:bool}
 Node :: struct {entity:shared.Entity,layout_index,text_index,parent_entity_index:int,rect:Rect,seen:bool}
 State :: struct {
 	nodes:[MAX_NODES]Node,
@@ -28,8 +27,7 @@ State :: struct {
 
 init :: proc(state:^State)->string {
 	state^={}
-	result:=stb.BakeFontBitmap(raw_data(FONT_DATA),0,FONT_BAKE_SIZE,raw_data(state.font.pixels[:]),FONT_ATLAS_SIZE,FONT_ATLAS_SIZE,FONT_FIRST_CHAR,FONT_CHAR_COUNT,raw_data(state.font.glyphs[:]))
-	if result<=0 {state.err="failed to bake built-in UI font atlas";return state.err}
+	state.font.glyphs=FONT_GLYPHS
 	state.font.ready=true
 	return ""
 }
@@ -79,14 +77,14 @@ layout_node :: proc(state:^State,world:^shared.World,node_index:int,parent:Rect,
 }
 
 append_text :: proc(state:^State,text:shared.UI_Text_Component,rect:Rect,padding:f32)->string {
-	scale:=text.size/FONT_BAKE_SIZE;x:=rect.x+padding;y:=rect.y+padding+text.size
+	x:=rect.x+padding;baseline:=rect.y+padding+FONT_ASCENDER*text.size
 	for character in text.text {
-		if character=='\n'{x=rect.x+padding;y+=text.size;continue}
+		if character=='\n'{x=rect.x+padding;baseline+=text.size;continue}
 		code:=int(character);if code<FONT_FIRST_CHAR||code>=FONT_FIRST_CHAR+FONT_CHAR_COUNT{code=int('?')}
-		bx,by:=x/scale,y/scale;q:stb.aligned_quad
-		stb.GetBakedQuad(&state.font.glyphs[0],FONT_ATLAS_SIZE,FONT_ATLAS_SIZE,c.int(code-FONT_FIRST_CHAR),&bx,&by,&q,true)
-		x=bx*scale;y=by*scale
-		if q.x1>q.x0&&q.y1>q.y0 {if err:=append_paint(state,{kind=.Glyph,rect={q.x0*scale,q.y0*scale,(q.x1-q.x0)*scale,(q.y1-q.y0)*scale},color=text.color,uv={q.s0,q.t0,q.s1,q.t1}});err!=""{return err}}
+		glyph:=state.font.glyphs[code-FONT_FIRST_CHAR]
+		width:=(glyph.plane.z-glyph.plane.x)*text.size;height:=(glyph.plane.w-glyph.plane.y)*text.size
+		if width>0&&height>0 {if err:=append_paint(state,{kind=.Glyph,rect={x+glyph.plane.x*text.size,baseline+glyph.plane.y*text.size,width,height},color=text.color,uv=glyph.uv});err!=""{return err}}
+		x+=glyph.advance*text.size
 	}
 	return ""
 }
