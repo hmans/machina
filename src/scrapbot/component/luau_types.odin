@@ -58,12 +58,14 @@ export type ScrapbotComponent<T, R> = {
 }
 
 export type ScrapbotQuery1<A, RA> = {
+	_arity: "1",
 	_type_a: A?,
 	_read_type_a: RA?,
 	each: (ScrapbotQuery1<A, RA>, callback: (ScrapbotEntity, RA) -> ()) -> (),
 }
 
 export type ScrapbotQuery2<A, RA, B, RB> = {
+	_arity: "2",
 	_type_a: A?,
 	_read_type_a: RA?,
 	_type_b: B?,
@@ -72,6 +74,7 @@ export type ScrapbotQuery2<A, RA, B, RB> = {
 }
 
 export type ScrapbotQuery3<A, RA, B, RB, C, RC> = {
+	_arity: "3",
 	_type_a: A?,
 	_read_type_a: RA?,
 	_type_b: B?,
