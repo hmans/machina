@@ -26,12 +26,19 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	}
 	scrapbot.component(&reg, Rigidbody_Component, rigidbody_fields[:])
 
-	accesses := [?]scrapbot.Access {
+	spin_accesses := [?]scrapbot.Access {
 		scrapbot.read(scrapbot.Transform_Component),
 		scrapbot.write(scrapbot.Transform_Component),
 		scrapbot.read(Spin_Component),
 	}
-	scrapbot.system(&reg, "scrappyphysics.spin", accesses[:], spin_system)
+	scrapbot.system(&reg, "scrappyphysics.spin", spin_accesses[:], spin_system)
+
+	motion_accesses := [?]scrapbot.Access {
+		scrapbot.read(scrapbot.Transform_Component),
+		scrapbot.write(scrapbot.Transform_Component),
+		scrapbot.read(Rigidbody_Component),
+	}
+	scrapbot.system(&reg, "scrappyphysics.motion", motion_accesses[:], motion_system)
 
 	return scrapbot.err(&reg)
 }
@@ -67,6 +74,46 @@ spin_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 		transform.rotation.x += angular_velocity.x * ctx.delta_seconds
 		transform.rotation.y += angular_velocity.y * ctx.delta_seconds
 		transform.rotation.z += angular_velocity.z * ctx.delta_seconds
+
+		if !scrapbot.set(ctx, entity, transform) {
+			return "failed to write transform"
+		}
+	}
+
+	return nil
+}
+
+motion_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+	components := [?]scrapbot.Component {
+		scrapbot.Transform_Component,
+		Rigidbody_Component,
+	}
+	rigidbody_query := scrapbot.query(components[:])
+
+	count := scrapbot.count(ctx, rigidbody_query)
+	if count < 0 {
+		return "failed to query rigidbodies"
+	}
+
+	for i in 0..<count {
+		entity, entity_ok := scrapbot.entity_at(ctx, rigidbody_query, i)
+		if !entity_ok {
+			continue
+		}
+
+		transform, transform_ok := scrapbot.get(ctx, entity, scrapbot.Transform_Component)
+		if !transform_ok {
+			return "failed to read transform"
+		}
+
+		velocity, velocity_ok := scrapbot.get(ctx, entity, Rigidbody_Velocity)
+		if !velocity_ok {
+			return "failed to read velocity"
+		}
+
+		transform.position.x += velocity.x * ctx.delta_seconds
+		transform.position.y += velocity.y * ctx.delta_seconds
+		transform.position.z += velocity.z * ctx.delta_seconds
 
 		if !scrapbot.set(ctx, entity, transform) {
 			return "failed to write transform"

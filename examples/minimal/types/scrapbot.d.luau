@@ -164,4 +164,14 @@ export type ReadonlyScrappyphysicsRigidbody = {
 
 export type ScrappyphysicsRigidbodyComponent = ScrapbotComponent<ScrappyphysicsRigidbody, ReadonlyScrappyphysicsRigidbody>
 
+export type Drift = {
+	velocity: Vec3,
+}
+
+export type ReadonlyDrift = {
+	read velocity: ReadonlyVec3,
+}
+
+export type DriftComponent = ScrapbotComponent<Drift, ReadonlyDrift>
+
 declare scrapbot: Scrapbot
