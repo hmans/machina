@@ -68,7 +68,7 @@ The callback receives `scrapbot.System_Context`. The context includes a read-onl
 Native systems with complete, non-conflicting access declarations run concurrently on Scrapbot's worker pool. Conflicting systems preserve registration order, Luau systems remain serial, and systems without access declarations execute exclusively. Parallel native systems queue lifecycle commands privately; Scrapbot merges those commands deterministically after the stage.
 
 ```odin
-motion_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+motion_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		scrapbot.Transform_Component,
 		Rigidbody_Component,
@@ -108,6 +108,8 @@ motion_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 	return nil
 }
 ```
+
+Project system callbacks are ordinary contextless Odin procedures. The extension helper retains their bindings and routes the host's C-compatible callback through an internal trampoline; only the exported `scrapbot_extension_register` entry point needs `proc "c"` in project source.
 
 The raw C-compatible package remains available as `scrapbot:extension_api` for non-Odin bindings and ABI reference work.
 

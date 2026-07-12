@@ -100,7 +100,7 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	return scrapbot.err(&reg)
 }
 
-spin_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+spin_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		scrapbot.Transform_Component,
 		Spin_Component,
@@ -139,7 +139,7 @@ spin_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 	return nil
 }
 
-light_orbit_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+light_orbit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		scrapbot.Transform_Component,
 		scrapbot.Point_Light_Component,
@@ -175,7 +175,7 @@ light_orbit_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 	return nil
 }
 
-lifetime_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+lifetime_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		Lifetime_Component,
 	}
@@ -212,7 +212,7 @@ lifetime_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 	return nil
 }
 
-velocity_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+velocity_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		scrapbot.Transform_Component,
 		Velocity_Component,
@@ -266,7 +266,7 @@ velocity_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 	return nil
 }
 
-fountain_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+fountain_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		scrapbot.Transform_Component,
 		Emitter_Component,

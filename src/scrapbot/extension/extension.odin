@@ -42,7 +42,7 @@ Access_Mode :: raw.Access_Mode
 Entity :: raw.Entity
 Query_Term :: raw.Query_Term
 System_Context :: raw.System_Context
-System_Proc :: raw.System_Proc
+System_Proc :: #type proc "contextless" (ctx: ^System_Context) -> cstring
 Transform :: raw.Transform
 Time :: raw.Time
 Mesh_Payload :: raw.Mesh_Payload
@@ -65,6 +65,15 @@ Point_Light_Component :: Component{name = POINT_LIGHT}
 Shadow_Caster_Component :: Component{name = SHADOW_CASTER}
 Shadow_Receiver_Component :: Component{name = SHADOW_RECEIVER}
 MAX_QUERY_TERMS :: 16
+MAX_SYSTEM_BINDINGS :: 64
+
+System_Binding :: struct {
+	callback: System_Proc,
+	userdata: rawptr,
+}
+
+system_bindings: [MAX_SYSTEM_BINDINGS]System_Binding
+system_binding_count: int
 
 Generated_Geometry :: struct {
 	vertices: [24]Geometry_Vertex,
@@ -104,6 +113,8 @@ register :: proc "contextless" (api: ^raw.API, callback: Register_Proc) -> cstri
 	if callback == nil {
 		return "Scrapbot extension register callback is not available"
 	}
+	system_bindings = {}
+	system_binding_count = 0
 
 	ctx := Context{api = api}
 	return callback(&ctx)
@@ -233,14 +244,32 @@ system_by_name :: proc "contextless" (
 	if ctx == nil || ctx.api == nil || ctx.api.register_system == nil {
 		return "Scrapbot system registration API is not available"
 	}
+	if callback == nil {
+		return "Scrapbot system callback is not available"
+	}
+	if system_binding_count >= len(system_bindings) {
+		return "too many Scrapbot system callback bindings"
+	}
+	binding := &system_bindings[system_binding_count]
+	binding^ = System_Binding{callback = callback, userdata = userdata}
 	definition := raw.System_Definition {
 		name = name,
 		accesses = raw_data(accesses),
 		access_count = c.int(len(accesses)),
-		callback = callback,
-		userdata = userdata,
+		callback = system_trampoline,
+		userdata = binding,
 	}
-	return ctx.api.register_system(ctx.api, &definition)
+	err := ctx.api.register_system(ctx.api, &definition)
+	if err == nil {system_binding_count += 1}
+	return err
+}
+
+system_trampoline :: proc "c" (ctx: ^raw.System_Context) -> cstring {
+	if ctx == nil || ctx.userdata == nil {return "Scrapbot system callback binding is not available"}
+	binding := cast(^System_Binding)ctx.userdata
+	if binding.callback == nil {return "Scrapbot system callback is not available"}
+	ctx.userdata = binding.userdata
+	return binding.callback(ctx)
 }
 
 system_with_registry :: proc "contextless" (

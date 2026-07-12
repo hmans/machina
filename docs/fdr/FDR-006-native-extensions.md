@@ -17,8 +17,9 @@ Native extensions let project code add compiled engine/library behavior incremen
 - Built extension files include the target name, a source stamp, and the platform dynamic-library suffix, such as `.dylib` on macOS and `.so` on Linux.
 - `build/extensions/.scrapbot-extensions` records the active output files for the latest build.
 - Each extension must export `scrapbot_extension_register`.
-- The register function receives a versioned C-compatible `extension_api.API`.
+- The register function receives a lockstep C-compatible `extension_api.API`.
 - Odin extensions can import `scrapbot:extension`, which wraps the raw ABI with helpers for components, systems, full geometry, generated cube/plane geometry, shared materials, queries, and deferred lifecycle commands.
+- Project-local system callbacks use ordinary contextless Odin procedures; the helper owns stable callback bindings and hides the C-compatible trampoline.
 - Odin extension authors can define `Component` and field descriptors once, then use those descriptors for schema registration, scheduler access, queries, and field reads/writes.
 - `scrapbot.registry(ctx)` returns a small registration accumulator that records the first registration error so extension setup code can remain linear and return `scrapbot.err(&reg)` at the end.
 - The API supports registering library component schemas with dotted, non-`scrapbot` names.

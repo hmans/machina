@@ -91,6 +91,8 @@ Native callbacks receive a host-owned `System_Context`:
 System_Proc :: #type proc "c" (ctx: ^System_Context) -> cstring
 ```
 
+This raw callback type is the dynamic-library boundary. Odin projects using `scrapbot:extension` register ordinary `proc "contextless"` callbacks; the helper supplies the C-compatible trampoline and stable callback storage.
+
 The context includes:
 
 - a read-only `time` snapshot with delta time, smoothed delta time, elapsed time, and frame index;

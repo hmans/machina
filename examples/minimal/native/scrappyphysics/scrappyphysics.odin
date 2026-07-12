@@ -43,7 +43,7 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	return scrapbot.err(&reg)
 }
 
-spin_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+spin_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		scrapbot.Transform_Component,
 		Spin_Component,
@@ -83,7 +83,7 @@ spin_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 	return nil
 }
 
-motion_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+motion_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		scrapbot.Transform_Component,
 		Rigidbody_Component,
