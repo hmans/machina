@@ -25,6 +25,9 @@ Material_Component :: shared.Material_Component
 Render_Instance_Component :: shared.Render_Instance_Component
 Geometry_Handle :: shared.Geometry_Handle
 Material_Handle :: shared.Material_Handle
+Ambient_Light_Component :: shared.Ambient_Light_Component
+Directional_Light_Component :: shared.Directional_Light_Component
+Point_Light_Component :: shared.Point_Light_Component
 
 INVALID_COMPONENT_INDEX :: -1
 MAX_QUERY_TERMS :: 8
@@ -66,6 +69,9 @@ destroy_world :: proc(world: ^World) {
 	delete(world.entities)
 	delete(world.transforms)
 	delete(world.cameras)
+	delete(world.ambient_lights)
+	delete(world.directional_lights)
+	delete(world.point_lights)
 	delete(world.meshes)
 	delete(world.renderables)
 	delete(world.geometries)
@@ -85,6 +91,9 @@ build_world :: proc(scene: ^Scene) -> World {
 			name            = clone_world_string(entity.name),
 			transform_index = INVALID_COMPONENT_INDEX,
 			camera_index    = INVALID_COMPONENT_INDEX,
+			ambient_light_index = INVALID_COMPONENT_INDEX,
+			directional_light_index = INVALID_COMPONENT_INDEX,
+			point_light_index = INVALID_COMPONENT_INDEX,
 			mesh_index      = INVALID_COMPONENT_INDEX,
 			geometry_index  = INVALID_COMPONENT_INDEX,
 			material_index  = INVALID_COMPONENT_INDEX,
@@ -101,6 +110,9 @@ build_world :: proc(scene: ^Scene) -> World {
 			world_entity.camera_index = len(world.cameras)
 			append(&world.cameras, entity.camera)
 		}
+		if entity.has_ambient_light {world_entity.ambient_light_index=len(world.ambient_lights); append(&world.ambient_lights,entity.ambient_light)}
+		if entity.has_directional_light {world_entity.directional_light_index=len(world.directional_lights); append(&world.directional_lights,entity.directional_light)}
+		if entity.has_point_light {world_entity.point_light_index=len(world.point_lights); append(&world.point_lights,entity.point_light)}
 		if entity.has_mesh {
 			world_entity.mesh_index = len(world.meshes)
 			mesh := entity.mesh
@@ -201,6 +213,7 @@ reconcile_render_instances :: proc(world: ^World, registry: ^resources.Registry)
 build_resource_render_list :: proc(world: ^World, registry: ^resources.Registry) -> Render_List {
 	list: Render_List
 	list.camera, list.has_camera = first_camera_instance(world)
+	extract_lights(world, &list)
 	reconcile_render_instances(world, registry)
 	for entity in world.entities {
 		if !entity.alive || entity.render_instance_index < 0 || entity.render_instance_index >= len(world.render_instances) {continue}
@@ -214,6 +227,21 @@ build_resource_render_list :: proc(world: ^World, registry: ^resources.Registry)
 		})
 	}
 	return list
+}
+
+extract_lights :: proc(world: ^World, list: ^Render_List) {
+	for entity in world.entities {
+		if !entity.alive {continue}
+		if entity.ambient_light_index >= 0 && entity.ambient_light_index < len(world.ambient_lights) {
+			light:=world.ambient_lights[entity.ambient_light_index]; list.ambient.x += light.color.x*light.intensity; list.ambient.y += light.color.y*light.intensity; list.ambient.z += light.color.z*light.intensity
+		}
+		if entity.directional_light_index >= 0 && entity.directional_light_index < len(world.directional_lights) && list.directional_light_count < len(list.directional_lights) {
+			list.directional_lights[list.directional_light_count]={light=world.directional_lights[entity.directional_light_index]}; list.directional_light_count += 1
+		}
+		if entity.point_light_index >= 0 && entity.point_light_index < len(world.point_lights) && entity.transform_index >= 0 && entity.transform_index < len(world.transforms) && list.point_light_count < len(list.point_lights) {
+			list.point_lights[list.point_light_count]={position=world.transforms[entity.transform_index].position,light=world.point_lights[entity.point_light_index]}; list.point_light_count += 1
+		}
+	}
 }
 
 render_batch_count :: proc(list: ^Render_List) -> int {
@@ -676,6 +704,9 @@ entity_has_component :: proc "c" (
 		return entity.transform_index >= 0 && entity.transform_index < len(world.transforms)
 	case "scrapbot.camera":
 		return entity.camera_index >= 0 && entity.camera_index < len(world.cameras)
+	case "scrapbot.ambient_light": return entity.ambient_light_index >= 0 && entity.ambient_light_index < len(world.ambient_lights)
+	case "scrapbot.directional_light": return entity.directional_light_index >= 0 && entity.directional_light_index < len(world.directional_lights)
+	case "scrapbot.point_light": return entity.point_light_index >= 0 && entity.point_light_index < len(world.point_lights)
 	case "scrapbot.mesh":
 		return entity.mesh_index >= 0 && entity.mesh_index < len(world.meshes)
 	case "scrapbot.geometry":

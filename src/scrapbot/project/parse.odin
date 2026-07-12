@@ -122,7 +122,7 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			continue
 		}
 
-		if line == "[entities.transform]" || line == "[entities.camera]" || line == "[entities.mesh]" || line == "[entities.geometry]" || line == "[entities.material]" {
+		if line == "[entities.transform]" || line == "[entities.camera]" || line == "[entities.mesh]" || line == "[entities.geometry]" || line == "[entities.material]" || line == "[entities.ambient_light]" || line == "[entities.directional_light]" || line == "[entities.point_light]" {
 			if current == nil {
 				return scene, fail(.Invalid_Syntax, fmt.tprintf("%s appears before [[entities]]", line))
 			}
@@ -193,6 +193,18 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			if !found {
 				return scene, fail(.Invalid_Field, fmt.tprintf("camera.%s must be a number", key))
 			}
+		case "ambient_light":
+			current.has_ambient_light = true
+			switch key {case "color": current.ambient_light.color,found=parse_vec3(value); case "intensity": current.ambient_light.intensity,found=parse_f32(value); case: return scene,fail(.Invalid_Field,fmt.tprintf("unknown ambient_light field '%s'",key))}
+			if !found {return scene,fail(.Invalid_Field,fmt.tprintf("invalid ambient_light.%s",key))}
+		case "directional_light":
+			current.has_directional_light = true
+			switch key {case "direction": current.directional_light.direction,found=parse_vec3(value); case "color": current.directional_light.color,found=parse_vec3(value); case "intensity": current.directional_light.intensity,found=parse_f32(value); case: return scene,fail(.Invalid_Field,fmt.tprintf("unknown directional_light field '%s'",key))}
+			if !found {return scene,fail(.Invalid_Field,fmt.tprintf("invalid directional_light.%s",key))}
+		case "point_light":
+			current.has_point_light = true
+			switch key {case "color": current.point_light.color,found=parse_vec3(value); case "intensity": current.point_light.intensity,found=parse_f32(value); case "range": current.point_light.range,found=parse_f32(value); case: return scene,fail(.Invalid_Field,fmt.tprintf("unknown point_light field '%s'",key))}
+			if !found {return scene,fail(.Invalid_Field,fmt.tprintf("invalid point_light.%s",key))}
 		case "mesh":
 			current.has_mesh = true
 			if key != "primitive" {

@@ -25,9 +25,9 @@ Scrapbot currently has a small Odin CLI and runtime skeleton:
 
 During development, use `mise build` to compile the CLI and `mise scrapbot -- [args...]` to compile and run it with arguments forwarded to Scrapbot.
 
-This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Rendering is pluggable at the runtime boundary. The `null` backend supports headless smoke tests, while the `wgpu` backend renders full indexed geometry with shared unlit materials, backend-owned GPU caches, and automatic instanced batching for shared geometry/material pairs. Headless WGPU can write a final-frame PNG with `--framegrab`. Luau scripting is embedded from a pinned source dependency and exposes the ECS, full geometry/material resource creation, scheduled systems, deferred lifecycle commands, generated types, native extension integration, and hot reload.
+This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Rendering is pluggable at the runtime boundary. The `null` backend supports headless smoke tests, while the `wgpu` backend renders full indexed geometry with shared base-color materials, ECS ambient/directional/point lights, backend-owned GPU caches, and automatic instanced batching for shared geometry/material pairs. Headless WGPU can write a final-frame PNG with `--framegrab`. Luau scripting is embedded from a pinned source dependency and exposes the ECS, full geometry/material resource creation, scheduled systems, deferred lifecycle commands, generated types, native extension integration, and hot reload.
 
-Example projects live in [`examples/`](examples/). The minimal example demonstrates Luau-defined and Odin-defined components and systems, and can be verified with `mise scrapbot run examples/minimal`. The ECS showcase runs a native object fountain with visible spawned cube renderables, velocity, lifetime, spin, despawn, and Luau typed queries.
+Example projects live in [`examples/`](examples/). The minimal example demonstrates Luau-defined and Odin-defined components and systems, and can be verified with `mise scrapbot run examples/minimal`. The ECS showcase runs a native object fountain with visible spawned cube renderables, velocity, lifetime, spin, despawn, animated point lights, and Luau typed queries.
 
 Run the full local test suite with `mise test`.
 
@@ -113,7 +113,7 @@ Run the full local test suite with `mise test`.
   - [x] Basic cameras
   - [ ] Lighting
   - [x] Generated cube and plane geometry
-  - [x] Shared unlit materials
+  - [x] Shared base-color materials
   - [ ] Scene camera workflow
 - Pipeline
   - [x] Geometry/material render batching
@@ -122,7 +122,7 @@ Run the full local test suite with `mise test`.
   - [ ] Postprocessing
   - [ ] Frustum culling
   - [ ] GPU-driven rendering
-  - [ ] Multi-light rendering
+  - [x] Ambient, directional, and point-light rendering
 - Assets
   - [ ] Mesh assets
   - [ ] Texture assets

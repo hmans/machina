@@ -21,6 +21,9 @@ Current decisions:
 | ADR-006 | Use Luau for project scripting |
 | ADR-007 | Use ID-keyed component storage |
 | ADR-008 | Use a small C ABI for native extensions |
+| ADR-009 | Parallelize access-declared native systems |
+| ADR-010 | Keep render resources outside the ECS |
+| ADR-011 | Extract ECS lights into bounded render packets |
 
 ## FDRs
 

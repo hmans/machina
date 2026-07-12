@@ -28,6 +28,11 @@ Built-in handles:
 - `scrapbot.camera`
 - `scrapbot.geometry_component`
 - `scrapbot.material_component`
+- `scrapbot.ambient_light`
+- `scrapbot.directional_light`
+- `scrapbot.point_light`
+
+Light query payloads expose `color` and `intensity`; directional lights also expose `direction`, and point lights expose `range`. Systems can animate a point light by writing the same entity's transform.
 
 ## Render resources
 
@@ -36,7 +41,8 @@ Built-in handles:
 | `scrapbot.geometry.create(name, descriptor)` | Register full position/normal/UV vertices and `u32` triangle indices. |
 | `scrapbot.geometry.cube(name, size?)` | Generate and register indexed cube geometry. |
 | `scrapbot.geometry.plane(name, width?, depth?)` | Generate and register indexed plane geometry. |
-| `scrapbot.material.unlit(name, r?, g?, b?, a?)` | Register a shared unlit material. |
+| `scrapbot.material.lit(name, r?, g?, b?, a?)` | Register a shared Lambert-lit base-color material. |
+| `scrapbot.material.unlit(name, r?, g?, b?, a?)` | Compatibility alias for `material.lit`. |
 
 Named registration updates an existing resource while preserving its handle. Spawn component maps use `scrapbot.geometry` and `scrapbot.material` names with the returned handles.
 

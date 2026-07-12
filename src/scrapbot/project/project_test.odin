@@ -93,6 +93,41 @@ rotation.velocity = [0, 0, 0]
 }
 
 @(test)
+test_scene_parses_engine_light_components :: proc(t: ^testing.T) {
+	scene, result := parse_scene(`[[entities]]
+name = "Ambient"
+[entities.ambient_light]
+color = [0.2, 0.3, 0.4]
+intensity = 0.5
+
+[[entities]]
+name = "Sun"
+[entities.directional_light]
+direction = [-1, -2, -3]
+color = [1, 0.9, 0.8]
+intensity = 1.25
+
+[[entities]]
+name = "Lamp"
+[entities.point_light]
+color = [0.1, 0.4, 1]
+intensity = 8
+range = 12
+`)
+	defer destroy_scene(&scene)
+
+	testing.expect(t, result.err == .None)
+	testing.expect(t, len(scene.entities) == 3)
+	testing.expect(t, scene.entities[0].has_ambient_light)
+	testing.expect(t, scene.entities[0].ambient_light.color.z == 0.4)
+	testing.expect(t, scene.entities[1].has_directional_light)
+	testing.expect(t, scene.entities[1].directional_light.direction.y == -2)
+	testing.expect(t, scene.entities[2].has_point_light)
+	testing.expect(t, scene.entities[2].point_light.intensity == 8)
+	testing.expect(t, scene.entities[2].point_light.range == 12)
+}
+
+@(test)
 test_project_check_accepts_registered_namespaced_scene_components :: proc(t: ^testing.T) {
 	scene, result := parse_scene(`[[entities]]
 name = "Body"

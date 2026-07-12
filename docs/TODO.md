@@ -13,6 +13,8 @@
 - [x] Add full indexed geometry resources with cube and plane generators.
 - [x] Add geometry/material ECS references and internal render reconciliation.
 - [x] Cache geometry and material resources in the WGPU backend.
+- [x] Add ECS ambient, directional, and point lights to the WGPU backend.
+- [ ] Add light selection or clustered lighting beyond the initial fixed limits.
 - [ ] Add visual comparison for offscreen render output.
 
 ## Project Runtime

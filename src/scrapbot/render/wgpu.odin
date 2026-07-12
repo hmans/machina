@@ -13,7 +13,15 @@ import "vendor:wgpu"
 WGPU_RENDER_SHADER :: `
 struct Render_Uniform {
 	mvp: array<mat4x4<f32>, 64>,
+	model: array<mat4x4<f32>, 64>,
+	normal_model: array<mat4x4<f32>, 64>,
 	color: array<vec4<f32>, 64>,
+	ambient: vec4<f32>,
+	directional_direction_intensity: array<vec4<f32>, 4>,
+	directional_color: array<vec4<f32>, 4>,
+	point_position_range: array<vec4<f32>, 16>,
+	point_color_intensity: array<vec4<f32>, 16>,
+	light_counts: vec4<u32>,
 };
 
 @group(0) @binding(0)
@@ -28,19 +36,41 @@ struct Vertex_Input {
 struct Vertex_Output {
 	@builtin(position) position: vec4<f32>,
 	@location(0) color: vec3<f32>,
+	@location(1) world_position: vec3<f32>,
+	@location(2) world_normal: vec3<f32>,
 };
 
 @vertex
 fn vs_main(input: Vertex_Input, @builtin(instance_index) instance_index: u32) -> Vertex_Output {
 	var output: Vertex_Output;
 	output.position = render.mvp[instance_index] * vec4<f32>(input.position, 1.0);
+	output.world_position = (render.model[instance_index] * vec4<f32>(input.position, 1.0)).xyz;
+	output.world_normal = normalize((render.normal_model[instance_index] * vec4<f32>(input.normal, 0.0)).xyz);
 	output.color = render.color[instance_index].rgb;
 	return output;
 }
 
 @fragment
 fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
-	return vec4<f32>(input.color, 1.0);
+	let normal = normalize(input.world_normal);
+	var lighting = render.ambient.rgb;
+	for (var i: u32 = 0u; i < render.light_counts.x; i = i + 1u) {
+		let packed = render.directional_direction_intensity[i];
+		let diffuse = max(dot(normal, -normalize(packed.xyz)), 0.0);
+		lighting += render.directional_color[i].rgb * packed.w * diffuse;
+	}
+	for (var i: u32 = 0u; i < render.light_counts.y; i = i + 1u) {
+		let packed = render.point_position_range[i];
+		let offset = packed.xyz - input.world_position;
+		let distance = length(offset);
+		if (distance < packed.w && distance > 0.0001) {
+			let diffuse = max(dot(normal, offset / distance), 0.0);
+			let range_fade = max(1.0 - distance / packed.w, 0.0);
+			let attenuation = range_fade * range_fade / (1.0 + distance * distance);
+			lighting += render.point_color_intensity[i].rgb * render.point_color_intensity[i].w * diffuse * attenuation;
+		}
+	}
+	return vec4<f32>(input.color * lighting, 1.0);
 }
 `
 
@@ -55,7 +85,15 @@ WGPU_MAX_INSTANCES :: 64
 
 WGPU_Render_Uniform :: struct {
 	mvp: [WGPU_MAX_INSTANCES]Mat4,
+	model: [WGPU_MAX_INSTANCES]Mat4,
+	normal_model: [WGPU_MAX_INSTANCES]Mat4,
 	color: [WGPU_MAX_INSTANCES][4]f32,
+	ambient: [4]f32,
+	directional_direction_intensity: [shared.MAX_DIRECTIONAL_LIGHTS][4]f32,
+	directional_color: [shared.MAX_DIRECTIONAL_LIGHTS][4]f32,
+	point_position_range: [shared.MAX_POINT_LIGHTS][4]f32,
+	point_color_intensity: [shared.MAX_POINT_LIGHTS][4]f32,
+	light_counts: [4]u32,
 }
 
 WGPU_Draw_Batch :: struct {
@@ -359,7 +397,7 @@ wgpu_create_render_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 
 	bind_group_layout_entry := wgpu.BindGroupLayoutEntry {
 		binding    = 0,
-		visibility = {.Vertex},
+		visibility = {.Vertex, .Fragment},
 		buffer = wgpu.BufferBindingLayout {
 			type           = .Uniform,
 			minBindingSize = u64(size_of(WGPU_Render_Uniform)),
@@ -580,6 +618,16 @@ wgpu_acquire_surface_texture :: proc(
 
 wgpu_prepare_draw_batches :: proc(renderer: ^WGPU_Renderer, render_list: ^Render_List, registry: ^resources.Registry, width, height: u32) -> ([64]WGPU_Draw_Batch, int) {
 	uniform: WGPU_Render_Uniform
+	uniform.ambient = {render_list.ambient.x, render_list.ambient.y, render_list.ambient.z, 1}
+	uniform.light_counts = {u32(render_list.directional_light_count), u32(render_list.point_light_count), 0, 0}
+	for light, i in render_list.directional_lights[:render_list.directional_light_count] {
+		uniform.directional_direction_intensity[i] = {light.light.direction.x, light.light.direction.y, light.light.direction.z, light.light.intensity}
+		uniform.directional_color[i] = {light.light.color.x, light.light.color.y, light.light.color.z, 1}
+	}
+	for light, i in render_list.point_lights[:render_list.point_light_count] {
+		uniform.point_position_range[i] = {light.position.x, light.position.y, light.position.z, light.light.range}
+		uniform.point_color_intensity[i] = {light.light.color.x, light.light.color.y, light.light.color.z, light.light.intensity}
+	}
 	batches: [64]WGPU_Draw_Batch
 	batch_count, instance_count := 0, 0
 	for candidate in render_list.instances {
@@ -594,6 +642,8 @@ wgpu_prepare_draw_batches :: proc(renderer: ^WGPU_Renderer, render_list: ^Render
 			if instance.geometry.handle != batch.geometry || instance.material.handle != batch.material {continue}
 			if instance_count >= WGPU_MAX_INSTANCES {break}
 			uniform.mvp[instance_count] = wgpu_build_mvp(instance, render_list.camera, render_list.has_camera, width, height)
+			uniform.model[instance_count] = wgpu_build_model(instance.transform)
+			uniform.normal_model[instance_count] = wgpu_build_normal_model(instance.transform)
 			color := material.desc.base_color
 			uniform.color[instance_count] = {color.x,color.y,color.z,color.w}
 			instance_count += 1; batch.instance_count += 1
@@ -932,7 +982,6 @@ wgpu_run_headless :: proc(world: ^World, config: ^Run_Config) -> string {
 }
 
 wgpu_build_mvp :: proc(instance: Render_Instance, camera: Camera_Instance, has_camera: bool, width, height: u32) -> Mat4 {
-	transform := instance.transform
 	aspect := f32(16.0 / 9.0)
 	if width > 0 && height > 0 {
 		aspect = f32(width) / f32(height)
@@ -955,7 +1004,14 @@ wgpu_build_mvp :: proc(instance: Render_Instance, camera: Camera_Instance, has_c
 		}
 	}
 
-	model := mat4_mul(
+	model := wgpu_build_model(instance.transform)
+	view := mat4_look_at(eye, Vec3{0, 0, 0}, Vec3{0, 1, 0})
+	projection := mat4_perspective(math.to_radians(fov), aspect, near, far)
+	return mat4_mul(projection, mat4_mul(view, model))
+}
+
+wgpu_build_model :: proc(transform: shared.Transform_Component) -> Mat4 {
+	return mat4_mul(
 		mat4_translate(transform.position),
 		mat4_mul(
 			mat4_rotate_z(transform.rotation.z),
@@ -965,9 +1021,20 @@ wgpu_build_mvp :: proc(instance: Render_Instance, camera: Camera_Instance, has_c
 			),
 		),
 	)
-	view := mat4_look_at(eye, Vec3{0, 0, 0}, Vec3{0, 1, 0})
-	projection := mat4_perspective(math.to_radians(fov), aspect, near, far)
-	return mat4_mul(projection, mat4_mul(view, model))
+}
+
+wgpu_build_normal_model :: proc(transform: shared.Transform_Component) -> Mat4 {
+	inverse_scale := Vec3{}
+	if math.abs(transform.scale.x) > 0.000001 {inverse_scale.x = 1 / transform.scale.x}
+	if math.abs(transform.scale.y) > 0.000001 {inverse_scale.y = 1 / transform.scale.y}
+	if math.abs(transform.scale.z) > 0.000001 {inverse_scale.z = 1 / transform.scale.z}
+	return mat4_mul(
+		mat4_rotate_z(transform.rotation.z),
+		mat4_mul(
+			mat4_rotate_y(transform.rotation.y),
+			mat4_mul(mat4_rotate_x(transform.rotation.x), mat4_scale(inverse_scale)),
+		),
+	)
 }
 
 mat4_identity :: proc() -> Mat4 {

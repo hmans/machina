@@ -17,6 +17,7 @@ Owner :: enum {
 
 Field_Type :: enum {
 	Vec3,
+	Number,
 }
 
 Field_Definition :: struct {
@@ -50,6 +51,9 @@ init_registry :: proc(registry: ^Registry) {
 		},
 	)
 	register_engine_component(registry, "scrapbot.camera", {})
+	register_engine_component(registry, "scrapbot.ambient_light", {Field_Definition{name="color",field_type=.Vec3},Field_Definition{name="intensity",field_type=.Number}})
+	register_engine_component(registry, "scrapbot.directional_light", {Field_Definition{name="direction",field_type=.Vec3},Field_Definition{name="color",field_type=.Vec3},Field_Definition{name="intensity",field_type=.Number}})
+	register_engine_component(registry, "scrapbot.point_light", {Field_Definition{name="color",field_type=.Vec3},Field_Definition{name="intensity",field_type=.Number},Field_Definition{name="range",field_type=.Number}})
 	register_engine_component(registry, "scrapbot.mesh", {})
 	register_engine_component(registry, "scrapbot.geometry", {})
 	register_engine_component(registry, "scrapbot.material", {})

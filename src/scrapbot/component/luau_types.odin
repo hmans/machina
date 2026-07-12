@@ -16,6 +16,9 @@ export type Scrapbot = {
 	vec3: ScrapbotComponentField<Vec3, ReadonlyVec3>,
 	transform: ScrapbotTransformComponent,
 	camera: ScrapbotCameraComponent,
+	ambient_light: ScrapbotAmbientLightComponent,
+	directional_light: ScrapbotDirectionalLightComponent,
+	point_light: ScrapbotPointLightComponent,
 	mesh: ScrapbotMeshComponent,
 	geometry_component: ScrapbotGeometryComponent,
 	material_component: ScrapbotMaterialComponent,
@@ -25,6 +28,7 @@ export type Scrapbot = {
 		plane: (name: string, width: number?, depth: number?) -> ScrapbotGeometryResource,
 	},
 	material: {
+		lit: (name: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
 		unlit: (name: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
 	},
 	system: (...any) -> (),
@@ -196,6 +200,8 @@ luau_field_type_name :: proc(field_type: Field_Type) -> string {
 	#partial switch field_type {
 	case .Vec3:
 		return "Vec3"
+	case .Number:
+		return "number"
 	}
 	return "any"
 }
@@ -204,6 +210,8 @@ luau_readonly_field_type_name :: proc(field_type: Field_Type) -> string {
 	#partial switch field_type {
 	case .Vec3:
 		return "ReadonlyVec3"
+	case .Number:
+		return "number"
 	}
 	return "any"
 }

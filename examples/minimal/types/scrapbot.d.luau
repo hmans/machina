@@ -11,6 +11,9 @@ export type Scrapbot = {
 	vec3: ScrapbotComponentField<Vec3, ReadonlyVec3>,
 	transform: ScrapbotTransformComponent,
 	camera: ScrapbotCameraComponent,
+	ambient_light: ScrapbotAmbientLightComponent,
+	directional_light: ScrapbotDirectionalLightComponent,
+	point_light: ScrapbotPointLightComponent,
 	mesh: ScrapbotMeshComponent,
 	geometry_component: ScrapbotGeometryComponent,
 	material_component: ScrapbotMaterialComponent,
@@ -20,6 +23,7 @@ export type Scrapbot = {
 		plane: (name: string, width: number?, depth: number?) -> ScrapbotGeometryResource,
 	},
 	material: {
+		lit: (name: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
 		unlit: (name: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
 	},
 	system: (...any) -> (),
@@ -159,6 +163,46 @@ export type ReadonlyScrapbotCamera = {
 }
 
 export type ScrapbotCameraComponent = ScrapbotComponent<ScrapbotCamera, ReadonlyScrapbotCamera>
+
+export type ScrapbotAmbientLight = {
+	color: Vec3,
+	intensity: number,
+}
+
+export type ReadonlyScrapbotAmbientLight = {
+	read color: ReadonlyVec3,
+	read intensity: number,
+}
+
+export type ScrapbotAmbientLightComponent = ScrapbotComponent<ScrapbotAmbientLight, ReadonlyScrapbotAmbientLight>
+
+export type ScrapbotDirectionalLight = {
+	direction: Vec3,
+	color: Vec3,
+	intensity: number,
+}
+
+export type ReadonlyScrapbotDirectionalLight = {
+	read direction: ReadonlyVec3,
+	read color: ReadonlyVec3,
+	read intensity: number,
+}
+
+export type ScrapbotDirectionalLightComponent = ScrapbotComponent<ScrapbotDirectionalLight, ReadonlyScrapbotDirectionalLight>
+
+export type ScrapbotPointLight = {
+	color: Vec3,
+	intensity: number,
+	range: number,
+}
+
+export type ReadonlyScrapbotPointLight = {
+	read color: ReadonlyVec3,
+	read intensity: number,
+	read range: number,
+}
+
+export type ScrapbotPointLightComponent = ScrapbotComponent<ScrapbotPointLight, ReadonlyScrapbotPointLight>
 
 export type ScrapbotMesh = {
 }

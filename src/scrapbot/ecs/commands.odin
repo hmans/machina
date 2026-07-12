@@ -429,7 +429,13 @@ spawn_entity :: proc(world: ^World, spawn: ^Spawn_Command) -> int {
 			name            = clone_world_string(spawn_command_name(spawn)),
 			transform_index = transform_index,
 			camera_index    = INVALID_COMPONENT_INDEX,
+			ambient_light_index = INVALID_COMPONENT_INDEX,
+			directional_light_index = INVALID_COMPONENT_INDEX,
+			point_light_index = INVALID_COMPONENT_INDEX,
 			mesh_index      = mesh_index,
+			geometry_index = INVALID_COMPONENT_INDEX,
+			material_index = INVALID_COMPONENT_INDEX,
+			render_instance_index = INVALID_COMPONENT_INDEX,
 		},
 	)
 	if transform_index != INVALID_COMPONENT_INDEX && mesh_index != INVALID_COMPONENT_INDEX {
@@ -463,6 +469,9 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 	entity.id.generation += 1
 	entity.transform_index = INVALID_COMPONENT_INDEX
 	entity.camera_index = INVALID_COMPONENT_INDEX
+	entity.ambient_light_index = INVALID_COMPONENT_INDEX
+	entity.directional_light_index = INVALID_COMPONENT_INDEX
+	entity.point_light_index = INVALID_COMPONENT_INDEX
 	entity.mesh_index = INVALID_COMPONENT_INDEX
 	entity.geometry_index = INVALID_COMPONENT_INDEX
 	entity.material_index = INVALID_COMPONENT_INDEX

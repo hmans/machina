@@ -15,6 +15,9 @@ Velocity_Value :: scrapbot.Vec3_Field{component = Velocity_Component, name = "va
 Emitter_Component :: scrapbot.Component{name = "showcase.emitter"}
 Emitter_State :: scrapbot.Vec3_Field{component = Emitter_Component, name = "state"}
 
+Light_Orbit_Component :: scrapbot.Component{name = "showcase.light_orbit"}
+Light_Orbit_Settings :: scrapbot.Vec3_Field{component = Light_Orbit_Component, name = "settings"}
+
 Fountain_Geometry: scrapbot.Resource_Handle
 Fountain_Material: scrapbot.Resource_Handle
 
@@ -49,6 +52,11 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	}
 	scrapbot.component(&reg, Emitter_Component, emitter_fields[:])
 
+	light_orbit_fields := [?]scrapbot.Field {
+		scrapbot.vec3(Light_Orbit_Settings),
+	}
+	scrapbot.component(&reg, Light_Orbit_Component, light_orbit_fields[:])
+
 	spin_accesses := [?]scrapbot.Access {
 		scrapbot.write(scrapbot.Transform_Component),
 		scrapbot.read(Spin_Component),
@@ -80,6 +88,13 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 		scrapbot.write(Spin_Component),
 	}
 	scrapbot.system(&reg, "showcase.fountain", emitter_accesses[:], fountain_system)
+
+	light_orbit_accesses := [?]scrapbot.Access {
+		scrapbot.write(scrapbot.Transform_Component),
+		scrapbot.read(scrapbot.Point_Light_Component),
+		scrapbot.read(Light_Orbit_Component),
+	}
+	scrapbot.system(&reg, "showcase.light_orbit", light_orbit_accesses[:], light_orbit_system)
 
 	return scrapbot.err(&reg)
 }
@@ -117,6 +132,42 @@ spin_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
 
 		if !scrapbot.set(ctx, entity, transform) {
 			return "failed to write transform"
+		}
+	}
+
+	return nil
+}
+
+light_orbit_system :: proc "c" (ctx: ^scrapbot.System_Context) -> cstring {
+	components := [?]scrapbot.Component {
+		scrapbot.Transform_Component,
+		scrapbot.Point_Light_Component,
+		Light_Orbit_Component,
+	}
+	light_query := scrapbot.query(components[:])
+
+	count := scrapbot.count(ctx, light_query)
+	if count < 0 {
+		return "failed to query orbiting point lights"
+	}
+	for i in 0..<count {
+		entity, entity_ok := scrapbot.entity_at(ctx, light_query, i)
+		if !entity_ok {
+			continue
+		}
+
+		transform, transform_ok := scrapbot.get(ctx, entity, scrapbot.Transform_Component)
+		settings, settings_ok := scrapbot.get(ctx, entity, Light_Orbit_Settings)
+		if !transform_ok || !settings_ok {
+			return "failed to read orbiting point light"
+		}
+
+		transform.rotation.y += settings.y * ctx.delta_seconds
+		transform.position.x = math.cos(transform.rotation.y) * settings.x
+		transform.position.y = settings.z
+		transform.position.z = math.sin(transform.rotation.y) * settings.x
+		if !scrapbot.set(ctx, entity, transform) {
+			return "failed to write orbiting point light transform"
 		}
 	}
 

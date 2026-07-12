@@ -84,6 +84,49 @@ test_render_batches_group_shared_geometry_and_material :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_render_list_extracts_ambient_directional_and_point_lights :: proc(t: ^testing.T) {
+	scene, result := project.parse_scene(`[[entities]]
+name = "Ambient"
+[entities.ambient_light]
+color = [0.2, 0.4, 0.6]
+intensity = 0.5
+
+[[entities]]
+name = "Sun"
+[entities.directional_light]
+direction = [0, -1, 0]
+color = [1, 0.9, 0.8]
+intensity = 1.5
+
+[[entities]]
+name = "Lamp"
+[entities.transform]
+position = [2, 3, 4]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+[entities.point_light]
+color = [0.1, 0.2, 1]
+intensity = 12
+range = 7
+`)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, result.err == .None)
+
+	world := build_world(&scene)
+	defer destroy_world(&world)
+	list: Render_List
+	extract_lights(&world, &list)
+
+	testing.expect(t, list.ambient == shared.Vec3{0.1, 0.2, 0.3})
+	testing.expect(t, list.directional_light_count == 1)
+	testing.expect(t, list.directional_lights[0].light.direction == shared.Vec3{0, -1, 0})
+	testing.expect(t, list.directional_lights[0].light.intensity == 1.5)
+	testing.expect(t, list.point_light_count == 1)
+	testing.expect(t, list.point_lights[0].position == shared.Vec3{2, 3, 4})
+	testing.expect(t, list.point_lights[0].light.range == 7)
+}
+
+@(test)
 test_deferred_render_components_drive_reconciliation :: proc(t: ^testing.T) {
 	registry: resources.Registry; defer resources.destroy_registry(&registry)
 	desc,_:=resources.cube(); defer delete(desc.vertices); defer delete(desc.indices)
@@ -250,6 +293,13 @@ test_deferred_commands_spawn_entities_when_applied :: proc(t: ^testing.T) {
 	testing.expect(t, commands.command_count == 0)
 	testing.expect(t, alive_entity_count(&world) == 1)
 	testing.expect(t, world.entities[0].name == "Spawned")
+	testing.expect(t, world.entities[0].camera_index == INVALID_COMPONENT_INDEX)
+	testing.expect(t, world.entities[0].ambient_light_index == INVALID_COMPONENT_INDEX)
+	testing.expect(t, world.entities[0].directional_light_index == INVALID_COMPONENT_INDEX)
+	testing.expect(t, world.entities[0].point_light_index == INVALID_COMPONENT_INDEX)
+	testing.expect(t, world.entities[0].geometry_index == INVALID_COMPONENT_INDEX)
+	testing.expect(t, world.entities[0].material_index == INVALID_COMPONENT_INDEX)
+	testing.expect(t, world.entities[0].render_instance_index == INVALID_COMPONENT_INDEX)
 }
 
 @(test)

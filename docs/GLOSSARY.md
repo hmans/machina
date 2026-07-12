@@ -62,7 +62,7 @@
 
 **SDL3** - The first platform window layer for Scrapbot's headful runtime smoke tests and renderer surface creation.
 
-**Render packet** - Planned name for backend-neutral render data extracted from the ECS world before submission to a renderer backend.
+**Render packet** - Backend-neutral frame data extracted from the ECS world before submission to a renderer backend. It contains render instances, the active camera, accumulated ambient light, and bounded directional and point-light arrays.
 
 **WebGPU** - The modern graphics API model Scrapbot is targeting for its first real renderer.
 

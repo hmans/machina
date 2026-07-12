@@ -12,6 +12,65 @@ near = 0.1
 far = 100
 
 [[entities]]
+name = "Ambient Light"
+
+[entities.ambient_light]
+color = [0.32, 0.38, 0.48]
+intensity = 0.28
+
+[[entities]]
+name = "Sun"
+
+[entities.directional_light]
+direction = [-0.45, -1, -0.35]
+color = [1, 0.92, 0.78]
+intensity = 0.72
+
+[[entities]]
+name = "Warm Orbiting Light"
+
+[entities.transform]
+position = [2.6, 1.4, 0]
+rotation = [0, 0, 0]
+scale = [0.12, 0.12, 0.12]
+
+[entities.geometry]
+resource = "cube"
+
+[entities.material]
+resource = "warm-light"
+
+[entities.point_light]
+color = [1, 0.18, 0.06]
+intensity = 2
+range = 6
+
+[entities.components.showcase.light_orbit]
+settings = [2.6, 0.75, 1.4]
+
+[[entities]]
+name = "Cool Orbiting Light"
+
+[entities.transform]
+position = [-3.4, 0.45, 0]
+rotation = [0, 3.14159, 0]
+scale = [0.12, 0.12, 0.12]
+
+[entities.geometry]
+resource = "cube"
+
+[entities.material]
+resource = "cool-light"
+
+[entities.point_light]
+color = [0.05, 0.4, 1]
+intensity = 2.5
+range = 6.5
+
+[entities.components.showcase.light_orbit]
+settings = [3.4, -0.5, 0.45]
+
+[[entities]]
 name = "Luau Float Marker"
 
 [entities.transform]

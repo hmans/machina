@@ -578,6 +578,9 @@ register_scrapbot_api :: proc(L: Lua_State) {
 
 	push_registered_component_handle_by_name(L, "scrapbot.camera")
 	lua_setfield(L, -2, "camera")
+	push_registered_component_handle_by_name(L, "scrapbot.ambient_light"); lua_setfield(L,-2,"ambient_light")
+	push_registered_component_handle_by_name(L, "scrapbot.directional_light"); lua_setfield(L,-2,"directional_light")
+	push_registered_component_handle_by_name(L, "scrapbot.point_light"); lua_setfield(L,-2,"point_light")
 
 	push_registered_component_handle_by_name(L, "scrapbot.mesh")
 	lua_setfield(L, -2, "mesh")
@@ -593,6 +596,7 @@ register_scrapbot_api :: proc(L: Lua_State) {
 	lua_pushcclosurek(L, scrapbot_geometry_plane, "scrapbot.geometry.plane", 0, nil); lua_setfield(L, -2, "plane")
 	lua_setfield(L, -2, "geometry")
 	lua_createtable(L, 0, 1)
+	lua_pushcclosurek(L, scrapbot_material_unlit, "scrapbot.material.lit", 0, nil); lua_setfield(L, -2, "lit")
 	lua_pushcclosurek(L, scrapbot_material_unlit, "scrapbot.material.unlit", 0, nil); lua_setfield(L, -2, "unlit")
 	lua_setfield(L, -2, "material")
 
@@ -1969,6 +1973,12 @@ push_query_component_table :: proc "c" (
 	case "scrapbot.camera":
 		lua_createtable(L, 0, 0)
 		return
+	case "scrapbot.ambient_light":
+		if entity.ambient_light_index>=0 && entity.ambient_light_index<len(world.ambient_lights) {light:=world.ambient_lights[entity.ambient_light_index]; lua_createtable(L,0,2); push_vec3_table(L,light.color); lua_setfield(L,-2,"color"); lua_pushnumber(L,f64(light.intensity)); lua_setfield(L,-2,"intensity"); return}
+	case "scrapbot.directional_light":
+		if entity.directional_light_index>=0 && entity.directional_light_index<len(world.directional_lights) {light:=world.directional_lights[entity.directional_light_index]; lua_createtable(L,0,3); push_vec3_table(L,light.direction); lua_setfield(L,-2,"direction"); push_vec3_table(L,light.color); lua_setfield(L,-2,"color"); lua_pushnumber(L,f64(light.intensity)); lua_setfield(L,-2,"intensity"); return}
+	case "scrapbot.point_light":
+		if entity.point_light_index>=0 && entity.point_light_index<len(world.point_lights) {light:=world.point_lights[entity.point_light_index]; lua_createtable(L,0,3); push_vec3_table(L,light.color); lua_setfield(L,-2,"color"); lua_pushnumber(L,f64(light.intensity)); lua_setfield(L,-2,"intensity"); lua_pushnumber(L,f64(light.range)); lua_setfield(L,-2,"range"); return}
 	case "scrapbot.mesh":
 		lua_createtable(L, 0, 0)
 		return

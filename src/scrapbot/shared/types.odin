@@ -40,6 +40,12 @@ Scene_Entity :: struct {
 
 	has_camera: bool,
 	camera:     Camera_Component,
+	has_ambient_light: bool,
+	ambient_light: Ambient_Light_Component,
+	has_directional_light: bool,
+	directional_light: Directional_Light_Component,
+	has_point_light: bool,
+	point_light: Point_Light_Component,
 
 	has_mesh: bool,
 	mesh:     Mesh_Component,
@@ -73,6 +79,10 @@ Camera_Component :: struct {
 	near: f32,
 	far:  f32,
 }
+
+Ambient_Light_Component :: struct {color: Vec3, intensity: f32}
+Directional_Light_Component :: struct {direction, color: Vec3, intensity: f32}
+Point_Light_Component :: struct {color: Vec3, intensity, range: f32}
 
 Mesh_Component :: struct {
 	primitive: string,
@@ -109,6 +119,9 @@ World_Entity :: struct {
 	name:            string,
 	transform_index: int,
 	camera_index:    int,
+	ambient_light_index: int,
+	directional_light_index: int,
+	point_light_index: int,
 	mesh_index:      int,
 	geometry_index:  int,
 	material_index:  int,
@@ -137,16 +150,30 @@ Camera_Instance :: struct {
 	camera:    Camera_Component,
 }
 
+Directional_Light_Instance :: struct {light: Directional_Light_Component}
+Point_Light_Instance :: struct {position: Vec3, light: Point_Light_Component}
+
+MAX_DIRECTIONAL_LIGHTS :: 4
+MAX_POINT_LIGHTS :: 16
+
 Render_List :: struct {
 	instances:  [dynamic]Render_Instance,
 	camera:     Camera_Instance,
 	has_camera: bool,
+	ambient: Vec3,
+	directional_lights: [MAX_DIRECTIONAL_LIGHTS]Directional_Light_Instance,
+	directional_light_count: int,
+	point_lights: [MAX_POINT_LIGHTS]Point_Light_Instance,
+	point_light_count: int,
 }
 
 World :: struct {
 	entities:   [dynamic]World_Entity,
 	transforms: #soa[dynamic]Transform_Component,
 	cameras:    [dynamic]Camera_Component,
+	ambient_lights: [dynamic]Ambient_Light_Component,
+	directional_lights: [dynamic]Directional_Light_Component,
+	point_lights: [dynamic]Point_Light_Component,
 	meshes:     [dynamic]Mesh_Component,
 	renderables: [dynamic]Renderable,
 	geometries: [dynamic]Geometry_Component,

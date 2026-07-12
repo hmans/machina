@@ -71,6 +71,26 @@ resource = "coral"
 
 Geometry and material names resolve against resources created by project Luau or native Odin code. Entities become renderable once transform, geometry, and material references are valid.
 
+Lights:
+
+```toml
+[entities.ambient_light]
+color = [0.3, 0.35, 0.45]
+intensity = 0.25
+
+[entities.directional_light]
+direction = [-0.5, -1, -0.3]
+color = [1, 0.95, 0.85]
+intensity = 0.8
+
+[entities.point_light]
+color = [1, 0.2, 0.05]
+intensity = 2
+range = 6
+```
+
+Ambient and directional lights do not need transforms. A point light reads its world-space position from the entity's transform, so moving that transform moves the light.
+
 ## Custom component sections
 
 ```toml

@@ -12,7 +12,8 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 - The runtime can submit frame data through a renderer boundary.
 - The current implementation supports the null backend.
 - Users can select a renderer backend from the CLI.
-- The `wgpu` backend renders full indexed geometry with shared unlit materials and a perspective camera.
+- The `wgpu` backend renders full indexed geometry with shared base-color materials, a perspective camera, and ambient, directional, and point lighting.
+- Lights are ECS components extracted into a bounded backend-neutral frame packet: accumulated ambient light, four directional lights, and sixteen point lights.
 - Eligible entities receive internal render-instance components automatically.
 - Shared geometry/material pairs use one instanced draw batch, and geometry uploads are cached by handle and version.
 - The `wgpu` backend can also render a headless final-frame PNG with `--framegrab`.
@@ -43,9 +44,9 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 
 ### 4. Render full indexed geometry
 
-**Decision:** WGPU consumes position/normal/UV vertices with `u32` triangle indices and shared unlit materials. Cube and plane helpers generate the same representation.
+**Decision:** WGPU consumes position/normal/UV vertices with `u32` triangle indices and shared base-color materials. Cube and plane helpers generate the same representation.
 **Why:** Procedural, custom, and future imported geometry should follow one rendering path.
-**Tradeoff:** The canonical vertex format and unlit material model will need to grow with lighting and textures.
+**Tradeoff:** The canonical vertex format and simple Lambert material model will need to grow with textures and physically based shading.
 
 ### 5. Keep headless framegrabs on the same render path
 
@@ -65,13 +66,19 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 **Why:** Many entities should share one CPU description and one backend GPU allocation without putting GPU ownership into the ECS.
 **Tradeoff:** Rendering needs an explicit reconciliation step and backend resource caches before the current cube-only path can be retired.
 
+### 8. Extract ECS lights into a bounded frame packet
+
+**Decision:** Ambient, directional, and point lights are public ECS components. ECS extraction accumulates ambient light and copies up to four directional and sixteen point lights into each render list, following ADR-011.
+**Why:** Lights remain scriptable scene state without exposing ECS storage to renderer backends, and fixed limits keep the first uniform layout predictable.
+**Tradeoff:** Excess lights are ignored in entity order until a future light-selection or clustered-lighting path replaces the fixed packet.
+
 ## Related
 
-- **ADRs:** ADR-003, ADR-005, ADR-010
+- **ADRs:** ADR-003, ADR-005, ADR-010, ADR-011
 - **FDRs:** FDR-001, FDR-002
 
 ## Open Questions
 
-- How should the render packet evolve for textures, lighting, and culling?
+- How should the render packet evolve for textures, shadows, and culling?
 - How should offscreen render output be compared once scene rendering exists?
 - How long should the headful runtime loop live before the editor and game loop exist?

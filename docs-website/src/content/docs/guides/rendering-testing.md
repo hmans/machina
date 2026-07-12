@@ -6,7 +6,7 @@ description: Run the null and WebGPU backends, smoke-test projects, and verify g
 Scrapbot has two rendering paths today:
 
 - `null`: headless renderer for fast smoke tests.
-- `wgpu`: SDL3 plus `wgpu-native` for indexed geometry, shared materials, and instanced draw batching.
+- `wgpu`: SDL3 plus `wgpu-native` for indexed geometry, shared materials, ECS lighting, and instanced draw batching.
 
 ## Null renderer
 
@@ -32,7 +32,7 @@ Use `--frames` for automated smoke checks so the command returns.
 bin/scrapbot run examples/minimal \
   --backend wgpu \
   --headless \
-  --frames 2 \
+  --frames 120 \
   --framegrab /tmp/scrapbot-framegrab.png
 ```
 
@@ -47,7 +47,8 @@ Expected basics:
 
 - PNG image data, 1280 x 720, RGBA.
 - Signature starts with `8950 4e47 0d0a 1a0a`.
-- Visual output shows the fountain cubes and generated ground plane with distinct shared materials.
+- Visual output shows shaded fountain cubes and the generated ground plane under ambient and directional light.
+- Warm and cool point-light pools move around the fountain in later frames.
 
 ## Full local verification
 

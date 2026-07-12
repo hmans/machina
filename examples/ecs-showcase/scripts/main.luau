@@ -1,7 +1,9 @@
 scrapbot.geometry.cube("cube", 2)
 scrapbot.geometry.plane("ground", 12, 12)
-scrapbot.material.unlit("marker", 1, 0.3, 0.15, 1)
-scrapbot.material.unlit("ground", 0.12, 0.18, 0.22, 1)
+scrapbot.material.lit("marker", 1, 0.3, 0.15, 1)
+scrapbot.material.lit("ground", 0.12, 0.18, 0.22, 1)
+scrapbot.material.lit("warm-light", 1, 0.12, 0.03, 1)
+scrapbot.material.lit("cool-light", 0.03, 0.3, 1, 1)
 
 scrapbot.log("hello from examples/ecs-showcase")
 scrapbot.log("entities: " .. tostring(scrapbot.entity_count()))
@@ -16,11 +18,13 @@ local EmitterComponent = scrapbot.component_handle("showcase.emitter") :: Showca
 local LifetimeComponent = scrapbot.component_handle("showcase.lifetime") :: ShowcaseLifetimeComponent
 local SpinComponent = scrapbot.component_handle("showcase.spin") :: ShowcaseSpinComponent
 local VelocityComponent = scrapbot.component_handle("showcase.velocity") :: ShowcaseVelocityComponent
+local LightOrbitComponent = scrapbot.component_handle("showcase.light_orbit") :: ShowcaseLightOrbitComponent
 
 local Floating = scrapbot.query(scrapbot.transform, FloatComponent)
 local Emitters = scrapbot.query(scrapbot.transform, EmitterComponent)
 local FountainBodies = scrapbot.query(scrapbot.transform, LifetimeComponent, VelocityComponent)
 local Spinners = scrapbot.query(SpinComponent)
+local OrbitingLights = scrapbot.query(scrapbot.point_light, LightOrbitComponent)
 
 scrapbot.system(Floating, {
 	writes = { scrapbot.transform, FloatComponent },
@@ -43,4 +47,9 @@ end)
 
 scrapbot.system(Spinners, function(delta_seconds: number, entity: ScrapbotEntity, spin: ReadonlyShowcaseSpin)
 	assert(spin.angular_velocity.y ~= 0)
+end)
+
+scrapbot.system(OrbitingLights, function(delta_seconds: number, entity: ScrapbotEntity, light: ReadonlyScrapbotPointLight, orbit: ReadonlyShowcaseLightOrbit)
+	assert(light.range > 0)
+	assert(orbit.settings.x > 0)
 end)

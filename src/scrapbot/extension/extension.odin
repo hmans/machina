@@ -6,6 +6,9 @@ import raw "scrapbot:extension_api"
 ABI_VERSION :: raw.ABI_VERSION
 TRANSFORM :: "scrapbot.transform"
 MESH :: "scrapbot.mesh"
+AMBIENT_LIGHT :: "scrapbot.ambient_light"
+DIRECTIONAL_LIGHT :: "scrapbot.directional_light"
+POINT_LIGHT :: "scrapbot.point_light"
 
 Context :: struct {
 	api: ^raw.API,
@@ -54,6 +57,9 @@ Spawn_Options :: raw.Spawn_Options
 
 Transform_Component :: Component{name = TRANSFORM}
 Mesh_Component :: Component{name = MESH}
+Ambient_Light_Component :: Component{name = AMBIENT_LIGHT}
+Directional_Light_Component :: Component{name = DIRECTIONAL_LIGHT}
+Point_Light_Component :: Component{name = POINT_LIGHT}
 MAX_QUERY_TERMS :: 16
 
 Generated_Geometry :: struct {
