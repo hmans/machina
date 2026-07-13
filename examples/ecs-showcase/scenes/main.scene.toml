@@ -71,6 +71,63 @@ range = 5.5
 settings = [2.7, -0.8, 0.2]
 
 [[entities]]
+name = "Static Amber Light"
+
+[entities.transform]
+position = [-3.8, 0.35, 1.8]
+rotation = [0, 0, 0]
+scale = [0.16, 0.16, 0.16]
+
+[entities.geometry]
+resource = "cube"
+
+[entities.material]
+resource = "static-amber-light"
+
+[entities.point_light]
+color = [1, 0.32, 0.03]
+intensity = 10
+range = 4.5
+
+[[entities]]
+name = "Static Green Light"
+
+[entities.transform]
+position = [0, 2.8, -1.5]
+rotation = [0, 0, 0]
+scale = [0.16, 0.16, 0.16]
+
+[entities.geometry]
+resource = "cube"
+
+[entities.material]
+resource = "static-green-light"
+
+[entities.point_light]
+color = [0.03, 1, 0.24]
+intensity = 11
+range = 4.5
+
+[[entities]]
+name = "Static Violet Light"
+
+[entities.transform]
+position = [3.8, 0.35, 1.8]
+rotation = [0, 0, 0]
+scale = [0.16, 0.16, 0.16]
+
+[entities.geometry]
+resource = "cube"
+
+[entities.material]
+resource = "static-violet-light"
+
+[entities.point_light]
+color = [0.58, 0.04, 1]
+intensity = 10
+range = 4.5
+
+[[entities]]
 name = "Luau Float Marker"
 
 [entities.transform]
