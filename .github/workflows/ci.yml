@@ -18,11 +18,22 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y ca-certificates curl git xz-utils zstd build-essential clang libsdl3-dev
+          apt-get install -y ca-certificates curl git unzip xz-utils zstd build-essential clang libsdl3-dev
       - uses: actions/checkout@v6
         with:
           submodules: recursive
       - uses: jdx/mise-action@v4
+      - name: Prepare Odin vendor libraries
+        run: |
+          make -C "$(odin root)/vendor/stb/src"
+          WGPU_ARCHIVE="wgpu-linux-x86_64-release.zip"
+          WGPU_VERSION="v29.0.1.1"
+          WGPU_LIB_DIR="$(odin root)/vendor/wgpu/lib"
+          mkdir -p "$WGPU_LIB_DIR"
+          curl --fail --location --retry 3 \
+            "https://github.com/gfx-rs/wgpu-native/releases/download/$WGPU_VERSION/$WGPU_ARCHIVE" \
+            --output "/tmp/$WGPU_ARCHIVE"
+          unzip -q "/tmp/$WGPU_ARCHIVE" -d "$WGPU_LIB_DIR"
       - name: Test
         run: mise test
       - name: AddressSanitizer
