@@ -107,7 +107,8 @@ jobs:
           $wgpuDownload = Join-Path $env:RUNNER_TEMP $wgpuArchive
           New-Item -ItemType Directory -Force -Path $wgpuLibDir | Out-Null
           Invoke-WebRequest -Uri "https://github.com/gfx-rs/wgpu-native/releases/download/$wgpuVersion/$wgpuArchive" -OutFile $wgpuDownload
-          Expand-Archive -Path $wgpuDownload -DestinationPath $wgpuLibDir
+          & tar.exe -xf $wgpuDownload -C $wgpuLibDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check
         shell: pwsh
         run: |
