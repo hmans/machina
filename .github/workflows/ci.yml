@@ -29,11 +29,12 @@ jobs:
           WGPU_ARCHIVE="wgpu-linux-x86_64-release.zip"
           WGPU_VERSION="v29.0.1.1"
           WGPU_LIB_DIR="$(odin root)/vendor/wgpu/lib"
-          mkdir -p "$WGPU_LIB_DIR"
+          WGPU_PACKAGE="${WGPU_ARCHIVE%.zip}"
+          mkdir -p "$WGPU_LIB_DIR/$WGPU_PACKAGE"
           curl --fail --location --retry 3 \
             "https://github.com/gfx-rs/wgpu-native/releases/download/$WGPU_VERSION/$WGPU_ARCHIVE" \
             --output "/tmp/$WGPU_ARCHIVE"
-          unzip -q "/tmp/$WGPU_ARCHIVE" -d "$WGPU_LIB_DIR"
+          unzip -q "/tmp/$WGPU_ARCHIVE" -d "$WGPU_LIB_DIR/$WGPU_PACKAGE"
       - name: Test
         run: mise test
       - name: AddressSanitizer
