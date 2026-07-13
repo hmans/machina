@@ -207,7 +207,11 @@ package_executable_name :: proc(name: string) -> string {
 	}
 	value := strings.trim_right(strings.to_string(builder), "-")
 	if value == "" {value = "scrapbot-game"}
-	when ODIN_OS == .Windows {return clone_package_string(value + ".exe")}
+	when ODIN_OS == .Windows {
+		executable, err := strings.concatenate({value, ".exe"})
+		if err != nil {return ""}
+		return executable
+	}
 	return clone_package_string(value)
 }
 
