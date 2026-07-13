@@ -90,7 +90,8 @@ jobs:
       - name: Prepare Odin vendor libraries
         shell: pwsh
         run: |
-          $odinRoot = odin root
+          $odin = Join-Path (mise where odin) "odin.exe"
+          $odinRoot = & $odin root
           Push-Location "$odinRoot\vendor\stb\src"
           try {
             & .\build.bat
@@ -109,4 +110,7 @@ jobs:
           Expand-Archive -Path $wgpuDownload -DestinationPath $wgpuLibDir
       - name: Check
         shell: pwsh
-        run: odin check src/scrapbot -no-entry-point
+        run: |
+          $odin = Join-Path (mise where odin) "odin.exe"
+          & $odin check src/scrapbot -no-entry-point
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
