@@ -18,7 +18,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y ca-certificates git xz-utils zstd build-essential clang libsdl3-dev
+          apt-get install -y ca-certificates curl git xz-utils zstd build-essential clang libsdl3-dev
       - uses: actions/checkout@v6
         with:
           submodules: recursive
