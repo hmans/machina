@@ -1,16 +1,18 @@
 package platform
 
+import shared "../shared"
+import base_runtime "base:runtime"
 import "core:c"
 import "core:fmt"
 import "core:strings"
-import base_runtime "base:runtime"
-import shared "../shared"
 import sdl "vendor:sdl3"
 
 runtime_window: ^sdl.Window
 runtime_window_ready: bool
 runtime_window_hidden: bool
 runtime_editor_toggle_requested: bool
+runtime_editor_gizmo_mode_requested: bool
+runtime_editor_gizmo_mode: shared.Editor_Gizmo_Mode
 runtime_wheel_y: f32
 runtime_scene_camera_look_active: bool
 
@@ -24,35 +26,46 @@ Pointer_State :: struct {
 
 Scene_Camera_Key_State :: struct {
 	forward, backward: bool,
-	left, right:       bool,
-	up, down:          bool,
+	left, right: bool,
+	up, down: bool,
 }
 
 Live_Resize_Redraw_Proc :: #type proc "c" (userdata: rawptr)
 
 Live_Resize_Watch :: struct {
 	window_id: sdl.WindowID,
-	redraw:    Live_Resize_Redraw_Proc,
-	userdata:  rawptr,
+	redraw: Live_Resize_Redraw_Proc,
+	userdata: rawptr,
 }
 
-runtime_event_requests_live_resize_redraw :: proc(event: ^sdl.Event, window_id: sdl.WindowID) -> bool {
-	return event != nil &&
+runtime_event_requests_live_resize_redraw :: proc(
+	event: ^sdl.Event,
+	window_id: sdl.WindowID,
+) -> bool {
+	return(
+		event != nil &&
 		event.type == .WINDOW_EXPOSED &&
 		event.window.data1 == 1 &&
-		event.window.windowID == window_id
+		event.window.windowID == window_id \
+	)
 }
 
 runtime_live_resize_event_watch :: proc "c" (userdata: rawptr, event: ^sdl.Event) -> bool {
 	context = base_runtime.default_context()
 	watch := cast(^Live_Resize_Watch)userdata
-	if watch != nil && watch.redraw != nil && runtime_event_requests_live_resize_redraw(event, watch.window_id) {
+	if watch != nil &&
+	   watch.redraw != nil &&
+	   runtime_event_requests_live_resize_redraw(event, watch.window_id) {
 		watch.redraw(watch.userdata)
 	}
 	return true
 }
 
-watch_runtime_live_resize :: proc(watch: ^Live_Resize_Watch, redraw: Live_Resize_Redraw_Proc, userdata: rawptr) -> string {
+watch_runtime_live_resize :: proc(
+	watch: ^Live_Resize_Watch,
+	redraw: Live_Resize_Redraw_Proc,
+	userdata: rawptr,
+) -> string {
 	if watch == nil || redraw == nil || runtime_window == nil {
 		return "cannot watch live resize without a runtime window and redraw callback"
 	}
@@ -69,7 +82,7 @@ watch_runtime_live_resize :: proc(watch: ^Live_Resize_Watch, redraw: Live_Resize
 }
 
 unwatch_runtime_live_resize :: proc(watch: ^Live_Resize_Watch) {
-	if watch == nil || watch.redraw == nil {return}
+	if watch == nil || watch.redraw == nil { return }
 	sdl.RemoveEventWatch(runtime_live_resize_event_watch, watch)
 	watch^ = {}
 }
@@ -89,9 +102,9 @@ runtime_window_flags :: proc(hidden: bool) -> sdl.WindowFlags {
 }
 
 runtime_window_pixel_density :: proc() -> f32 {
-	if runtime_window == nil || runtime_window_hidden {return 1}
-	density:=sdl.GetWindowPixelDensity(runtime_window)
-	if density<=0 {return 1}
+	if runtime_window == nil || runtime_window_hidden { return 1 }
+	density := sdl.GetWindowPixelDensity(runtime_window)
+	if density <= 0 { return 1 }
 	return density
 }
 
@@ -103,7 +116,11 @@ open_hidden_runtime_window :: proc(title: string, width, height: int) -> string 
 	return open_runtime_window_with_visibility(title, width, height, true)
 }
 
-open_runtime_window_with_visibility :: proc(title: string, width, height: int, hidden: bool) -> string {
+open_runtime_window_with_visibility :: proc(
+	title: string,
+	width, height: int,
+	hidden: bool,
+) -> string {
 	if runtime_window_ready {
 		return ""
 	}
@@ -115,7 +132,12 @@ open_runtime_window_with_visibility :: proc(title: string, width, height: int, h
 	title_c := strings.clone_to_cstring(title)
 	defer delete(title_c)
 
-	runtime_window = sdl.CreateWindow(title_c, c.int(width), c.int(height), runtime_window_flags(hidden))
+	runtime_window = sdl.CreateWindow(
+		title_c,
+		c.int(width),
+		c.int(height),
+		runtime_window_flags(hidden),
+	)
 	if runtime_window == nil {
 		err := fmt.tprintf("failed to create SDL3 window: %s", sdl.GetError())
 		sdl.Quit()
@@ -141,6 +163,7 @@ close_runtime_window :: proc() {
 	}
 	runtime_window_hidden = false
 	runtime_editor_toggle_requested = false
+	runtime_editor_gizmo_mode_requested = false
 	runtime_scene_camera_look_active = false
 }
 
@@ -150,43 +173,85 @@ runtime_pointer_state :: proc() -> Pointer_State {
 	}
 	x, y: f32
 	buttons := sdl.GetMouseState(&x, &y)
-	return {x=x, y=y, wheel_y=runtime_wheel_y, primary_down=.LEFT in buttons, secondary_down=.RIGHT in buttons, available=true}
+	return {
+		x = x,
+		y = y,
+		wheel_y = runtime_wheel_y,
+		primary_down = .LEFT in buttons,
+		secondary_down = .RIGHT in buttons,
+		available = true,
+	}
 }
 
 runtime_pointer_state_in_pixels :: proc() -> Pointer_State {
 	pointer := runtime_pointer_state()
-	if !pointer.available || runtime_window == nil {return pointer}
+	if !pointer.available || runtime_window == nil { return pointer }
 	window_width, window_height: c.int
 	pixel_width, pixel_height: c.int
 	if !sdl.GetWindowSize(runtime_window, &window_width, &window_height) ||
 	   !sdl.GetWindowSizeInPixels(runtime_window, &pixel_width, &pixel_height) ||
-	   window_width <= 0 || window_height <= 0 {return pointer}
+	   window_width <= 0 ||
+	   window_height <= 0 { return pointer }
 	pointer.x *= f32(pixel_width) / f32(window_width)
 	pointer.y *= f32(pixel_height) / f32(window_height)
 	return pointer
 }
 
 consume_editor_toggle :: proc() -> bool {
-	requested:=runtime_editor_toggle_requested
-	runtime_editor_toggle_requested=false
+	requested := runtime_editor_toggle_requested
+	runtime_editor_toggle_requested = false
 	return requested
 }
 
-editor_toggle_shortcut :: proc(scancode:sdl.Scancode,modifiers:sdl.Keymod,repeat:bool)->bool {
-	return !repeat&&scancode==.ESCAPE&&(.LCTRL in modifiers||.RCTRL in modifiers)
+consume_editor_gizmo_mode :: proc() -> (shared.Editor_Gizmo_Mode, bool) {
+	mode, requested := runtime_editor_gizmo_mode, runtime_editor_gizmo_mode_requested
+	runtime_editor_gizmo_mode_requested = false
+	return mode, requested
 }
 
-scene_camera_input_from_state :: proc(keys: Scene_Camera_Key_State, look_delta: shared.Vec2, look_active: bool) -> shared.Editor_Fly_Camera_Input {
+editor_toggle_shortcut :: proc(
+	scancode: sdl.Scancode,
+	modifiers: sdl.Keymod,
+	repeat: bool,
+) -> bool {
+	return !repeat && scancode == .ESCAPE && (.LCTRL in modifiers || .RCTRL in modifiers)
+}
+
+editor_gizmo_mode_shortcut :: proc(
+	scancode: sdl.Scancode,
+	repeat: bool,
+) -> (
+	shared.Editor_Gizmo_Mode,
+	bool,
+) {
+	if repeat { return .Translate, false }
+	#partial switch scancode {
+		case .W:
+			return .Translate, true
+		case .E:
+			return .Rotate, true
+		case .R:
+			return .Scale, true
+		case:
+			return .Translate, false
+	}
+}
+
+scene_camera_input_from_state :: proc(
+	keys: Scene_Camera_Key_State,
+	look_delta: shared.Vec2,
+	look_active: bool,
+) -> shared.Editor_Fly_Camera_Input {
 	if !look_active {
 		return {}
 	}
 	movement := shared.Vec3{}
-	if keys.right {movement.x += 1}
-	if keys.left {movement.x -= 1}
-	if keys.up {movement.y += 1}
-	if keys.down {movement.y -= 1}
-	if keys.forward {movement.z += 1}
-	if keys.backward {movement.z -= 1}
+	if keys.right { movement.x += 1 }
+	if keys.left { movement.x -= 1 }
+	if keys.up { movement.y += 1 }
+	if keys.down { movement.y -= 1 }
+	if keys.forward { movement.z += 1 }
+	if keys.backward { movement.z -= 1 }
 	return {movement = movement, look_delta = look_delta, look_active = true}
 }
 
@@ -202,7 +267,10 @@ keyboard_state_has :: proc(keyboard: [^]bool, key_count: int, scancode: sdl.Scan
 	return keyboard != nil && index >= 0 && index < key_count && keyboard[index]
 }
 
-runtime_scene_camera_input :: proc(enabled: bool, viewport_x, viewport_y, viewport_width, viewport_height: f32) -> shared.Editor_Fly_Camera_Input {
+runtime_scene_camera_input :: proc(
+	enabled: bool,
+	viewport_x, viewport_y, viewport_width, viewport_height: f32,
+) -> shared.Editor_Fly_Camera_Input {
 	if runtime_window == nil || runtime_window_hidden || !enabled {
 		if runtime_window != nil && runtime_scene_camera_look_active {
 			_ = sdl.SetWindowRelativeMouseMode(runtime_window, false)
@@ -212,8 +280,12 @@ runtime_scene_camera_input :: proc(enabled: bool, viewport_x, viewport_y, viewpo
 	}
 
 	pointer := runtime_pointer_state_in_pixels()
-	inside_viewport := pointer.available && pointer.x >= viewport_x && pointer.y >= viewport_y &&
-		pointer.x < viewport_x + viewport_width && pointer.y < viewport_y + viewport_height
+	inside_viewport :=
+		pointer.available &&
+		pointer.x >= viewport_x &&
+		pointer.y >= viewport_y &&
+		pointer.x < viewport_x + viewport_width &&
+		pointer.y < viewport_y + viewport_height
 	capture_started := false
 	if !runtime_scene_camera_look_active {
 		if !pointer.secondary_down || !inside_viewport {
@@ -237,12 +309,16 @@ runtime_scene_camera_input :: proc(enabled: bool, viewport_x, viewport_y, viewpo
 	key_count: c.int
 	keyboard := sdl.GetKeyboardState(&key_count)
 	keys := Scene_Camera_Key_State {
-		forward  = keyboard_state_has(keyboard, int(key_count), .W),
+		forward = keyboard_state_has(keyboard, int(key_count), .W),
 		backward = keyboard_state_has(keyboard, int(key_count), .S),
-		left     = keyboard_state_has(keyboard, int(key_count), .A),
-		right    = keyboard_state_has(keyboard, int(key_count), .D),
-		up       = keyboard_state_has(keyboard, int(key_count), .SPACE),
-		down     = keyboard_state_has(keyboard, int(key_count), .LCTRL) || keyboard_state_has(keyboard, int(key_count), .RCTRL),
+		left = keyboard_state_has(keyboard, int(key_count), .A),
+		right = keyboard_state_has(keyboard, int(key_count), .D),
+		up = keyboard_state_has(keyboard, int(key_count), .SPACE),
+		down = keyboard_state_has(
+			keyboard,
+			int(key_count),
+			.LCTRL,
+		) || keyboard_state_has(keyboard, int(key_count), .RCTRL),
 	}
 	look_delta := scene_camera_capture_delta({delta_x, delta_y}, capture_started)
 	return scene_camera_input_from_state(keys, look_delta, true)
@@ -268,10 +344,15 @@ pump_runtime_window_events :: proc() -> bool {
 		if event.type == .QUIT || event.type == .WINDOW_CLOSE_REQUESTED {
 			should_quit = true
 		}
-		if event.type==.KEY_DOWN && editor_toggle_shortcut(event.key.scancode,event.key.mod,event.key.repeat) {
-			runtime_editor_toggle_requested=true
+		if event.type == .KEY_DOWN &&
+		   editor_toggle_shortcut(event.key.scancode, event.key.mod, event.key.repeat) {
+			runtime_editor_toggle_requested = true
 		}
-		if event.type==.MOUSE_WHEEL {runtime_wheel_y += event.wheel.y}
+		if event.type == .KEY_DOWN {
+			if mode, requested := editor_gizmo_mode_shortcut(event.key.scancode, event.key.repeat);
+			   requested { runtime_editor_gizmo_mode = mode; runtime_editor_gizmo_mode_requested = true }
+		}
+		if event.type == .MOUSE_WHEEL { runtime_wheel_y += event.wheel.y }
 	}
 	return should_quit
 }

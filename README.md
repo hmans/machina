@@ -25,7 +25,7 @@ Scrapbot currently has a small Odin CLI and runtime skeleton:
 
 During development, use `mise build` to compile the CLI and `mise scrapbot -- [args...]` to compile and run it with arguments forwarded to Scrapbot.
 
-This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Rendering is pluggable at the runtime boundary. The `null` backend supports headless smoke tests, while the `wgpu` backend renders full indexed geometry with shared base-color and PNG-textured materials, ECS ambient/directional/point lights, backend-owned GPU caches, automatic instanced batching, live window resizing, and a retained ECS UI overlay with a box model, horizontal and vertical stacks, smooth clipped scroll areas, MTSDF text, pointer-aware buttons, and SDF-rounded backgrounds. An engine-owned editor shell can frame the live project viewport with top, status, scene, and inspector chrome, independently smoothed scroll panes, and an ECS-owned fly camera that navigates independently from the project's camera. Headless WGPU can write a final-frame PNG with `--framegrab`. Luau scripting is embedded from a pinned source dependency and exposes the ECS, full geometry/material resource creation, scheduled systems, deferred lifecycle commands, generated types, native extension integration, and hot reload.
+This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Rendering is pluggable at the runtime boundary. The `null` backend supports headless smoke tests, while the `wgpu` backend renders full indexed geometry with shared base-color and PNG-textured materials, ECS ambient/directional/point lights, backend-owned GPU caches, automatic instanced batching, live window resizing, and a retained ECS UI overlay with a box model, fixed or proportional horizontal and vertical stacks, draggable separators, hidden subtrees, smooth clipped scroll areas, MTSDF text, pointer-aware buttons, and SDF-rounded backgrounds and borders. A transient ECS-built editor shell can frame the live project viewport with top, status, resizable scene and inspector chrome, independently smoothed scroll panes, and an ECS-owned fly camera that navigates independently from the project's camera. Headless WGPU can write a final-frame PNG with `--framegrab`. Luau scripting is embedded from a pinned source dependency and exposes the ECS, full geometry/material resource creation, scheduled systems, deferred lifecycle commands, generated types, native extension integration, and hot reload.
 
 Example projects live in [`examples/`](examples/). The minimal example demonstrates Luau-defined and Odin-defined components and systems, and can be verified with `mise scrapbot run examples/minimal`. The ECS showcase runs a native object fountain with visible spawned cube renderables, velocity, lifetime, spin, despawn, animated point lights, editor-movable static point lights, and Luau typed queries.
 
@@ -145,6 +145,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] Element hover and active hit-testing state
   - [ ] UI command events
   - [x] Smooth clipped vertical scroll areas
+  - [x] Titled panels and equal-column tables
   - [ ] Canvas scaling
   - [x] Built-in scalable UI text
   - [x] MTSDF-based font rendering
@@ -158,7 +159,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [ ] Clipboard support
 - Styling
   - [x] Scene-defined UI API
-  - [x] Margins, padding, backgrounds, and rounded corners
+  - [x] Margins, padding, hidden subtrees, backgrounds, rounded corners, and borders
   - [ ] UI themes
 
 ### Editor
@@ -166,7 +167,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
 - Shell
   - [x] Toggleable editor shell
   - [x] Aspect-correct live game viewport
-  - [ ] Resizable panels
+  - [x] Resizable panels
   - [ ] Dockable editor workspace
 - Inspection
   - [ ] System profiler
@@ -188,7 +189,8 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [ ] Playback controls
   - [x] RMB-captured WASD/Space/Ctrl scene-camera navigation
   - [x] World-space translation gizmo
-  - [ ] Transform gizmo modes
+  - [x] Translation, rotation, and scale gizmo modes
+  - [x] Two-axis plane handles and center free/uniform transform handles
   - [x] Precise viewport entity picking
 - Extensibility
   - [ ] Asset browser

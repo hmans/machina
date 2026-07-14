@@ -19,7 +19,7 @@ Pass `--editor` to start with the editor already open:
 bin/scrapbot run examples/ecs-showcase --backend wgpu --window --editor
 ```
 
-The project keeps running when the editor opens or closes. Its world and project-authored UI fill all currently available center space without enforcing a fixed aspect ratio. During a native window resize, the simulation, surface, camera aspect, viewport, and editor layout continue updating throughout the drag.
+The project keeps running when the editor opens or closes. Its world and project-authored UI fill all currently available center space without enforcing a fixed aspect ratio. Drag either vertical separator beside the viewport to resize the scene or inspector sidebar; the center viewport automatically fills the remainder and the panes keep their proportions as the window changes. During a native window resize, the simulation, surface, camera aspect, viewport, and editor layout continue updating throughout the drag.
 
 ## Navigate the scene view
 
@@ -39,29 +39,33 @@ Closing and reopening the editor preserves the scene-camera viewpoint for the cu
 
 ## Browse and inspect entities
 
-The scene sidebar lists every live entity, including objects that do not come from the scene TOML:
+The scene sidebar lists scene-authored and runtime-spawned entities, including objects that do not come from the scene TOML. Scene-authored names use normal white text and runtime-spawned names use muted gray. Transient editor-origin entities—including the shell itself and scene camera—stay hidden from the browser and inspector.
 
-| Label | Meaning |
-| --- | --- |
-| `SCENE` | Authored by the loaded scene |
-| `LIVE` | Spawned while the project is running |
-| `EDIT` | Owned temporarily by the editor |
+The shell is itself built from transient ECS entities using the same layout, horizontal and vertical stack, draggable separator, scroll-area, panel, table, text, and button components available to project UI. Editor origin keeps those tool entities out of project data while letting the editor exercise the ordinary UI system.
 
 Click an entry to select it, or click rendered geometry in the viewport. Viewport picking tests the rendered triangles and selects the nearest hit; clicking empty viewport space clears the selection. The browser scrolls to reveal a viewport-picked entity and automatically clears selection if that entity despawns.
 
-The inspector reports the selected entity's name, identity, provenance, attached components, field names, and current values. The scene browser and inspector scroll independently with pixel-continuous targets, frame-time smoothing without line snapping, clipped partial content, and proportional scrollbars. Fractional trackpad deltas remain fractional.
+The inspector reports the selected entity's name, identity, provenance, attached components, field names, and current values. Each component receives a titled panel, with its fields arranged as label/value rows in a two-column property table. Entity membership and formatted values refresh every 200 ms, while selection changes refresh immediately. The scene browser and inspector scroll independently with pixel-continuous targets, frame-time smoothing without line snapping, clipped partial content, and proportional scrollbars. Fractional trackpad deltas remain fractional.
 
-## Translate an entity
+## Transform an entity
 
-Selecting an entity with a Transform adds a world-space translation gizmo:
+Selecting an entity with a Transform adds a screen-legible transform gizmo. Choose a mode with the standard shortcuts:
+
+| Shortcut | Mode | Handles |
+| --- | --- | --- |
+| `W` | Move | World-axis rails, plane walls, and a free-move center |
+| `E` | Rotate | Axis rings |
+| `R` | Scale | Axis rails, plane walls, and a uniform-scale center |
+
+The axis colors remain consistent in every mode:
 
 - Red moves along X.
 - Green moves along Y.
 - Blue moves along Z.
 
-Hover an axis to emphasize it, then drag to move the entity along that axis. The inspector updates with the live Transform values. Gizmo ownership is represented by a transient editor component on the selected entity and is removed when selection changes or the editor closes.
+Hover an axis to affect one component, or hover an XY, XZ, or YZ wall to affect that pair. In move mode, the center handle translates freely in the camera plane. In scale mode, it changes all three scale components uniformly. Gizmo ownership and mode are represented by a transient editor component on the selected entity; the component is removed when selection changes or the editor closes. W/E/R mode shortcuts are ignored while the right mouse button is capturing fly-camera input.
 
-Transform edits currently affect only the running world. Scene persistence, undo, snapping, rotation, scaling, and multi-selection are not implemented yet.
+Transform edits currently affect only the running world. Scene persistence, undo, snapping, local/world orientation switching, and multi-selection are not implemented yet.
 
 ## Capture the editor
 

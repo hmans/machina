@@ -1,7 +1,7 @@
 package component
 
-import "core:fmt"
 import shared "../shared"
+import "core:fmt"
 
 MAX_COMPONENTS :: 128
 MAX_COMPONENT_FIELDS :: 16
@@ -51,9 +51,32 @@ init_registry :: proc(registry: ^Registry) {
 		},
 	)
 	register_engine_component(registry, "scrapbot.camera", {})
-	register_engine_component(registry, "scrapbot.ambient_light", {Field_Definition{name="color",field_type=.Vec3},Field_Definition{name="intensity",field_type=.Number}})
-	register_engine_component(registry, "scrapbot.directional_light", {Field_Definition{name="direction",field_type=.Vec3},Field_Definition{name="color",field_type=.Vec3},Field_Definition{name="intensity",field_type=.Number}})
-	register_engine_component(registry, "scrapbot.point_light", {Field_Definition{name="color",field_type=.Vec3},Field_Definition{name="intensity",field_type=.Number},Field_Definition{name="range",field_type=.Number}})
+	register_engine_component(
+		registry,
+		"scrapbot.ambient_light",
+		{
+			Field_Definition{name = "color", field_type = .Vec3},
+			Field_Definition{name = "intensity", field_type = .Number},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.directional_light",
+		{
+			Field_Definition{name = "direction", field_type = .Vec3},
+			Field_Definition{name = "color", field_type = .Vec3},
+			Field_Definition{name = "intensity", field_type = .Number},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.point_light",
+		{
+			Field_Definition{name = "color", field_type = .Vec3},
+			Field_Definition{name = "intensity", field_type = .Number},
+			Field_Definition{name = "range", field_type = .Number},
+		},
+	)
 	register_engine_component(registry, "scrapbot.mesh", {})
 	register_engine_component(registry, "scrapbot.geometry", {})
 	register_engine_component(registry, "scrapbot.material", {})
@@ -63,13 +86,22 @@ init_registry :: proc(registry: ^Registry) {
 	register_engine_component(registry, "scrapbot.ui_hstack", {})
 	register_engine_component(registry, "scrapbot.ui_vstack", {})
 	register_engine_component(registry, "scrapbot.ui_scroll_area", {})
+	register_engine_component(registry, "scrapbot.ui_panel", {})
+	register_engine_component(registry, "scrapbot.ui_table", {})
 	register_engine_component(registry, "scrapbot.ui_text", {})
 	register_engine_component(registry, "scrapbot.ui_button", {})
 	register_engine_component(registry, "scrapbot.internal.render_instance", {})
 }
 
-register_engine_component :: proc(registry: ^Registry, name: string, fields: []Field_Definition) -> string {
-	definition := Definition{name = name, owner = .Engine}
+register_engine_component :: proc(
+	registry: ^Registry,
+	name: string,
+	fields: []Field_Definition,
+) -> string {
+	definition := Definition {
+		name = name,
+		owner = .Engine,
+	}
 	if err := copy_fields(&definition, fields); err != "" {
 		return err
 	}
@@ -135,7 +167,13 @@ register_definition :: proc "c" (registry: ^Registry, definition: Definition) ->
 	return ""
 }
 
-find_definition :: proc "c" (registry: ^Registry, name: string) -> (definition: Definition, ok: bool) {
+find_definition :: proc "c" (
+	registry: ^Registry,
+	name: string,
+) -> (
+	definition: Definition,
+	ok: bool,
+) {
 	index, found := find_definition_index(registry, name)
 	if !found {
 		return {}, false
@@ -143,7 +181,13 @@ find_definition :: proc "c" (registry: ^Registry, name: string) -> (definition: 
 	return registry.definitions[index], true
 }
 
-find_definition_by_id :: proc "c" (registry: ^Registry, id: Component_ID) -> (definition: Definition, ok: bool) {
+find_definition_by_id :: proc "c" (
+	registry: ^Registry,
+	id: Component_ID,
+) -> (
+	definition: Definition,
+	ok: bool,
+) {
 	if registry == nil || id == shared.INVALID_COMPONENT_ID {
 		return {}, false
 	}
@@ -167,7 +211,10 @@ find_definition_index :: proc "c" (registry: ^Registry, name: string) -> (index:
 	return -1, false
 }
 
-validate_custom_component :: proc(registry: ^Registry, scene_component: Custom_Component) -> string {
+validate_custom_component :: proc(
+	registry: ^Registry,
+	scene_component: Custom_Component,
+) -> string {
 	definition, found := find_definition(registry, scene_component.name)
 	if !found {
 		if shared.component_name_is_project_level(scene_component.name) {
@@ -208,8 +255,14 @@ validate_custom_component :: proc(registry: ^Registry, scene_component: Custom_C
 	return ""
 }
 
-lookup_field_definition :: proc(definition: Definition, name: string) -> (field: Field_Definition, ok: bool) {
-	for i in 0..<definition.field_count {
+lookup_field_definition :: proc(
+	definition: Definition,
+	name: string,
+) -> (
+	field: Field_Definition,
+	ok: bool,
+) {
+	for i in 0 ..< definition.field_count {
 		definition_field := definition.fields[i]
 		if definition_field.name == name {
 			return definition_field, true

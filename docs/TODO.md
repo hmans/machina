@@ -29,6 +29,7 @@
 - [x] Add pointer input, topmost-element hit testing, retained hover/active state, and button hover/press styling.
 - [ ] Emit button activation and other UI command events.
 - [x] Add nested paint/hit-test clipping and smooth vertical scroll areas.
+- [x] Add proportional fill stacks with draggable separators and minimum pane sizes.
 - [ ] Add canvas scaling and richer sizing/alignment.
 
 ## Project Runtime
@@ -78,12 +79,14 @@
 
 ## Editor
 
-- [x] Add an engine-owned editor shell toggled with Ctrl+Esc.
+- [x] Add a transient ECS-built editor shell toggled with Ctrl+Esc.
 - [x] Keep the running project live across the complete available viewport with a dynamic camera aspect ratio.
 - [x] Add a smoothly scrolling entity browser with scene/runtime provenance and stable selection.
 - [x] Add a smoothly scrolling read-only component field/value inspector for the selected entity.
 - [x] Add nearest-triangle entity picking in the live viewport.
 - [x] Add functional world-space X/Y/Z translation handles for selected entities.
+- [x] Add functional rotation rings and per-axis scale handles with W/E/R mode shortcuts.
+- [x] Add XY/XZ/YZ plane handles, camera-plane free translation, and uniform XYZ scaling.
 - [x] Add an editor-origin ECS scene camera with RMB-captured WASD, Space, and Ctrl fly navigation.
 - [ ] Add component value editing.
 
@@ -93,6 +96,8 @@
 
 ## Testing And Diagnostics
 
+- [x] Pin OLS and `odinfmt` with shared project configuration, mise tasks, and a staged-content pre-commit check.
+- [ ] Apply a dedicated baseline `odinfmt` pass and promote format checking into the default test gate.
 - [x] Add structured runtime storage, allocator, and update-cost statistics.
 - [x] Add deterministic entity/component churn invariants to the normal test suite.
 - [x] Add an opt-in lifecycle-heavy CPU/RAM growth soak.

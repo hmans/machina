@@ -1,22 +1,35 @@
 package platform
 
-import "core:testing"
 import shared "../shared"
+import "core:testing"
 import sdl "vendor:sdl3"
 
 @(test)
-test_editor_toggle_shortcut_requires_ctrl_escape_press :: proc(t:^testing.T) {
-	testing.expect(t,editor_toggle_shortcut(.ESCAPE,sdl.Keymod{.LCTRL},false))
-	testing.expect(t,editor_toggle_shortcut(.ESCAPE,sdl.Keymod{.RCTRL},false))
-	testing.expect(t,!editor_toggle_shortcut(.ESCAPE,sdl.Keymod{},false))
-	testing.expect(t,!editor_toggle_shortcut(.ESCAPE,sdl.Keymod{.LCTRL},true))
-	other:=sdl.Scancode(4)
-	testing.expect(t,!editor_toggle_shortcut(other,sdl.Keymod{.LCTRL},false))
+test_editor_toggle_shortcut_requires_ctrl_escape_press :: proc(t: ^testing.T) {
+	testing.expect(t, editor_toggle_shortcut(.ESCAPE, sdl.Keymod{.LCTRL}, false))
+	testing.expect(t, editor_toggle_shortcut(.ESCAPE, sdl.Keymod{.RCTRL}, false))
+	testing.expect(t, !editor_toggle_shortcut(.ESCAPE, sdl.Keymod{}, false))
+	testing.expect(t, !editor_toggle_shortcut(.ESCAPE, sdl.Keymod{.LCTRL}, true))
+	other := sdl.Scancode(4)
+	testing.expect(t, !editor_toggle_shortcut(other, sdl.Keymod{.LCTRL}, false))
+}
+
+@(test)
+test_editor_gizmo_mode_shortcuts_use_standard_transform_keys :: proc(t: ^testing.T) {
+	mode, ok := editor_gizmo_mode_shortcut(.W, false); testing.expect(t, ok && mode == .Translate)
+	mode, ok = editor_gizmo_mode_shortcut(.E, false); testing.expect(t, ok && mode == .Rotate)
+	mode, ok = editor_gizmo_mode_shortcut(.R, false); testing.expect(t, ok && mode == .Scale)
+	_, ok = editor_gizmo_mode_shortcut(.R, true); testing.expect(t, !ok)
+	_, ok = editor_gizmo_mode_shortcut(.A, false); testing.expect(t, !ok)
 }
 
 @(test)
 test_scene_camera_input_maps_navigation_only_while_looking :: proc(t: ^testing.T) {
-	keys := Scene_Camera_Key_State{forward = true, left = true, up = true}
+	keys := Scene_Camera_Key_State {
+		forward = true,
+		left = true,
+		up = true,
+	}
 	inactive := scene_camera_input_from_state(keys, {4, -2}, false)
 	testing.expect(t, !inactive.look_active)
 	testing.expect(t, inactive.movement == shared.Vec3{})

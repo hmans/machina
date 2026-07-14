@@ -6,22 +6,26 @@ import "core:testing"
 
 @(test)
 test_project_config_requires_safe_scene_path :: proc(t: ^testing.T) {
-	config, result := parse_project_config(`name = "Demo"
+	config, result := parse_project_config(
+		`name = "Demo"
 default_scene = "../outside.scene.toml"
-`)
+`,
+	)
 	testing.expect(t, result.err == .Invalid_Path)
 	testing.expect(t, config.default_scene == "../outside.scene.toml")
 }
 
 @(test)
 test_project_config_accepts_project_toml_shape :: proc(t: ^testing.T) {
-	config, result := parse_project_config(`name = "Demo #1" # comments are allowed outside strings
+	config, result := parse_project_config(
+		`name = "Demo #1" # comments are allowed outside strings
 default_scene = "scenes/main.scene.toml"
 
 [[native_extensions]]
 name = "scrappyphysics"
 source = "native/scrappyphysics"
-`)
+`,
+	)
 	defer destroy_project_config(&config)
 	testing.expect(t, result.err == .None)
 	testing.expect(t, config.name == "Demo #1")
@@ -33,31 +37,37 @@ source = "native/scrappyphysics"
 
 @(test)
 test_project_config_rejects_unescaped_string_bodies :: proc(t: ^testing.T) {
-	_, result := parse_project_config("name = \"Bad \\ Game\"\ndefault_scene = \"scenes/main.scene.toml\"\n")
+	_, result := parse_project_config(
+		"name = \"Bad \\ Game\"\ndefault_scene = \"scenes/main.scene.toml\"\n",
+	)
 	testing.expect(t, result.err == .Invalid_Field)
 }
 
 @(test)
 test_project_config_requires_safe_native_extension_source_path :: proc(t: ^testing.T) {
-	config, result := parse_project_config(`name = "Demo"
+	config, result := parse_project_config(
+		`name = "Demo"
 default_scene = "scenes/main.scene.toml"
 
 [[native_extensions]]
 name = "faststuff"
 source = "../faststuff"
-`)
+`,
+	)
 	defer destroy_project_config(&config)
 	testing.expect(t, result.err == .Invalid_Path)
 }
 
 @(test)
 test_scene_accepts_namespaced_component_names :: proc(t: ^testing.T) {
-	scene, result := parse_scene(`[[entities]]
+	scene, result := parse_scene(
+		`[[entities]]
 name = "Body"
 
 [entities.components.scrappyphysics.rigidbody]
 velocity = [0, 0, 0]
-`)
+`,
+	)
 	defer destroy_scene(&scene)
 
 	testing.expect(t, result.err == .None)
@@ -68,12 +78,14 @@ velocity = [0, 0, 0]
 
 @(test)
 test_scene_rejects_malformed_component_names :: proc(t: ^testing.T) {
-	scene, result := parse_scene(`[[entities]]
+	scene, result := parse_scene(
+		`[[entities]]
 name = "Body"
 
 [entities.components.scrappyphysics..rigidbody]
 velocity = [0, 0, 0]
-`)
+`,
+	)
 	defer destroy_scene(&scene)
 
 	testing.expect(t, result.err == .Invalid_Field)
@@ -81,12 +93,14 @@ velocity = [0, 0, 0]
 
 @(test)
 test_scene_component_fields_are_single_tokens :: proc(t: ^testing.T) {
-	scene, result := parse_scene(`[[entities]]
+	scene, result := parse_scene(
+		`[[entities]]
 name = "Body"
 
 [entities.components.autorotate]
 rotation.velocity = [0, 0, 0]
-`)
+`,
+	)
 	defer destroy_scene(&scene)
 
 	testing.expect(t, result.err == .Invalid_Field)
@@ -94,7 +108,8 @@ rotation.velocity = [0, 0, 0]
 
 @(test)
 test_scene_parses_engine_light_components :: proc(t: ^testing.T) {
-	scene, result := parse_scene(`[[entities]]
+	scene, result := parse_scene(
+		`[[entities]]
 name = "Ambient"
 [entities.ambient_light]
 color = [0.2, 0.3, 0.4]
@@ -113,7 +128,8 @@ name = "Lamp"
 color = [0.1, 0.4, 1]
 intensity = 8
 range = 12
-`)
+`,
+	)
 	defer destroy_scene(&scene)
 
 	testing.expect(t, result.err == .None)
@@ -129,11 +145,13 @@ range = 12
 
 @(test)
 test_scene_parses_shadow_marker_components :: proc(t: ^testing.T) {
-	scene, result := parse_scene(`[[entities]]
+	scene, result := parse_scene(
+		`[[entities]]
 name = "Cube"
 [entities.shadow_caster]
 [entities.shadow_receiver]
-`)
+`,
+	)
 	defer destroy_scene(&scene)
 	testing.expect(t, result.err == .None)
 	testing.expect(t, len(scene.entities) == 1)
@@ -143,12 +161,14 @@ name = "Cube"
 
 @(test)
 test_project_check_accepts_registered_namespaced_scene_components :: proc(t: ^testing.T) {
-	scene, result := parse_scene(`[[entities]]
+	scene, result := parse_scene(
+		`[[entities]]
 name = "Body"
 
 [entities.components.scrapbot.transform]
 position = [0, 0, 0]
-`)
+`,
+	)
 	defer destroy_scene(&scene)
 
 	testing.expect(t, result.err == .None)
@@ -157,19 +177,21 @@ position = [0, 0, 0]
 
 @(test)
 test_project_check_rejects_unknown_namespaced_scene_components :: proc(t: ^testing.T) {
-	scene, result := parse_scene(`[[entities]]
+	scene, result := parse_scene(
+		`[[entities]]
 name = "Body"
 
 [entities.components.scrappyphysics.rigidbody]
 velocity = [0, 0, 0]
-`)
+`,
+	)
 	defer destroy_scene(&scene)
 
 	testing.expect(t, result.err == .None)
 	testing.expect(
 		t,
 		validate_namespaced_scene_components(&scene) ==
-			`scene component "scrappyphysics.rigidbody" is not registered`,
+		`scene component "scrappyphysics.rigidbody" is not registered`,
 	)
 }
 
@@ -205,16 +227,30 @@ test_init_project_writes_luau_lsp_metadata :: proc(t: ^testing.T) {
 	testing.expect(t, string(settings_bytes) == default_vscode_settings_template())
 }
 @(test)
-test_scene_parses_ecs_ui_hierarchy :: proc(t:^testing.T) {
-	scene,result:=parse_scene(`[[entities]]
+test_scene_parses_ecs_ui_hierarchy :: proc(t: ^testing.T) {
+	scene, result := parse_scene(
+		`[[entities]]
 name = "HUD"
 [entities.ui_layout]
 position = [20, 30]
 size = [400, 200]
 padding = [12, 12, 12, 12]
 background = [0.1, 0.2, 0.3, 0.9]
+border_color = [0.4, 0.5, 0.6, 1.0]
+border_width = 2
+corner_radius = 6
+hidden = true
 [entities.ui_vstack]
 gap = 8
+fill = true
+draggable = true
+min_size = 72
+[entities.ui_panel]
+title = "METRICS"
+title_color = [0.9, 0.9, 0.9, 1]
+title_background = [0.12, 0.13, 0.14, 1]
+title_size = 11
+title_height = 28
 [entities.ui_scroll_area]
 scroll_speed = 64
 smoothness = 12
@@ -227,22 +263,48 @@ size = [300, 40]
 text = "HELLO"
 color = [1, 0.8, 0.2, 1]
 size = 24
-`)
+[[entities]]
+name = "Stats"
+[entities.ui_layout]
+parent = "HUD"
+size = [300, 80]
+[entities.ui_table]
+columns = 3
+column_gap = 6
+row_gap = 4
+`,
+	)
 	defer destroy_scene(&scene)
-	testing.expectf(t,result.err==.None,"parse failed: %s",result.message)
-	testing.expect(t,len(scene.entities)==2)
-	testing.expect(t,scene.entities[0].has_ui_vstack)
-	testing.expect(t,scene.entities[0].ui_vstack.gap==8)
-	testing.expect(t,scene.entities[0].has_ui_scroll_area)
-	testing.expect(t,scene.entities[0].ui_scroll_area.scroll_speed==64)
-	testing.expect(t,scene.entities[0].ui_scroll_area.smoothness==12)
-	testing.expect(t,scene.entities[1].ui_layout.parent=="HUD")
-	testing.expect(t,scene.entities[1].ui_text.text=="HELLO")
+	testing.expectf(t, result.err == .None, "parse failed: %s", result.message)
+	testing.expect(t, len(scene.entities) == 3)
+	testing.expect(t, scene.entities[0].has_ui_vstack)
+	testing.expect(t, scene.entities[0].ui_vstack.gap == 8)
+	testing.expect(t, scene.entities[0].ui_vstack.fill)
+	testing.expect(t, scene.entities[0].ui_vstack.draggable)
+	testing.expect(t, scene.entities[0].ui_vstack.min_size == 72)
+	testing.expect(t, scene.entities[0].has_ui_scroll_area)
+	testing.expect(t, scene.entities[0].ui_scroll_area.scroll_speed == 64)
+	testing.expect(t, scene.entities[0].ui_scroll_area.smoothness == 12)
+	testing.expect(t, scene.entities[0].has_ui_panel)
+	testing.expect(t, scene.entities[0].ui_panel.title == "METRICS")
+	testing.expect(t, scene.entities[0].ui_panel.title_size == 11)
+	testing.expect(t, scene.entities[0].ui_panel.title_height == 28)
+	testing.expect(t, scene.entities[0].ui_layout.border_color == Vec4{0.4, 0.5, 0.6, 1})
+	testing.expect(t, scene.entities[0].ui_layout.border_width == 2)
+	testing.expect(t, scene.entities[0].ui_layout.corner_radius == 6)
+	testing.expect(t, scene.entities[0].ui_layout.hidden)
+	testing.expect(t, scene.entities[1].ui_layout.parent == "HUD")
+	testing.expect(t, scene.entities[1].ui_text.text == "HELLO")
+	testing.expect(t, scene.entities[2].has_ui_table)
+	testing.expect(t, scene.entities[2].ui_table.columns == 3)
+	testing.expect(t, scene.entities[2].ui_table.column_gap == 6)
+	testing.expect(t, scene.entities[2].ui_table.row_gap == 4)
 }
 
 @(test)
-test_scene_rejects_ui_parent_cycles :: proc(t:^testing.T) {
-	scene,result:=parse_scene(`[[entities]]
+test_scene_rejects_ui_parent_cycles :: proc(t: ^testing.T) {
+	scene, result := parse_scene(
+		`[[entities]]
 name = "A"
 [entities.ui_layout]
 parent = "B"
@@ -252,7 +314,8 @@ name = "B"
 [entities.ui_layout]
 parent = "A"
 size = [10, 10]
-`)
+`,
+	)
 	defer destroy_scene(&scene)
-	testing.expect(t,result.err==.Invalid_Field)
+	testing.expect(t, result.err == .Invalid_Field)
 }

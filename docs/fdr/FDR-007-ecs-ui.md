@@ -1,7 +1,7 @@
 # FDR-007: ECS UI
 
 **Status:** Active
-**Last reviewed:** 2026-07-13
+**Last reviewed:** 2026-07-14
 
 ## Overview
 
@@ -9,14 +9,17 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 ## Behavior
 
-- Every UI entity describes a rectangular box with an explicit size, optional position, per-edge margin and padding, background color, and corner radius.
+- Every UI entity describes a rectangular box with an explicit size, optional position, per-edge margin and padding, background color, SDF border color and width, corner radius, and hidden state.
+- A hidden box removes its complete descendant subtree from retained layout, painting, and pointer interaction without despawning any entities.
 - UI entities form a parent-by-name hierarchy validated when the scene loads.
-- Horizontal and vertical stack components arrange child boxes in scene order with a configurable gap; boxes without a stack component overlay their children.
+- Horizontal and vertical stack components arrange child boxes in scene order with a configurable gap; boxes without a stack component overlay their children. Fill stacks treat child sizes as proportions, fill the cross-axis, and can expose draggable separators with minimum pane sizes.
+- Table containers arrange children in row-major order across 1–64 equal-width columns, with independent column and row gaps. A partial final row remains left aligned.
+- Panel decoration adds an optional title band with its own text and background styling and reserves that band above nested content. Panels can compose with overlay, stack, or table layout.
 - Scroll-area containers accept an explicitly oversized child pane, clip descendants to their padded content rectangle, and smoothly approach wheel-driven vertical offsets.
 - Nested scroll clips intersect, the topmost hovered scroll area receives wheel input, and overflowing areas render a proportional scrollbar.
 - Every element receives retained hover and active state from topmost pointer hit testing. Active state is captured on primary-button press and held until release.
 - Text and button controls provide labels with RGBA color and pixel size. Buttons consume generic element state with optional hover and active background and text colors.
-- Backgrounds use GPU-evaluated signed-distance rounded rectangles, including square corners at a zero radius.
+- Backgrounds and inset borders use GPU-evaluated signed-distance rounded rectangles, including square corners at a zero radius.
 - The engine reconciles alive UI entities after frame systems and removes retained nodes when their entities disappear.
 - WGPU paints UI after world geometry, including in headless framegrabs.
 - UI rendering does not require a world camera or renderable geometry.
@@ -35,17 +38,17 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 **Decision:** An engine-owned reconciliation step tracks eligible entities, resolves their hierarchy, computes layout, and emits a bounded paint list.
 **Why:** Renderers need ordered, resolved rectangles and glyphs rather than repeated ECS queries or project-owned GPU handles.
-**Tradeoff:** The first implementation has fixed node/paint limits and recomputes layout each frame.
+**Tradeoff:** The implementation has fixed node/paint limits and recomputes layout each frame. The same reconciler maintains distinct project and transient editor UI coordinate and interaction domains.
 
-### 3. Start with fixed screen-space pixels
+### 3. Use explicit pixels with opt-in proportional fill
 
-**Decision:** Use top-left pixel coordinates and explicit sizes with overlay, horizontal-stack, and vertical-stack flow.
-**Why:** This is deterministic, easy to validate in framegrabs, and sufficient to prove hierarchy and text before responsive sizing becomes necessary.
-**Tradeoff:** There is no canvas scaling, percentage sizing, alignment, automatic content sizing, or horizontal scrolling yet.
+**Decision:** Use top-left pixel coordinates and explicit sizes with overlay, horizontal-stack, and vertical-stack flow. A stack can opt into fill layout, where authored child sizes seed proportional weights and each child fills the cross-axis. Fill stacks may make their gaps draggable and enforce a shared minimum pane size.
+**Why:** Fixed boxes remain deterministic, while an explicit fill policy supports responsive application and editor layouts without introducing a complete constraint language.
+**Tradeoff:** There is no percentage syntax, alignment, automatic content measurement, per-child grow policy, or horizontal scrolling yet. Split weights are retained runtime state rather than scene data.
 
 ### 4. Compose controls from a shared box model
 
-**Decision:** Keep geometry and visual box styling in one layout component, then add independent stack, text, and button components to an entity.
+**Decision:** Keep geometry and visual box styling in one layout component, then add independent stack, table, panel, text, and button components to an entity.
 **Why:** A shared box model makes margins, padding, backgrounds, and rounded corners consistent while ECS composition keeps layout and content roles explicit. See ADR-014.
 **Tradeoff:** Invalid combinations require scene validation. Buttons expose visual press feedback, but activation commands still await the UI event system.
 
@@ -67,6 +70,12 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 **Why:** Authored components stay declarative, smoothing survives normal frame reconciliation, pointer and paint clipping share one rectangle, and nested areas preserve the ordered paint stream. See ADR-020.
 **Tradeoff:** Scroll position is not yet queryable or controllable through public ECS APIs, and per-fragment discard adds modest shader work.
 
+### 8. Keep panels decorative and tables structural
+
+**Decision:** Let `ui_panel` reserve and paint a title band without becoming a flow container, while `ui_table` owns row-major child placement with equal-width columns.
+**Why:** Panels should compose around any nested layout, while tables need a generic 1–N column primitive rather than inspector-specific field rendering.
+**Tradeoff:** Column proportions, spanning, headers, and automatic row measurement are deferred; authored child height determines each row's height.
+
 ## Related
 
 - **ADRs:** ADR-003, ADR-013, ADR-014, ADR-020
@@ -76,5 +85,4 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 - What Luau mutation API best preserves ECS scheduling and deferred structural changes?
 - What command-event API should report release-inside button activation?
-- Should responsive sizing stay component-based or use a separate style resource?
 - When should text gain shaping, font fallback, and glyph-atlas streaming?

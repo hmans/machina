@@ -6,6 +6,8 @@ position = [40, 40]
 size = [560, 600]
 padding = [28, 28, 28, 28]
 background = [0.05, 0.055, 0.065, 0.99]
+border_color = [0.18, 0.20, 0.24, 1]
+border_width = 2
 corner_radius = 24
 
 [entities.ui_vstack]
@@ -47,6 +49,9 @@ corner_radius = 14
 
 [entities.ui_hstack]
 gap = 12
+fill = true
+draggable = true
+min_size = 80
 
 [[entities]]
 name = "Status"
@@ -131,6 +136,8 @@ parent = "HUD"
 size = [504, 190]
 padding = [10, 10, 10, 10]
 background = [0.08, 0.09, 0.11, 1]
+border_color = [0.22, 0.24, 0.29, 1]
+border_width = 1
 corner_radius = 12
 
 [entities.ui_scroll_area]
@@ -148,19 +155,25 @@ size = [484, 360]
 gap = 8
 
 [[entities]]
-name = "Feature Layout"
+name = "Feature Components"
 
 [entities.ui_layout]
 parent = "Feature Pane"
-size = [470, 52]
-padding = [15, 16, 10, 16]
-background = [0.12, 0.13, 0.15, 1]
+size = [470, 112]
+padding = [6, 8, 8, 8]
+background = [0.075, 0.082, 0.095, 1]
+border_color = [0.22, 0.24, 0.29, 1]
+border_width = 1
 corner_radius = 8
 
-[entities.ui_text]
-text = "BOX MODEL  /  MARGIN + PADDING"
-color = [0.88, 0.9, 0.93, 1]
-size = 14
+[entities.ui_panel]
+title = "PANEL + TABLE"
+title_color = [0.88, 0.9, 0.93, 1]
+title_background = [0.12, 0.13, 0.15, 1]
+title_size = 11
+title_height = 28
+
+[entities.ui_vstack]
 
 [[entities]]
 name = "Feature Stacks"
@@ -208,7 +221,7 @@ color = [0.88, 0.9, 0.93, 1]
 size = 14
 
 [[entities]]
-name = "Feature Scroll Areas"
+name = "Feature Layout"
 
 [entities.ui_layout]
 parent = "Feature Pane"
@@ -218,24 +231,87 @@ background = [0.12, 0.13, 0.15, 1]
 corner_radius = 8
 
 [entities.ui_text]
-text = "SCROLL AREAS  /  SMOOTH + CLIPPED"
-color = [0.28, 0.88, 0.76, 1]
+text = "BOX MODEL  /  MARGIN + PADDING"
+color = [0.88, 0.9, 0.93, 1]
 size = 14
 
 [[entities]]
-name = "Feature ECS"
+name = "Feature Table"
 
 [entities.ui_layout]
-parent = "Feature Pane"
-size = [470, 52]
-padding = [15, 16, 10, 16]
-background = [0.12, 0.13, 0.15, 1]
-corner_radius = 8
+parent = "Feature Components"
+size = [454, 64]
 
+[entities.ui_table]
+columns = 3
+column_gap = 6
+row_gap = 4
+
+[[entities]]
+name = "Panel Cell"
+[entities.ui_layout]
+parent = "Feature Table"
+size = [1, 30]
+padding = [7, 6, 4, 6]
 [entities.ui_text]
-text = "ECS OWNED  /  TOML DECLARED"
-color = [0.88, 0.9, 0.93, 1]
-size = 14
+text = "TITLE BAND"
+color = [0.68, 0.72, 0.79, 1]
+size = 10
+
+[[entities]]
+name = "Table Cell"
+[entities.ui_layout]
+parent = "Feature Table"
+size = [1, 30]
+padding = [7, 6, 4, 6]
+[entities.ui_text]
+text = "1-N COLUMNS"
+color = [0.68, 0.72, 0.79, 1]
+size = 10
+
+[[entities]]
+name = "Equal Cell"
+[entities.ui_layout]
+parent = "Feature Table"
+size = [1, 30]
+padding = [7, 6, 4, 6]
+[entities.ui_text]
+text = "EQUAL WIDTH"
+color = [0.68, 0.72, 0.79, 1]
+size = 10
+
+[[entities]]
+name = "ECS Cell"
+[entities.ui_layout]
+parent = "Feature Table"
+size = [1, 30]
+padding = [7, 6, 4, 6]
+[entities.ui_text]
+text = "ECS OWNED"
+color = [0.28, 0.88, 0.76, 1]
+size = 10
+
+[[entities]]
+name = "TOML Cell"
+[entities.ui_layout]
+parent = "Feature Table"
+size = [1, 30]
+padding = [7, 6, 4, 6]
+[entities.ui_text]
+text = "TOML DECLARED"
+color = [0.28, 0.88, 0.76, 1]
+size = 10
+
+[[entities]]
+name = "Flow Cell"
+[entities.ui_layout]
+parent = "Feature Table"
+size = [1, 30]
+padding = [7, 6, 4, 6]
+[entities.ui_text]
+text = "ROW MAJOR"
+color = [0.28, 0.88, 0.76, 1]
+size = 10
 
 [[entities]]
 name = "Footer"

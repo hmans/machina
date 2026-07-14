@@ -113,10 +113,16 @@ position = [40, 40]
 size = [460, 280]
 padding = [24, 24, 24, 24]
 background = [0.035, 0.055, 0.105, 0.96]
+border_color = [0.18, 0.20, 0.24, 1]
+border_width = 2
 corner_radius = 20
+hidden = false
 
 [entities.ui_vstack]
 gap = 14
+fill = true
+draggable = true
+min_size = 64
 
 [[entities]]
 name = "Title"
@@ -174,11 +180,49 @@ size = [396, 360]
 gap = 8
 ```
 
-Positions and sizes are screen pixels from the top-left. `margin` and `padding` use `[top, right, bottom, left]`. Add `ui_hstack` or `ui_vstack` with a non-negative `gap` to arrange children in scene order; an element without either stack overlays its children. Background corner radii are rendered as signed-distance rounded rectangles. Parent names must resolve to another UI layout entity, cycles are rejected, and one entity cannot combine both stack directions or both text and button content.
+Positions and sizes are screen pixels from the top-left. `margin` and `padding` use `[top, right, bottom, left]`. `border_color` and non-negative `border_width` add an inset signed-distance border that follows `corner_radius`. `hidden = true` removes the box and its descendant subtree from layout, paint, and interaction without despawning their entities. Add `ui_hstack` or `ui_vstack` with a non-negative `gap` to arrange children in scene order; an element without either stack overlays its children inside the parent's padded content box. Set `fill = true` to treat authored child sizes as proportions along the stack axis and fill the available cross-axis. Add `draggable = true` to turn the gaps into pointer-draggable separators; `min_size` sets the non-negative minimum pane extent on the stack axis. Draggable stacks must also enable fill. Backgrounds, borders, and corner radii are rendered from the same signed-distance rounded rectangle. Parent names must resolve to another UI layout entity, cycles are rejected, and one entity cannot combine both stack directions or both text and button content.
 
 Pointer hit testing gives the topmost element under the pointer hover state. Pressing the primary button captures active state on that element until release. Buttons can consume those generic states through `hover_background`, `active_background`, `hover_color`, and `active_color`; a zero-alpha state color falls back to the normal layout background or button text color. Button activation events are not emitted yet.
 
 A `ui_scroll_area` clips descendants to its padded content rectangle and scrolls vertically when the pointer wheel is over it. Give its nested pane an explicit size larger than the viewport; that pane may contain overlays or stacks of any size. `scroll_speed` is the target movement per wheel unit and `smoothness` controls frame-time interpolation toward that target. Both must be positive. Nested scroll clips intersect, and only the topmost hovered scroll area consumes a wheel update.
+
+Panels add a styled title band without choosing how their children flow, so they can compose with an overlay, stack, or nested table. Tables place children in row-major order across 1–64 equal-width columns. Child heights determine row height; `column_gap` and `row_gap` control spacing. A partial final row starts at the first column.
+
+```toml
+[[entities]]
+name = "Stats Panel"
+
+[entities.ui_layout]
+size = [360, 150]
+padding = [8, 10, 10, 10]
+background = [0.06, 0.065, 0.075, 1]
+border_color = [0.18, 0.19, 0.22, 1]
+border_width = 1
+corner_radius = 6
+
+[entities.ui_panel]
+title = "RENDER STATS"
+title_color = [0.9, 0.91, 0.93, 1]
+title_background = [0.10, 0.105, 0.12, 1]
+title_size = 11
+title_height = 28
+
+[entities.ui_vstack]
+
+[[entities]]
+name = "Stats Table"
+
+[entities.ui_layout]
+parent = "Stats Panel"
+size = [340, 100]
+
+[entities.ui_table]
+columns = 3
+column_gap = 8
+row_gap = 4
+```
+
+Each child of `Stats Table` occupies the next table cell. A table is a flow container and therefore cannot share an entity with `ui_hstack` or `ui_vstack`; a panel is decoration and may share an entity with either stack.
 
 ## Custom component sections
 

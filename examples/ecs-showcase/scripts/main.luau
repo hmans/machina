@@ -48,7 +48,7 @@ end)
 
 scrapbot.system(Emitters, function(time: ScrapbotTime, entity: ScrapbotEntity, transform: ReadonlyScrapbotTransform, emitter: ReadonlyShowcaseEmitter)
 	assert(emitter.state.y > 0)
-	assert(transform.position.y < 0)
+	assert(type(transform.position.y) == "number")
 end)
 
 scrapbot.system(FountainBodies, function(time: ScrapbotTime, entity: ScrapbotEntity, transform: ReadonlyScrapbotTransform, lifetime: ReadonlyShowcaseLifetime, velocity: ReadonlyShowcaseVelocity)

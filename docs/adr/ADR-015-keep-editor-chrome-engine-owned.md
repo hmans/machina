@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-13
 
+**Status:** Superseded by [ADR-021](ADR-021-model-editor-chrome-as-transient-ecs-ui.md)
+
 ## Context
 
 Scrapbot projects need to remain playable while exposing editing tools in the same runtime window. Project-authored ECS UI is part of the game and may be reloaded or replaced with the project world, so using it to own editor chrome would mix tool lifecycle with game state and allow project content to obscure or serialize engine tools.
@@ -14,4 +16,4 @@ When visible, the renderer gives world rendering and project UI the complete cen
 
 ## Consequences
 
-The running game remains live and isolated from editor ownership, and future inspectors can survive scene reloads without becoming project entities. Rendering gains explicit world, project-UI, and editor-chrome regions. Resizable panel layout, persisted workspace state, and editor-to-project commands remain future work.
+The running game remains live and isolated from editor ownership, and future inspectors can survive scene reloads without becoming project entities. Rendering gains explicit world, project-UI, and editor-chrome regions. ADR-021 later retained these boundaries while replacing the separate chrome implementation with transient editor-origin ECS UI entities.

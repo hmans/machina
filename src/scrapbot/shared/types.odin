@@ -11,8 +11,12 @@ VERSION :: "0.1.0-dev"
 Vec3 :: struct {
 	x, y, z: f32,
 }
-Vec2 :: struct {x,y: f32}
-Vec4 :: struct {x,y,z,w: f32}
+Vec2 :: struct {
+	x, y: f32,
+}
+Vec4 :: struct {
+	x, y, z, w: f32,
+}
 
 Renderer_Backend :: enum {
 	Null,
@@ -20,13 +24,13 @@ Renderer_Backend :: enum {
 }
 
 Project_Config :: struct {
-	name:          string,
+	name: string,
 	default_scene: string,
 	native_extensions: [dynamic]Native_Extension_Target,
 }
 
 Native_Extension_Target :: struct {
-	name:   string,
+	name: string,
 	source: string,
 }
 
@@ -36,21 +40,18 @@ Scene :: struct {
 
 Scene_Entity :: struct {
 	name: string,
-
 	has_transform: bool,
-	transform:     Transform_Component,
-
+	transform: Transform_Component,
 	has_camera: bool,
-	camera:     Camera_Component,
+	camera: Camera_Component,
 	has_ambient_light: bool,
 	ambient_light: Ambient_Light_Component,
 	has_directional_light: bool,
 	directional_light: Directional_Light_Component,
 	has_point_light: bool,
 	point_light: Point_Light_Component,
-
 	has_mesh: bool,
-	mesh:     Mesh_Component,
+	mesh: Mesh_Component,
 	has_geometry: bool,
 	geometry_resource: string,
 	has_material: bool,
@@ -65,61 +66,81 @@ Scene_Entity :: struct {
 	ui_vstack: UI_Stack_Component,
 	has_ui_scroll_area: bool,
 	ui_scroll_area: UI_Scroll_Area_Component,
+	has_ui_panel: bool,
+	ui_panel: UI_Panel_Component,
+	has_ui_table: bool,
+	ui_table: UI_Table_Component,
 	has_ui_text: bool,
 	ui_text: UI_Text_Component,
 	has_ui_button: bool,
 	ui_button: UI_Button_Component,
-
 	custom_components: [dynamic]Custom_Component,
 }
 
 Entity :: struct {
-	index:      u32,
+	index: u32,
 	generation: u32,
 }
 
-Entity_Origin :: enum {Scene,Runtime,Editor}
+Entity_Origin :: enum {
+	Scene,
+	Runtime,
+	Editor,
+}
 
 Component_ID :: int
 INVALID_COMPONENT_ID :: Component_ID(0)
 
-Geometry_Handle :: struct {index, generation: u32}
-Material_Handle :: struct {index, generation: u32}
+Geometry_Handle :: struct {
+	index, generation: u32,
+}
+Material_Handle :: struct {
+	index, generation: u32,
+}
 
 Time_Resource :: struct {
-	delta_time:        f32,
+	delta_time: f32,
 	smooth_delta_time: f32,
-	elapsed_time:      f64,
-	frame_index:       u64,
+	elapsed_time: f64,
+	frame_index: u64,
 }
 
 Transform_Component :: struct {
 	position: Vec3,
 	rotation: Vec3,
-	scale:    Vec3,
+	scale: Vec3,
 }
 
 Camera_Component :: struct {
-	fov:  f32,
+	fov: f32,
 	near: f32,
-	far:  f32,
+	far: f32,
 }
 
 Editor_Scene_Camera_Component :: struct {
-	entity_index:    int,
-	move_speed:      f32,
-	look_sensitivity:f32,
+	entity_index: int,
+	move_speed: f32,
+	look_sensitivity: f32,
 }
 
 Editor_Fly_Camera_Input :: struct {
-	movement:   Vec3,
+	movement: Vec3,
 	look_delta: Vec2,
-	look_active:bool,
+	look_active: bool,
 }
 
-Ambient_Light_Component :: struct {color: Vec3, intensity: f32}
-Directional_Light_Component :: struct {direction, color: Vec3, intensity: f32}
-Point_Light_Component :: struct {color: Vec3, intensity, range: f32}
+Ambient_Light_Component :: struct {
+	color: Vec3,
+	intensity: f32,
+}
+Directional_Light_Component :: struct {
+	direction, color: Vec3,
+	intensity: f32,
+}
+Point_Light_Component :: struct {
+	color: Vec3,
+	intensity, range: f32,
+}
 
 UI_Layout_Component :: struct {
 	parent: string,
@@ -128,11 +149,37 @@ UI_Layout_Component :: struct {
 	margin: Vec4,
 	padding: Vec4,
 	background: Vec4,
+	border_color: Vec4,
+	border_width: f32,
 	corner_radius: f32,
+	hidden: bool,
 }
-UI_Stack_Component :: struct {gap: f32}
-UI_Scroll_Area_Component :: struct {scroll_speed, smoothness: f32}
-UI_Text_Component :: struct {text: string, color: Vec4, size: f32}
+UI_Stack_Component :: struct {
+	gap: f32,
+	fill: bool,
+	draggable: bool,
+	min_size: f32,
+}
+UI_Scroll_Area_Component :: struct {
+	scroll_speed, smoothness: f32,
+}
+UI_Panel_Component :: struct {
+	title: string,
+	title_color: Vec4,
+	title_background: Vec4,
+	title_size: f32,
+	title_height: f32,
+}
+UI_Table_Component :: struct {
+	columns: int,
+	column_gap: f32,
+	row_gap: f32,
+}
+UI_Text_Component :: struct {
+	text: string,
+	color: Vec4,
+	size: f32,
+}
 UI_Button_Component :: struct {
 	text: string,
 	color: Vec4,
@@ -143,51 +190,86 @@ UI_Button_Component :: struct {
 	active_color: Vec4,
 }
 
-Editor_Gizmo_Mode :: enum {World_Translate}
-Editor_Transform_Gizmo_Component :: struct {entity_index:int,mode:Editor_Gizmo_Mode}
+Editor_Gizmo_Mode :: enum {
+	Translate,
+	Rotate,
+	Scale,
+}
+Editor_Transform_Gizmo_Component :: struct {
+	entity_index: int,
+	mode: Editor_Gizmo_Mode,
+}
+
+Editor_UI_Role :: enum {
+	None,
+	Root,
+	Viewport,
+	Browser_Scroll,
+	Browser_Header,
+	Browser_Row,
+	Browser_Row_Label,
+	Inspector_Header,
+	Inspector_Scroll,
+	Inspector_Content,
+	Inspector_Panel,
+	Inspector_Table,
+	Inspector_Cell,
+	Status,
+}
+
+Editor_UI_Component :: struct {
+	entity_index: int,
+	role: Editor_UI_Role,
+	target: Entity,
+	slot: int,
+}
 
 Mesh_Component :: struct {
 	primitive: string,
 }
 
-Geometry_Component :: struct {handle: Geometry_Handle}
-Material_Component :: struct {handle: Material_Handle}
+Geometry_Component :: struct {
+	handle: Geometry_Handle,
+}
+Material_Component :: struct {
+	handle: Material_Handle,
+}
 Render_Instance_Component :: struct {
 	geometry: Geometry_Handle,
 	material: Material_Handle,
 }
 
 Named_Vec3 :: struct {
-	name:  string,
+	name: string,
 	value: Vec3,
 }
 
 Custom_Component :: struct {
 	entity_index: int,
 	component_id: Component_ID,
-	name:         string,
+	name: string,
 	vec3_fields: [dynamic]Named_Vec3,
 }
 
 Custom_Component_Storage :: struct {
 	component_id: Component_ID,
-	name:         string,
-	components:   [dynamic]Custom_Component,
+	name: string,
+	components: [dynamic]Custom_Component,
 }
 
 World_Entity :: struct {
-	id:              Entity,
-	alive:           bool,
-	origin:          Entity_Origin,
-	name:            string,
+	id: Entity,
+	alive: bool,
+	origin: Entity_Origin,
+	name: string,
 	transform_index: int,
-	camera_index:    int,
+	camera_index: int,
 	ambient_light_index: int,
 	directional_light_index: int,
 	point_light_index: int,
-	mesh_index:      int,
-	geometry_index:  int,
-	material_index:  int,
+	mesh_index: int,
+	geometry_index: int,
+	material_index: int,
 	render_instance_index: int,
 	has_shadow_caster: bool,
 	has_shadow_receiver: bool,
@@ -195,44 +277,52 @@ World_Entity :: struct {
 	ui_hstack_index: int,
 	ui_vstack_index: int,
 	ui_scroll_area_index: int,
+	ui_panel_index: int,
+	ui_table_index: int,
 	ui_text_index: int,
 	ui_button_index: int,
-	editor_transform_gizmo_index:int,
+	editor_transform_gizmo_index: int,
+	editor_ui_index: int,
 	geometry_resource: string,
 	material_resource: string,
 }
 
 Renderable :: struct {
-	entity_index:    int,
+	entity_index: int,
 	transform_index: int,
-	mesh_index:      int,
+	mesh_index: int,
 }
 
 Render_Instance :: struct {
-	entity:    World_Entity,
+	entity: World_Entity,
 	transform: Transform_Component,
-	mesh:      Mesh_Component,
-	geometry:  Geometry_Component,
-	material:  Material_Component,
+	mesh: Mesh_Component,
+	geometry: Geometry_Component,
+	material: Material_Component,
 	shadow_caster: bool,
 	shadow_receiver: bool,
 }
 
 Camera_Instance :: struct {
-	entity:    World_Entity,
+	entity: World_Entity,
 	transform: Transform_Component,
-	camera:    Camera_Component,
+	camera: Camera_Component,
 }
 
-Directional_Light_Instance :: struct {light: Directional_Light_Component}
-Point_Light_Instance :: struct {position: Vec3, light: Point_Light_Component}
+Directional_Light_Instance :: struct {
+	light: Directional_Light_Component,
+}
+Point_Light_Instance :: struct {
+	position: Vec3,
+	light: Point_Light_Component,
+}
 
 MAX_DIRECTIONAL_LIGHTS :: 4
 MAX_POINT_LIGHTS :: 16
 
 Render_List :: struct {
-	instances:  [dynamic]Render_Instance,
-	camera:     Camera_Instance,
+	instances: [dynamic]Render_Instance,
+	camera: Camera_Instance,
 	has_camera: bool,
 	ambient: Vec3,
 	directional_lights: [MAX_DIRECTIONAL_LIGHTS]Directional_Light_Instance,
@@ -242,38 +332,41 @@ Render_List :: struct {
 }
 
 World :: struct {
-	time:       Time_Resource,
-	entities:   [dynamic]World_Entity,
+	time: Time_Resource,
+	entities: [dynamic]World_Entity,
 	transforms: #soa[dynamic]Transform_Component,
-	cameras:    [dynamic]Camera_Component,
+	cameras: [dynamic]Camera_Component,
 	ambient_lights: [dynamic]Ambient_Light_Component,
 	directional_lights: [dynamic]Directional_Light_Component,
 	point_lights: [dynamic]Point_Light_Component,
-	meshes:     [dynamic]Mesh_Component,
+	meshes: [dynamic]Mesh_Component,
 	renderables: [dynamic]Renderable,
 	geometries: [dynamic]Geometry_Component,
 	materials: [dynamic]Material_Component,
 	render_instances: [dynamic]Render_Instance_Component,
-	free_transform_indices:       [dynamic]int,
-	free_mesh_indices:            [dynamic]int,
-	free_geometry_indices:        [dynamic]int,
-	free_material_indices:        [dynamic]int,
+	free_transform_indices: [dynamic]int,
+	free_mesh_indices: [dynamic]int,
+	free_geometry_indices: [dynamic]int,
+	free_material_indices: [dynamic]int,
 	free_render_instance_indices: [dynamic]int,
 	ui_layouts: [dynamic]UI_Layout_Component,
 	ui_hstacks: [dynamic]UI_Stack_Component,
 	ui_vstacks: [dynamic]UI_Stack_Component,
 	ui_scroll_areas: [dynamic]UI_Scroll_Area_Component,
+	ui_panels: [dynamic]UI_Panel_Component,
+	ui_tables: [dynamic]UI_Table_Component,
 	ui_texts: [dynamic]UI_Text_Component,
 	ui_buttons: [dynamic]UI_Button_Component,
-	editor_transform_gizmos:[dynamic]Editor_Transform_Gizmo_Component,
-	editor_scene_cameras:[dynamic]Editor_Scene_Camera_Component,
+	editor_transform_gizmos: [dynamic]Editor_Transform_Gizmo_Component,
+	editor_scene_cameras: [dynamic]Editor_Scene_Camera_Component,
+	editor_uis: [dynamic]Editor_UI_Component,
 	custom_components: [dynamic]Custom_Component_Storage,
 }
 
 Render_Frame :: struct {
-	entity_count:     int,
-	camera_count:     int,
-	mesh_count:       int,
+	entity_count: int,
+	camera_count: int,
+	mesh_count: int,
 	renderable_count: int,
 }
 

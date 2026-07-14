@@ -27,12 +27,13 @@ Current decisions:
 | ADR-012 | Model frame time as a world resource |
 | ADR-013 | Precompute MTSDF font atlases |
 | ADR-014 | Compose UI from boxes and controls |
-| ADR-015 | Keep editor chrome engine-owned |
+| ADR-015 | Keep editor chrome engine-owned (superseded by ADR-021) |
 | ADR-016 | Track entity origin in the runtime world |
 | ADR-017 | Use CPU triangle rays for editor picking |
 | ADR-018 | Render editor gizmos as screen overlays |
 | ADR-019 | Model the editor scene camera as a transient ECS entity |
 | ADR-020 | Keep scroll state in retained UI and clip on the GPU |
+| ADR-021 | Model editor chrome as transient ECS UI |
 
 ## FDRs
 

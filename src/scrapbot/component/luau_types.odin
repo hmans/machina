@@ -25,6 +25,8 @@ export type Scrapbot = {
 	ui_hstack: ScrapbotUiHstackComponent,
 	ui_vstack: ScrapbotUiVstackComponent,
 	ui_scroll_area: ScrapbotUiScrollAreaComponent,
+	ui_panel: ScrapbotUiPanelComponent,
+	ui_table: ScrapbotUiTableComponent,
 	ui_text: ScrapbotUiTextComponent,
 	ui_button: ScrapbotUiButtonComponent,
 	mesh: ScrapbotMeshComponent,
@@ -193,7 +195,7 @@ write_luau_component_type :: proc(builder: ^strings.Builder, definition: Definit
 
 	fmt.sbprintf(builder, "export type %s = ", type_name)
 	strings.write_string(builder, "{\n")
-	for i in 0..<definition.field_count {
+	for i in 0 ..< definition.field_count {
 		field := definition.fields[i]
 		fmt.sbprintf(builder, "\t%s: %s,\n", field.name, luau_field_type_name(field.field_type))
 	}
@@ -201,9 +203,14 @@ write_luau_component_type :: proc(builder: ^strings.Builder, definition: Definit
 
 	fmt.sbprintf(builder, "export type %s = ", readonly_type_name)
 	strings.write_string(builder, "{\n")
-	for i in 0..<definition.field_count {
+	for i in 0 ..< definition.field_count {
 		field := definition.fields[i]
-		fmt.sbprintf(builder, "\tread %s: %s,\n", field.name, luau_readonly_field_type_name(field.field_type))
+		fmt.sbprintf(
+			builder,
+			"\tread %s: %s,\n",
+			field.name,
+			luau_readonly_field_type_name(field.field_type),
+		)
 	}
 	strings.write_string(builder, "}\n\n")
 
@@ -218,20 +225,20 @@ write_luau_component_type :: proc(builder: ^strings.Builder, definition: Definit
 
 luau_field_type_name :: proc(field_type: Field_Type) -> string {
 	#partial switch field_type {
-	case .Vec3:
-		return "Vec3"
-	case .Number:
-		return "number"
+		case .Vec3:
+			return "Vec3"
+		case .Number:
+			return "number"
 	}
 	return "any"
 }
 
 luau_readonly_field_type_name :: proc(field_type: Field_Type) -> string {
 	#partial switch field_type {
-	case .Vec3:
-		return "ReadonlyVec3"
-	case .Number:
-		return "number"
+		case .Vec3:
+			return "ReadonlyVec3"
+		case .Number:
+			return "number"
 	}
 	return "any"
 }
