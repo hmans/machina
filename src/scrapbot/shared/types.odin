@@ -178,10 +178,16 @@ UI_Table_Component :: struct {
 	column_gap: f32,
 	row_gap: f32,
 }
+UI_Text_Alignment :: enum {
+	Left,
+	Center,
+	Right,
+}
 UI_Text_Component :: struct {
 	text: string,
 	color: Vec4,
 	size: f32,
+	alignment: UI_Text_Alignment,
 }
 UI_Button_Component :: struct {
 	text: string,

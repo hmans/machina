@@ -323,6 +323,7 @@ size = [300, 40]
 text = "HELLO"
 color = [1, 0.8, 0.2, 1]
 size = 24
+alignment = "right"
 [[entities]]
 id = "a6000000-0000-4000-8000-00000000000c"
 name = "Stats"
@@ -357,6 +358,7 @@ row_gap = 4
 	hud_id, hud_id_ok := shared.entity_uuid_parse("a6000000-0000-4000-8000-00000000000a")
 	testing.expect(t, hud_id_ok && scene.entities[1].ui_layout.parent == hud_id)
 	testing.expect(t, scene.entities[1].ui_text.text == "HELLO")
+	testing.expect(t, scene.entities[1].ui_text.alignment == .Right)
 	testing.expect(t, scene.entities[2].has_ui_table)
 	testing.expect(t, scene.entities[2].ui_table.columns == 3)
 	testing.expect(t, scene.entities[2].ui_table.column_gap == 6)

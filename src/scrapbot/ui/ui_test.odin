@@ -15,6 +15,19 @@ find_editor_role_node :: proc(state: ^State, role: shared.Editor_UI_Role) -> int
 	return -1
 }
 
+find_editor_name_node :: proc(state: ^State, world: ^shared.World, name: string) -> int {
+	for node, index in state.nodes[:state.node_count] {
+		entity_index := int(node.entity.index)
+		if node.origin == .Editor &&
+		   entity_index >= 0 &&
+		   entity_index < len(world.entities) &&
+		   world.entities[entity_index].name == name {
+			return index
+		}
+	}
+	return -1
+}
+
 editor_browser_row_count :: proc(world: ^shared.World) -> int {
 	count := 0
 	for component in world.editor_uis {
@@ -491,6 +504,44 @@ test_vertical_fill_stack_drags_and_fills_the_cross_axis :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_ui_text_right_alignment_uses_the_padded_content_edge :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			name = "Timing",
+			has_ui_layout = true,
+			ui_layout = {position = {10, 20}, size = {100, 30}, padding = {4, 7, 3, 5}},
+			has_ui_text = true,
+			ui_text = {text = "12", color = {1, 1, 1, 1}, size = 12, alignment = .Right},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	testing.expect(t, reconcile(state, &world, 120, 60) == "")
+	advance := text_advance_to(state, "12", 12, 2)
+	expected_start := f32(10 + 100 - 7) - advance
+	first_glyph := -1
+	for command, index in state.paint[:state.paint_count] {
+		if command.kind == .Glyph {
+			first_glyph = index
+			break
+		}
+	}
+	testing.expect(t, first_glyph >= 0)
+	if first_glyph >= 0 {
+		glyph := state.font.glyphs[int('1') - FONT_FIRST_CHAR]
+		expected_ink_x := expected_start + glyph.plane.x * 12
+		testing.expect(t, math.abs(state.paint[first_glyph].rect.x - expected_ink_x) < 0.001)
+	}
+}
+
+@(test)
 test_box_model_applies_margins_padding_and_rounded_button_paint :: proc(t: ^testing.T) {
 	scene := shared.Scene{}; defer delete(scene.entities)
 	append(
@@ -961,6 +1012,169 @@ test_editor_sidebar_separators_resize_panes_and_preserve_the_center_fill :: proc
 }
 
 @(test)
+test_editor_systems_separator_resizes_profiler_and_scene_panes :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(&scene.entities, shared.Scene_Entity{name = "Entity"})
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.editor_visible = true
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	systems := find_editor_role_node(state, .Systems_Scroll)
+	browser := find_editor_role_node(state, .Browser_Scroll)
+	vertical_handle := -1
+	for handle, index in state.split_handles[:state.split_handle_count] {
+		if handle.editor && !handle.horizontal {
+			vertical_handle = index
+			break
+		}
+	}
+	testing.expect(t, systems >= 0 && browser >= 0 && vertical_handle >= 0)
+	if systems < 0 || browser < 0 || vertical_handle < 0 {
+		return
+	}
+	initial_system_height := state.nodes[systems].rect.height
+	initial_browser_height := state.nodes[browser].rect.height
+	handle := state.split_handles[vertical_handle]
+	point := shared.Vec2 {
+		handle.rect.x + handle.rect.width * 0.5,
+		handle.rect.y + handle.rect.height * 0.5,
+	}
+	testing.expect(
+		t,
+		reconcile(
+			state,
+			&world,
+			1280,
+			720,
+			{position = point, primary_down = true, available = true},
+		) ==
+		"",
+	)
+	point.y += 60
+	testing.expect(
+		t,
+		reconcile(
+			state,
+			&world,
+			1280,
+			720,
+			{position = point, primary_down = true, available = true},
+		) ==
+		"",
+	)
+	testing.expect(t, state.nodes[systems].rect.height > initial_system_height + 59)
+	testing.expect(t, state.nodes[browser].rect.height < initial_browser_height - 40)
+}
+
+@(test)
+test_editor_nested_scroll_prefers_inner_panes_and_sidebar_padding_targets_outer :: proc(
+	t: ^testing.T,
+) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	for _ in 0 ..< 25 {
+		append(&scene.entities, shared.Scene_Entity{name = "Entity"})
+	}
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	profile: shared.System_Profile
+	profile.entry_count = 10
+	profile.revision = 1
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.editor_visible = true
+	state.system_profile = &profile
+	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 300) == "")
+	left := find_editor_name_node(state, &world, EDITOR_UI_LEFT_NAME)
+	right := find_editor_name_node(state, &world, EDITOR_UI_RIGHT_NAME)
+	systems := find_editor_role_node(state, .Systems_Scroll)
+	testing.expect(t, left >= 0 && right >= 0 && systems >= 0)
+	if left < 0 || right < 0 || systems < 0 {
+		return
+	}
+	testing.expect(t, state.nodes[left].scroll_max > 0)
+	testing.expect(t, state.nodes[right].scroll_max > 0)
+	left_layout := world.ui_layouts[state.nodes[left].layout_index]
+	right_layout := world.ui_layouts[state.nodes[right].layout_index]
+	testing.expect(
+		t,
+		left_layout.padding ==
+		shared.Vec4 {
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+			},
+	)
+	testing.expect(
+		t,
+		right_layout.padding ==
+		shared.Vec4 {
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+			},
+	)
+
+	system_rect := state.nodes[systems].rect
+	testing.expect(
+		t,
+		reconcile(
+			state,
+			&world,
+			1280,
+			720,
+			{position = {system_rect.x + 20, system_rect.y + 60}, wheel_y = -1, available = true},
+			1280,
+			300,
+		) ==
+		"",
+	)
+	testing.expect(t, state.nodes[systems].scroll_target == EDITOR_SCROLL_SPEED)
+	testing.expect(t, state.nodes[left].scroll_target == 0)
+
+	left_rect := state.nodes[left].rect
+	testing.expect(
+		t,
+		reconcile(
+			state,
+			&world,
+			1280,
+			720,
+			{position = {left_rect.x + 2, left_rect.y + 20}, wheel_y = -1, available = true},
+			1280,
+			300,
+		) ==
+		"",
+	)
+	testing.expect(t, state.nodes[left].scroll_target == EDITOR_SCROLL_SPEED)
+
+	right_rect := state.nodes[right].rect
+	testing.expect(
+		t,
+		reconcile(
+			state,
+			&world,
+			1280,
+			720,
+			{position = {right_rect.x + 2, right_rect.y + 20}, wheel_y = -1, available = true},
+			1280,
+			300,
+		) ==
+		"",
+	)
+	testing.expect(t, state.nodes[right].scroll_target == EDITOR_SCROLL_SPEED)
+}
+
+@(test)
 test_editor_scene_count_is_clipped_inside_a_narrow_left_sidebar :: proc(t: ^testing.T) {
 	scene := shared.Scene{}
 	defer delete(scene.entities)
@@ -1018,9 +1232,22 @@ test_editor_browser_scrolls_selects_runtime_entities_and_clears_stale_selection 
 		State,
 	); defer free(state); testing.expect(t, init(state) == ""); defer destroy(state); state.editor_visible = true
 	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 300) == "")
+	left_sidebar := find_editor_name_node(state, &world, EDITOR_UI_LEFT_NAME)
+	testing.expect(t, left_sidebar >= 0 && state.nodes[left_sidebar].scroll_max > 0)
+	if left_sidebar >= 0 {
+		state.nodes[left_sidebar].scroll_target = state.nodes[left_sidebar].scroll_max
+	}
+	for _ in 0 ..< 60 {
+		testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 300) == "")
+	}
 	browser_index := find_editor_role_node(state, .Browser_Scroll)
 	testing.expect(t, browser_index >= 0)
 	browser_rect := state.nodes[browser_index].rect
+	browser_visible := rect_intersection(browser_rect, state.nodes[browser_index].clip)
+	browser_point := shared.Vec2 {
+		browser_visible.x + min(browser_visible.width * 0.5, 20),
+		browser_visible.y + min(browser_visible.height * 0.5, 20),
+	}
 
 	// A wheel step settles at a pixel offset between rows instead of snapping to one.
 	testing.expect(
@@ -1030,11 +1257,7 @@ test_editor_browser_scrolls_selects_runtime_entities_and_clears_stale_selection 
 			&world,
 			1280,
 			720,
-			{
-				position = {browser_rect.x + 20, browser_rect.y + 20},
-				wheel_y = -1,
-				available = true,
-			},
+			{position = browser_point, wheel_y = -1, available = true},
 			1280,
 			300,
 		) ==
@@ -1057,11 +1280,7 @@ test_editor_browser_scrolls_selects_runtime_entities_and_clears_stale_selection 
 			&world,
 			1280,
 			720,
-			{
-				position = {browser_rect.x + 20, browser_rect.y + 20},
-				wheel_y = -20,
-				available = true,
-			},
+			{position = browser_point, wheel_y = -20, available = true},
 			1280,
 			300,
 		) ==
@@ -1836,6 +2055,7 @@ test_editor_system_profile_uses_panel_table_and_scroll_components :: proc(t: ^te
 		text := world.ui_texts[world.entities[time_cell].ui_text_index]
 		testing.expect(t, text.text == "1.50 ms")
 		testing.expect(t, text.size == EDITOR_TEXT_SIZE)
+		testing.expect(t, text.alignment == .Right)
 	}
 	if luau_found {
 		text := world.ui_texts[world.entities[luau_cell].ui_text_index]

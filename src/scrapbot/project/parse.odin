@@ -490,7 +490,8 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 				switch key {case "text":
 						current.ui_text.text, found = parse_basic_string(value); case "color":
 						current.ui_text.color, found = parse_vec4(value); case "size":
-						current.ui_text.size, found = parse_f32(value); case:
+						current.ui_text.size, found = parse_f32(value); case "alignment":
+						current.ui_text.alignment, found = parse_ui_text_alignment(value); case:
 						return scene, fail(
 							.Invalid_Field,
 							fmt.tprintf("unknown ui_text field '%s'", key),
@@ -756,6 +757,23 @@ parse_basic_string :: proc(value: string) -> (out: string, ok: bool) {
 		return "", false
 	}
 	return body, true
+}
+
+parse_ui_text_alignment :: proc(value: string) -> (out: shared.UI_Text_Alignment, ok: bool) {
+	text, parsed := parse_basic_string(value)
+	if !parsed {
+		return .Left, false
+	}
+	switch text {
+		case "left":
+			return .Left, true
+		case "center":
+			return .Center, true
+		case "right":
+			return .Right, true
+		case:
+			return .Left, false
+	}
 }
 
 is_basic_string_body :: proc(body: string) -> bool {

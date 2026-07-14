@@ -18,7 +18,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 - Scroll-area containers accept an explicitly oversized child pane, clip descendants to their padded content rectangle, and smoothly approach wheel-driven vertical offsets.
 - Nested scroll clips intersect, the topmost hovered scroll area receives wheel input, and overflowing areas render a proportional scrollbar.
 - Every element receives retained hover and active state from topmost pointer hit testing. Active state is captured on primary-button press and held until release.
-- Text and button controls provide labels with RGBA color and pixel size. Buttons consume generic element state with optional hover and active background and text colors.
+- Text controls provide labels with RGBA color, pixel size, and left, center, or right alignment within the padded content box. Buttons consume generic element state with optional hover and active background and text colors.
 - Single-line input controls store authored text in their ECS component while the retained UI state owns focus, cursor, selection, horizontal reveal, and blink state. Clicking selects all text.
 - Focused inputs accept typed text, Left/Right/Home/End cursor movement, Shift-extended selection, Backspace/Delete, and Select All. Tab and Shift+Tab traverse inputs in paint order; Enter commits and leaves the field, while Escape restores the value present when focus began.
 - Backgrounds and inset borders use GPU-evaluated signed-distance rounded rectangles, including square corners at a zero radius.
@@ -46,7 +46,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 **Decision:** Use top-left pixel coordinates and explicit sizes with overlay, horizontal-stack, and vertical-stack flow. A stack can opt into fill layout, where authored child sizes seed proportional weights and each child fills the cross-axis. Fill stacks may make their gaps draggable and enforce a shared minimum pane size.
 **Why:** Fixed boxes remain deterministic, while an explicit fill policy supports responsive application and editor layouts without introducing a complete constraint language.
-**Tradeoff:** There is no percentage syntax, alignment, automatic content measurement, per-child grow policy, or horizontal scrolling yet. Split weights are retained runtime state rather than scene data.
+**Tradeoff:** There is no percentage syntax, general box alignment, automatic content measurement, per-child grow policy, or horizontal scrolling yet. Split weights are retained runtime state rather than scene data.
 
 ### 4. Compose controls from a shared box model
 

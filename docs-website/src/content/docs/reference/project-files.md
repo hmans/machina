@@ -138,6 +138,7 @@ size = [412, 52]
 text = "SCRAPBOT UI"
 color = [0.15, 0.95, 0.82, 1]
 size = 32
+alignment = "left"
 
 [[entities]]
 id = "d4000000-0000-4000-8000-000000000012"
@@ -207,7 +208,7 @@ size = [396, 360]
 gap = 8
 ```
 
-Positions and sizes are screen pixels from the top-left. `margin` and `padding` use `[top, right, bottom, left]`. `border_color` and non-negative `border_width` add an inset signed-distance border that follows `corner_radius`. `hidden = true` removes the box and its descendant subtree from layout, paint, and interaction without despawning their entities. Add `ui_hstack` or `ui_vstack` with a non-negative `gap` to arrange children in scene order; an element without either stack overlays its children inside the parent's padded content box. Set `fill = true` to treat authored child sizes as proportions along the stack axis and fill the available cross-axis. Add `draggable = true` to turn the gaps into pointer-draggable separators; `min_size` sets the non-negative minimum pane extent on the stack axis. Draggable stacks must also enable fill. Backgrounds, borders, and corner radii are rendered from the same signed-distance rounded rectangle. Parent UUIDs must resolve to another UI layout entity, cycles are rejected, and one entity cannot combine both stack directions or more than one of `ui_text`, `ui_button`, and `ui_input`.
+Positions and sizes are screen pixels from the top-left. `margin` and `padding` use `[top, right, bottom, left]`. `border_color` and non-negative `border_width` add an inset signed-distance border that follows `corner_radius`. `hidden = true` removes the box and its descendant subtree from layout, paint, and interaction without despawning their entities. Add `ui_hstack` or `ui_vstack` with a non-negative `gap` to arrange children in scene order; an element without either stack overlays its children inside the parent's padded content box. Set `fill = true` to treat authored child sizes as proportions along the stack axis and fill the available cross-axis. Add `draggable = true` to turn the gaps into pointer-draggable separators; `min_size` sets the non-negative minimum pane extent on the stack axis. Draggable stacks must also enable fill. A `ui_text` can set `alignment` to `"left"`, `"center"`, or `"right"` within its padded content box. Backgrounds, borders, and corner radii are rendered from the same signed-distance rounded rectangle. Parent UUIDs must resolve to another UI layout entity, cycles are rejected, and one entity cannot combine both stack directions or more than one of `ui_text`, `ui_button`, and `ui_input`.
 
 Pointer hit testing gives the topmost element under the pointer hover state. Pressing the primary button captures active state on that element until release. Buttons can consume those generic states through `hover_background`, `active_background`, `hover_color`, and `active_color`; a zero-alpha state color falls back to the normal layout background or button text color. Button activation events are not emitted yet.
 

@@ -367,6 +367,9 @@ reconcile :: proc(
 	editor_pointer := pointer
 	if editor_pointer.available { editor_pointer.position.x /= editor_scale; editor_pointer.position.y /= editor_scale }
 	if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
+	if editor_ui_fit_sidebar_content(state, world) {
+		if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
+	}
 	if editor_ui_fit_inspector_width(state, world) {
 		if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
 	}
@@ -379,7 +382,7 @@ reconcile :: proc(
 		state,
 		editor_pointer,
 		true,
-	) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }; if editor_ui_fit_inspector_width(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; _ = update_split_interaction(state, editor_pointer, true) }
+	) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }; if editor_ui_fit_sidebar_content(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; if editor_ui_fit_inspector_width(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; _ = update_split_interaction(state, editor_pointer, true) }
 	if state.active_split_handle >= 0 { project_pointer = {}; editor_pointer = {} }
 	if update_scroll_areas(
 		state,
@@ -1875,7 +1878,7 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 	   node.text_index <
 		   len(
 			   world.ui_texts,
-		   ) { text := world.ui_texts[node.text_index]; if err := append_text(state, text.text, text.color, text.size, node.rect, layout.padding); err != "" { return err } }
+		   ) { text := world.ui_texts[node.text_index]; if err := append_text(state, text.text, text.color, text.size, node.rect, layout.padding, text.alignment); err != "" { return err } }
 	if node.input_index >= 0 && node.input_index < len(world.ui_inputs) {
 		if err := append_input(
 			state,
@@ -2239,9 +2242,61 @@ append_text :: proc(
 	size: f32,
 	rect: Rect,
 	padding: shared.Vec4,
+	alignment: shared.UI_Text_Alignment = .Left,
 ) -> string {
-	x := rect.x + padding.w; baseline := rect.y + padding.x + FONT_ASCENDER * size
-	return append_text_at(state, text, color, size, x, baseline, rect.x + padding.w)
+	content_x := rect.x + padding.w
+	content_width := max(rect.width - padding.w - padding.y, 0)
+	baseline := rect.y + padding.x + FONT_ASCENDER * size
+	line_start := 0
+	bytes := transmute([]u8)text
+	for byte, index in bytes {
+		if byte != '\n' {
+			continue
+		}
+		if err := append_aligned_text_line(
+			state,
+			text[line_start:index],
+			color,
+			size,
+			content_x,
+			content_width,
+			baseline,
+			alignment,
+		); err != "" {
+			return err
+		}
+		line_start = index + 1
+		baseline += size
+	}
+	return append_aligned_text_line(
+		state,
+		text[line_start:],
+		color,
+		size,
+		content_x,
+		content_width,
+		baseline,
+		alignment,
+	)
+}
+
+append_aligned_text_line :: proc(
+	state: ^State,
+	text: string,
+	color: shared.Vec4,
+	size, content_x, content_width, baseline: f32,
+	alignment: shared.UI_Text_Alignment,
+) -> string {
+	advance := text_advance_to(state, text, size, len(text))
+	x := content_x
+	switch alignment {
+		case .Left:
+		case .Center:
+			x += max((content_width - advance) * 0.5, 0)
+		case .Right:
+			x += max(content_width - advance, 0)
+	}
+	return append_text_at(state, text, color, size, x, baseline, x)
 }
 
 text_advance_to :: proc(state: ^State, text: string, size: f32, byte_index: int) -> f32 {

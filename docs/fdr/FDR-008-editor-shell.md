@@ -13,6 +13,7 @@ The editor shell turns a running Scrapbot project into its own editing workspace
 - Pressing `Ctrl+Esc` toggles the editor shell without restarting or pausing the project.
 - The shell provides a top bar, bottom status bar, left scene sidebar, and right entity/component inspector sidebar.
 - The vertical boundaries around the project viewport are draggable. Resizing either sidebar preserves a minimum center viewport and the center automatically fills the remaining width.
+- Each complete sidebar is a smooth scroll viewport with a contrasting 10-pixel frame around a minimum-height content pane, so the dock inset remains visually clear and short windows can reach every tool section. Separate Systems and Scene sections use a six-pixel gutter; related headers and content remain connected. Nested Systems, scene-browser, and inspector scroll areas receive wheel input when hovered; hovering sidebar padding or non-scrollable chrome addresses the outer sidebar.
 - Editor chrome uses neutral near-black and charcoal surfaces, gray-to-white text, quiet gray selection, and restrained mint accents for a dense professional tool aesthetic.
 - Header bands, inspector surfaces, viewport seams, and selection use the shared ECS box border fields; pooled browser rows use hidden subtrees rather than leaving the ECS lifecycle. The default desktop density uses 30-pixel scene rows, 24-pixel inspector rows, and a wider inspector pane so labels and three-axis controls remain comfortable without becoming oversized.
 - The running project's world and project-authored UI always share the complete available viewport. With the editor closed that is the full window; with the editor open it is the remaining center workspace.
@@ -24,7 +25,7 @@ The editor shell turns a running Scrapbot project into its own editing workspace
 - Releasing the right mouse button restores normal pointer interaction. Closing and reopening the editor preserves the scene-camera viewpoint for the current run.
 - Project cameras derive their view direction from transform rotation, and rendering, viewport picking, and transform gizmos use the same camera orientation.
 - The scene sidebar lists scene-authored and runtime-spawned entities and supports pixel-continuous pointer-wheel and trackpad scrolling, clipped partial rows, hover, and stable selection.
-- Above the scene browser, a systems panel lists registered native and Luau systems with their average callback time per frame. It publishes a new average every ten successful frames and refreshes immediately when the system topology or published sample changes.
+- Above the scene browser, a systems panel lists registered native and Luau systems with right-aligned average callback times per frame. It publishes a new average every ten successful frames and refreshes immediately when the system topology or published sample changes. A horizontal separator resizes the systems and scene panes.
 - Scene-authored entity names use normal white editor text and runtime-spawned entity names use muted gray. Editor-origin entities are hidden from the browser and cannot be selected in the inspector.
 - Selection follows the entity's generation-aware identity and clears if that entity despawns.
 - The inspector shows the selected entity's name, stable UUID, provenance, attached components, field names, and current values. Components are vertically stacked titled panels, and each panel renders its fields in a two-column property table inside an independently scrollable sidebar. Values use reusable input controls: transform, camera, light, and custom Vec3 fields are live-editable, while unsupported field types remain selectable and read-only. Vec3 value cells compose three equal-width X, Y, and Z inputs with a fill HStack; scalar value cells contain one full-width input.
@@ -131,7 +132,7 @@ The editor shell turns a running Scrapbot project into its own editing workspace
 
 ### 15. Profile systems at their execution boundary
 
-**Decision:** Render the scheduler's fixed-storage ten-frame timing snapshot through a titled, two-column, smoothly scrollable ECS UI panel above the scene list.
+**Decision:** Render the scheduler's fixed-storage ten-frame timing snapshot through a titled, two-column, smoothly scrollable ECS UI panel above the scene list. Nest that panel and the complete scene pane in a draggable fill VStack, and right-align the timing cells through the ordinary text component.
 **Why:** System costs should be visible in the same live world the editor inspects, and the panel should dogfood the ordinary panel, table, text, and scroll-area components.
 **Tradeoff:** Native systems use their registered names, while Luau systems currently receive ordinal fallback labels. Times cover callback execution only and are diagnostic samples rather than a full frame profiler.
 

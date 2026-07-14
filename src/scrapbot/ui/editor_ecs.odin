@@ -10,15 +10,21 @@ EDITOR_UI_ROOT_NAME :: "__scrapbot_editor_root"
 EDITOR_UI_TOP_NAME :: "__scrapbot_editor_top"
 EDITOR_UI_WORKSPACE_NAME :: "__scrapbot_editor_workspace"
 EDITOR_UI_LEFT_NAME :: "__scrapbot_editor_left"
+EDITOR_UI_LEFT_CONTENT_NAME :: "__scrapbot_editor_left_content"
 EDITOR_UI_SYSTEMS_NAME :: "__scrapbot_editor_systems"
+EDITOR_UI_SCENE_NAME :: "__scrapbot_editor_scene"
 EDITOR_UI_BROWSER_HEADER_NAME :: "__scrapbot_editor_browser_header"
 EDITOR_UI_BROWSER_NAME :: "__scrapbot_editor_browser"
 EDITOR_UI_VIEWPORT_NAME :: "__scrapbot_editor_viewport"
 EDITOR_UI_RIGHT_NAME :: "__scrapbot_editor_right"
+EDITOR_UI_RIGHT_CONTENT_NAME :: "__scrapbot_editor_right_content"
 EDITOR_UI_INSPECTOR_HEADER_NAME :: "__scrapbot_editor_inspector_header"
 EDITOR_UI_INSPECTOR_NAME :: "__scrapbot_editor_inspector"
 EDITOR_UI_INSPECTOR_CONTENT_NAME :: "__scrapbot_editor_inspector_content"
 EDITOR_UI_STATUS_NAME :: "__scrapbot_editor_status"
+EDITOR_SIDEBAR_PADDING :: f32(10)
+EDITOR_SIDEBAR_SECTION_GAP :: f32(6)
+EDITOR_SIDEBAR_CONTENT_MIN_HEIGHT :: f32(618)
 
 editor_ui_clone_string :: proc(value: string) -> string {
 	if value == "" { return "" }
@@ -343,16 +349,39 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		.None,
 		{
 			size = {EDITOR_LEFT_SIDEBAR_WIDTH, 638},
-			background = panel,
+			padding = {
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+			},
+			background = void,
 			border_color = rule,
 			border_width = 1,
 		},
 	)
-	editor_ui_add_vstack(world, left, {fill = true})
+	editor_ui_add_scroll(world, left)
+	left_content := editor_ui_create_box(
+		world,
+		EDITOR_UI_LEFT_CONTENT_NAME,
+		EDITOR_UI_LEFT_NAME,
+		.None,
+		{
+			size = {
+				EDITOR_LEFT_SIDEBAR_WIDTH - EDITOR_SIDEBAR_PADDING * 2,
+				EDITOR_SIDEBAR_CONTENT_MIN_HEIGHT,
+			},
+		},
+	)
+	editor_ui_add_vstack(
+		world,
+		left_content,
+		{gap = EDITOR_SIDEBAR_SECTION_GAP, fill = true, draggable = true, min_size = 160},
+	)
 	systems := editor_ui_create_box(
 		world,
 		EDITOR_UI_SYSTEMS_NAME,
-		EDITOR_UI_LEFT_NAME,
+		EDITOR_UI_LEFT_CONTENT_NAME,
 		.Systems_Scroll,
 		{
 			size = {EDITOR_LEFT_SIDEBAR_WIDTH, 178},
@@ -375,10 +404,18 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 	)
 	editor_ui_add_table(world, systems, {columns = 2, column_gap = 8, row_gap = 2})
 	editor_ui_add_scroll(world, systems)
+	scene := editor_ui_create_box(
+		world,
+		EDITOR_UI_SCENE_NAME,
+		EDITOR_UI_LEFT_CONTENT_NAME,
+		.None,
+		{size = {EDITOR_LEFT_SIDEBAR_WIDTH, 434}, background = panel},
+	)
+	editor_ui_add_vstack(world, scene, {fill = true, min_size = 72})
 	left_header := editor_ui_create_box(
 		world,
 		"__scrapbot_editor_left_header",
-		EDITOR_UI_LEFT_NAME,
+		EDITOR_UI_SCENE_NAME,
 		.None,
 		{
 			size = {EDITOR_LEFT_SIDEBAR_WIDTH, 72},
@@ -403,9 +440,9 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 	browser := editor_ui_create_box(
 		world,
 		EDITOR_UI_BROWSER_NAME,
-		EDITOR_UI_LEFT_NAME,
+		EDITOR_UI_SCENE_NAME,
 		.Browser_Scroll,
-		{size = {EDITOR_LEFT_SIDEBAR_WIDTH, 388}, padding = {7, 9, 7, 9}, background = panel},
+		{size = {EDITOR_LEFT_SIDEBAR_WIDTH, 362}, padding = {7, 9, 7, 9}, background = panel},
 	)
 	editor_ui_add_vstack(world, browser, {gap = 0})
 	editor_ui_add_scroll(world, browser)
@@ -425,16 +462,35 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		.None,
 		{
 			size = {EDITOR_RIGHT_SIDEBAR_WIDTH, 638},
-			background = panel,
+			padding = {
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+				EDITOR_SIDEBAR_PADDING,
+			},
+			background = void,
 			border_color = rule,
 			border_width = 1,
 		},
 	)
-	editor_ui_add_vstack(world, right, {fill = true})
+	editor_ui_add_scroll(world, right)
+	right_content := editor_ui_create_box(
+		world,
+		EDITOR_UI_RIGHT_CONTENT_NAME,
+		EDITOR_UI_RIGHT_NAME,
+		.None,
+		{
+			size = {
+				EDITOR_RIGHT_SIDEBAR_WIDTH - EDITOR_SIDEBAR_PADDING * 2,
+				EDITOR_SIDEBAR_CONTENT_MIN_HEIGHT,
+			},
+		},
+	)
+	editor_ui_add_vstack(world, right_content, {fill = true})
 	right_header := editor_ui_create_box(
 		world,
 		EDITOR_UI_INSPECTOR_HEADER_NAME,
-		EDITOR_UI_RIGHT_NAME,
+		EDITOR_UI_RIGHT_CONTENT_NAME,
 		.None,
 		{
 			size = {EDITOR_RIGHT_SIDEBAR_WIDTH, 110},
@@ -462,9 +518,9 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 	inspector := editor_ui_create_box(
 		world,
 		EDITOR_UI_INSPECTOR_NAME,
-		EDITOR_UI_RIGHT_NAME,
+		EDITOR_UI_RIGHT_CONTENT_NAME,
 		.Inspector_Scroll,
-		{size = {EDITOR_RIGHT_SIDEBAR_WIDTH, 528}, padding = {12, 14, 12, 14}, background = panel},
+		{size = {EDITOR_RIGHT_SIDEBAR_WIDTH, 508}, padding = {12, 14, 12, 14}, background = panel},
 	)
 	editor_ui_add_scroll(world, inspector)
 	content := editor_ui_create_box(
@@ -602,6 +658,7 @@ editor_ui_ensure_system_cells :: proc(world: ^shared.World, slot: int) -> (int, 
 		slot,
 	)
 	editor_ui_add_text(world, time_cell, "--", {0.42, 0.45, 0.51, 1}, EDITOR_TEXT_SIZE)
+	world.ui_texts[world.entities[time_cell].ui_text_index].alignment = .Right
 	return name_cell, time_cell
 }
 
@@ -1184,6 +1241,15 @@ editor_ui_build_inspector_panels :: proc(
 		editor_ui_inspector_field(&builder, "text", value.text)
 		editor_ui_inspector_field(&builder, "color", format_vec4(value.color))
 		editor_ui_inspector_field(&builder, "size", fmt.tprintf("%.2f", value.size))
+		alignment := "left"
+		switch value.alignment {
+			case .Left:
+			case .Center:
+				alignment = "center"
+			case .Right:
+				alignment = "right"
+		}
+		editor_ui_inspector_field(&builder, "alignment", alignment)
 	}
 	if entity.ui_button_index >= 0 && entity.ui_button_index < len(world.ui_buttons) {
 		value := world.ui_buttons[entity.ui_button_index]
@@ -1342,6 +1408,55 @@ editor_ui_fit_inspector_width :: proc(state: ^State, world: ^shared.World) -> bo
 				continue
 		}
 		if math.abs(layout.size.x - width) > 0.01 { layout.size.x = width; changed = true }
+	}
+	return changed
+}
+
+editor_ui_fit_sidebar_content :: proc(state: ^State, world: ^shared.World) -> bool {
+	if state == nil || world == nil || !state.editor_visible {
+		return false
+	}
+	pairs := [2]struct {
+		viewport: string,
+		content: string,
+	} {
+		{EDITOR_UI_LEFT_NAME, EDITOR_UI_LEFT_CONTENT_NAME},
+		{EDITOR_UI_RIGHT_NAME, EDITOR_UI_RIGHT_CONTENT_NAME},
+	}
+	changed := false
+	for pair in pairs {
+		viewport_node := -1
+		content_entity := -1
+		for node, node_index in state.nodes[:state.node_count] {
+			entity_index := int(node.entity.index)
+			if entity_index < 0 || entity_index >= len(world.entities) {
+				continue
+			}
+			name := world.entities[entity_index].name
+			if name == pair.viewport {
+				viewport_node = node_index
+			}
+			if name == pair.content {
+				content_entity = entity_index
+			}
+		}
+		if viewport_node < 0 || content_entity < 0 {
+			continue
+		}
+		viewport := state.nodes[viewport_node]
+		viewport_layout := world.ui_layouts[viewport.layout_index]
+		content_layout := &world.ui_layouts[world.entities[content_entity].ui_layout_index]
+		next_size := shared.Vec2 {
+			max(viewport.rect.width - viewport_layout.padding.w - viewport_layout.padding.y, 1),
+			max(
+				viewport.rect.height - viewport_layout.padding.x - viewport_layout.padding.z,
+				EDITOR_SIDEBAR_CONTENT_MIN_HEIGHT,
+			),
+		}
+		if content_layout.size != next_size {
+			content_layout.size = next_size
+			changed = true
+		}
 	}
 	return changed
 }
