@@ -11,6 +11,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs-website
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: node pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build and verify Cloudflare bundle
+        run: pnpm run deploy:dry-run
+
   macos:
     runs-on: macos-latest
     steps:

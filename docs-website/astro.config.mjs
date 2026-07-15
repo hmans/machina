@@ -4,6 +4,7 @@ import starlight from '@astrojs/starlight';
 
 // https://astro.build/config
 export default defineConfig({
+	site: 'https://scrapbot.dev',
 	vite: {
 		server: {
 			allowedHosts: ['localhost', '127.0.0.1'],

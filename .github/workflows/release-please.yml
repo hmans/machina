@@ -1,0 +1,123 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  macos-release-artifacts:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          submodules: recursive
+
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: odin
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install SDL3
+        run: brew install sdl3
+
+      - name: Prepare Odin vendor libraries
+        run: |
+          set -euo pipefail
+          make -C "$(odin root)/vendor/stb/src"
+
+          case "$(uname -m)" in
+            arm64) WGPU_ARCH="aarch64" ;;
+            x86_64) WGPU_ARCH="x86_64" ;;
+            *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          WGPU_ARCHIVE="wgpu-macos-$WGPU_ARCH-release.zip"
+          WGPU_VERSION="v29.0.1.1"
+          WGPU_LIB_DIR="$(odin root)/vendor/wgpu/lib"
+          WGPU_PACKAGE="${WGPU_ARCHIVE%.zip}"
+          mkdir -p "$WGPU_LIB_DIR/$WGPU_PACKAGE"
+          curl --fail --location --retry 3 \
+            "https://github.com/gfx-rs/wgpu-native/releases/download/$WGPU_VERSION/$WGPU_ARCHIVE" \
+            --output "$RUNNER_TEMP/$WGPU_ARCHIVE"
+          unzip -q "$RUNNER_TEMP/$WGPU_ARCHIVE" -d "$WGPU_LIB_DIR/$WGPU_PACKAGE"
+
+      - name: Build CLI
+        run: mise build
+
+      - name: Bundle SDL3 runtime
+        run: |
+          set -euo pipefail
+          sdl3_library="$(otool -L bin/scrapbot | awk '/libSDL3.*dylib/ { print $1; exit }')"
+          if [ -z "$sdl3_library" ]; then
+            echo "failed to find linked SDL3 dylib in Odin binary" >&2
+            exit 1
+          fi
+
+          cp "$sdl3_library" bin/libSDL3.0.dylib
+          install_name_tool -change "$sdl3_library" "@executable_path/libSDL3.0.dylib" bin/scrapbot
+          otool -L bin/scrapbot
+
+      - name: Smoke test CLI
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: test "$(bin/scrapbot version)" = "$VERSION"
+
+      - name: Package archive
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+
+          package_name="scrapbot-${VERSION}-macos-${ARCH}"
+          package_dir="dist/${package_name}"
+
+          mkdir -p "$package_dir"
+          cp bin/scrapbot "$package_dir/"
+          cp bin/libSDL3.0.dylib "$package_dir/"
+          cp LICENSE NOTICE "$package_dir/"
+          tar -C dist -czf "dist/${package_name}.tar.gz" "$package_name"
+
+      - name: Upload archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: gh release upload "$TAG_NAME" "dist/scrapbot-${VERSION}-macos-${ARCH}.tar.gz" --clobber

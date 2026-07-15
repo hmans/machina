@@ -221,7 +221,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] Documentation site
   - [x] Agent workflow docs
   - [x] macOS, Linux, and Windows CI workflow
-  - [ ] Docs checks
+  - [x] Docs checks
   - [ ] Benchmark trend reporting
 
 ### Assets, Simulation, And Larger Systems

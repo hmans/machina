@@ -17,7 +17,7 @@ import "core:path/filepath"
 import "core:strings"
 import "core:time"
 
-VERSION :: "0.1.0-dev"
+VERSION :: shared.VERSION
 
 PROJECT_FILE :: shared.PROJECT_FILE
 DEFAULT_SCENE :: shared.DEFAULT_SCENE

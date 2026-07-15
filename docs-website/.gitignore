@@ -19,3 +19,8 @@ pnpm-debug.log*
 
 # macOS-specific files
 .DS_Store
+
+# Cloudflare local state and generated bindings
+.wrangler/
+.dev.vars*
+!.dev.vars.example

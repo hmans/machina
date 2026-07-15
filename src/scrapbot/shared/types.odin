@@ -9,7 +9,7 @@ DEFAULT_SCRIPT :: "scripts/main.luau"
 DEFAULT_LUAU_TYPES :: "types/scrapbot.d.luau"
 DEFAULT_VSCODE_SETTINGS :: ".vscode/settings.json"
 
-VERSION :: "0.1.0-dev"
+VERSION :: "0.1.0" // x-release-please-version
 
 FONT_FIRST_CHAR :: 32
 FONT_CHAR_COUNT :: 95

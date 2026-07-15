@@ -34,10 +34,13 @@ Run commands from `docs-website/`:
 | `pnpm dev`                 | Starts local dev server at `localhost:4321`      |
 | `pnpm build`               | Builds the static site into `./dist/`            |
 | `pnpm preview`             | Previews the built site locally                  |
+| `pnpm deploy:dry-run`      | Builds and validates the Cloudflare bundle       |
+| `pnpm deploy`              | Builds and deploys the site to Cloudflare Workers |
 | `pnpm astro ...`           | Runs Astro CLI commands                          |
 
 ## Development Notes
 
 - Keep source-of-truth design decisions in the repository `docs/adr/` and `docs/fdr/` records.
 - Use the website for reader-facing guides and reference material.
-- Run `pnpm build` before committing docs site changes.
+- Run `pnpm deploy:dry-run` before committing deployment changes.
+- Cloudflare Workers Builds must use `docs-website/` as its root directory. The tracked `wrangler.jsonc` deploys the generated site as static assets.
