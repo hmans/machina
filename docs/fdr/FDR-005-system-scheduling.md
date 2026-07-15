@@ -26,7 +26,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 - Each parallel native system receives a private deferred-command buffer; commands merge deterministically in system order after the stage completes.
 - Every system in a frame observes the same read-only world time resource snapshot.
 - `scrapbot run --scheduler-trace` reports worker count, parallel stage count, and maximum parallel width for the run.
-- The runtime measures each native and Luau callback at its execution boundary. The editor publishes per-system averages after each ten successful frames and uses project-facing Luau names when provided; failed frames do not enter the sample.
+- The runtime measures each project-Odin and Luau callback at its execution boundary and tags profiler entries with explicit Engine, Project Odin, or Luau provenance rather than inferring origin from names. The editor publishes every five successful frames from a rolling window of the last 50 successful frames and uses project-facing Luau names when provided; failed frames do not enter the sample.
 - Structural world changes requested from Luau systems are queued in a deferred command buffer and applied after all scheduled systems finish for the frame.
 - Deferred commands currently support spawning named entities with initial transform/project component payloads, despawning entities without shifting existing entity indices, and adding/removing `scrapbot.transform` or project components.
 - Runtime spawns reuse dead entity slots and world-level free pools for transform, mesh, geometry, material, and render-instance storage regardless of the previous entity archetype. Reused entity slots retain their incremented generation, so handles from the previous entity lifetime remain stale.
@@ -90,9 +90,9 @@ Declared systems now enforce their declared component access at the Luau API bou
 
 ### 9. Measure callbacks at the scheduler boundary
 
-**Decision:** Time each native worker callback and serial Luau callback where the scheduler invokes it, then publish fixed-storage averages every ten successful frames.
+**Decision:** Time each project-native worker callback and serial Luau callback where the scheduler invokes it, tag each fixed-storage entry with explicit provenance, retain the latest 50 successful samples in a fixed ring, and publish their rolling averages every five successful frames.
 **Why:** The live editor needs useful per-system cost data without allocations, string formatting, or full-world work in the frame loop.
-**Tradeoff:** The measurement excludes scheduler planning, deferred-command merging and application, rendering, and GPU execution. Each callback also pays for two monotonic-clock reads.
+**Tradeoff:** The measurement excludes scheduler planning, deferred-command merging and application, rendering, and GPU execution. Engine provenance is reserved for engine-provided scheduled callbacks, which are not part of the current project callback snapshot. Each measured callback also pays for two monotonic-clock reads.
 
 ## Related
 

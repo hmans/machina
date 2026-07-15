@@ -296,7 +296,8 @@ MAX_SYSTEM_PROFILE_ENTRIES :: 64
 SYSTEM_PROFILE_NAME_CAPACITY :: 96
 
 System_Profile_Kind :: enum {
-	Native,
+	Engine,
+	Project_Odin,
 	Luau,
 }
 
@@ -324,6 +325,8 @@ Editor_UI_Role :: enum {
 	Systems_Scroll,
 	Systems_Name,
 	Systems_Time,
+	Systems_Origin,
+	Systems_Bar_Fill,
 	Browser_Scroll,
 	Browser_Header,
 	Browser_Row,

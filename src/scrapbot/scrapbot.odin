@@ -49,12 +49,16 @@ Frame_Runtime :: struct {
 	system_profile: System_Profile_Accumulator,
 }
 
-SYSTEM_PROFILE_WINDOW_FRAMES :: 10
+SYSTEM_PROFILE_PUBLISH_INTERVAL_FRAMES :: 5
+SYSTEM_PROFILE_ROLLING_WINDOW_FRAMES :: 50
 
 System_Profile_Accumulator :: struct {
 	snapshot: shared.System_Profile,
 	totals: [shared.MAX_SYSTEM_PROFILE_ENTRIES]i64,
-	window_frames: int,
+	samples: [shared.MAX_SYSTEM_PROFILE_ENTRIES][SYSTEM_PROFILE_ROLLING_WINDOW_FRAMES]i64,
+	sample_cursor: int,
+	sample_count: int,
+	frames_since_publish: int,
 }
 
 Native_Work_Context :: struct {
@@ -557,7 +561,7 @@ system_profile_prepare :: proc(
 		for index in 0 ..< native_extensions.system_count {
 			if !system_profile_entry_matches(
 				&profile.snapshot.entries[index],
-				.Native,
+				.Project_Odin,
 				native_extensions.systems[index].name,
 			) {
 				topology_changed = true
@@ -590,7 +594,7 @@ system_profile_prepare :: proc(
 	for index in 0 ..< native_extensions.system_count {
 		system_profile_set_entry(
 			&profile.snapshot.entries[index],
-			.Native,
+			.Project_Odin,
 			native_extensions.systems[index].name,
 		)
 	}
@@ -607,19 +611,25 @@ system_profile_commit_frame :: proc(profile: ^System_Profile_Accumulator, durati
 		return
 	}
 	for index in 0 ..< min(profile.snapshot.entry_count, len(durations)) {
-		profile.totals[index] += durations[index]
+		previous := i64(0)
+		if profile.sample_count == SYSTEM_PROFILE_ROLLING_WINDOW_FRAMES {
+			previous = profile.samples[index][profile.sample_cursor]
+		}
+		profile.samples[index][profile.sample_cursor] = durations[index]
+		profile.totals[index] += durations[index] - previous
 	}
-	profile.window_frames += 1
-	if profile.window_frames < SYSTEM_PROFILE_WINDOW_FRAMES {
+	profile.sample_cursor = (profile.sample_cursor + 1) % SYSTEM_PROFILE_ROLLING_WINDOW_FRAMES
+	profile.sample_count = min(profile.sample_count + 1, SYSTEM_PROFILE_ROLLING_WINDOW_FRAMES)
+	profile.frames_since_publish += 1
+	if profile.frames_since_publish < SYSTEM_PROFILE_PUBLISH_INTERVAL_FRAMES {
 		return
 	}
 	for index in 0 ..< profile.snapshot.entry_count {
 		profile.snapshot.entries[index].average_nanoseconds =
-			f64(profile.totals[index]) / f64(profile.window_frames)
-		profile.totals[index] = 0
+			f64(profile.totals[index]) / f64(profile.sample_count)
 	}
-	profile.snapshot.sample_frames = profile.window_frames
-	profile.window_frames = 0
+	profile.snapshot.sample_frames = profile.sample_count
+	profile.frames_since_publish = 0
 	profile.snapshot.revision += 1
 }
 

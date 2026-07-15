@@ -50,6 +50,7 @@
 - [x] Reflect component registry metadata into editor/tooling APIs.
 - [x] Add scheduled systems with declared component access.
 - [x] Add optional project-facing names for Luau systems and expose them in the profiler.
+- [x] Show system provenance and full-width absolute callback-time bars in the live profiler.
 - [x] Execute a project-local Luau entry script during `scrapbot run`.
 - [x] Add Luau LSP metadata for the built-in `scrapbot` global.
 - [x] Add a first Luau system bridge for project-local systems.
@@ -85,7 +86,7 @@
 ## Editor
 
 - [x] Add a transient ECS-built editor shell toggled with Ctrl+Esc.
-- [x] Add a smoothly scrolling system list with ten-frame callback-time averages.
+- [x] Add a smoothly scrolling system list with five-frame updates over rolling 50-frame callback-time averages.
 - [x] Keep the running project live across the complete available viewport with a dynamic camera aspect ratio.
 - [x] Add a smoothly scrolling entity browser with scene/runtime provenance and stable selection.
 - [x] Add a smoothly scrolling component field/value inspector for the selected entity.

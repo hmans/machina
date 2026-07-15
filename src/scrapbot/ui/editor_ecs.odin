@@ -623,6 +623,20 @@ editor_ui_ensure_row :: proc(world: ^shared.World, slot: int) -> (int, int) {
 }
 
 SYSTEM_PROFILE_CELL_HEIGHT :: f32(24)
+SYSTEM_PROFILE_BAR_MARGIN_TOP :: f32(14)
+SYSTEM_PROFILE_BAR_MAX_NANOSECONDS :: f64(10_000_000)
+
+system_profile_origin_color :: proc(kind: shared.System_Profile_Kind) -> shared.Vec4 {
+	switch kind {
+		case .Engine:
+			return {0.22, 0.78, 0.69, 1}
+		case .Project_Odin:
+			return {0.35, 0.62, 0.94, 1}
+		case .Luau:
+			return {0.91, 0.61, 0.24, 1}
+	}
+	return {}
+}
 
 editor_ui_ensure_system_cells :: proc(world: ^shared.World, slot: int) -> (int, int) {
 	name_cell, name_found := editor_ui_entity(world, .Systems_Name, slot)
@@ -637,10 +651,38 @@ editor_ui_ensure_system_cells :: proc(world: ^shared.World, slot: int) -> (int, 
 		name,
 		EDITOR_UI_SYSTEMS_NAME,
 		.Systems_Name,
-		{size = {100, SYSTEM_PROFILE_CELL_HEIGHT}, padding = {5, 3, 3, 3}},
+		{size = {100, SYSTEM_PROFILE_CELL_HEIGHT}, padding = {5, 3, 3, 20}},
 		slot,
 	)
 	editor_ui_add_text(world, name_cell, "", {0.82, 0.85, 0.90, 1}, EDITOR_TEXT_SIZE)
+	origin_name := fmt.tprintf("__scrapbot_editor_system_origin_%d", slot)
+	_ = editor_ui_create_box(
+		world,
+		origin_name,
+		name,
+		.Systems_Origin,
+		{
+			position = {-15, 3},
+			size = {8, 8},
+			background = system_profile_origin_color(.Engine),
+			corner_radius = 4,
+		},
+		slot,
+	)
+	bar_fill_name := fmt.tprintf("__scrapbot_editor_system_bar_fill_%d", slot)
+	_ = editor_ui_create_box(
+		world,
+		bar_fill_name,
+		name,
+		.Systems_Bar_Fill,
+		{
+			position = {0, SYSTEM_PROFILE_BAR_MARGIN_TOP},
+			size = {1, 2},
+			background = system_profile_origin_color(.Engine),
+			corner_radius = 1,
+		},
+		slot,
+	)
 	time_cell = editor_ui_create_box(
 		world,
 		timing,
@@ -652,6 +694,22 @@ editor_ui_ensure_system_cells :: proc(world: ^shared.World, slot: int) -> (int, 
 	editor_ui_add_text(world, time_cell, "--", {0.42, 0.45, 0.51, 1}, EDITOR_TEXT_SIZE)
 	world.ui_texts[world.entities[time_cell].ui_text_index].alignment = .Right
 	return name_cell, time_cell
+}
+
+editor_ui_set_system_visuals :: proc(
+	world: ^shared.World,
+	slot: int,
+	kind: shared.System_Profile_Kind,
+) {
+	color := system_profile_origin_color(kind)
+	if origin, found := editor_ui_entity(world, .Systems_Origin, slot); found {
+		layout := &world.ui_layouts[world.entities[origin].ui_layout_index]
+		layout.background = color
+	}
+	fill, fill_found := editor_ui_entity(world, .Systems_Bar_Fill, slot)
+	if !fill_found { return }
+	fill_layout := &world.ui_layouts[world.entities[fill].ui_layout_index]
+	fill_layout.background = color
 }
 
 format_system_profile_time :: proc(average_nanoseconds: f64, sampled: bool) -> string {
@@ -727,6 +785,7 @@ editor_ui_refresh_system_profile :: proc(state: ^State, world: ^shared.World) {
 				}
 			}
 			editor_ui_set_text(world, name_cell, name)
+			editor_ui_set_system_visuals(world, index, entry.kind)
 			editor_ui_set_text(
 				world,
 				time_cell,
@@ -1581,6 +1640,53 @@ editor_ui_right_stack_height :: proc(world: ^shared.World) -> f32 {
 		child_count += 1
 	}
 	return height
+}
+
+editor_ui_fit_system_bars :: proc(state: ^State, world: ^shared.World) -> bool {
+	if state == nil || world == nil || state.system_profile == nil { return false }
+	systems_node := -1
+	for node, node_index in state.nodes[:state.node_count] {
+		if node.origin == .Editor && node.editor_role == .Systems_Scroll {
+			systems_node = node_index
+			break
+		}
+	}
+	if systems_node < 0 { return false }
+	systems := state.nodes[systems_node]
+	systems_layout := world.ui_layouts[systems.layout_index]
+	content_width := max(
+		systems.rect.width - systems_layout.padding.w - systems_layout.padding.y,
+		0,
+	)
+	changed := false
+	for component in world.editor_uis {
+		if component.role != .Systems_Bar_Fill ||
+		   component.slot < 0 ||
+		   component.slot >= state.system_profile.entry_count ||
+		   component.entity_index < 0 ||
+		   component.entity_index >= len(world.entities) { continue }
+		bar_entity := world.entities[component.entity_index]
+		if !bar_entity.alive ||
+		   bar_entity.ui_layout_index < 0 ||
+		   bar_entity.ui_layout_index >= len(world.ui_layouts) { continue }
+		name_cell, found := editor_ui_entity(world, .Systems_Name, component.slot)
+		if !found { continue }
+		name_layout := world.ui_layouts[world.entities[name_cell].ui_layout_index]
+		average := state.system_profile.entries[component.slot].average_nanoseconds
+		ratio := f32(math.clamp(average / SYSTEM_PROFILE_BAR_MAX_NANOSECONDS, f64(0), f64(1)))
+		width := content_width * ratio
+		bar_layout := &world.ui_layouts[bar_entity.ui_layout_index]
+		position_x := content_width - name_layout.padding.w - width
+		if math.abs(bar_layout.position.x - position_x) > 0.01 {
+			bar_layout.position.x = position_x
+			changed = true
+		}
+		if math.abs(bar_layout.size.x - width) > 0.01 {
+			bar_layout.size.x = width
+			changed = true
+		}
+	}
+	return changed
 }
 
 editor_ui_fit_sidebar_content :: proc(state: ^State, world: ^shared.World) -> bool {

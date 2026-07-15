@@ -438,6 +438,9 @@ reconcile :: proc(
 	if editor_ui_fit_inspector_width(state, world) {
 		if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
 	}
+	if editor_ui_fit_system_bars(state, world) {
+		if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
+	}
 	if update_split_interaction(
 		state,
 		project_pointer,
@@ -447,7 +450,7 @@ reconcile :: proc(
 		state,
 		editor_pointer,
 		true,
-	) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }; if editor_ui_fit_sidebar_content(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; if editor_ui_fit_inspector_width(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; _ = update_split_interaction(state, editor_pointer, true) }
+	) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }; if editor_ui_fit_sidebar_content(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; if editor_ui_fit_inspector_width(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; if editor_ui_fit_system_bars(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; _ = update_split_interaction(state, editor_pointer, true) }
 	state.pointer_cursor = split_pointer_cursor(state)
 	if state.active_split_handle >= 0 { project_pointer = {}; editor_pointer = {} }
 	if update_scroll_areas(
@@ -762,6 +765,8 @@ handle_editor_ecs_press :: proc(
 				     .Systems_Scroll,
 				     .Systems_Name,
 				     .Systems_Time,
+				     .Systems_Origin,
+				     .Systems_Bar_Fill,
 				     .Browser_Scroll,
 				     .Browser_Header,
 				     .Inspector_Header,

@@ -2363,7 +2363,7 @@ test_editor_system_profile_uses_panel_table_and_scroll_components :: proc(t: ^te
 	profile.entry_count = 3
 	profile.sample_frames = 10
 	profile.revision = 1
-	profile.entries[0].kind = .Native
+	profile.entries[0].kind = .Project_Odin
 	profile.entries[0].average_nanoseconds = 1_500_000
 	physics_name := "Physics"
 	profile.entries[0].name_length = len(physics_name)
@@ -2426,6 +2426,50 @@ test_editor_system_profile_uses_panel_table_and_scroll_components :: proc(t: ^te
 		text := world.ui_texts[world.entities[fallback_cell].ui_text_index]
 		testing.expect(t, text.text == "Luau System 2")
 	}
+	project_origin, project_origin_found := editor_ui_entity(&world, .Systems_Origin, 0)
+	luau_origin, luau_origin_found := editor_ui_entity(&world, .Systems_Origin, 1)
+	bar_fill, bar_fill_found := editor_ui_entity(&world, .Systems_Bar_Fill, 0)
+	testing.expect(t, project_origin_found && luau_origin_found && bar_fill_found)
+	if project_origin_found {
+		layout := world.ui_layouts[world.entities[project_origin].ui_layout_index]
+		testing.expect(t, layout.background == system_profile_origin_color(.Project_Odin))
+	}
+	if luau_origin_found {
+		layout := world.ui_layouts[world.entities[luau_origin].ui_layout_index]
+		testing.expect(t, layout.background == system_profile_origin_color(.Luau))
+	}
+	if bar_fill_found {
+		fill_layout := world.ui_layouts[world.entities[bar_fill].ui_layout_index]
+		testing.expect(t, fill_layout.background == system_profile_origin_color(.Project_Odin))
+		fill_node := find_node_by_entity_index(state, bar_fill)
+		systems_node := find_node_by_entity_index(state, systems)
+		testing.expect(t, fill_node >= 0 && systems_node >= 0)
+		if fill_node >= 0 && systems_node >= 0 {
+			systems_layout := world.ui_layouts[state.nodes[systems_node].layout_index]
+			content_width :=
+				state.nodes[systems_node].rect.width -
+				systems_layout.padding.w -
+				systems_layout.padding.y
+			testing.expect(
+				t,
+				math.abs(state.nodes[fill_node].rect.width - content_width * 0.15) < 0.01,
+			)
+			testing.expect(
+				t,
+				math.abs(
+					state.nodes[fill_node].rect.x +
+					state.nodes[fill_node].rect.width -
+					(state.nodes[systems_node].rect.x + systems_layout.padding.w + content_width),
+				) <
+				0.01,
+			)
+		}
+	}
+	testing.expect(
+		t,
+		system_profile_origin_color(.Engine) != system_profile_origin_color(.Project_Odin) &&
+		system_profile_origin_color(.Engine) != system_profile_origin_color(.Luau),
+	)
 
 	refresh_count := state.editor_snapshot_refresh_count
 	profile.entries[0].average_nanoseconds = 750_000
