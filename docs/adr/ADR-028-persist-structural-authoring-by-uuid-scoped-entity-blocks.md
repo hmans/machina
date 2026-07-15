@@ -19,4 +19,4 @@ Promotion changes a runtime entity to scene origin only through an explicit stop
 
 Large scenes pay one linear source scan at explicit Save rather than per-frame reconciliation or whole-world serialization. Unrelated entities remain byte-for-byte stable, while a structurally changed entity block is normalized to Scrapbot's canonical TOML form. Stable UUIDs make rename, duplicate names, deletion, and history replay unambiguous.
 
-Snapshots own their string and custom-component data, so history eviction, branching, Stop, and editor teardown must destroy them explicitly. Structural changes can invalidate older field transactions through component revisions, which are discarded by the existing stale-history rules.
+Snapshots own their string and custom-component data, so history eviction, branching, playback-baseline replacement, and editor teardown must destroy them explicitly. Stop preserves authoring history and restores captured component revisions; unrelated structural changes can still invalidate older field transactions through the existing stale-history rules.

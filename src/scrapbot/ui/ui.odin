@@ -1,5 +1,6 @@
 package ui
 
+import component "../component"
 import ecs "../ecs"
 import resources "../resources"
 import shared "../shared"
@@ -156,6 +157,7 @@ State :: struct {
 	paint_count: int,
 	font: Font_Atlas,
 	resource_registry: ^resources.Registry,
+	component_registry: ^component.Registry,
 	ui_world_uuid: shared.Entity_UUID,
 	ui_structure_revision: u64,
 	ui_structure_synced: bool,
@@ -179,7 +181,8 @@ State :: struct {
 	editor_simulation_playing: bool,
 	editor_simulation_stopped: bool,
 	editor_simulation_step_requested: bool,
-	editor_scene_reload_requested: bool,
+	editor_playback_begin_requested: bool,
+	editor_playback_stop_requested: bool,
 	editor_scene_save_requested: bool,
 	editor_scene_dirty: bool,
 	editor_scene_save_failed: bool,
@@ -195,6 +198,8 @@ State :: struct {
 	editor_snapshot_has_selection: bool,
 	editor_snapshot_selected_entity: shared.Entity,
 	editor_snapshot_refresh_count: u64,
+	editor_component_menu_open: bool,
+	editor_layout_invalidated: bool,
 	system_profile: ^shared.System_Profile,
 	editor_system_profile_revision: u64,
 	editor_previous_primary_down: bool,
@@ -272,8 +277,8 @@ select_font :: proc(state: ^State, name: string) {
 
 editor_play :: proc(state: ^State) {
 	if state == nil { return }
-	if state.editor_simulation_stopped && state.editor_scene_dirty {
-		return
+	if state.editor_simulation_stopped {
+		state.editor_playback_begin_requested = true
 	}
 	state.editor_simulation_playing = true
 	state.editor_simulation_stopped = false
@@ -290,17 +295,14 @@ editor_pause :: proc(state: ^State) {
 }
 
 editor_stop :: proc(state: ^State) {
-	if state == nil { return }
+	if state == nil || state.editor_simulation_stopped { return }
 	state.editor_simulation_playing = false
 	state.editor_simulation_stopped = true
 	state.editor_simulation_step_requested = false
-	state.editor_scene_reload_requested = true
+	state.editor_playback_begin_requested = false
+	state.editor_playback_stop_requested = true
 	state.editor_scene_save_requested = false
-	state.editor_scene_dirty = false
 	state.editor_scene_save_failed = false
-	clear(&state.editor_dirty_entities)
-	clear(&state.editor_dirty_entity_lookup)
-	editor_history_clear(state)
 	state.editor_snapshot_valid = false
 }
 
@@ -349,8 +351,8 @@ editor_mark_scene_uuid_dirty :: proc(state: ^State, id: shared.Entity_UUID) {
 
 editor_step :: proc(state: ^State) {
 	if state == nil { return }
-	if state.editor_simulation_stopped && state.editor_scene_dirty {
-		return
+	if state.editor_simulation_stopped {
+		state.editor_playback_begin_requested = true
 	}
 	state.editor_simulation_playing = false
 	state.editor_simulation_stopped = false
@@ -358,12 +360,54 @@ editor_step :: proc(state: ^State) {
 	state.editor_snapshot_valid = false
 }
 
-consume_scene_reload_request :: proc(state: ^State) -> bool {
-	if state == nil || !state.editor_scene_reload_requested {
+consume_playback_begin_request :: proc(state: ^State) -> bool {
+	if state == nil || !state.editor_playback_begin_requested {
 		return false
 	}
-	state.editor_scene_reload_requested = false
+	state.editor_playback_begin_requested = false
 	return true
+}
+
+consume_playback_stop_request :: proc(state: ^State) -> bool {
+	if state == nil || !state.editor_playback_stop_requested {
+		return false
+	}
+	state.editor_playback_stop_requested = false
+	return true
+}
+
+editor_selected_uuid :: proc(state: ^State, world: ^shared.World) -> (shared.Entity_UUID, bool) {
+	if state == nil || world == nil || !state.editor_has_selection {
+		return {}, false
+	}
+	entity_index := int(state.editor_selected_entity.index)
+	if !ecs.entity_is_alive(world, entity_index) ||
+	   world.entities[entity_index].id != state.editor_selected_entity {
+		return {}, false
+	}
+	return world.entities[entity_index].uuid, true
+}
+
+editor_world_restored :: proc(
+	state: ^State,
+	world: ^shared.World,
+	selected_uuid: shared.Entity_UUID,
+	had_selection: bool,
+) {
+	if state == nil || world == nil {
+		return
+	}
+	state.editor_has_selection = false
+	if had_selection {
+		if entity_index, found := ecs.entity_index_by_uuid(world, selected_uuid); found {
+			state.editor_selected_entity = world.entities[entity_index].id
+			state.editor_has_selection = true
+		}
+	}
+	state.editor_snapshot_valid = false
+	state.editor_gizmo_active_handle = .None
+	state.editor_gizmo_captures_pointer = false
+	clear_input_focus(state)
 }
 
 consume_scene_save_request :: proc(state: ^State) -> bool {
@@ -552,6 +596,7 @@ reconcile :: proc(
 	editor_height := surface_height / editor_scale
 	reconcile_editor_ui_world(state, world)
 	if err := sync_ui_structure(state, world); err != "" { return err }
+	editor_ui_anchor_component_menu(state, world, editor_width, editor_height)
 	project_layout := Rect{0, 0, width, height}
 	editor_layout := Rect{0, 0, editor_width, editor_height}
 	if !state.editor_visible && state.has_focused_input && state.focused_input_editor {
@@ -602,6 +647,7 @@ reconcile :: proc(
 		editor_pointer.primary_down &&
 		!state.editor_previous_primary_down
 	project_pressed, project_pressed_ok := update_interaction(state, project_pointer, false)
+	component_menu_was_open := state.editor_component_menu_open
 	pressed, pressed_ok := update_interaction(state, editor_pointer, true)
 	sync_ui_interaction_states(state, world)
 	panel_changed := false
@@ -616,6 +662,8 @@ reconcile :: proc(
 		}
 		panel_changed = checkbox_changed || panel_changed
 		editor_ui_handle_activation(state, world, pressed, editor_pointer.position)
+		panel_changed = state.editor_layout_invalidated || panel_changed
+		state.editor_layout_invalidated = false
 		panel_title_changed := handle_panel_title_press(
 			state,
 			world,
@@ -626,6 +674,16 @@ reconcile :: proc(
 			editor_ui_handle_panel_change(state, world, pressed)
 		}
 		panel_changed = panel_title_changed || panel_changed
+	}
+	if component_menu_was_open &&
+	   editor_press_started &&
+	   (!pressed_ok || !editor_ui_component_menu_contains(world, pressed)) {
+		editor_ui_close_component_menu(state, world)
+		panel_changed = true
+	}
+	if state.editor_component_menu_open && keyboard.escape {
+		editor_ui_close_component_menu(state, world)
+		panel_changed = true
 	}
 	if project_pressed_ok {
 		_ = ecs.mark_ui_activated(world, int(project_pressed.index))

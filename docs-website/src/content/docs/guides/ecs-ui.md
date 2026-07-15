@@ -185,7 +185,7 @@ bin/scrapbot run examples/ui-showcase \
   --framegrab /tmp/scrapbot-ui.png
 ```
 
-Hidden framegrabs do not provide pointer interaction, so cover hover, active, focus, scrolling, and edits with UI tests or a bounded visible-window smoke. See [Rendering And Testing](/guides/rendering-testing/) for 1:1 frame regions and visual verification.
+Headless runs normally have no platform pointer, but `--ui-script` can semantically drive hover, active, focus, scrolling, typing, assertions, and target-cropped framegrabs through the same reconciler. See [Rendering And Testing](/guides/rendering-testing/#semantic-ui-diagnostics) for the script and UI-tree dump workflow.
 
 ## Current limits
 

@@ -59,7 +59,7 @@ Compare allocated-slot fields across `runtime_stats.early_storage`, `late_storag
 
 - Use `examples/minimal` for fast CLI, project loading, scheduling, Luau/Odin integration, null backend, and basic WGPU smoke tests.
 - Use `examples/ecs-showcase` for geometry, materials, render reconciliation, batching, lighting, lifecycle-heavy ECS behavior, and visual renderer changes.
-- Use `examples/ui-showcase` for retained ECS UI hierarchy, box-model layout, horizontal/vertical stacks, smooth clipped scroll areas, SDF-rounded backgrounds, pointer-styled buttons, MTSDF text, and overlay/framegrab changes. Hidden framegrabs intentionally have no pointer interaction; verify hover/active/scroll interaction with UI tests or a bounded visible-window smoke.
+- Use `examples/ui-showcase` for retained ECS UI hierarchy, box-model layout, horizontal/vertical stacks, smooth clipped scroll areas, SDF-rounded backgrounds, pointer-styled buttons, MTSDF text, and overlay/framegrab changes. Use `--ui-script` for deterministic headless hover, active, focus, typing, scrolling, and editor workflows; do not rely on OS pointer automation.
 
 Validate an example with:
 
@@ -91,7 +91,13 @@ bin/scrapbot run examples/minimal --backend wgpu --headless --frames 2 --framegr
 bin/scrapbot run examples/ecs-showcase --backend wgpu --headless --frames 20 --framegrab /tmp/scrapbot-showcase.png
 bin/scrapbot run examples/ui-showcase --backend wgpu --headless --frames 2 --framegrab /tmp/scrapbot-ui.png
 bin/scrapbot run examples/ecs-showcase --backend wgpu --editor --headless --frames 20 --framegrab /tmp/scrapbot-editor.png
+bin/scrapbot run examples/ecs-showcase --backend wgpu --editor --headless \
+  --ui-script tests/fixtures/ui/component-picker.json \
+  --ui-dump /tmp/scrapbot-component-picker-tree.json \
+  --framegrab /tmp/scrapbot-component-picker.png
 ```
+
+Use `tests/fixtures/ui/playback-authoring.json` when changing Play, Step, Stop, authoring baselines, dirty-state preservation, or world replacement. It creates an unsaved scene entity, runs a complete Play/Stop round trip, and asserts that the authored entity remains visible.
 
 Framegrabs are losslessly compressed and preserve 1:1 pixels. The complete frame remains 1280×720. When a visual question concerns one control, label, gizmo, or panel, request a top-left-origin crop instead of passing the entire frame through image inspection:
 
@@ -117,6 +123,11 @@ Expected basics:
 - Visual inspection matches the selected fixture and changed behavior.
 
 Use `view_image` only when the conclusion depends on visual inspection. Start with its default/high detail and one overview image per visual checkpoint. Do not request `original` detail for a complete frame by default. For a named pixel-level concern, generate the tightest useful 1:1 framegrab region and inspect that region at original detail. Reuse an existing artifact when the rendered state has not changed, and avoid emitting several near-identical screenshots in one turn.
+
+For interactive UI bugs, prefer a semantic script plus `--ui-dump`. A script is a versioned JSON object with an `actions` array. Actions may `click`, `hover`, `scroll`, `type`, send a `key`, `wait`, `expect`, or select a `capture` target. Targets match UUID, entity name, or visible text and may choose a zero-based `occurrence`; the driver automatically reveals targets through clipped ancestor scroll areas. A target `capture` overrides full-frame output unless an explicit `--framegrab-region` was supplied. Inspect `driver_action_index`, `driver_action`, and `driver_target` in a failure dump before changing code.
+
+When reproducing or verifying an editor/UI interaction bug, read
+[`references/ui-diagnostics.md`](references/ui-diagnostics.md) and follow its replay-dump-capture loop. Do not claim a visual fix from layout arithmetic or a successful process exit alone: assert the semantic state and inspect the smallest relevant 1:1 PNG.
 
 For renderer changes, inspect the artifact for:
 

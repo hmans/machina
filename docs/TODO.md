@@ -102,7 +102,7 @@
 - [x] Add live inspector editing for transform, camera, light, and custom Vec3 fields.
 - [x] Add numeric validation, keyboard stepping, axis-label scrubbing, and bounded inspector undo/redo.
 - [x] Unify numeric, boolean, and transform-gizmo edits as UUID-addressed authoring transactions.
-- [x] Add top-bar Play, Pause, scene-reloading Stop, fixed-frame Step, and explicit Save controls.
+- [x] Add Play, Pause, fixed-frame Step, non-destructive Stop restoration, and explicit Save controls.
 - [x] Persist only semantic differences for dirty stopped-mode scene entities while preserving unchanged TOML text and excluding runtime entities.
 - [x] Add UUID-addressed create, duplicate, rename, delete, runtime promotion, and component add/remove transactions with structural scene persistence.
 - [ ] Generalize component value editing across every reflected field type.

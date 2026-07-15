@@ -10,7 +10,7 @@ Scrapbot has two rendering paths today:
 
 The WGPU path decodes material base colors to linear space, accumulates light there, tone maps the HDR result, and presents through an sRGB target. A scene with no ambient, directional, or point lights therefore renders its geometry black.
 
-Screen-space ECS UI is reconciled after engine/project systems and painted as a blended overlay after world geometry. Visible windows feed pointer position, primary-button state, and keyboard text commands into the retained interaction system; hidden framegrabs deliberately render with no pointer interaction. `examples/ui-showcase` exercises the box model, hidden subtrees, nested horizontal and vertical stacks, titled panels, equal-width multi-column tables, selectable lists, progress indicators, smooth clipped scrolling, SDF-rounded styling, buttons, numeric and text inputs, checkboxes, and the embedded Inter typeface rendered from a precomputed MTSDF atlas. See [ECS UI](/guides/ecs-ui/) for the shared project/editor component contract.
+Screen-space ECS UI is reconciled after engine/project systems and painted as a blended overlay after world geometry. Visible windows feed platform pointer and keyboard state into the retained interaction system. Headless runs normally provide no interaction, but a semantic UI diagnostic script can drive the same reconciled controls deterministically without OS automation. `examples/ui-showcase` exercises the box model, hidden subtrees, nested horizontal and vertical stacks, titled panels, equal-width multi-column tables, selectable lists, progress indicators, smooth clipped scrolling, SDF-rounded styling, buttons, numeric and text inputs, checkboxes, and the embedded Inter typeface rendered from a precomputed MTSDF atlas. See [ECS UI](/guides/ecs-ui/) for the shared project/editor component contract.
 
 With `--editor`, WGPU fills the complete central project viewport with world rendering and project UI, derives camera aspect from that live rectangle, remaps project pointer coordinates, and paints transient editor-origin ECS UI in a separate full-window coordinate and paint domain. Visible windows use the display's native pixel density while retaining logical editor dimensions, keeping UI text crisp on HiDPI displays. The editor-origin scene-camera entity clones the initial project view and supports right-mouse-captured WASD, Space, and Ctrl fly navigation in a visible window. Use `examples/ecs-showcase` to verify live geometry and `examples/ui-showcase` to verify project UI scaling:
 
@@ -31,6 +31,42 @@ scrapbot run examples/ui-showcase --backend wgpu --headless --frames 2 \
 ```
 
 Region coordinates are `x,y,width,height` from the top-left of the complete frame. The output PNG contains exactly those source pixels and is not resized.
+
+## Semantic UI diagnostics
+
+Use `--ui-script` to reproduce interactions against public project UI or transient editor UI by UUID, entity name, or visible text. The driver resolves the target from the retained tree, reveals it through clipped ancestor scroll areas, and feeds ordinary pointer and keyboard state back through the normal reconciler. `--ui-dump` writes the final tree even when the run fails, including hierarchy, text, control kinds, clipping, raw and visible screen rectangles, paint order, hover/active/focus state, and the pending script action.
+
+The checked-in component-picker scenario stops the project, selects an entity, opens the popup, hovers Camera, asserts the hover state, and requests a small target crop:
+
+```sh
+bin/scrapbot run examples/ecs-showcase \
+  --backend wgpu \
+  --editor \
+  --headless \
+  --ui-script tests/fixtures/ui/component-picker.json \
+  --ui-dump /tmp/component-picker-tree.json \
+  --framegrab /tmp/component-picker.png \
+  --json
+```
+
+`tests/fixtures/ui/playback-authoring.json` covers the editor transport boundary: it stops initial playback, creates an unsaved authored entity, plays, stops again, and asserts that the entity survives restoration.
+
+Scripts use schema version 1 and execute actions sequentially:
+
+```json
+{
+  "schema_version": 1,
+  "timeout_frames": 120,
+  "actions": [
+    {"action": "click", "target": {"text": "STOP", "origin": "editor"}},
+    {"action": "hover", "target": {"text": "[ ]  camera", "origin": "editor"}},
+    {"action": "expect", "target": {"text": "[ ]  camera"}, "expect": "hovered"},
+    {"action": "capture", "target": {"text": "[ ]  camera"}, "padding": 12}
+  ]
+}
+```
+
+Available actions are `click`, `hover`, `scroll` (`wheel_y`), `type` (`text`), `key`, `wait` (`frames`), `expect`, and `capture`. Keys include navigation, editing, Tab, Enter, Escape, Select All, Save, Undo, and Redo. Expectations cover `visible`, `hovered`, `active`, `focused`, `text`, and `inside_parent`; a text expectation compares the action's `text` value. Targets may combine `uuid`, `name`, `text`, and `origin`, plus a zero-based `occurrence` for duplicate matches. A capture target supplies the framegrab region unless `--framegrab-region` is explicitly present. When `--frames` is omitted, a scripted run receives a 240-frame safety bound and exits as soon as all actions complete.
 
 ## Directional shadows
 

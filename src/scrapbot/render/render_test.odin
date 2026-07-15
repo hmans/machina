@@ -76,28 +76,58 @@ test_stopped_editor_simulation_only_runs_requested_step :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_editor_stop_resets_runtime_once_at_the_frame_boundary :: proc(t: ^testing.T) {
+test_editor_stop_restores_authoring_world_once_at_the_frame_boundary :: proc(t: ^testing.T) {
 	world: World
 	state := new(ui.State)
 	defer free(state)
 	testing.expect(t, ui.init(state) == "")
 	defer ui.destroy(state)
 	frame_count := 0
-	reset_count := 0
+	restore_count := 0
 	config := Run_Config {
 		frame_system = test_count_frame_system,
 		frame_system_data = &frame_count,
-		runtime_reset = test_count_runtime_reset,
-		runtime_reset_data = &reset_count,
+		runtime_playback_stop = test_count_runtime_world_action,
+		runtime_playback_stop_data = &restore_count,
 		ui_state = state,
 	}
 	ui.editor_stop(state)
 	testing.expect(t, run_frame_system_unmeasured(&config, &world, 0.1) == "")
-	testing.expect(t, reset_count == 1)
+	testing.expect(t, restore_count == 1)
 	testing.expect(t, frame_count == 0)
 	testing.expect(t, state.editor_simulation_stopped)
 	testing.expect(t, run_frame_system_unmeasured(&config, &world, 0.1) == "")
-	testing.expect(t, reset_count == 1)
+	testing.expect(t, restore_count == 1)
+	ui.editor_stop(state)
+	testing.expect(t, run_frame_system_unmeasured(&config, &world, 0.1) == "")
+	testing.expect(t, restore_count == 1)
+}
+
+@(test)
+test_editor_play_snapshots_authoring_world_before_simulation :: proc(t: ^testing.T) {
+	world: World
+	state := new(ui.State)
+	defer free(state)
+	testing.expect(t, ui.init(state) == "")
+	defer ui.destroy(state)
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
+	begin_count := 0
+	frame_count := 0
+	config := Run_Config {
+		frame_system = test_count_frame_system,
+		frame_system_data = &frame_count,
+		runtime_playback_begin = test_count_runtime_world_action,
+		runtime_playback_begin_data = &begin_count,
+		ui_state = state,
+	}
+	ui.editor_play(state)
+	testing.expect(t, run_frame_system_unmeasured(&config, &world, 0.1) == "")
+	testing.expect(t, begin_count == 1)
+	testing.expect(t, frame_count == 1)
+	testing.expect(t, run_frame_system_unmeasured(&config, &world, 0.1) == "")
+	testing.expect(t, begin_count == 1)
+	testing.expect(t, frame_count == 2)
 }
 
 @(test)
@@ -190,7 +220,7 @@ test_count_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32)
 	return ""
 }
 
-test_count_runtime_reset :: proc(data: rawptr, world: ^World) -> string {
+test_count_runtime_world_action :: proc(data: rawptr, world: ^World) -> string {
 	count := cast(^int)data
 	count^ += 1
 	world.time = {}

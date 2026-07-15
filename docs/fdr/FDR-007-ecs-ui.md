@@ -30,6 +30,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 - Luau UI additions, removals, and runtime spawns are deferred with other structural ECS commands. Partial UI payloads merge with current values, runtime spawn returns the entity's stable UUID for parent references, and removed/despawned UI component slots are reclaimed.
 - Native extensions expose the same complete public UI values, styles, state revisions, deferred mutation, removal, and runtime spawning through fixed-layout typed payloads. Bounded inline text and font buffers keep allocator-owned Odin strings from crossing the extension ABI; UI state remains renderer-owned and read-only.
 - WGPU paints UI after world geometry, including in headless framegrabs.
+- Bounded runs can replay versioned semantic UI diagnostic scripts against the same reconciled tree used for live interaction. Actions target laid-out entities by stable UUID, name, or visible text; clicks include press/release phases, clipped targets are revealed through ancestor scroll areas, expectations fail the run, and capture actions select a tight 1:1 framegrab region without hard-coded coordinates. Optional JSON tree dumps expose raw and visible screen rectangles, clipping, hierarchy, control kinds, text, paint order, and interaction state even when a run fails.
 - UI rendering does not require a world camera or renderable geometry.
 - The built-in Inter font is embedded and redistributed under the SIL Open Font License 1.1.
 - Text uses a precomputed MTSDF atlas and derivative-based GPU antialiasing, so one atlas remains sharp across UI text sizes.
@@ -96,6 +97,12 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 **Decision:** Let `ui_list` vertically lay out its direct children, fill their width, and store the selected child UUID in the component. Derive hover and active state through the existing pointer chain, and compose scrolling through `ui_scroll_area` instead of embedding a second scrolling model.
 **Why:** Project UI and editor tooling need the same reusable navigation primitive, while stable UUID selection survives retained reconciliation and nested labels or row content remain clickable.
 **Tradeoff:** Lists currently support one selected direct child, vertical layout, and pointer selection only. Keyboard navigation, activation events, multi-selection, virtualization, disabled rows, and programmatic scroll-to-selection remain future work.
+
+### 11. Drive diagnostics through semantic retained state
+
+**Decision:** Let bounded renderer runs inspect and drive the reconciled ECS UI tree by entity identity and visible control data, while preserving ordinary input, layout, scrolling, state, and paint paths.
+**Why:** Automated agents and tests need to reproduce interaction bugs without OS automation, coordinate guessing, or editor-only fixtures, and need structured geometry alongside pixels when a visual assertion fails.
+**Tradeoff:** Text-only targets can be ambiguous and therefore support an occurrence selector; scripts that depend on internal editor names remain diagnostic contracts rather than public project APIs.
 
 ## Related
 

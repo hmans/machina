@@ -53,3 +53,6 @@ Review generated `types/scrapbot.d.luau` rather than editing it directly. Build 
 Add focused tests at each changed boundary. Maintain the registry reflection contract so canonical struct fields cannot silently disappear from public schemas. Cover partial Luau updates, native read/write conversion, parser validation, deferred structural mutation, lifecycle cleanup, and editor use of the public component.
 
 For visual changes, use a bounded headless WGPU framegrab. Capture the smallest useful 1:1 region for a control-level question and inspect it at original detail; use a full frame only for composition. Compare against a baseline when the requirement is no visual regression.
+
+For interactive editor or project UI changes, use the semantic replay driver described in
+`.agents/skills/scrapbot-testing/references/ui-diagnostics.md`. Prefer selectors by UUID or stable entity name; use visible text plus `occurrence` only when that is the public behavior under test. Add an `expect` action for the interaction state and a `capture` action for the exact control or panel, then inspect both the final tree dump and the target-cropped PNG.

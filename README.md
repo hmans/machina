@@ -20,7 +20,7 @@ Scrapbot currently has a small Odin CLI and runtime skeleton:
 - `scrapbot init [path] [name]` creates a text-first project with `project.toml`, `scenes/main.scene.toml`, `scripts/main.luau`, an `assets/` directory, and Luau LSP metadata.
 - `scrapbot check [path] [--json]` builds declared native extensions, validates the project manifest, default scene, and project Luau component schemas, refreshes generated Luau LSP types, and runs Luau static analysis when `luau-analyze` is available.
 - `scrapbot build [path] [--target host] [--json]` creates a host-native runnable package under `build/<target>`, including the game executable, project data, and active native extension artifacts.
-- `scrapbot run [path] [--backend null|wgpu] [--window] [--editor] [--hot-reload] [--scheduler-trace] [--runtime-stats] [--frames n] [--framegrab out.png] [--framegrab-region x,y,width,height] [--json]` builds declared native extensions, loads the scene into a tiny native ECS world, executes `scripts/main.luau` if present, runs registered native and script systems, and submits the world through the selected renderer backend. `Ctrl+Esc` toggles the editor shell in a visible window, and `--editor` starts it open. Scheduler tracing reports native worker utilization. Runtime statistics report early/late engine-frame cost through render preparation, engine-allocator bytes including post-teardown retention, and ECS storage high-water marks. Windowed runtime statistics require a bounded `--frames` value. Framegrab regions preserve 1:1 output pixels and use top-left coordinates.
+- `scrapbot run [path] [--backend null|wgpu] [--window] [--editor] [--hot-reload] [--scheduler-trace] [--runtime-stats] [--frames n] [--framegrab out.png] [--framegrab-region x,y,width,height] [--ui-script actions.json] [--ui-dump tree.json] [--json]` builds declared native extensions, loads the scene into a tiny native ECS world, executes `scripts/main.luau` if present, runs registered native and script systems, and submits the world through the selected renderer backend. `Ctrl+Esc` toggles the editor shell in a visible window, and `--editor` starts it open. Scheduler tracing reports native worker utilization. Runtime statistics report early/late engine-frame cost through render preparation, engine-allocator bytes including post-teardown retention, and ECS storage high-water marks. Windowed runtime statistics require a bounded `--frames` value. Framegrab regions preserve 1:1 output pixels and use top-left coordinates. UI diagnostic scripts semantically target reconciled ECS controls by UUID, name, or text, automatically reveal clipped targets, replay interactions, assert state, and select tight capture regions; UI dumps expose the final logical and screen-space tree as structured JSON.
 - `scrapbot help <command>` prints command-specific options parsed by Odin's `core:flags`.
 
 During development, use `mise build` to compile the CLI and `mise scrapbot -- [args...]` to compile and run it with arguments forwarded to Scrapbot.
@@ -155,6 +155,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] MTSDF-based font rendering
   - [x] Auto-atlased project TTF/OTF fonts with embedded Inter fallback
   - [x] UI gallery
+  - [x] Semantic headless UI replay, assertions, tree dumps, and target framegrabs
 - Controls
   - [x] Text and pointer-styled button controls
   - [x] Reusable SDF checkbox controls
@@ -186,13 +187,13 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
 - Editing
   - [x] Live transform, camera, light, and custom Vec3 inspector editing
   - [x] UUID-addressed authoring transactions with inspector and gizmo undo/redo
-  - [x] Component add/remove management with undo/redo
+  - [x] Registry-driven, namespaced component picker with add/remove undo/redo
   - [x] Entity create, duplicate, rename, delete, and runtime promotion
   - [x] Explicit stopped-mode scene persistence by stable entity UUID
   - [ ] Multi-selection editing
   - [x] Bounded field and structural editor transactions
 - Scene Tools
-  - [x] Play, Pause, scene-reloading Stop, single-frame Step, and explicit Save controls
+  - [x] Play/Pause/Step with an in-memory authoring baseline, non-destructive Stop, and explicit Save
   - [x] RMB-captured WASD/Space/Ctrl scene-camera navigation
   - [x] World-space translation gizmo
   - [x] Translation, rotation, and scale gizmo modes

@@ -38,6 +38,7 @@ Hot_Reload_State :: struct {
 	scene_stamp: File_Stamp,
 	script_stamp: File_Stamp,
 	assets_stamp: Asset_Stamp,
+	playback_baseline: Playback_Baseline,
 	runtime: script.Runtime,
 	native_extensions: native.Extension_Set,
 	executor: schedule.Executor,
@@ -115,6 +116,7 @@ init_hot_reload_state :: proc(
 
 	if err := init_render_resources(&state.resources, world, root, &loaded.config);
 	   err != "" { return err }
+	if err := capture_playback_baseline(&state.playback_baseline, world); err != "" { return err }
 	return load_script_runtime(state, world)
 }
 
@@ -124,6 +126,7 @@ destroy_hot_reload_state :: proc(state: ^Hot_Reload_State) {
 	schedule.destroy_executor(&state.executor)
 	resources.destroy_registry(&state.resources)
 	native.destroy_source_set(&state.native_sources)
+	destroy_playback_baseline(&state.playback_baseline)
 	delete(state.last_good_script_source)
 	delete(state.project_path)
 	delete(state.scene_path)
@@ -150,12 +153,20 @@ hot_reload_frame_system :: proc(data: rawptr, world: ^shared.World, delta_second
 	)
 }
 
-hot_reload_runtime_reset :: proc(data: rawptr, world: ^shared.World) -> string {
+hot_reload_playback_begin :: proc(data: rawptr, world: ^shared.World) -> string {
 	state := cast(^Hot_Reload_State)data
 	if state == nil || world == nil {
-		return "cannot reset an unavailable hot-reload runtime"
+		return "cannot snapshot an unavailable hot-reload runtime"
 	}
-	return reset_scene_world(state.scene_path, &state.runtime, world)
+	return capture_playback_baseline(&state.playback_baseline, world)
+}
+
+hot_reload_playback_stop :: proc(data: rawptr, world: ^shared.World) -> string {
+	state := cast(^Hot_Reload_State)data
+	if state == nil || world == nil {
+		return "cannot restore an unavailable hot-reload runtime"
+	}
+	return restore_playback_baseline(&state.playback_baseline, &state.runtime, world)
 }
 
 hot_reload_scene_save :: proc(
@@ -276,6 +287,13 @@ reload_project_world_and_script :: proc(state: ^Hot_Reload_State, world: ^shared
 		destroy_script_load(&script_load)
 		return source_err
 	}
+	next_baseline: Playback_Baseline
+	if baseline_err := capture_playback_baseline(&next_baseline, &next_world); baseline_err != "" {
+		ecs.destroy_world(&next_world)
+		destroy_script_load(&script_load)
+		native.destroy_source_set(&next_sources)
+		return baseline_err
+	}
 
 	ecs.destroy_world(world)
 	world^ = next_world
@@ -283,11 +301,13 @@ reload_project_world_and_script :: proc(state: ^Hot_Reload_State, world: ^shared
 	script.destroy_runtime(&state.runtime)
 	native.destroy_extension_set(&state.native_extensions)
 	native.destroy_source_set(&state.native_sources)
+	destroy_playback_baseline(&state.playback_baseline)
 	delete(state.last_good_script_source)
 	state.runtime = script_load.runtime
 	state.native_extensions = script_load.native_extensions
 	state.system_profile = {}
 	state.native_sources = next_sources
+	state.playback_baseline = next_baseline
 	script.rebind_runtime(&state.runtime)
 	state.last_good_script_source = script_load.source
 	state.has_last_good_script = script_load.has_source

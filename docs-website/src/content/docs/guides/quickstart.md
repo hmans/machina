@@ -83,7 +83,7 @@ bin/scrapbot run examples/ecs-showcase --backend wgpu --window --editor
 bin/scrapbot run examples/ecs-showcase --backend wgpu --editor --headless --frames 20 --framegrab /tmp/scrapbot-editor.png
 ```
 
-The live editor can browse scene-authored and runtime entities, profile systems, inspect and edit component fields, manage entity and component structure, pick geometry in the viewport, fly an independent scene camera, and translate, rotate, or scale selected entities. Stop enters authoring mode; value and structural scene changes can then be saved explicitly, while runtime entities remain disposable unless explicitly kept. See [Live Editor](/guides/live-editor/) for controls and current limitations.
+The live editor can browse scene-authored and runtime entities, profile systems, inspect and edit component fields, manage entity and component structure, pick geometry in the viewport, fly an independent scene camera, and translate, rotate, or scale selected entities. Play snapshots the current authoring state in memory; Stop restores it after simulation, preserving unsaved authored changes while discarding runtime mutations and unkept runtime entities. Scene changes can then be saved explicitly. See [Live Editor](/guides/live-editor/) for controls and current limitations.
 
 Headless WebGPU can write a framegrab:
 

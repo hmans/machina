@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "timeout_frames": 180,
+  "actions": [
+    {"action": "click", "target": {"text": "STOP", "origin": "editor"}},
+    {"action": "wait", "frames": 2},
+    {"action": "click", "target": {"name": "__scrapbot_editor_entity_create", "origin": "editor"}},
+    {"action": "wait", "frames": 1},
+    {"action": "hover", "target": {"text": "New Entity", "origin": "editor", "occurrence": 1}},
+    {"action": "expect", "target": {"text": "New Entity", "origin": "editor", "occurrence": 1}, "expect": "visible"},
+    {"action": "click", "target": {"text": "PLAY", "origin": "editor"}},
+    {"action": "wait", "frames": 3},
+    {"action": "click", "target": {"text": "STOP", "origin": "editor"}},
+    {"action": "wait", "frames": 2},
+    {"action": "hover", "target": {"text": "New Entity", "origin": "editor", "occurrence": 1}},
+    {"action": "expect", "target": {"text": "New Entity", "origin": "editor", "occurrence": 1}, "expect": "visible"},
+    {"action": "capture", "target": {"text": "New Entity", "origin": "editor", "occurrence": 1}, "padding": 10}
+  ]
+}

@@ -43,6 +43,7 @@ Runtime_Result :: struct {
 
 Frame_Runtime :: struct {
 	scene_path: string,
+	playback_baseline: Playback_Baseline,
 	script_runtime: script.Runtime,
 	native_extensions: native.Extension_Set,
 	executor: schedule.Executor,
@@ -388,11 +389,14 @@ run_project_internal_untracked :: proc(
 			return result
 		}
 		ui_state.system_profile = &hot_reload.system_profile.snapshot
+		ui_state.component_registry = &hot_reload.runtime.registry
 
 		run_config.frame_system = hot_reload_frame_system
 		run_config.frame_system_data = &hot_reload
-		run_config.runtime_reset = hot_reload_runtime_reset
-		run_config.runtime_reset_data = &hot_reload
+		run_config.runtime_playback_begin = hot_reload_playback_begin
+		run_config.runtime_playback_begin_data = &hot_reload
+		run_config.runtime_playback_stop = hot_reload_playback_stop
+		run_config.runtime_playback_stop_data = &hot_reload
 		run_config.runtime_save = hot_reload_scene_save
 		run_config.runtime_save_data = &hot_reload
 		run_config.resource_registry = &hot_reload.resources
@@ -414,11 +418,14 @@ run_project_internal_untracked :: proc(
 	}
 	frame_runtime.scene_path = scene_path
 	defer delete(frame_runtime.scene_path)
+	defer destroy_playback_baseline(&frame_runtime.playback_baseline)
 	defer script.destroy_runtime(&frame_runtime.script_runtime)
 	defer native.destroy_extension_set(&frame_runtime.native_extensions)
 	defer schedule.destroy_executor(&frame_runtime.executor)
 	defer resources.destroy_registry(&frame_runtime.resources)
 	if err := init_render_resources(&frame_runtime.resources, &world, root, &loaded.config);
+	   err != "" { result.err = err; return result }
+	if err := capture_playback_baseline(&frame_runtime.playback_baseline, &world);
 	   err != "" { result.err = err; return result }
 	extensions: native.Extension_Set
 	defer native.destroy_extension_set(&extensions)
@@ -454,13 +461,16 @@ run_project_internal_untracked :: proc(
 	frame_runtime.native_extensions = extensions
 	extensions = {}
 	ui_state.system_profile = &frame_runtime.system_profile.snapshot
+	ui_state.component_registry = &frame_runtime.script_runtime.registry
 	if script_result.ran || frame_runtime.native_extensions.system_count > 0 {
 		run_config.frame_system = step_frame_runtime_system
 		run_config.frame_system_data = &frame_runtime
 	}
 	run_config.resource_registry = &frame_runtime.resources
-	run_config.runtime_reset = frame_runtime_reset
-	run_config.runtime_reset_data = &frame_runtime
+	run_config.runtime_playback_begin = frame_runtime_playback_begin
+	run_config.runtime_playback_begin_data = &frame_runtime
+	run_config.runtime_playback_stop = frame_runtime_playback_stop
+	run_config.runtime_playback_stop_data = &frame_runtime
 	run_config.runtime_save = frame_runtime_save
 	run_config.runtime_save_data = &frame_runtime
 
@@ -516,12 +526,20 @@ step_frame_runtime_system :: proc(
 	return step_frame_runtime(runtime, world, delta_seconds)
 }
 
-frame_runtime_reset :: proc(data: rawptr, world: ^shared.World) -> string {
+frame_runtime_playback_begin :: proc(data: rawptr, world: ^shared.World) -> string {
 	runtime := cast(^Frame_Runtime)data
 	if runtime == nil || world == nil {
-		return "cannot reset an unavailable project runtime"
+		return "cannot snapshot an unavailable project runtime"
 	}
-	return reset_scene_world(runtime.scene_path, &runtime.script_runtime, world)
+	return capture_playback_baseline(&runtime.playback_baseline, world)
+}
+
+frame_runtime_playback_stop :: proc(data: rawptr, world: ^shared.World) -> string {
+	runtime := cast(^Frame_Runtime)data
+	if runtime == nil || world == nil {
+		return "cannot restore an unavailable project runtime"
+	}
+	return restore_playback_baseline(&runtime.playback_baseline, &runtime.script_runtime, world)
 }
 
 frame_runtime_save :: proc(

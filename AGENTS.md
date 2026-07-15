@@ -43,6 +43,7 @@ Prefer Scrapbot's structured CLI output when inspecting projects or verifying ch
 bin/scrapbot check <path> --json
 bin/scrapbot build <path> --json
 bin/scrapbot run <path> --frames <n> --json
+bin/scrapbot run <path> --backend wgpu --editor --headless --ui-script <actions.json> --ui-dump /tmp/ui-tree.json --framegrab /tmp/ui.png --json
 ```
 
 - Treat `ok`, diagnostic `code`, and documented `result` fields as the automation contract.
@@ -51,6 +52,7 @@ bin/scrapbot run <path> --frames <n> --json
 - Expect exactly one JSON document on stdout. Use `schema_version` before assuming an envelope shape.
 - Keep automated runs bounded with `--frames`.
 - Use a headless WGPU framegrab when correctness depends on rendered output; structured diagnostics do not replace visual verification.
+- For interactive UI/editor bugs, prefer a semantic `--ui-script` over manual clicks or guessed coordinates. Target controls by stable UUID, internal name, or visible text; pair it with `--ui-dump` and a target `capture` action so failures preserve both the reconciled tree and the smallest useful 1:1 PNG.
 
 ## Odin Tooling
 

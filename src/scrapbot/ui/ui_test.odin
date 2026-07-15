@@ -1,5 +1,6 @@
 package ui
 
+import component "../component"
 import ecs "../ecs"
 import resources "../resources"
 import shared "../shared"
@@ -76,7 +77,6 @@ test_progress_paints_overridable_track_and_right_anchored_fill :: proc(t: ^testi
 		},
 	)
 	world := ecs.build_world(&scene)
-	defer ecs.destroy_world(&world)
 	state := new(State)
 	defer free(state)
 	testing.expect(t, init(state) == "")
@@ -1655,7 +1655,7 @@ test_editor_shell_is_an_editor_origin_ecs_ui_tree :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_editor_transport_buttons_control_simulation_and_request_stop_reload :: proc(t: ^testing.T) {
+test_editor_transport_buttons_preserve_unsaved_authoring_across_playback :: proc(t: ^testing.T) {
 	world: shared.World
 	defer ecs.destroy_world(&world)
 	state := new(State)
@@ -1722,12 +1722,24 @@ test_editor_transport_buttons_control_simulation_and_request_stop_reload :: proc
 	testing.expect(t, !state.editor_simulation_playing)
 	testing.expect(t, state.editor_simulation_stopped)
 	testing.expect(t, world.ui_texts[status_entity.ui_text_index].text == "STOPPED")
-	testing.expect(t, consume_scene_reload_request(state))
-	testing.expect(t, !consume_scene_reload_request(state))
+	testing.expect(t, consume_playback_stop_request(state))
+	testing.expect(t, !consume_playback_stop_request(state))
+	press(state, &world, stop)
+	testing.expect(t, !consume_playback_stop_request(state))
 	state.editor_scene_dirty = true
 	state.editor_snapshot_valid = false
 	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
 	testing.expect(t, world.ui_texts[status_entity.ui_text_index].text == "STOPPED  /  UNSAVED")
+	press(state, &world, play)
+	testing.expect(t, state.editor_simulation_playing)
+	testing.expect(t, state.editor_scene_dirty)
+	testing.expect(t, consume_playback_begin_request(state))
+	testing.expect(t, !consume_playback_begin_request(state))
+	press(state, &world, stop)
+	testing.expect(t, consume_playback_stop_request(state))
+	testing.expect(t, state.editor_scene_dirty)
+	state.editor_snapshot_valid = false
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
 	press(state, &world, save)
 	testing.expect(t, consume_scene_save_request(state))
 	testing.expect(t, !consume_scene_save_request(state))
@@ -2204,6 +2216,202 @@ test_editor_structural_authoring_is_uuid_addressed_and_undoable :: proc(t: ^test
 	testing.expect(t, duplicate_found)
 	testing.expect(t, state.editor_scene_dirty)
 	testing.expect(t, len(state.editor_dirty_entities) == 2)
+}
+
+@(test)
+test_editor_component_picker_uses_registry_hierarchy_and_structural_history :: proc(
+	t: ^testing.T,
+) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = ui_test_id("Component Picker"),
+			name = "Picker Target",
+			has_transform = true,
+			transform = {scale = {1, 1, 1}},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	registry: component.Registry
+	component.init_registry(&registry)
+	register_err := component.register_project_component(
+		&registry,
+		{name = "floating", fields = {0 = {name = "offset", field_type = .Vec3}}, field_count = 1},
+	)
+	testing.expect(t, register_err == "")
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.component_registry = &registry
+	state.editor_visible = true
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
+	state.editor_selected_entity = world.entities[0].id
+	state.editor_has_selection = true
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	_, button_found := editor_ui_entity(&world, .Inspector_Component_Menu_Button)
+	menu, menu_found := editor_ui_entity(&world, .Inspector_Component_Menu)
+	testing.expect(t, button_found && menu_found)
+	if !menu_found {
+		return
+	}
+	state.editor_component_menu_open = true
+	state.editor_snapshot_valid = false
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	testing.expect(t, !world.ui_layouts[world.entities[menu].ui_layout_index].hidden)
+	project_group_found := false
+	engine_group_found := false
+	for binding in world.editor_uis {
+		if binding.role != .Inspector_Component_Menu_Group {
+			continue
+		}
+		entity := world.entities[binding.entity_index]
+		if world.ui_layouts[entity.ui_layout_index].hidden {
+			continue
+		}
+		label := world.ui_texts[entity.ui_text_index].text
+		project_group_found = project_group_found || label == "PROJECT"
+		engine_group_found = engine_group_found || label == "scrapbot"
+	}
+	testing.expect(t, project_group_found && engine_group_found)
+	for binding in world.editor_uis {
+		if binding.role != .Inspector_Component_Menu_Item {
+			continue
+		}
+		entity := world.entities[binding.entity_index]
+		if world.ui_layouts[entity.ui_layout_index].hidden {
+			continue
+		}
+		label := world.ui_buttons[entity.ui_button_index].text
+		testing.expect(t, len(label) > 5)
+		for index in 0 ..< len(label) {
+			byte := label[index]
+			testing.expect(t, byte >= 32 && byte <= 126)
+		}
+	}
+	transform_index, transform_found := component.find_definition_index(
+		&registry,
+		"scrapbot.transform",
+	)
+	testing.expect(t, transform_found)
+	if transform_item, found := editor_ui_entity(
+		&world,
+		.Inspector_Component_Menu_Item,
+		transform_index,
+	); found {
+		button := world.ui_buttons[world.entities[transform_item].ui_button_index]
+		testing.expect(t, button.text == "[x]  transform")
+	} else {
+		testing.expect(t, false)
+	}
+	camera_index, camera_found := component.find_definition_index(&registry, "scrapbot.camera")
+	if camera_found {
+		if camera_item, camera_item_found := editor_ui_entity(
+			&world,
+			.Inspector_Component_Menu_Item,
+			camera_index,
+		); camera_item_found {
+			camera_node_index := find_node(state, world.entities[camera_item].id)
+			testing.expect(t, camera_node_index >= 0)
+			if camera_node_index >= 0 {
+				camera_rect := state.nodes[camera_node_index].rect
+				pointer := Pointer_Input {
+					position = {
+						camera_rect.x + camera_rect.width * 0.5,
+						camera_rect.y + camera_rect.height * 0.5,
+					},
+					available = true,
+				}
+				testing.expect(t, reconcile(state, &world, 1280, 720, pointer) == "")
+				hover_paint_index := -1
+				last_hover_glyph_index := -1
+				for command, command_index in state.paint[:state.paint_count] {
+					if command.kind == .Panel &&
+					   command.color == (shared.Vec4{0.020, 0.027, 0.036, 1}) &&
+					   command.rect == camera_rect {
+						hover_paint_index = command_index
+					}
+					if command.kind == .Glyph {
+						center := shared.Vec2 {
+							command.rect.x + command.rect.width * 0.5,
+							command.rect.y + command.rect.height * 0.5,
+						}
+						if rect_contains(camera_rect, center) {
+							last_hover_glyph_index = command_index
+						}
+					}
+				}
+				testing.expect(t, hover_paint_index >= 0)
+				testing.expect(t, last_hover_glyph_index > hover_paint_index)
+			}
+		}
+	}
+	definition_index, definition_found := component.find_definition_index(&registry, "floating")
+	testing.expect(t, definition_found)
+	if !definition_found {
+		return
+	}
+	item, item_found := editor_ui_entity(&world, .Inspector_Component_Menu_Item, definition_index)
+	testing.expect(t, item_found)
+	if !item_found {
+		return
+	}
+	editor_ui_handle_activation(state, &world, world.entities[item].id, {})
+	testing.expect(
+		t,
+		ecs.entity_has_component(&world, 0, registry.definitions[definition_index].id, "floating"),
+	)
+	testing.expect(t, !state.editor_component_menu_open)
+	testing.expect(t, editor_history_apply(state, &world, false))
+	testing.expect(
+		t,
+		!ecs.entity_has_component(
+			&world,
+			0,
+			registry.definitions[definition_index].id,
+			"floating",
+		),
+	)
+}
+
+@(test)
+test_stopped_component_picker_cell_can_be_reused_by_new_entity_inspector :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity{id = ui_test_id("Empty Authoring Entity"), name = "Empty"},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	registry: component.Registry
+	component.init_registry(&registry)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.component_registry = &registry
+	state.editor_visible = true
+	state.editor_selected_entity = world.entities[0].id
+	state.editor_has_selection = true
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	editor_stop(state)
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	cell, cell_found := editor_ui_entity(&world, .Inspector_Cell, 0)
+	testing.expect(t, cell_found)
+	if !cell_found {
+		return
+	}
+	testing.expect(t, world.entities[cell].ui_text_index < 0)
+	_, created := editor_authoring_create_entity(state, &world)
+	testing.expect(t, created)
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	cell, cell_found = editor_ui_entity(&world, .Inspector_Cell, 0)
+	testing.expect(t, cell_found && world.entities[cell].ui_text_index >= 0)
 }
 
 @(test)
@@ -3134,8 +3342,9 @@ test_editor_history_transactions_undo_and_redo_boolean_changes :: proc(t: ^testi
 	testing.expect(t, world.ui_checkboxes[world.entities[0].ui_checkbox_index].checked)
 	testing.expect(t, len(state.editor_dirty_entities) == 1)
 	editor_stop(state)
-	testing.expect(t, state.editor_history_count == 0)
-	testing.expect(t, !state.editor_scene_dirty && len(state.editor_dirty_entities) == 0)
+	testing.expect(t, state.editor_history_count == 1)
+	testing.expect(t, state.editor_scene_dirty && len(state.editor_dirty_entities) == 1)
+	testing.expect(t, !consume_playback_stop_request(state))
 }
 
 @(test)

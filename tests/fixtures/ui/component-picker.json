@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "timeout_frames": 120,
+  "actions": [
+    {"action": "click", "target": {"text": "STOP", "origin": "editor"}},
+    {"action": "wait", "frames": 2},
+    {"action": "click", "target": {"text": "Icosphere", "origin": "editor"}},
+    {"action": "wait", "frames": 1},
+    {"action": "click", "target": {"text": "+  ADD COMPONENT", "origin": "editor"}},
+    {"action": "wait", "frames": 1},
+    {"action": "hover", "target": {"text": "[ ]  camera", "origin": "editor"}},
+    {"action": "expect", "target": {"text": "[ ]  camera", "origin": "editor"}, "expect": "hovered"},
+    {"action": "capture", "target": {"text": "[ ]  camera", "origin": "editor"}, "padding": 12}
+  ]
+}

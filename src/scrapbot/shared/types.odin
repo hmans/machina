@@ -643,7 +643,11 @@ Editor_UI_Role :: enum {
 	Inspector_Cell,
 	Inspector_Input,
 	Inspector_Checkbox,
-	Inspector_Component_Toggle,
+	Inspector_Component_Menu_Button,
+	Inspector_Component_Menu,
+	Inspector_Component_Menu_Content,
+	Inspector_Component_Menu_Group,
+	Inspector_Component_Menu_Item,
 	Status,
 }
 

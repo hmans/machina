@@ -12,7 +12,7 @@ import "core:time"
 
 Renderer_Backend :: shared.Renderer_Backend
 Frame_System_Proc :: #type proc(data: rawptr, world: ^World, delta_seconds: f32) -> string
-Runtime_Reset_Proc :: #type proc(data: rawptr, world: ^World) -> string
+Runtime_World_Proc :: #type proc(data: rawptr, world: ^World) -> string
 Runtime_Save_Proc :: #type proc(
 	data: rawptr,
 	world: ^World,
@@ -60,10 +60,14 @@ Run_Config :: struct {
 	max_frames: u32,
 	framegrab_path: string,
 	framegrab_region: Framegrab_Region,
+	ui_script_path: string,
+	ui_dump_path: string,
 	frame_system: Frame_System_Proc,
 	frame_system_data: rawptr,
-	runtime_reset: Runtime_Reset_Proc,
-	runtime_reset_data: rawptr,
+	runtime_playback_begin: Runtime_World_Proc,
+	runtime_playback_begin_data: rawptr,
+	runtime_playback_stop: Runtime_World_Proc,
+	runtime_playback_stop_data: rawptr,
 	runtime_save: Runtime_Save_Proc,
 	runtime_save_data: rawptr,
 	resource_registry: ^resources.Registry,
@@ -75,6 +79,9 @@ Run_Config :: struct {
 	allocator_peak_bytes: ^i64,
 	log_enabled: bool,
 	ui_state: ^ui.State,
+	ui_driver: ^ui.Diagnostic_Driver,
+	last_drawable_width: f32,
+	last_drawable_height: f32,
 }
 World :: shared.World
 Render_Frame :: shared.Render_Frame
@@ -115,6 +122,47 @@ renderer_backend_name :: proc(backend: Renderer_Backend) -> string {
 
 run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame, err: string) {
 	run_config := config
+	diagnostic_driver: ui.Diagnostic_Driver
+	diagnostic_driver_loaded := false
+	if run_config.ui_script_path != "" {
+		if run_config.ui_state == nil {
+			return frame, "UI diagnostic scripts require an active UI state"
+		}
+		if load_err := ui.diagnostic_driver_load(&diagnostic_driver, run_config.ui_script_path);
+		   load_err != "" {
+			return frame, load_err
+		}
+		diagnostic_driver_loaded = true
+		run_config.ui_driver = &diagnostic_driver
+		if run_config.max_frames == 0 {
+			run_config.max_frames = 240
+		}
+	}
+	defer {
+		if run_config.ui_dump_path != "" {
+			dump_width := run_config.last_drawable_width
+			dump_height := run_config.last_drawable_height
+			if dump_width <= 0 {
+				dump_width = 1280
+			}
+			if dump_height <= 0 {
+				dump_height = 720
+			}
+			if dump_err := ui.diagnostic_driver_write_dump(
+				run_config.ui_dump_path,
+				run_config.ui_state,
+				world,
+				dump_width,
+				dump_height,
+				run_config.ui_driver,
+			); dump_err != "" && err == "" {
+				err = dump_err
+			}
+		}
+		if diagnostic_driver_loaded {
+			ui.diagnostic_driver_destroy(&diagnostic_driver)
+		}
+	}
 	if run_config.runtime_stats != nil && run_config.window && run_config.max_frames == 0 {
 		return frame, "runtime statistics require a bounded windowed run; pass --frames"
 	}
@@ -158,6 +206,17 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 					ecs.destroy_render_list(&list)
 				}
 				finish_runtime_frame(&run_config, world, frame_start)
+				if run_config.ui_driver != nil &&
+				   ui.diagnostic_driver_is_complete(run_config.ui_driver) {
+					break
+				}
+			}
+			if run_config.ui_driver != nil &&
+			   !ui.diagnostic_driver_is_complete(run_config.ui_driver) {
+				return frame, fmt.tprintf(
+					"UI diagnostic script did not complete within %d frames",
+					frame_count,
+				)
 			}
 			if run_config.window {
 				window_err := platform.open_runtime_window("Scrapbot", 1280, 720)
@@ -255,13 +314,25 @@ run_frame_system_unmeasured :: proc(
 	drawable_width: f32 = 1280,
 	drawable_height: f32 = 720,
 ) -> string {
-	if ui.consume_scene_reload_request(config.ui_state) {
-		if config.runtime_reset == nil {
-			return "editor stop requires a runtime reset callback"
+	if ui.consume_playback_begin_request(config.ui_state) {
+		if config.runtime_playback_begin == nil {
+			return "editor playback requires an authoring snapshot callback"
 		}
-		if err := config.runtime_reset(config.runtime_reset_data, world); err != "" {
+		if err := config.runtime_playback_begin(config.runtime_playback_begin_data, world);
+		   err != "" {
 			return err
 		}
+	}
+	if ui.consume_playback_stop_request(config.ui_state) {
+		selected_uuid, had_selection := ui.editor_selected_uuid(config.ui_state, world)
+		if config.runtime_playback_stop == nil {
+			return "editor stop requires an authoring restore callback"
+		}
+		if err := config.runtime_playback_stop(config.runtime_playback_stop_data, world);
+		   err != "" {
+			return err
+		}
+		ui.editor_world_restored(config.ui_state, world, selected_uuid, had_selection)
 	}
 	if ui.consume_scene_save_request(config.ui_state) {
 		save_err := "editor save requires a runtime save callback"
@@ -285,6 +356,8 @@ run_frame_system_unmeasured :: proc(
 		   err != "" { return err }
 	}
 	if config.ui_state != nil {
+		config.last_drawable_width = drawable_width
+		config.last_drawable_height = drawable_height
 		config.ui_state.editor_pixel_density = platform.runtime_window_pixel_density()
 		if platform.consume_editor_toggle() {
 			config.ui_state.editor_visible = !config.ui_state.editor_visible
@@ -297,6 +370,9 @@ run_frame_system_unmeasured :: proc(
 			viewport.width,
 			viewport.height,
 		)
+		if config.ui_driver != nil {
+			camera_input = {}
+		}
 		config.ui_state.editor_scene_camera_captures_input = camera_input.look_active
 		if mode, requested := platform.consume_editor_gizmo_mode();
 		   requested &&
@@ -337,6 +413,20 @@ run_frame_system_unmeasured :: proc(
 			save = platform_keyboard.save,
 			undo = platform_keyboard.undo,
 			redo = platform_keyboard.redo,
+		}
+		if config.ui_driver != nil {
+			driver_pointer, driver_keyboard, driver_err := ui.diagnostic_driver_input(
+				config.ui_driver,
+				config.ui_state,
+				world,
+				drawable_width,
+				drawable_height,
+			)
+			if driver_err != "" {
+				return driver_err
+			}
+			pointer = driver_pointer
+			keyboard = driver_keyboard
 		}
 		camera, has_camera := ecs.active_camera_instance(world, config.ui_state.editor_visible)
 		editor_transform_gizmo_system(

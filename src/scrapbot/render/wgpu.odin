@@ -1118,8 +1118,9 @@ wgpu_run_headless :: proc(world: ^World, config: ^Run_Config) -> string {
 	if frame_count == 0 {
 		frame_count = 1
 	}
+	diagnostic_err := ""
 	for index in 0 ..< frame_count {
-		capture := index == frame_count - 1
+		capture := config.ui_driver != nil || index == frame_count - 1
 		err := wgpu_render_offscreen_frame(
 			&renderer,
 			world,
@@ -1133,7 +1134,42 @@ wgpu_run_headless :: proc(world: ^World, config: ^Run_Config) -> string {
 			config,
 		)
 		if err != "" {
-			return err
+			if config.ui_driver == nil {
+				return err
+			}
+			diagnostic_err = err
+			break
+		}
+		if config.ui_driver != nil && ui.diagnostic_driver_is_complete(config.ui_driver) {
+			break
+		}
+	}
+	if config.ui_driver != nil && !ui.diagnostic_driver_is_complete(config.ui_driver) {
+		if diagnostic_err == "" {
+			diagnostic_err = fmt.tprintf(
+				"UI diagnostic script did not complete within %d frames",
+				frame_count,
+			)
+		}
+	}
+	if config.framegrab_region.width == 0 && config.ui_driver != nil {
+		if target_rect, found := ui.diagnostic_driver_capture_rect(
+			config.ui_driver,
+			config.ui_state,
+			world,
+			f32(width),
+			f32(height),
+		); found {
+			x0 := u32(math.floor(clamp(target_rect.x, 0, f32(width - 1))))
+			y0 := u32(math.floor(clamp(target_rect.y, 0, f32(height - 1))))
+			x1 := u32(math.ceil(clamp(target_rect.x + target_rect.width, f32(x0 + 1), f32(width))))
+			y1 := u32(
+				math.ceil(clamp(target_rect.y + target_rect.height, f32(y0 + 1), f32(height))),
+			)
+			capture_x = x0
+			capture_y = y0
+			capture_width = x1 - x0
+			capture_height = y1 - y0
 		}
 	}
 
@@ -1172,7 +1208,11 @@ wgpu_run_headless :: proc(world: ^World, config: ^Run_Config) -> string {
 		)
 	}
 
-	return write_png_rgba8(config.framegrab_path, pixels, capture_width, capture_height)
+	if write_err := write_png_rgba8(config.framegrab_path, pixels, capture_width, capture_height);
+	   write_err != "" {
+		return write_err
+	}
+	return diagnostic_err
 }
 
 copy_framegrab_row :: proc(dst, src: []u8, format: wgpu.TextureFormat) {
@@ -1238,7 +1278,16 @@ wgpu_run_window :: proc(world: ^World, config: ^Run_Config) -> string {
 		}
 
 		frame_count += 1
+		if config.ui_driver != nil && ui.diagnostic_driver_is_complete(config.ui_driver) {
+			break
+		}
 		time.sleep(16 * time.Millisecond)
+	}
+	if config.ui_driver != nil && !ui.diagnostic_driver_is_complete(config.ui_driver) {
+		return fmt.tprintf(
+			"UI diagnostic script did not complete within %d frames",
+			config.max_frames,
+		)
 	}
 
 	return ""

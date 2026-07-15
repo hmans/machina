@@ -1,5 +1,6 @@
 package ui
 
+import component "../component"
 import ecs "../ecs"
 import shared "../shared"
 import "core:fmt"
@@ -27,6 +28,142 @@ Editor_Authoring_Component :: enum {
 	UI_Button,
 	UI_Input,
 	UI_Checkbox,
+}
+
+editor_authoring_component_from_name :: proc(name: string) -> (Editor_Authoring_Component, bool) {
+	switch name {
+		case "scrapbot.transform":
+			return .Transform, true
+		case "scrapbot.camera":
+			return .Camera, true
+		case "scrapbot.ambient_light":
+			return .Ambient_Light, true
+		case "scrapbot.directional_light":
+			return .Directional_Light, true
+		case "scrapbot.point_light":
+			return .Point_Light, true
+		case "scrapbot.mesh":
+			return .Mesh, true
+		case "scrapbot.geometry":
+			return .Geometry, true
+		case "scrapbot.material":
+			return .Material, true
+		case "scrapbot.shadow_caster":
+			return .Shadow_Caster, true
+		case "scrapbot.shadow_receiver":
+			return .Shadow_Receiver, true
+		case "scrapbot.ui_layout":
+			return .UI_Layout, true
+		case "scrapbot.ui_hstack":
+			return .UI_HStack, true
+		case "scrapbot.ui_vstack":
+			return .UI_VStack, true
+		case "scrapbot.ui_scroll_area":
+			return .UI_Scroll_Area, true
+		case "scrapbot.ui_panel":
+			return .UI_Panel, true
+		case "scrapbot.ui_table":
+			return .UI_Table, true
+		case "scrapbot.ui_list":
+			return .UI_List, true
+		case "scrapbot.ui_progress":
+			return .UI_Progress, true
+		case "scrapbot.ui_text":
+			return .UI_Text, true
+		case "scrapbot.ui_button":
+			return .UI_Button, true
+		case "scrapbot.ui_input":
+			return .UI_Input, true
+		case "scrapbot.ui_checkbox":
+			return .UI_Checkbox, true
+	}
+	return {}, false
+}
+
+editor_authoring_definition_is_supported :: proc(definition: ^component.Definition) -> bool {
+	if definition == nil {
+		return false
+	}
+	if _, found := editor_authoring_component_from_name(definition.name); found {
+		return true
+	}
+	if definition.owner == .Engine {
+		return false
+	}
+	for field in definition.fields[:definition.field_count] {
+		if field.field_type != .Vec3 {
+			return false
+		}
+	}
+	return true
+}
+
+editor_authoring_set_registered_component :: proc(
+	state: ^State,
+	world: ^shared.World,
+	entity_index: int,
+	definition: ^component.Definition,
+	present: bool,
+) -> bool {
+	if definition == nil || !editor_authoring_definition_is_supported(definition) {
+		return false
+	}
+	if builtin, found := editor_authoring_component_from_name(definition.name); found {
+		return editor_authoring_set_component(state, world, entity_index, builtin, present)
+	}
+	if !editor_authoring_available(state, world) || !ecs.entity_is_alive(world, entity_index) {
+		return false
+	}
+	before := capture_snapshot_pointer(world, entity_index)
+	if before == nil || before.origin != .Scene {
+		destroy_snapshot_pointer(before)
+		return false
+	}
+	after := capture_snapshot_pointer(world, entity_index)
+	if after == nil {
+		destroy_snapshot_pointer(before)
+		return false
+	}
+	found_index := -1
+	for custom, index in after.entity.custom_components {
+		if custom.name == definition.name {
+			found_index = index
+			break
+		}
+	}
+	if (found_index >= 0) == present {
+		destroy_snapshot_pointer(before)
+		destroy_snapshot_pointer(after)
+		return false
+	}
+	if present {
+		value: shared.Custom_Component
+		value.component_id = definition.id
+		value.name = ecs.clone_snapshot_string(definition.name)
+		for field in definition.fields[:definition.field_count] {
+			append(
+				&value.vec3_fields,
+				shared.Named_Vec3{name = ecs.clone_snapshot_string(field.name)},
+			)
+		}
+		append(&after.entity.custom_components, value)
+	} else {
+		value := &after.entity.custom_components[found_index]
+		delete(value.name)
+		for field in value.vec3_fields {
+			delete(field.name)
+		}
+		delete(value.vec3_fields)
+		ordered_remove(&after.entity.custom_components, found_index)
+	}
+	if _, ok := ecs.apply_entity_snapshot(world, after); !ok {
+		destroy_snapshot_pointer(before)
+		destroy_snapshot_pointer(after)
+		return false
+	}
+	push_structural_change(state, before.entity.id, before, after)
+	editor_authoring_select(state, world, entity_index)
+	return true
 }
 
 editor_authoring_create_entity :: proc(
