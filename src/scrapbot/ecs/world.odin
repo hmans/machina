@@ -2,12 +2,15 @@ package ecs
 
 import resources "../resources"
 import shared "../shared"
+import runtime "base:runtime"
 import "core:strings"
 
 Scene :: shared.Scene
 World :: shared.World
 World_Entity :: shared.World_Entity
 Entity :: shared.Entity
+Entity_UUID :: shared.Entity_UUID
+Entity_Origin :: shared.Entity_Origin
 Render_Frame :: shared.Render_Frame
 Renderable :: shared.Renderable
 Render_Instance :: shared.Render_Instance
@@ -33,6 +36,9 @@ UI_Stack_Component :: shared.UI_Stack_Component
 UI_Scroll_Area_Component :: shared.UI_Scroll_Area_Component
 UI_Panel_Component :: shared.UI_Panel_Component
 UI_Table_Component :: shared.UI_Table_Component
+UI_List_Component :: shared.UI_List_Component
+UI_Progress_Component :: shared.UI_Progress_Component
+UI_State_Component :: shared.UI_State_Component
 UI_Text_Component :: shared.UI_Text_Component
 UI_Button_Component :: shared.UI_Button_Component
 UI_Input_Component :: shared.UI_Input_Component
@@ -40,6 +46,109 @@ UI_Checkbox_Component :: shared.UI_Checkbox_Component
 
 INVALID_COMPONENT_INDEX :: -1
 MAX_QUERY_TERMS :: 8
+
+init_world_entity :: proc(
+	world: ^World,
+	entity_index: int,
+	generation: u32,
+	uuid: Entity_UUID,
+	origin: Entity_Origin,
+	name: string,
+) -> World_Entity {
+	return {
+		id = {index = u32(entity_index), generation = generation},
+		uuid = uuid,
+		alive = true,
+		origin = origin,
+		name = clone_world_string(world, name),
+		component_revision = 1,
+		transform_index = INVALID_COMPONENT_INDEX,
+		camera_index = INVALID_COMPONENT_INDEX,
+		ambient_light_index = INVALID_COMPONENT_INDEX,
+		directional_light_index = INVALID_COMPONENT_INDEX,
+		point_light_index = INVALID_COMPONENT_INDEX,
+		mesh_index = INVALID_COMPONENT_INDEX,
+		geometry_index = INVALID_COMPONENT_INDEX,
+		material_index = INVALID_COMPONENT_INDEX,
+		render_instance_index = INVALID_COMPONENT_INDEX,
+		render_active_index = INVALID_COMPONENT_INDEX,
+		render_camera_active_index = INVALID_COMPONENT_INDEX,
+		render_ambient_light_active_index = INVALID_COMPONENT_INDEX,
+		render_directional_light_active_index = INVALID_COMPONENT_INDEX,
+		render_point_light_active_index = INVALID_COMPONENT_INDEX,
+		ui_layout_index = INVALID_COMPONENT_INDEX,
+		ui_hstack_index = INVALID_COMPONENT_INDEX,
+		ui_vstack_index = INVALID_COMPONENT_INDEX,
+		ui_scroll_area_index = INVALID_COMPONENT_INDEX,
+		ui_panel_index = INVALID_COMPONENT_INDEX,
+		ui_table_index = INVALID_COMPONENT_INDEX,
+		ui_list_index = INVALID_COMPONENT_INDEX,
+		ui_progress_index = INVALID_COMPONENT_INDEX,
+		ui_state_index = INVALID_COMPONENT_INDEX,
+		ui_text_index = INVALID_COMPONENT_INDEX,
+		ui_button_index = INVALID_COMPONENT_INDEX,
+		ui_input_index = INVALID_COMPONENT_INDEX,
+		ui_checkbox_index = INVALID_COMPONENT_INDEX,
+		editor_transform_gizmo_index = INVALID_COMPONENT_INDEX,
+		editor_ui_index = INVALID_COMPONENT_INDEX,
+	}
+}
+
+create_world_entity :: proc(
+	world: ^World,
+	name: string,
+	uuid: Entity_UUID = {},
+	origin: Entity_Origin = .Runtime,
+	reuse_dead_slot: bool = true,
+) -> (
+	entity_index: int,
+	ok: bool,
+) {
+	if world == nil {
+		return -1, false
+	}
+	if world.string_allocator.procedure == nil {
+		world.string_allocator = runtime.heap_allocator()
+	}
+	if world.entity_by_uuid == nil {
+		world.entity_by_uuid = make(map[Entity_UUID]int)
+	}
+	entity_uuid := uuid
+	if entity_uuid == (Entity_UUID{}) {
+		entity_uuid = shared.entity_uuid_generate()
+		for {
+			if _, found := world.entity_by_uuid[entity_uuid]; !found {
+				break
+			}
+			entity_uuid = shared.entity_uuid_generate()
+		}
+	} else if _, found := world.entity_by_uuid[entity_uuid]; found {
+		return -1, false
+	}
+
+	entity_index = len(world.entities)
+	generation := u32(1)
+	reusing_slot := false
+	if reuse_dead_slot {
+		for entity, index in world.entities {
+			if entity.alive {
+				continue
+			}
+			entity_index = index
+			generation = entity.id.generation
+			reusing_slot = true
+			break
+		}
+	}
+	entity := init_world_entity(world, entity_index, generation, entity_uuid, origin, name)
+	if reusing_slot {
+		world.entities[entity_index] = entity
+	} else {
+		append(&world.entities, entity)
+	}
+	world.entity_by_uuid[entity_uuid] = entity_index
+	return entity_index, true
+}
 
 Query_View :: struct {
 	storage: ^Custom_Component_Storage,
@@ -74,6 +183,9 @@ World_Storage_Stats :: struct {
 	ui_scroll_area_slots: int,
 	ui_panel_slots: int,
 	ui_table_slots: int,
+	ui_list_slots: int,
+	ui_progress_slots: int,
+	ui_state_slots: int,
 	ui_text_slots: int,
 	ui_button_slots: int,
 	ui_input_slots: int,
@@ -88,23 +200,27 @@ World_Storage_Stats :: struct {
 
 destroy_world :: proc(world: ^World) {
 	for entity in world.entities {
-		delete(entity.name)
-		delete(entity.geometry_resource)
-		delete(entity.material_resource)
+		delete_world_string(world, entity.name)
+		delete_world_string(world, entity.geometry_resource)
+		delete_world_string(world, entity.material_resource)
 	}
 	for mesh in world.meshes {
-		delete(mesh.primitive)
+		delete_world_string(world, mesh.primitive)
 	}
-	for panel in world.ui_panels { delete(panel.title); delete(panel.font) }
-	for text in world.ui_texts { delete(text.text); delete(text.font) }
-	for button in world.ui_buttons { delete(button.text); delete(button.font) }
-	for input in world.ui_inputs { delete(input.text); delete(input.font) }
+	for panel in world.ui_panels { delete_world_string(world, panel.title); delete_world_string(world, panel.font) }
+	for text in world.ui_texts { delete_world_string(world, text.text); delete_world_string(world, text.font) }
+	for button in world.ui_buttons { delete_world_string(world, button.text); delete_world_string(world, button.font) }
+	for input in world.ui_inputs {
+		delete_world_string(world, input.text)
+		delete_world_string(world, input.font)
+		delete_world_string(world, input.prefix)
+	}
 	for &storage in world.custom_components {
-		delete(storage.name)
+		delete_world_string(world, storage.name)
 		for &component in storage.components {
-			delete(component.name)
+			delete_world_string(world, component.name)
 			for field in component.vec3_fields {
-				delete(field.name)
+				delete_world_string(world, field.name)
 			}
 			delete(component.vec3_fields)
 		}
@@ -139,10 +255,26 @@ destroy_world :: proc(world: ^World) {
 	delete(world.ui_scroll_areas)
 	delete(world.ui_panels)
 	delete(world.ui_tables)
+	delete(world.ui_lists)
+	delete(world.ui_progresses)
+	delete(world.ui_states)
 	delete(world.ui_texts)
 	delete(world.ui_buttons)
 	delete(world.ui_inputs)
 	delete(world.ui_checkboxes)
+	delete(world.free_ui_layout_indices)
+	delete(world.free_ui_hstack_indices)
+	delete(world.free_ui_vstack_indices)
+	delete(world.free_ui_scroll_area_indices)
+	delete(world.free_ui_panel_indices)
+	delete(world.free_ui_table_indices)
+	delete(world.free_ui_list_indices)
+	delete(world.free_ui_progress_indices)
+	delete(world.free_ui_state_indices)
+	delete(world.free_ui_text_indices)
+	delete(world.free_ui_button_indices)
+	delete(world.free_ui_input_indices)
+	delete(world.free_ui_checkbox_indices)
 	delete(world.editor_transform_gizmos)
 	delete(world.editor_scene_cameras)
 	delete(world.editor_uis)
@@ -153,6 +285,7 @@ destroy_world :: proc(world: ^World) {
 
 build_world :: proc(scene: ^Scene) -> World {
 	world: World
+	world.string_allocator = runtime.heap_allocator()
 	world.instance_uuid = shared.entity_uuid_generate()
 	world.entity_by_uuid = make(map[shared.Entity_UUID]int)
 	for entity in scene.entities {
@@ -160,44 +293,18 @@ build_world :: proc(scene: ^Scene) -> World {
 			index = u32(len(world.entities)),
 			generation = 1,
 		}
-		world_entity := World_Entity {
-			id = id,
-			uuid = entity.id,
-			alive = true,
-			origin = .Scene,
-			name = clone_world_string(entity.name),
-			component_revision = 1,
-			transform_index = INVALID_COMPONENT_INDEX,
-			camera_index = INVALID_COMPONENT_INDEX,
-			ambient_light_index = INVALID_COMPONENT_INDEX,
-			directional_light_index = INVALID_COMPONENT_INDEX,
-			point_light_index = INVALID_COMPONENT_INDEX,
-			mesh_index = INVALID_COMPONENT_INDEX,
-			geometry_index = INVALID_COMPONENT_INDEX,
-			material_index = INVALID_COMPONENT_INDEX,
-			render_instance_index = INVALID_COMPONENT_INDEX,
-			render_active_index = INVALID_COMPONENT_INDEX,
-			render_camera_active_index = INVALID_COMPONENT_INDEX,
-			render_ambient_light_active_index = INVALID_COMPONENT_INDEX,
-			render_directional_light_active_index = INVALID_COMPONENT_INDEX,
-			render_point_light_active_index = INVALID_COMPONENT_INDEX,
-			ui_layout_index = INVALID_COMPONENT_INDEX,
-			ui_hstack_index = INVALID_COMPONENT_INDEX,
-			ui_vstack_index = INVALID_COMPONENT_INDEX,
-			ui_scroll_area_index = INVALID_COMPONENT_INDEX,
-			ui_panel_index = INVALID_COMPONENT_INDEX,
-			ui_table_index = INVALID_COMPONENT_INDEX,
-			ui_text_index = INVALID_COMPONENT_INDEX,
-			ui_button_index = INVALID_COMPONENT_INDEX,
-			ui_input_index = INVALID_COMPONENT_INDEX,
-			ui_checkbox_index = INVALID_COMPONENT_INDEX,
-			editor_transform_gizmo_index = INVALID_COMPONENT_INDEX,
-			editor_ui_index = INVALID_COMPONENT_INDEX,
-			geometry_resource = clone_world_string(entity.geometry_resource),
-			material_resource = clone_world_string(entity.material_resource),
-			has_shadow_caster = entity.has_shadow_caster,
-			has_shadow_receiver = entity.has_shadow_receiver,
-		}
+		world_entity := init_world_entity(
+			&world,
+			int(id.index),
+			id.generation,
+			entity.id,
+			.Scene,
+			entity.name,
+		)
+		world_entity.geometry_resource = clone_world_string(&world, entity.geometry_resource)
+		world_entity.material_resource = clone_world_string(&world, entity.material_resource)
+		world_entity.has_shadow_caster = entity.has_shadow_caster
+		world_entity.has_shadow_receiver = entity.has_shadow_receiver
 
 		if entity.has_transform {
 			world_entity.transform_index = len(world.transforms)
@@ -217,16 +324,31 @@ build_world :: proc(scene: ^Scene) -> World {
 		if entity.has_ui_hstack { world_entity.ui_hstack_index = len(world.ui_hstacks); append(&world.ui_hstacks, entity.ui_hstack) }
 		if entity.has_ui_vstack { world_entity.ui_vstack_index = len(world.ui_vstacks); append(&world.ui_vstacks, entity.ui_vstack) }
 		if entity.has_ui_scroll_area { world_entity.ui_scroll_area_index = len(world.ui_scroll_areas); append(&world.ui_scroll_areas, entity.ui_scroll_area) }
-		if entity.has_ui_panel { world_entity.ui_panel_index = len(world.ui_panels); panel := entity.ui_panel; panel.title = clone_world_string(panel.title); panel.font = clone_world_string(panel.font); append(&world.ui_panels, panel) }
+		if entity.has_ui_panel { world_entity.ui_panel_index = len(world.ui_panels); panel := entity.ui_panel; panel.title = clone_world_string(&world, panel.title); panel.font = clone_world_string(&world, panel.font); append(&world.ui_panels, panel) }
 		if entity.has_ui_table { world_entity.ui_table_index = len(world.ui_tables); append(&world.ui_tables, entity.ui_table) }
-		if entity.has_ui_text { world_entity.ui_text_index = len(world.ui_texts); text := entity.ui_text; text.text = clone_world_string(text.text); text.font = clone_world_string(text.font); append(&world.ui_texts, text) }
-		if entity.has_ui_button { world_entity.ui_button_index = len(world.ui_buttons); button := entity.ui_button; button.text = clone_world_string(button.text); button.font = clone_world_string(button.font); append(&world.ui_buttons, button) }
-		if entity.has_ui_input { world_entity.ui_input_index = len(world.ui_inputs); input := entity.ui_input; input.text = clone_world_string(input.text); input.font = clone_world_string(input.font); append(&world.ui_inputs, input) }
+		if entity.has_ui_list {
+			world_entity.ui_list_index = len(world.ui_lists)
+			append(&world.ui_lists, entity.ui_list)
+		}
+		if entity.has_ui_progress {
+			world_entity.ui_progress_index = len(world.ui_progresses)
+			append(&world.ui_progresses, entity.ui_progress)
+		}
+		if entity.has_ui_text { world_entity.ui_text_index = len(world.ui_texts); text := entity.ui_text; text.text = clone_world_string(&world, text.text); text.font = clone_world_string(&world, text.font); append(&world.ui_texts, text) }
+		if entity.has_ui_button { world_entity.ui_button_index = len(world.ui_buttons); button := entity.ui_button; button.text = clone_world_string(&world, button.text); button.font = clone_world_string(&world, button.font); append(&world.ui_buttons, button) }
+		if entity.has_ui_input {
+			world_entity.ui_input_index = len(world.ui_inputs)
+			input := entity.ui_input
+			input.text = clone_world_string(&world, input.text)
+			input.font = clone_world_string(&world, input.font)
+			input.prefix = clone_world_string(&world, input.prefix)
+			append(&world.ui_inputs, input)
+		}
 		if entity.has_ui_checkbox { world_entity.ui_checkbox_index = len(world.ui_checkboxes); append(&world.ui_checkboxes, entity.ui_checkbox) }
 		if entity.has_mesh {
 			world_entity.mesh_index = len(world.meshes)
 			mesh := entity.mesh
-			mesh.primitive = clone_world_string(entity.mesh.primitive)
+			mesh.primitive = clone_world_string(&world, entity.mesh.primitive)
 			append(&world.meshes, mesh)
 		}
 		for component in entity.custom_components {
@@ -383,7 +505,7 @@ release_transform_slot :: proc(world: ^World, index: int) {
 
 allocate_mesh_slot :: proc(world: ^World, primitive: string) -> int {
 	mesh := Mesh_Component {
-		primitive = clone_world_string(primitive),
+		primitive = clone_world_string(world, primitive),
 	}
 	if index, found := take_free_slot(&world.free_mesh_indices); found {
 		world.meshes[index] = mesh
@@ -396,7 +518,7 @@ allocate_mesh_slot :: proc(world: ^World, primitive: string) -> int {
 
 release_mesh_slot :: proc(world: ^World, index: int) {
 	if index < 0 || index >= len(world.meshes) { return }
-	delete(world.meshes[index].primitive)
+	delete_world_string(world, world.meshes[index].primitive)
 	world.meshes[index] = {}
 	append(&world.free_mesh_indices, index)
 }
@@ -629,7 +751,7 @@ ensure_entity_renderable :: proc(world: ^World, entity_index: int) {
 add_geometry :: proc(world: ^World, entity_index: int, handle: shared.Geometry_Handle) {
 	if !entity_is_alive(world, entity_index) { return }
 	entity := &world.entities[entity_index]
-	delete(entity.geometry_resource); entity.geometry_resource = ""
+	delete_world_string(world, entity.geometry_resource); entity.geometry_resource = ""
 	if entity.geometry_index >= 0 && entity.geometry_index < len(world.geometries) {
 		world.geometries[entity.geometry_index].handle = handle
 		mark_render_entity_dirty(world, entity_index)
@@ -643,7 +765,7 @@ add_geometry :: proc(world: ^World, entity_index: int, handle: shared.Geometry_H
 add_material :: proc(world: ^World, entity_index: int, handle: shared.Material_Handle) {
 	if !entity_is_alive(world, entity_index) { return }
 	entity := &world.entities[entity_index]
-	delete(entity.material_resource); entity.material_resource = ""
+	delete_world_string(world, entity.material_resource); entity.material_resource = ""
 	if entity.material_index >= 0 && entity.material_index < len(world.materials) {
 		world.materials[entity.material_index].handle = handle
 		mark_render_entity_dirty(world, entity_index)
@@ -832,15 +954,30 @@ render_batch_count :: proc(list: ^Render_List) -> int {
 	return count
 }
 
-clone_world_string :: proc(value: string) -> string {
+clone_world_string :: proc(world: ^World, value: string) -> string {
 	if value == "" {
 		return ""
 	}
-	cloned, err := strings.clone(value)
+	allocator := context.allocator
+	if world != nil && world.string_allocator.procedure != nil {
+		allocator = world.string_allocator
+	}
+	cloned, err := strings.clone(value, allocator)
 	if err != nil {
 		return ""
 	}
 	return cloned
+}
+
+delete_world_string :: proc(world: ^World, value: string) {
+	if value == "" {
+		return
+	}
+	allocator := context.allocator
+	if world != nil && world.string_allocator.procedure != nil {
+		allocator = world.string_allocator
+	}
+	delete(value, allocator)
 }
 
 render_frame_from_world :: proc(world: ^World) -> Render_Frame {
@@ -899,6 +1036,9 @@ world_storage_stats :: proc "c" (world: ^World) -> World_Storage_Stats {
 		ui_scroll_area_slots = len(world.ui_scroll_areas),
 		ui_panel_slots = len(world.ui_panels),
 		ui_table_slots = len(world.ui_tables),
+		ui_list_slots = len(world.ui_lists),
+		ui_progress_slots = len(world.ui_progresses),
+		ui_state_slots = len(world.ui_states),
 		ui_text_slots = len(world.ui_texts),
 		ui_button_slots = len(world.ui_buttons),
 		ui_input_slots = len(world.ui_inputs),
@@ -927,6 +1067,9 @@ world_storage_stats :: proc "c" (world: ^World) -> World_Storage_Stats {
 		stats.ui_scroll_area_slots +
 		stats.ui_panel_slots +
 		stats.ui_table_slots +
+		stats.ui_list_slots +
+		stats.ui_progress_slots +
+		stats.ui_state_slots +
 		stats.ui_text_slots +
 		stats.ui_button_slots +
 		stats.ui_input_slots +
@@ -958,6 +1101,9 @@ world_storage_stats_max :: proc "c" (a, b: World_Storage_Stats) -> World_Storage
 		ui_scroll_area_slots = max(a.ui_scroll_area_slots, b.ui_scroll_area_slots),
 		ui_panel_slots = max(a.ui_panel_slots, b.ui_panel_slots),
 		ui_table_slots = max(a.ui_table_slots, b.ui_table_slots),
+		ui_list_slots = max(a.ui_list_slots, b.ui_list_slots),
+		ui_progress_slots = max(a.ui_progress_slots, b.ui_progress_slots),
+		ui_state_slots = max(a.ui_state_slots, b.ui_state_slots),
 		ui_text_slots = max(a.ui_text_slots, b.ui_text_slots),
 		ui_button_slots = max(a.ui_button_slots, b.ui_button_slots),
 		ui_input_slots = max(a.ui_input_slots, b.ui_input_slots),
@@ -1176,8 +1322,8 @@ add_mesh :: proc(world: ^World, entity_index: int, primitive: string) {
 
 	entity := &world.entities[entity_index]
 	if entity.mesh_index >= 0 && entity.mesh_index < len(world.meshes) {
-		delete(world.meshes[entity.mesh_index].primitive)
-		world.meshes[entity.mesh_index].primitive = clone_world_string(primitive)
+		delete_world_string(world, world.meshes[entity.mesh_index].primitive)
+		world.meshes[entity.mesh_index].primitive = clone_world_string(world, primitive)
 	} else {
 		entity.mesh_index = allocate_mesh_slot(world, primitive)
 		bump_component_revision(world, entity_index)
@@ -1215,14 +1361,14 @@ add_custom_component :: proc(
 	world_component := Custom_Component {
 		entity_index = entity_index,
 		component_id = component_id,
-		name = clone_world_string(name),
+		name = clone_world_string(world, name),
 	}
 	for i in 0 ..< command_component.vec3_field_count {
 		command_field := &command_component.vec3_fields[i]
 		append(
 			&world_component.vec3_fields,
 			Named_Vec3 {
-				name = clone_world_string(command_field_name(command_field)),
+				name = clone_world_string(world, command_field_name(command_field)),
 				value = command_field.value,
 			},
 		)
@@ -1255,12 +1401,12 @@ remove_custom_component :: proc(
 		if world_component.entity_index != entity_index {
 			continue
 		}
-		delete(world_component.name)
+		delete_world_string(world, world_component.name)
 		world_component.name = ""
 		world_component.entity_index = INVALID_COMPONENT_INDEX
 		world_component.component_id = shared.INVALID_COMPONENT_ID
 		for field in world_component.vec3_fields {
-			delete(field.name)
+			delete_world_string(world, field.name)
 		}
 		delete(world_component.vec3_fields)
 		world_component.vec3_fields = nil
@@ -1282,11 +1428,11 @@ add_scene_custom_component :: proc(
 	world_component := Custom_Component {
 		entity_index = entity_index,
 		component_id = shared.INVALID_COMPONENT_ID,
-		name = clone_world_string(scene_component.name),
+		name = clone_world_string(world, scene_component.name),
 	}
 	for field in scene_component.vec3_fields {
 		world_field := field
-		world_field.name = clone_world_string(field.name)
+		world_field.name = clone_world_string(world, field.name)
 		append(&world_component.vec3_fields, world_field)
 	}
 	append(&storage.components, world_component)
@@ -1311,7 +1457,10 @@ ensure_custom_component_storage :: proc(
 
 	append(
 		&world.custom_components,
-		Custom_Component_Storage{component_id = component_id, name = clone_world_string(name)},
+		Custom_Component_Storage {
+			component_id = component_id,
+			name = clone_world_string(world, name),
+		},
 	)
 	return &world.custom_components[len(world.custom_components) - 1]
 }
@@ -1498,6 +1647,15 @@ entity_has_component :: proc "c" (
 			return entity.ui_panel_index >= 0 && entity.ui_panel_index < len(world.ui_panels)
 		case "scrapbot.ui_table":
 			return entity.ui_table_index >= 0 && entity.ui_table_index < len(world.ui_tables)
+		case "scrapbot.ui_list":
+			return entity.ui_list_index >= 0 && entity.ui_list_index < len(world.ui_lists)
+		case "scrapbot.ui_progress":
+			return(
+				entity.ui_progress_index >= 0 &&
+				entity.ui_progress_index < len(world.ui_progresses) \
+			)
+		case "scrapbot.ui_state":
+			return entity.ui_state_index >= 0 && entity.ui_state_index < len(world.ui_states)
 		case "scrapbot.ui_text":
 			return entity.ui_text_index >= 0 && entity.ui_text_index < len(world.ui_texts)
 		case "scrapbot.ui_button":

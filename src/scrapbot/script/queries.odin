@@ -367,19 +367,47 @@ push_query_component_table :: proc "c" (
 				   len(
 					   world.point_lights,
 				   ) { light := world.point_lights[entity.point_light_index]; lua_createtable(L, 0, 3); push_vec3_table(L, light.color); lua_setfield(L, -2, "color"); lua_pushnumber(L, f64(light.intensity)); lua_setfield(L, -2, "intensity"); lua_pushnumber(L, f64(light.range)); lua_setfield(L, -2, "range"); return }
-		case "scrapbot.shadow_caster",
-		     "scrapbot.shadow_receiver",
-		     "scrapbot.ui_layout",
-		     "scrapbot.ui_hstack",
-		     "scrapbot.ui_vstack",
-		     "scrapbot.ui_scroll_area",
-		     "scrapbot.ui_panel",
-		     "scrapbot.ui_table",
-		     "scrapbot.ui_text",
-		     "scrapbot.ui_button",
-		     "scrapbot.ui_input",
-		     "scrapbot.ui_checkbox":
+		case "scrapbot.shadow_caster", "scrapbot.shadow_receiver":
 			lua_createtable(L, 0, 0)
+			return
+		case "scrapbot.ui_layout":
+			push_ui_layout_table(L, world.ui_layouts[entity.ui_layout_index])
+			return
+		case "scrapbot.ui_hstack":
+			push_ui_stack_table(L, world.ui_hstacks[entity.ui_hstack_index])
+			return
+		case "scrapbot.ui_vstack":
+			push_ui_stack_table(L, world.ui_vstacks[entity.ui_vstack_index])
+			return
+		case "scrapbot.ui_scroll_area":
+			push_ui_scroll_area_table(L, world.ui_scroll_areas[entity.ui_scroll_area_index])
+			return
+		case "scrapbot.ui_panel":
+			push_ui_panel_table(L, world.ui_panels[entity.ui_panel_index])
+			return
+		case "scrapbot.ui_table":
+			push_ui_table_table(L, world.ui_tables[entity.ui_table_index])
+			return
+		case "scrapbot.ui_list":
+			push_ui_list_table(L, world.ui_lists[entity.ui_list_index])
+			return
+		case "scrapbot.ui_progress":
+			push_ui_progress_table(L, world.ui_progresses[entity.ui_progress_index])
+			return
+		case "scrapbot.ui_state":
+			push_ui_state_table(L, world.ui_states[entity.ui_state_index])
+			return
+		case "scrapbot.ui_text":
+			push_ui_text_table(L, world.ui_texts[entity.ui_text_index])
+			return
+		case "scrapbot.ui_button":
+			push_ui_button_table(L, world.ui_buttons[entity.ui_button_index])
+			return
+		case "scrapbot.ui_input":
+			push_ui_input_table(L, world.ui_inputs[entity.ui_input_index])
+			return
+		case "scrapbot.ui_checkbox":
+			push_ui_checkbox_table(L, world.ui_checkboxes[entity.ui_checkbox_index])
 			return
 		case "scrapbot.mesh":
 			lua_createtable(L, 0, 0)
@@ -416,6 +444,241 @@ push_vec3_table :: proc "c" (L: Lua_State, value: Vec3) {
 	lua_setfield(L, -2, "y")
 	lua_pushnumber(L, f64(value.z))
 	lua_setfield(L, -2, "z")
+}
+
+push_vec2_table :: proc "c" (L: Lua_State, value: shared.Vec2) {
+	lua_createtable(L, 0, 2)
+	push_number_field(L, "x", value.x)
+	push_number_field(L, "y", value.y)
+}
+
+push_vec4_table :: proc "c" (L: Lua_State, value: shared.Vec4) {
+	lua_createtable(L, 0, 4)
+	push_number_field(L, "x", value.x)
+	push_number_field(L, "y", value.y)
+	push_number_field(L, "z", value.z)
+	push_number_field(L, "w", value.w)
+}
+
+push_number_field :: proc "c" (L: Lua_State, name: cstring, value: f32) {
+	lua_pushnumber(L, f64(value))
+	lua_setfield(L, -2, name)
+}
+
+push_bool_field :: proc "c" (L: Lua_State, name: cstring, value: bool) {
+	encoded: c.int
+	if value {
+		encoded = 1
+	}
+	lua_pushboolean(L, encoded)
+	lua_setfield(L, -2, name)
+}
+
+push_string_field :: proc "c" (L: Lua_State, name: cstring, value: string) {
+	lua_pushlstring(L, cstring(raw_data(value)), c.size_t(len(value)))
+	lua_setfield(L, -2, name)
+}
+
+push_vec2_field :: proc "c" (L: Lua_State, name: cstring, value: shared.Vec2) {
+	push_vec2_table(L, value)
+	lua_setfield(L, -2, name)
+}
+
+push_vec4_field :: proc "c" (L: Lua_State, name: cstring, value: shared.Vec4) {
+	push_vec4_table(L, value)
+	lua_setfield(L, -2, name)
+}
+
+push_uuid_field :: proc "c" (L: Lua_State, name: cstring, value: shared.Entity_UUID) {
+	if value == (shared.Entity_UUID{}) {
+		push_string_field(L, name, "")
+		return
+	}
+	buffer: [36]u8
+	push_string_field(L, name, shared.entity_uuid_to_string(value, buffer[:]))
+}
+
+push_ui_layout_table :: proc "c" (L: Lua_State, value: shared.UI_Layout_Component) {
+	lua_createtable(L, 0, 16)
+	push_uuid_field(L, "parent", value.parent)
+	push_vec2_field(L, "position", value.position)
+	push_vec2_field(L, "size", value.size)
+	push_vec2_field(L, "min_size", value.min_size)
+	push_vec4_field(L, "margin", value.margin)
+	push_vec4_field(L, "padding", value.padding)
+	push_vec4_field(L, "background", value.background)
+	push_vec4_field(L, "border_color", value.border_color)
+	push_number_field(L, "border_width", value.border_width)
+	push_number_field(L, "corner_radius", value.corner_radius)
+	push_bool_field(L, "hidden", value.hidden)
+	push_bool_field(L, "fill_width", value.fill_width)
+	push_bool_field(L, "fill_height", value.fill_height)
+	push_bool_field(L, "fit_content_width", value.fit_content_width)
+	push_bool_field(L, "fit_content_height", value.fit_content_height)
+	push_bool_field(L, "fixed_in_fill", value.fixed_in_fill)
+}
+
+push_ui_stack_table :: proc "c" (L: Lua_State, value: shared.UI_Stack_Component) {
+	lua_createtable(L, 0, 4)
+	push_number_field(L, "gap", value.gap)
+	push_bool_field(L, "fill", value.fill)
+	push_bool_field(L, "draggable", value.draggable)
+	push_number_field(L, "min_size", value.min_size)
+}
+
+push_ui_scroll_area_table :: proc "c" (L: Lua_State, value: shared.UI_Scroll_Area_Component) {
+	lua_createtable(L, 0, 9)
+	push_number_field(L, "scroll_speed", value.scroll_speed)
+	push_number_field(L, "smoothness", value.smoothness)
+	push_number_field(L, "scrollbar_width", value.scrollbar_width)
+	push_number_field(L, "scrollbar_right", value.scrollbar_right)
+	push_number_field(L, "scrollbar_vertical_inset", value.scrollbar_vertical_inset)
+	push_number_field(L, "minimum_thumb_size", value.minimum_thumb_size)
+	push_number_field(L, "scrollbar_corner_radius", value.scrollbar_corner_radius)
+	push_vec4_field(L, "scrollbar_track_color", value.scrollbar_track_color)
+	push_vec4_field(L, "scrollbar_thumb_color", value.scrollbar_thumb_color)
+}
+
+push_ui_panel_table :: proc "c" (L: Lua_State, value: shared.UI_Panel_Component) {
+	lua_createtable(L, 0, 12)
+	push_string_field(L, "title", value.title)
+	push_string_field(L, "font", value.font)
+	push_vec4_field(L, "title_color", value.title_color)
+	push_vec4_field(L, "title_background", value.title_background)
+	push_number_field(L, "title_size", value.title_size)
+	push_number_field(L, "title_height", value.title_height)
+	push_number_field(L, "disclosure_size", value.disclosure_size)
+	push_number_field(L, "disclosure_margin", value.disclosure_margin)
+	push_number_field(L, "disclosure_gap", value.disclosure_gap)
+	push_number_field(L, "disclosure_corner_radius", value.disclosure_corner_radius)
+	push_bool_field(L, "collapsible", value.collapsible)
+	push_bool_field(L, "collapsed", value.collapsed)
+}
+
+push_ui_table_table :: proc "c" (L: Lua_State, value: shared.UI_Table_Component) {
+	lua_createtable(L, 0, 3)
+	lua_pushinteger(L, c.ptrdiff_t(value.columns))
+	lua_setfield(L, -2, "columns")
+	push_number_field(L, "column_gap", value.column_gap)
+	push_number_field(L, "row_gap", value.row_gap)
+}
+
+push_ui_list_table :: proc "c" (L: Lua_State, value: shared.UI_List_Component) {
+	lua_createtable(L, 0, 5)
+	push_uuid_field(L, "selected", value.selected)
+	push_number_field(L, "gap", value.gap)
+	push_vec4_field(L, "selection_background", value.selection_background)
+	push_vec4_field(L, "hover_background", value.hover_background)
+	push_vec4_field(L, "active_background", value.active_background)
+}
+
+push_ui_progress_table :: proc "c" (L: Lua_State, value: shared.UI_Progress_Component) {
+	lua_createtable(L, 0, 7)
+	push_number_field(L, "value", value.value)
+	push_number_field(L, "maximum", value.maximum)
+	push_vec4_field(L, "fill_color", value.fill_color)
+	push_vec4_field(L, "background_color", value.background_color)
+	push_vec4_field(L, "inset", value.inset)
+	push_number_field(L, "corner_radius", value.corner_radius)
+	push_bool_field(L, "right_to_left", value.right_to_left)
+}
+
+push_ui_state_table :: proc "c" (L: Lua_State, value: shared.UI_State_Component) {
+	lua_createtable(L, 0, 13)
+	push_bool_field(L, "hovered", value.hovered)
+	push_bool_field(L, "active", value.active)
+	push_bool_field(L, "focused", value.focused)
+	push_bool_field(L, "activated", value.activated)
+	push_bool_field(L, "changed", value.changed)
+	push_bool_field(L, "valid", value.valid)
+	push_bool_field(L, "submitted", value.submitted)
+	push_bool_field(L, "cancelled", value.cancelled)
+	lua_pushnumber(L, f64(value.activation_revision))
+	lua_setfield(L, -2, "activation_revision")
+	lua_pushnumber(L, f64(value.change_revision))
+	lua_setfield(L, -2, "change_revision")
+	lua_pushnumber(L, f64(value.submit_revision))
+	lua_setfield(L, -2, "submit_revision")
+	lua_pushnumber(L, f64(value.cancel_revision))
+	lua_setfield(L, -2, "cancel_revision")
+}
+
+push_ui_text_table :: proc "c" (L: Lua_State, value: shared.UI_Text_Component) {
+	lua_createtable(L, 0, 5)
+	push_string_field(L, "text", value.text)
+	push_string_field(L, "font", value.font)
+	push_vec4_field(L, "color", value.color)
+	push_number_field(L, "size", value.size)
+	alignment := "left"
+	if value.alignment == .Center {
+		alignment = "center"
+	} else if value.alignment == .Right {
+		alignment = "right"
+	}
+	push_string_field(L, "alignment", alignment)
+}
+
+push_ui_button_table :: proc "c" (L: Lua_State, value: shared.UI_Button_Component) {
+	lua_createtable(L, 0, 9)
+	push_string_field(L, "text", value.text)
+	push_string_field(L, "font", value.font)
+	push_vec4_field(L, "color", value.color)
+	push_number_field(L, "size", value.size)
+	push_string_field(L, "alignment", ui_text_alignment_name(value.alignment))
+	push_vec4_field(L, "hover_background", value.hover_background)
+	push_vec4_field(L, "active_background", value.active_background)
+	push_vec4_field(L, "hover_color", value.hover_color)
+	push_vec4_field(L, "active_color", value.active_color)
+}
+
+push_ui_input_table :: proc "c" (L: Lua_State, value: shared.UI_Input_Component) {
+	lua_createtable(L, 0, 29)
+	push_string_field(L, "text", value.text)
+	push_string_field(L, "font", value.font)
+	push_string_field(L, "prefix", value.prefix)
+	push_vec4_field(L, "color", value.color)
+	push_vec4_field(L, "prefix_color", value.prefix_color)
+	push_vec4_field(L, "prefix_background", value.prefix_background)
+	push_number_field(L, "size", value.size)
+	push_number_field(L, "prefix_width", value.prefix_width)
+	push_vec4_field(L, "selection_background", value.selection_background)
+	push_vec4_field(L, "focus_border_color", value.focus_border_color)
+	push_vec4_field(L, "invalid_border_color", value.invalid_border_color)
+	push_vec4_field(L, "caret_color", value.caret_color)
+	push_number_field(L, "number", value.number)
+	push_number_field(L, "step", value.step)
+	push_number_field(L, "minimum", value.minimum)
+	push_number_field(L, "maximum", value.maximum)
+	push_number_field(L, "prefix_gap", value.prefix_gap)
+	push_number_field(L, "prefix_corner_radius", value.prefix_corner_radius)
+	push_number_field(L, "prefix_text_padding", value.prefix_text_padding)
+	push_number_field(L, "selection_corner_radius", value.selection_corner_radius)
+	push_number_field(L, "focus_border_width", value.focus_border_width)
+	push_number_field(L, "invalid_border_width", value.invalid_border_width)
+	push_number_field(L, "caret_width", value.caret_width)
+	push_number_field(L, "caret_inset", value.caret_inset)
+	push_bool_field(L, "read_only", value.read_only)
+	push_bool_field(L, "numeric", value.numeric)
+	push_bool_field(L, "has_minimum", value.has_minimum)
+	push_bool_field(L, "has_maximum", value.has_maximum)
+	push_bool_field(L, "scrubbable", value.scrubbable)
+}
+
+push_ui_checkbox_table :: proc "c" (L: Lua_State, value: shared.UI_Checkbox_Component) {
+	lua_createtable(L, 0, 13)
+	push_bool_field(L, "checked", value.checked)
+	push_number_field(L, "box_size", value.box_size)
+	push_vec4_field(L, "background", value.background)
+	push_vec4_field(L, "checked_background", value.checked_background)
+	push_vec4_field(L, "border_color", value.border_color)
+	push_vec4_field(L, "check_color", value.check_color)
+	push_vec4_field(L, "hover_background", value.hover_background)
+	push_vec4_field(L, "active_background", value.active_background)
+	push_number_field(L, "corner_radius", value.corner_radius)
+	push_number_field(L, "border_width", value.border_width)
+	push_number_field(L, "check_inset", value.check_inset)
+	push_number_field(L, "check_corner_radius", value.check_corner_radius)
+	push_bool_field(L, "read_only", value.read_only)
 }
 
 require_system_access :: proc "c" (

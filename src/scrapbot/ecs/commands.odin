@@ -1,11 +1,15 @@
 package ecs
 
 import shared "../shared"
+import base_runtime "base:runtime"
 
 MAX_COMMANDS :: 128
 MAX_COMMAND_NAME_BYTES :: 64
 MAX_COMMAND_COMPONENTS :: 8
 MAX_COMMAND_FIELDS :: 16
+MAX_UI_COMMAND_TEXT_BYTES :: 1024
+MAX_UI_COMMAND_FONT_BYTES :: 256
+MAX_UI_COMMAND_PREFIX_BYTES :: 64
 
 Command_Kind :: enum {
 	Spawn,
@@ -28,12 +32,50 @@ Command_Vec3_Field :: struct {
 	value: Vec3,
 }
 
+UI_Component_Command_Kind :: enum {
+	None,
+	Layout,
+	HStack,
+	VStack,
+	Scroll_Area,
+	Panel,
+	Table,
+	List,
+	Progress,
+	Text,
+	Button,
+	Input,
+	Checkbox,
+}
+
+UI_Component_Command :: struct {
+	kind: UI_Component_Command_Kind,
+	layout: UI_Layout_Component,
+	stack: UI_Stack_Component,
+	scroll_area: UI_Scroll_Area_Component,
+	panel: UI_Panel_Component,
+	table: UI_Table_Component,
+	list: UI_List_Component,
+	progress: UI_Progress_Component,
+	text: UI_Text_Component,
+	button: UI_Button_Component,
+	input: UI_Input_Component,
+	checkbox: UI_Checkbox_Component,
+	text_bytes: [MAX_UI_COMMAND_TEXT_BYTES]u8,
+	text_len: int,
+	font_bytes: [MAX_UI_COMMAND_FONT_BYTES]u8,
+	font_len: int,
+	prefix_bytes: [MAX_UI_COMMAND_PREFIX_BYTES]u8,
+	prefix_len: int,
+}
+
 Command_Mesh :: struct {
 	primitive: [MAX_COMMAND_NAME_BYTES]u8,
 	primitive_len: int,
 }
 
 Spawn_Command :: struct {
+	uuid: shared.Entity_UUID,
 	name: [MAX_COMMAND_NAME_BYTES]u8,
 	name_len: int,
 	has_transform: bool,
@@ -48,6 +90,8 @@ Spawn_Command :: struct {
 	has_shadow_receiver: bool,
 	custom_components: [MAX_COMMAND_COMPONENTS]Command_Component,
 	custom_component_count: int,
+	ui_components: [MAX_COMMAND_COMPONENTS]UI_Component_Command,
+	ui_component_count: int,
 }
 
 Add_Component_Command :: struct {
@@ -64,6 +108,7 @@ Add_Component_Command :: struct {
 	has_shadow_caster: bool,
 	has_shadow_receiver: bool,
 	component: Command_Component,
+	ui_component: UI_Component_Command,
 }
 
 Remove_Component_Command :: struct {
@@ -107,10 +152,12 @@ queue_spawn :: proc "c" (buffer: ^Command_Buffer, name: string) -> string {
 }
 
 init_spawn_command :: proc "c" (spawn: ^Spawn_Command, name: string) -> string {
+	context = base_runtime.default_context()
 	if spawn == nil {
 		return "spawn command is not available"
 	}
 	spawn^ = {}
+	spawn.uuid = shared.entity_uuid_generate()
 	if err := copy_command_string(spawn.name[:], &spawn.name_len, name, "spawn name"); err != "" {
 		return err
 	}
@@ -177,6 +224,124 @@ spawn_add_custom_component :: proc "c" (
 	}
 	spawn.custom_components[spawn.custom_component_count] = command_component
 	spawn.custom_component_count += 1
+	return ""
+}
+
+init_ui_component_command :: proc "contextless" (
+	command: ^UI_Component_Command,
+	kind: UI_Component_Command_Kind,
+	text: string = "",
+	font: string = "",
+	prefix: string = "",
+) -> string {
+	if command == nil {
+		return "UI component command is not available"
+	}
+	command.kind = kind
+	if err := copy_command_string(command.text_bytes[:], &command.text_len, text, "UI text");
+	   err != "" {
+		return err
+	}
+	if err := copy_command_string(command.font_bytes[:], &command.font_len, font, "UI font");
+	   err != "" {
+		return err
+	}
+	if err := copy_command_string(
+		command.prefix_bytes[:],
+		&command.prefix_len,
+		prefix,
+		"UI input prefix",
+	); err != "" {
+		return err
+	}
+	return ""
+}
+
+ui_component_command_kind :: proc "contextless" (name: string) -> UI_Component_Command_Kind {
+	switch name {
+		case "scrapbot.ui_layout":
+			return .Layout
+		case "scrapbot.ui_hstack":
+			return .HStack
+		case "scrapbot.ui_vstack":
+			return .VStack
+		case "scrapbot.ui_scroll_area":
+			return .Scroll_Area
+		case "scrapbot.ui_panel":
+			return .Panel
+		case "scrapbot.ui_table":
+			return .Table
+		case "scrapbot.ui_list":
+			return .List
+		case "scrapbot.ui_progress":
+			return .Progress
+		case "scrapbot.ui_text":
+			return .Text
+		case "scrapbot.ui_button":
+			return .Button
+		case "scrapbot.ui_input":
+			return .Input
+		case "scrapbot.ui_checkbox":
+			return .Checkbox
+	}
+	return .None
+}
+
+queued_ui_component :: proc(
+	buffer: ^Command_Buffer,
+	entity_index: int,
+	generation: u32,
+	kind: UI_Component_Command_Kind,
+) -> ^UI_Component_Command {
+	if buffer == nil || buffer.commands == nil || kind == .None {
+		return nil
+	}
+	for command_index := buffer.command_count - 1; command_index >= 0; command_index -= 1 {
+		command := &buffer.commands[command_index]
+		if command.kind == .Remove_Component &&
+		   command.remove_component.entity_index == entity_index &&
+		   command.remove_component.generation == generation &&
+		   ui_component_command_kind(remove_component_name(&command.remove_component)) == kind {
+			return nil
+		}
+		if command.kind != .Add_Component ||
+		   command.add_component.entity_index != entity_index ||
+		   command.add_component.generation != generation ||
+		   command.add_component.ui_component.kind != kind {
+			continue
+		}
+		return &command.add_component.ui_component
+	}
+	return nil
+}
+
+ui_component_command_text :: proc "contextless" (command: ^UI_Component_Command) -> string {
+	if command == nil { return "" }
+	return string(command.text_bytes[:command.text_len])
+}
+
+ui_component_command_font :: proc "contextless" (command: ^UI_Component_Command) -> string {
+	if command == nil { return "" }
+	return string(command.font_bytes[:command.font_len])
+}
+
+ui_component_command_prefix :: proc "contextless" (command: ^UI_Component_Command) -> string {
+	if command == nil { return "" }
+	return string(command.prefix_bytes[:command.prefix_len])
+}
+
+spawn_add_ui_component :: proc "contextless" (
+	spawn: ^Spawn_Command,
+	component: UI_Component_Command,
+) -> string {
+	if spawn == nil {
+		return "spawn command is not available"
+	}
+	if spawn.ui_component_count >= len(spawn.ui_components) {
+		return "too many spawn UI components"
+	}
+	spawn.ui_components[spawn.ui_component_count] = component
+	spawn.ui_component_count += 1
 	return ""
 }
 
@@ -425,6 +590,30 @@ queue_add_custom_component :: proc "c" (
 	return ""
 }
 
+queue_add_ui_component :: proc "contextless" (
+	buffer: ^Command_Buffer,
+	entity_index: int,
+	generation: u32,
+	component: UI_Component_Command,
+) -> string {
+	if buffer == nil || buffer.commands == nil {
+		return "command buffer is not initialized"
+	}
+	if buffer.command_count >= len(buffer.commands) {
+		return "too many deferred world commands"
+	}
+	buffer.commands[buffer.command_count] = {
+		kind = .Add_Component,
+		add_component = {
+			entity_index = entity_index,
+			generation = generation,
+			ui_component = component,
+		},
+	}
+	buffer.command_count += 1
+	return ""
+}
+
 queue_remove_component :: proc "c" (
 	buffer: ^Command_Buffer,
 	entity_index: int,
@@ -509,32 +698,18 @@ append_commands :: proc(destination, source: ^Command_Buffer) -> string {
 }
 
 spawn_entity :: proc(world: ^World, spawn: ^Spawn_Command) -> int {
-	entity_index := len(world.entities)
-	generation := u32(1)
-	reusing_slot := false
-	for entity, index in world.entities {
-		if entity.alive {
-			continue
-		}
-		entity_index = index
-		generation = entity.id.generation
-		reusing_slot = true
-		break
+	context = base_runtime.default_context()
+	entity_index, created := create_world_entity(
+		world,
+		spawn_command_name(spawn),
+		spawn.uuid,
+		.Runtime,
+		true,
+	)
+	if !created {
+		return INVALID_COMPONENT_INDEX
 	}
-	id := Entity {
-		index = u32(entity_index),
-		generation = generation,
-	}
-	if world.entity_by_uuid == nil {
-		world.entity_by_uuid = make(map[shared.Entity_UUID]int)
-	}
-	entity_uuid := shared.entity_uuid_generate()
-	for {
-		if _, found := world.entity_by_uuid[entity_uuid]; !found {
-			break
-		}
-		entity_uuid = shared.entity_uuid_generate()
-	}
+	spawn.uuid = shared.entity_uuid_generate()
 	transform_index := INVALID_COMPONENT_INDEX
 	if spawn.has_transform {
 		transform_index = allocate_transform_slot(world, spawn.transform)
@@ -544,54 +719,20 @@ spawn_entity :: proc(world: ^World, spawn: ^Spawn_Command) -> int {
 		mesh_index = allocate_mesh_slot(world, command_mesh_primitive(&spawn.mesh))
 	}
 
-	world_entity := World_Entity {
-		id = id,
-		uuid = entity_uuid,
-		alive = true,
-		origin = .Runtime,
-		name = clone_world_string(spawn_command_name(spawn)),
-		component_revision = 1,
-		transform_index = transform_index,
-		camera_index = INVALID_COMPONENT_INDEX,
-		ambient_light_index = INVALID_COMPONENT_INDEX,
-		directional_light_index = INVALID_COMPONENT_INDEX,
-		point_light_index = INVALID_COMPONENT_INDEX,
-		mesh_index = mesh_index,
-		geometry_index = INVALID_COMPONENT_INDEX,
-		material_index = INVALID_COMPONENT_INDEX,
-		render_instance_index = INVALID_COMPONENT_INDEX,
-		render_active_index = INVALID_COMPONENT_INDEX,
-		render_camera_active_index = INVALID_COMPONENT_INDEX,
-		render_ambient_light_active_index = INVALID_COMPONENT_INDEX,
-		render_directional_light_active_index = INVALID_COMPONENT_INDEX,
-		render_point_light_active_index = INVALID_COMPONENT_INDEX,
-		ui_layout_index = INVALID_COMPONENT_INDEX,
-		ui_hstack_index = INVALID_COMPONENT_INDEX,
-		ui_vstack_index = INVALID_COMPONENT_INDEX,
-		ui_scroll_area_index = INVALID_COMPONENT_INDEX,
-		ui_panel_index = INVALID_COMPONENT_INDEX,
-		ui_table_index = INVALID_COMPONENT_INDEX,
-		ui_text_index = INVALID_COMPONENT_INDEX,
-		ui_button_index = INVALID_COMPONENT_INDEX,
-		ui_input_index = INVALID_COMPONENT_INDEX,
-		ui_checkbox_index = INVALID_COMPONENT_INDEX,
-		editor_transform_gizmo_index = INVALID_COMPONENT_INDEX,
-		editor_ui_index = INVALID_COMPONENT_INDEX,
-		has_shadow_caster = spawn.has_shadow_caster,
-		has_shadow_receiver = spawn.has_shadow_receiver,
-	}
-	if reusing_slot {
-		world.entities[entity_index] = world_entity
-	} else {
-		append(&world.entities, world_entity)
-	}
-	world.entity_by_uuid[entity_uuid] = entity_index
+	world_entity := &world.entities[entity_index]
+	world_entity.transform_index = transform_index
+	world_entity.mesh_index = mesh_index
+	world_entity.has_shadow_caster = spawn.has_shadow_caster
+	world_entity.has_shadow_receiver = spawn.has_shadow_receiver
 	ensure_entity_renderable(world, entity_index)
 	if spawn.has_geometry { add_geometry(world, entity_index, spawn.geometry) }
 	if spawn.has_material { add_material(world, entity_index, spawn.material) }
 
 	for i in 0 ..< spawn.custom_component_count {
 		add_custom_component(world, entity_index, &spawn.custom_components[i])
+	}
+	for i in 0 ..< spawn.ui_component_count {
+		apply_ui_component(world, entity_index, &spawn.ui_components[i])
 	}
 	mark_render_entity_dirty(world, entity_index)
 	return entity_index
@@ -609,12 +750,30 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 	if entity.ui_layout_index >= 0 {
 		mark_ui_subtree_dirty(world, entity_index)
 	}
-	delete(entity.name)
-	delete(entity.geometry_resource)
-	delete(entity.material_resource)
+	delete_world_string(world, entity.name)
+	delete_world_string(world, entity.geometry_resource)
+	delete_world_string(world, entity.material_resource)
 	entity.name = ""
 	entity.geometry_resource = ""
 	entity.material_resource = ""
+	ui_component_names := [?]string {
+		"scrapbot.ui_layout",
+		"scrapbot.ui_hstack",
+		"scrapbot.ui_vstack",
+		"scrapbot.ui_scroll_area",
+		"scrapbot.ui_panel",
+		"scrapbot.ui_table",
+		"scrapbot.ui_list",
+		"scrapbot.ui_progress",
+		"scrapbot.ui_text",
+		"scrapbot.ui_button",
+		"scrapbot.ui_input",
+		"scrapbot.ui_checkbox",
+	}
+	for component_name in ui_component_names {
+		remove_ui_component(world, entity_index, component_name)
+	}
+	release_ui_state(world, entity_index)
 	entity.alive = false
 	sync_render_watch_memberships(world, entity_index)
 	entity.uuid = {}
@@ -637,12 +796,12 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 			if component.entity_index != entity_index {
 				continue
 			}
-			delete(component.name)
+			delete_world_string(world, component.name)
 			component.name = ""
 			component.entity_index = INVALID_COMPONENT_INDEX
 			component.component_id = shared.INVALID_COMPONENT_ID
 			for field in component.vec3_fields {
-				delete(field.name)
+				delete_world_string(world, field.name)
 			}
 			delete(component.vec3_fields)
 			component.vec3_fields = nil
@@ -676,7 +835,61 @@ apply_add_component :: proc(world: ^World, command: ^Add_Component_Command) {
 	if command.has_material { add_material(world, command.entity_index, command.material); return }
 	if command.has_shadow_caster { if !world.entities[command.entity_index].has_shadow_caster { world.entities[command.entity_index].has_shadow_caster = true; bump_component_revision(world, command.entity_index) }; return }
 	if command.has_shadow_receiver { if !world.entities[command.entity_index].has_shadow_receiver { world.entities[command.entity_index].has_shadow_receiver = true; bump_component_revision(world, command.entity_index) }; return }
+	if command.ui_component.kind != .None {
+		apply_ui_component(world, command.entity_index, &command.ui_component)
+		return
+	}
 	add_custom_component(world, command.entity_index, &command.component)
+}
+
+apply_ui_component :: proc(world: ^World, entity_index: int, command: ^UI_Component_Command) {
+	if world == nil || command == nil {
+		return
+	}
+	text := string(command.text_bytes[:command.text_len])
+	font := string(command.font_bytes[:command.font_len])
+	prefix := string(command.prefix_bytes[:command.prefix_len])
+	switch command.kind {
+		case .Layout:
+			set_ui_layout(world, entity_index, command.layout)
+		case .HStack:
+			set_ui_hstack(world, entity_index, command.stack)
+		case .VStack:
+			set_ui_vstack(world, entity_index, command.stack)
+		case .Scroll_Area:
+			set_ui_scroll_area(world, entity_index, command.scroll_area)
+		case .Panel:
+			value := command.panel
+			value.title = text
+			value.font = font
+			set_ui_panel(world, entity_index, value)
+		case .Table:
+			set_ui_table(world, entity_index, command.table)
+		case .List:
+			set_ui_list(world, entity_index, command.list)
+		case .Progress:
+			set_ui_progress(world, entity_index, command.progress)
+		case .Text:
+			value := command.text
+			value.text = text
+			value.font = font
+			set_ui_text(world, entity_index, value)
+		case .Button:
+			value := command.button
+			value.text = text
+			value.font = font
+			set_ui_button(world, entity_index, value)
+		case .Input:
+			value := command.input
+			value.text = text
+			value.font = font
+			value.prefix = prefix
+			set_ui_input(world, entity_index, value)
+		case .Checkbox:
+			set_ui_checkbox(world, entity_index, command.checkbox)
+		case .None:
+			return
+	}
 }
 
 apply_remove_component :: proc(world: ^World, command: ^Remove_Component_Command) {
@@ -698,6 +911,9 @@ apply_remove_component :: proc(world: ^World, command: ^Remove_Component_Command
 	   "scrapbot.shadow_caster" { if world.entities[command.entity_index].has_shadow_caster { world.entities[command.entity_index].has_shadow_caster = false; bump_component_revision(world, command.entity_index) }; return }
 	if name ==
 	   "scrapbot.shadow_receiver" { if world.entities[command.entity_index].has_shadow_receiver { world.entities[command.entity_index].has_shadow_receiver = false; bump_component_revision(world, command.entity_index) }; return }
+	if remove_ui_component(world, command.entity_index, name) {
+		return
+	}
 	remove_custom_component(world, command.entity_index, command.component_id, name)
 }
 

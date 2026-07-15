@@ -228,6 +228,8 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 		   line == "[entities.ui_scroll_area]" ||
 		   line == "[entities.ui_panel]" ||
 		   line == "[entities.ui_table]" ||
+		   line == "[entities.ui_list]" ||
+		   line == "[entities.ui_progress]" ||
 		   line == "[entities.ui_text]" ||
 		   line == "[entities.ui_button]" ||
 		   line == "[entities.ui_input]" ||
@@ -244,41 +246,41 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			if section == "ui_layout" { current.has_ui_layout = true }
 			if section == "ui_hstack" { current.has_ui_hstack = true }
 			if section == "ui_vstack" { current.has_ui_vstack = true }
-			if section ==
-			   "ui_scroll_area" {current.has_ui_scroll_area = true; current.ui_scroll_area = {
-					scroll_speed = 48,
-					smoothness = 14,
-				}}
-			if section == "ui_panel" {current.has_ui_panel = true; current.ui_panel = {
-					title_color = {1, 1, 1, 1},
-					title_size = 12,
-					title_height = 32,
-				}}
-			if section == "ui_table" { current.has_ui_table = true; current.ui_table.columns = 1 }
-			if section ==
-			   "ui_text" { current.has_ui_text = true; current.ui_text.color = {1, 1, 1, 1}; current.ui_text.size = 16 }
-			if section ==
-			   "ui_button" { current.has_ui_button = true; current.ui_button.color = {1, 1, 1, 1}; current.ui_button.size = 16 }
+			if section == "ui_scroll_area" {
+				current.has_ui_scroll_area = true
+				current.ui_scroll_area = shared.ui_scroll_area_default()
+			}
+			if section == "ui_panel" {
+				current.has_ui_panel = true
+				current.ui_panel = shared.ui_panel_default()
+			}
+			if section == "ui_table" {
+				current.has_ui_table = true
+				current.ui_table = shared.ui_table_default()
+			}
+			if section == "ui_list" {
+				current.has_ui_list = true
+				current.ui_list = shared.ui_list_default()
+			}
+			if section == "ui_progress" {
+				current.has_ui_progress = true
+				current.ui_progress = shared.ui_progress_default()
+			}
+			if section == "ui_text" {
+				current.has_ui_text = true
+				current.ui_text = shared.ui_text_default()
+			}
+			if section == "ui_button" {
+				current.has_ui_button = true
+				current.ui_button = shared.ui_button_default()
+			}
 			if section == "ui_input" {
 				current.has_ui_input = true
-				current.ui_input = {
-					color = {1, 1, 1, 1},
-					size = 16,
-					selection_background = {0.15, 0.45, 0.40, 0.55},
-					focus_border_color = {0.15, 0.85, 0.72, 1},
-				}
+				current.ui_input = shared.ui_input_default()
 			}
 			if section == "ui_checkbox" {
 				current.has_ui_checkbox = true
-				current.ui_checkbox = {
-					box_size = 18,
-					background = {0.025, 0.030, 0.040, 1},
-					checked_background = {0.08, 0.55, 0.46, 1},
-					border_color = {0.24, 0.27, 0.32, 1},
-					check_color = {0.95, 0.97, 0.98, 1},
-					hover_background = {0.12, 0.64, 0.54, 1},
-					active_background = {0.06, 0.42, 0.36, 1},
-				}
+				current.ui_checkbox = shared.ui_checkbox_default()
 			}
 			current_component = nil
 			continue
@@ -471,6 +473,8 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						current.ui_layout.position, found = parse_vec2(value)
 					case "size":
 						current.ui_layout.size, found = parse_vec2(value)
+					case "min_size":
+						current.ui_layout.min_size, found = parse_vec2(value)
 					case "margin":
 						current.ui_layout.margin, found = parse_vec4(value)
 					case "padding":
@@ -485,6 +489,16 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						current.ui_layout.corner_radius, found = parse_f32(value)
 					case "hidden":
 						current.ui_layout.hidden, found = parse_bool(value)
+					case "fill_width":
+						current.ui_layout.fill_width, found = parse_bool(value)
+					case "fill_height":
+						current.ui_layout.fill_height, found = parse_bool(value)
+					case "fit_content_width":
+						current.ui_layout.fit_content_width, found = parse_bool(value)
+					case "fit_content_height":
+						current.ui_layout.fit_content_height, found = parse_bool(value)
+					case "fixed_in_fill":
+						current.ui_layout.fixed_in_fill, found = parse_bool(value)
 					case:
 						return scene, fail(
 							.Invalid_Field,
@@ -518,11 +532,26 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 				if !found { return scene, fail(.Invalid_Field, fmt.tprintf("invalid ui_vstack.%s", key)) }
 			case "ui_scroll_area":
 				current.has_ui_scroll_area = true
-				switch key {case "scroll_speed":
-						current.ui_scroll_area.scroll_speed, found = parse_f32(
-							value,
-						); case "smoothness":
-						current.ui_scroll_area.smoothness, found = parse_f32(value); case:
+				switch key {
+					case "scroll_speed":
+						current.ui_scroll_area.scroll_speed, found = parse_f32(value)
+					case "smoothness":
+						current.ui_scroll_area.smoothness, found = parse_f32(value)
+					case "scrollbar_width":
+						current.ui_scroll_area.scrollbar_width, found = parse_f32(value)
+					case "scrollbar_right":
+						current.ui_scroll_area.scrollbar_right, found = parse_f32(value)
+					case "scrollbar_vertical_inset":
+						current.ui_scroll_area.scrollbar_vertical_inset, found = parse_f32(value)
+					case "minimum_thumb_size":
+						current.ui_scroll_area.minimum_thumb_size, found = parse_f32(value)
+					case "scrollbar_corner_radius":
+						current.ui_scroll_area.scrollbar_corner_radius, found = parse_f32(value)
+					case "scrollbar_track_color":
+						current.ui_scroll_area.scrollbar_track_color, found = parse_vec4(value)
+					case "scrollbar_thumb_color":
+						current.ui_scroll_area.scrollbar_thumb_color, found = parse_vec4(value)
+					case:
 						return scene, fail(
 							.Invalid_Field,
 							fmt.tprintf("unknown ui_scroll_area field '%s'", key),
@@ -543,6 +572,14 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						current.ui_panel.title_size, found = parse_f32(value)
 					case "title_height":
 						current.ui_panel.title_height, found = parse_f32(value)
+					case "disclosure_size":
+						current.ui_panel.disclosure_size, found = parse_f32(value)
+					case "disclosure_margin":
+						current.ui_panel.disclosure_margin, found = parse_f32(value)
+					case "disclosure_gap":
+						current.ui_panel.disclosure_gap, found = parse_f32(value)
+					case "disclosure_corner_radius":
+						current.ui_panel.disclosure_corner_radius, found = parse_f32(value)
 					case "collapsible":
 						current.ui_panel.collapsible, found = parse_bool(value)
 					case "collapsed":
@@ -570,6 +607,58 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						)
 				}
 				if !found { return scene, fail(.Invalid_Field, fmt.tprintf("invalid ui_table.%s", key)) }
+			case "ui_list":
+				current.has_ui_list = true
+				switch key {
+					case "selected":
+						raw_selected: string
+						raw_selected, found = parse_basic_string(value)
+						if found {
+							current.ui_list.selected, found = shared.entity_uuid_parse(
+								raw_selected,
+							)
+						}
+					case "gap":
+						current.ui_list.gap, found = parse_f32(value)
+					case "selection_background":
+						current.ui_list.selection_background, found = parse_vec4(value)
+					case "hover_background":
+						current.ui_list.hover_background, found = parse_vec4(value)
+					case "active_background":
+						current.ui_list.active_background, found = parse_vec4(value)
+					case:
+						return scene, fail(
+							.Invalid_Field,
+							fmt.tprintf("unknown ui_list field '%s'", key),
+						)
+				}
+				if !found { return scene, fail(.Invalid_Field, fmt.tprintf("invalid ui_list.%s", key)) }
+			case "ui_progress":
+				current.has_ui_progress = true
+				switch key {
+					case "value":
+						current.ui_progress.value, found = parse_f32(value)
+					case "maximum":
+						current.ui_progress.maximum, found = parse_f32(value)
+					case "fill_color":
+						current.ui_progress.fill_color, found = parse_vec4(value)
+					case "background_color":
+						current.ui_progress.background_color, found = parse_vec4(value)
+					case "inset":
+						current.ui_progress.inset, found = parse_vec4(value)
+					case "corner_radius":
+						current.ui_progress.corner_radius, found = parse_f32(value)
+					case "right_to_left":
+						current.ui_progress.right_to_left, found = parse_bool(value)
+					case:
+						return scene, fail(
+							.Invalid_Field,
+							fmt.tprintf("unknown ui_progress field '%s'", key),
+						)
+				}
+				if !found {
+					return scene, fail(.Invalid_Field, fmt.tprintf("invalid ui_progress.%s", key))
+				}
 			case "ui_text":
 				current.has_ui_text = true
 				switch key {case "text":
@@ -589,7 +678,10 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						current.ui_button.text, found = parse_basic_string(value); case "font":
 						current.ui_button.font, found = parse_basic_string(value); case "color":
 						current.ui_button.color, found = parse_vec4(value); case "size":
-						current.ui_button.size, found = parse_f32(value); case "hover_background":
+						current.ui_button.size, found = parse_f32(value); case "alignment":
+						current.ui_button.alignment, found = parse_ui_text_alignment(
+							value,
+						); case "hover_background":
 						current.ui_button.hover_background, found = parse_vec4(
 							value,
 						); case "active_background":
@@ -612,16 +704,60 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						current.ui_input.text, found = parse_basic_string(value)
 					case "font":
 						current.ui_input.font, found = parse_basic_string(value)
+					case "prefix":
+						current.ui_input.prefix, found = parse_basic_string(value)
 					case "color":
 						current.ui_input.color, found = parse_vec4(value)
+					case "prefix_color":
+						current.ui_input.prefix_color, found = parse_vec4(value)
+					case "prefix_background":
+						current.ui_input.prefix_background, found = parse_vec4(value)
 					case "size":
 						current.ui_input.size, found = parse_f32(value)
+					case "prefix_width":
+						current.ui_input.prefix_width, found = parse_f32(value)
 					case "selection_background":
 						current.ui_input.selection_background, found = parse_vec4(value)
 					case "focus_border_color":
 						current.ui_input.focus_border_color, found = parse_vec4(value)
+					case "invalid_border_color":
+						current.ui_input.invalid_border_color, found = parse_vec4(value)
+					case "caret_color":
+						current.ui_input.caret_color, found = parse_vec4(value)
+					case "number":
+						current.ui_input.number, found = parse_f32(value)
+					case "step":
+						current.ui_input.step, found = parse_f32(value)
+					case "minimum":
+						current.ui_input.minimum, found = parse_f32(value)
+					case "maximum":
+						current.ui_input.maximum, found = parse_f32(value)
+					case "prefix_gap":
+						current.ui_input.prefix_gap, found = parse_f32(value)
+					case "prefix_corner_radius":
+						current.ui_input.prefix_corner_radius, found = parse_f32(value)
+					case "prefix_text_padding":
+						current.ui_input.prefix_text_padding, found = parse_f32(value)
+					case "selection_corner_radius":
+						current.ui_input.selection_corner_radius, found = parse_f32(value)
+					case "focus_border_width":
+						current.ui_input.focus_border_width, found = parse_f32(value)
+					case "invalid_border_width":
+						current.ui_input.invalid_border_width, found = parse_f32(value)
+					case "caret_width":
+						current.ui_input.caret_width, found = parse_f32(value)
+					case "caret_inset":
+						current.ui_input.caret_inset, found = parse_f32(value)
 					case "read_only":
 						current.ui_input.read_only, found = parse_bool(value)
+					case "numeric":
+						current.ui_input.numeric, found = parse_bool(value)
+					case "has_minimum":
+						current.ui_input.has_minimum, found = parse_bool(value)
+					case "has_maximum":
+						current.ui_input.has_maximum, found = parse_bool(value)
+					case "scrubbable":
+						current.ui_input.scrubbable, found = parse_bool(value)
 					case:
 						return scene, fail(
 							.Invalid_Field,
@@ -648,6 +784,14 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						current.ui_checkbox.hover_background, found = parse_vec4(value)
 					case "active_background":
 						current.ui_checkbox.active_background, found = parse_vec4(value)
+					case "corner_radius":
+						current.ui_checkbox.corner_radius, found = parse_f32(value)
+					case "border_width":
+						current.ui_checkbox.border_width, found = parse_f32(value)
+					case "check_inset":
+						current.ui_checkbox.check_inset, found = parse_f32(value)
+					case "check_corner_radius":
+						current.ui_checkbox.check_corner_radius, found = parse_f32(value)
 					case "read_only":
 						current.ui_checkbox.read_only, found = parse_bool(value)
 					case:
@@ -715,37 +859,46 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			   entity.has_ui_scroll_area ||
 			   entity.has_ui_panel ||
 			   entity.has_ui_table ||
+			   entity.has_ui_list ||
+			   entity.has_ui_progress ||
 			   entity.has_ui_input ||
 			   entity.has_ui_checkbox) &&
 		   !entity.has_ui_layout { return scene, fail(.Invalid_Field, fmt.tprintf("UI component on '%s' requires ui_layout", entity.name)) }
-		if entity.has_ui_layout &&
-		   (entity.ui_layout.size.x <= 0 ||
-				   entity.ui_layout.size.y <= 0 ||
-				   entity.ui_layout.border_width < 0 ||
-				   entity.ui_layout.corner_radius < 0 ||
-				   !vec4_is_non_negative(entity.ui_layout.margin) ||
-				   !vec4_is_non_negative(
-						   entity.ui_layout.padding,
-					   )) { return scene, fail(.Invalid_Field, fmt.tprintf("UI entity '%s' requires positive size and non-negative margin, padding, border width, and corner radius", entity.name)) }
+		if entity.has_ui_layout && !shared.ui_layout_is_valid(entity.ui_layout) {
+			return scene, fail(
+				.Invalid_Field,
+				fmt.tprintf(
+					"UI entity '%s' requires positive size and non-negative margin, padding, border width, and corner radius",
+					entity.name,
+				),
+			)
+		}
 		container_count := 0
 		if entity.has_ui_hstack { container_count += 1 }
 		if entity.has_ui_vstack { container_count += 1 }
 		if entity.has_ui_table { container_count += 1 }
+		if entity.has_ui_list { container_count += 1 }
 		if container_count >
-		   1 { return scene, fail(.Invalid_Field, fmt.tprintf("UI entity '%s' can only use one of ui_hstack, ui_vstack, or ui_table", entity.name)) }
-		if (entity.has_ui_hstack &&
-			   (entity.ui_hstack.gap < 0 ||
-					   entity.ui_hstack.min_size < 0 ||
-					   entity.ui_hstack.draggable && !entity.ui_hstack.fill)) ||
-		   (entity.has_ui_vstack &&
-				   (entity.ui_vstack.gap < 0 ||
-						   entity.ui_vstack.min_size < 0 ||
-						   entity.ui_vstack.draggable &&
-							   !entity.ui_vstack.fill)) { return scene, fail(.Invalid_Field, fmt.tprintf("UI stack '%s' requires non-negative gap/min_size and draggable requires fill", entity.name)) }
-		if entity.has_ui_scroll_area &&
-		   (entity.ui_scroll_area.scroll_speed <= 0 ||
-				   entity.ui_scroll_area.smoothness <=
-					   0) { return scene, fail(.Invalid_Field, fmt.tprintf("UI scroll area '%s' requires positive scroll_speed and smoothness", entity.name)) }
+		   1 { return scene, fail(.Invalid_Field, fmt.tprintf("UI entity '%s' can only use one of ui_hstack, ui_vstack, ui_table, or ui_list", entity.name)) }
+		if (entity.has_ui_hstack && !shared.ui_stack_is_valid(entity.ui_hstack)) ||
+		   (entity.has_ui_vstack && !shared.ui_stack_is_valid(entity.ui_vstack)) {
+			return scene, fail(
+				.Invalid_Field,
+				fmt.tprintf(
+					"UI stack '%s' requires non-negative gap/min_size and draggable requires fill",
+					entity.name,
+				),
+			)
+		}
+		if entity.has_ui_scroll_area && !shared.ui_scroll_area_is_valid(entity.ui_scroll_area) {
+			return scene, fail(
+				.Invalid_Field,
+				fmt.tprintf(
+					"UI scroll area '%s' requires positive scroll_speed and smoothness",
+					entity.name,
+				),
+			)
+		}
 		if entity.has_ui_panel &&
 		   entity.ui_panel.title != "" &&
 		   (entity.ui_panel.title_size <= 0 ||
@@ -758,12 +911,30 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 		if entity.has_ui_panel &&
 		   entity.ui_panel.collapsed &&
 		   !entity.ui_panel.collapsible { return scene, fail(.Invalid_Field, fmt.tprintf("collapsed UI panel '%s' must be collapsible", entity.name)) }
-		if entity.has_ui_table &&
-		   (entity.ui_table.columns < 1 ||
-				   entity.ui_table.columns > 64 ||
-				   entity.ui_table.column_gap < 0 ||
-				   entity.ui_table.row_gap <
-					   0) { return scene, fail(.Invalid_Field, fmt.tprintf("UI table '%s' requires 1..64 columns and non-negative gaps", entity.name)) }
+		if entity.has_ui_table && !shared.ui_table_is_valid(entity.ui_table) {
+			return scene, fail(
+				.Invalid_Field,
+				fmt.tprintf(
+					"UI table '%s' requires 1..64 columns and non-negative gaps",
+					entity.name,
+				),
+			)
+		}
+		if entity.has_ui_list && entity.ui_list.gap < 0 {
+			return scene, fail(
+				.Invalid_Field,
+				fmt.tprintf("UI list '%s' requires a non-negative gap", entity.name),
+			)
+		}
+		if entity.has_ui_progress && !shared.ui_progress_is_valid(entity.ui_progress) {
+			return scene, fail(
+				.Invalid_Field,
+				fmt.tprintf(
+					"UI progress '%s' requires a positive maximum and non-negative inset/corner radius",
+					entity.name,
+				),
+			)
+		}
 		content_count := 0
 		if entity.has_ui_text { content_count += 1 }
 		if entity.has_ui_button { content_count += 1 }

@@ -25,43 +25,14 @@ local FloatComponent = scrapbot.component("float", {
 	wave = scrapbot.vec3,
 }) :: FloatComponent
 
-local EmitterComponent = scrapbot.component_handle("showcase.emitter") :: ShowcaseEmitterComponent
-local LifetimeComponent = scrapbot.component_handle("showcase.lifetime") :: ShowcaseLifetimeComponent
-local SpinComponent = scrapbot.component_handle("showcase.spin") :: ShowcaseSpinComponent
-local VelocityComponent = scrapbot.component_handle("showcase.velocity") :: ShowcaseVelocityComponent
-local LightOrbitComponent = scrapbot.component_handle("showcase.light_orbit") :: ShowcaseLightOrbitComponent
-
 local Floating = scrapbot.query(scrapbot.transform, FloatComponent)
-local Emitters = scrapbot.query(scrapbot.transform, EmitterComponent)
-local FountainBodies = scrapbot.query(scrapbot.transform, LifetimeComponent, VelocityComponent)
-local Spinners = scrapbot.query(SpinComponent)
-local OrbitingLights = scrapbot.query(scrapbot.point_light, LightOrbitComponent)
 
 scrapbot.system(Floating, {
-	name = "Floating",
+	name = "floating",
 	writes = { scrapbot.transform, FloatComponent },
 }, function(time: ScrapbotTime, entity: ScrapbotEntity, transform: ScrapbotTransform, float: Float)
 	float.wave.x += float.wave.y * time.delta_time
 	transform.position.x = float.origin.x
 	transform.position.y = float.origin.y + math.sin(float.wave.x) * float.wave.z
 	transform.position.z = float.origin.z
-end)
-
-scrapbot.system(Emitters, { name = "Emitter Validation" }, function(time: ScrapbotTime, entity: ScrapbotEntity, transform: ReadonlyScrapbotTransform, emitter: ReadonlyShowcaseEmitter)
-	assert(emitter.state.y > 0)
-	assert(type(transform.position.y) == "number")
-end)
-
-scrapbot.system(FountainBodies, { name = "Fountain Bodies" }, function(time: ScrapbotTime, entity: ScrapbotEntity, transform: ReadonlyScrapbotTransform, lifetime: ReadonlyShowcaseLifetime, velocity: ReadonlyShowcaseVelocity)
-	assert(lifetime.timer.y > 0)
-	assert(velocity.value.y < 5)
-end)
-
-scrapbot.system(Spinners, { name = "Spinner Validation" }, function(time: ScrapbotTime, entity: ScrapbotEntity, spin: ReadonlyShowcaseSpin)
-	assert(spin.angular_velocity.y ~= 0)
-end)
-
-scrapbot.system(OrbitingLights, { name = "Orbiting Lights" }, function(time: ScrapbotTime, entity: ScrapbotEntity, light: ReadonlyScrapbotPointLight, orbit: ReadonlyShowcaseLightOrbit)
-	assert(light.range > 0)
-	assert(orbit.settings.x > 0)
 end)

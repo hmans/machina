@@ -37,12 +37,23 @@ reconcile_editor_scene_camera :: proc(
 		camera = source.camera
 	}
 
-	entity_index := len(world.entities)
+	entity_index, created := create_world_entity(
+		world,
+		EDITOR_SCENE_CAMERA_NAME,
+		shared.entity_uuid_from_engine_name(EDITOR_SCENE_CAMERA_NAME),
+		.Editor,
+		false,
+	)
+	if !created {
+		return -1, nil, false
+	}
 	transform_index := len(world.transforms)
 	camera_index := len(world.cameras)
 	component_index := len(world.editor_scene_cameras)
 	append_soa(&world.transforms, transform)
 	append(&world.cameras, camera)
+	world.entities[entity_index].transform_index = transform_index
+	world.entities[entity_index].camera_index = camera_index
 	append(
 		&world.editor_scene_cameras,
 		shared.Editor_Scene_Camera_Component {
@@ -51,46 +62,6 @@ reconcile_editor_scene_camera :: proc(
 			look_sensitivity = EDITOR_SCENE_CAMERA_LOOK_SENSITIVITY,
 		},
 	)
-	append(
-		&world.entities,
-		World_Entity {
-			id = {index = u32(entity_index), generation = 1},
-			uuid = shared.entity_uuid_from_engine_name(EDITOR_SCENE_CAMERA_NAME),
-			alive = true,
-			origin = .Editor,
-			name = clone_world_string(EDITOR_SCENE_CAMERA_NAME),
-			transform_index = transform_index,
-			camera_index = camera_index,
-			ambient_light_index = INVALID_COMPONENT_INDEX,
-			directional_light_index = INVALID_COMPONENT_INDEX,
-			point_light_index = INVALID_COMPONENT_INDEX,
-			mesh_index = INVALID_COMPONENT_INDEX,
-			geometry_index = INVALID_COMPONENT_INDEX,
-			material_index = INVALID_COMPONENT_INDEX,
-			render_instance_index = INVALID_COMPONENT_INDEX,
-			render_active_index = INVALID_COMPONENT_INDEX,
-			render_camera_active_index = INVALID_COMPONENT_INDEX,
-			render_ambient_light_active_index = INVALID_COMPONENT_INDEX,
-			render_directional_light_active_index = INVALID_COMPONENT_INDEX,
-			render_point_light_active_index = INVALID_COMPONENT_INDEX,
-			ui_layout_index = INVALID_COMPONENT_INDEX,
-			ui_hstack_index = INVALID_COMPONENT_INDEX,
-			ui_vstack_index = INVALID_COMPONENT_INDEX,
-			ui_scroll_area_index = INVALID_COMPONENT_INDEX,
-			ui_panel_index = INVALID_COMPONENT_INDEX,
-			ui_table_index = INVALID_COMPONENT_INDEX,
-			ui_text_index = INVALID_COMPONENT_INDEX,
-			ui_button_index = INVALID_COMPONENT_INDEX,
-			ui_input_index = INVALID_COMPONENT_INDEX,
-			ui_checkbox_index = INVALID_COMPONENT_INDEX,
-			editor_transform_gizmo_index = INVALID_COMPONENT_INDEX,
-			editor_ui_index = INVALID_COMPONENT_INDEX,
-		},
-	)
-	if world.entity_by_uuid == nil {
-		world.entity_by_uuid = make(map[shared.Entity_UUID]int)
-	}
-	world.entity_by_uuid[world.entities[entity_index].uuid] = entity_index
 	sync_render_watch_memberships(world, entity_index)
 	return entity_index, &world.editor_scene_cameras[component_index], true
 }

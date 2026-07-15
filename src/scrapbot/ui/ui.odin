@@ -26,8 +26,8 @@ EDITOR_VIEWPORT_MIN_WIDTH :: f32(320)
 EDITOR_VIEWPORT_INSET :: f32(4)
 EDITOR_ENTITY_ROW_HEIGHT :: f32(30)
 EDITOR_TEXT_SIZE :: f32(12)
-EDITOR_INPUT_AXIS_WIDTH :: f32(13)
-EDITOR_INPUT_AXIS_GAP :: f32(3)
+UI_INPUT_PREFIX_WIDTH :: f32(13)
+UI_INPUT_PREFIX_GAP :: f32(3)
 EDITOR_SCROLL_SPEED :: f32(48)
 EDITOR_SCROLL_SMOOTHNESS :: f32(18)
 EDITOR_SNAPSHOT_INTERVAL :: f32(0.2)
@@ -107,14 +107,18 @@ Node :: struct {
 	entity: shared.Entity,
 	origin: shared.Entity_Origin,
 	editor_role: shared.Editor_UI_Role,
-	layout_index, hstack_index, vstack_index, scroll_area_index, panel_index, table_index, text_index, button_index, input_index, checkbox_index, parent_entity_index: int,
+	layout_index, hstack_index, vstack_index, scroll_area_index, panel_index, table_index, list_index, progress_index, text_index, button_index, input_index, checkbox_index, parent_entity_index: int,
 	rect, clip: Rect,
+	resolved_size: shared.Vec2,
+	fill_available_size: shared.Vec2,
 	paint_order: int,
 	scroll_offset, scroll_target, scroll_max, scroll_content_height: f32,
 	split_weight: f32,
 	split_parent: shared.Entity,
 	split_weight_valid: bool,
 	seen, laid_out, hovered, active, has_clip: bool,
+	resolved_width_valid, resolved_height_valid: bool,
+	fill_width_valid, fill_height_valid: bool,
 }
 EDITOR_HISTORY_CAPACITY :: 128
 Editor_Edit_Command :: struct {
@@ -145,6 +149,7 @@ State :: struct {
 	editor_ui_active_entity: shared.Entity,
 	editor_ui_has_active_entity: bool,
 	next_paint_order: int,
+	layout_size_changed: bool,
 	split_handles: [MAX_NODES]Split_Handle,
 	split_handle_count, active_split_handle: int,
 	split_previous_primary_down: bool,
@@ -363,6 +368,7 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 			}
 			node_index = insert_ui_node(state, entity_index)
 		}
+		_ = ecs.ensure_ui_state(world, entity_index)
 		node := &state.nodes[node_index]
 		node.entity = entity.id
 		node.origin = entity.origin
@@ -376,6 +382,8 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 		node.scroll_area_index = entity.ui_scroll_area_index
 		node.panel_index = entity.ui_panel_index
 		node.table_index = entity.ui_table_index
+		node.list_index = entity.ui_list_index
+		node.progress_index = entity.ui_progress_index
 		node.text_index = entity.ui_text_index
 		node.button_index = entity.ui_button_index
 		node.input_index = entity.ui_input_index
@@ -405,6 +413,12 @@ reconcile :: proc(
 	resource_registry: ^resources.Registry = nil,
 ) -> string {
 	if state == nil || world == nil { return "UI state or world is unavailable" }
+	for &interaction in world.ui_states {
+		interaction.activated = false
+		interaction.changed = false
+		interaction.submitted = false
+		interaction.cancelled = false
+	}
 	surface_width := drawable_width; if surface_width <= 0 { surface_width = width }
 	surface_height := drawable_height; if surface_height <= 0 { surface_height = height }
 	if !state.font.ready { if err := init(state); err != "" { return err } }
@@ -412,7 +426,7 @@ reconcile :: proc(
 	editor_scale := max(state.editor_pixel_density, 1)
 	editor_width := surface_width / editor_scale
 	editor_height := surface_height / editor_scale
-	reconcile_editor_ui_world(state, world, editor_width, editor_height)
+	reconcile_editor_ui_world(state, world)
 	if err := sync_ui_structure(state, world); err != "" { return err }
 	project_layout := Rect{0, 0, width, height}
 	editor_layout := Rect{0, 0, editor_width, editor_height}
@@ -432,25 +446,15 @@ reconcile :: proc(
 	editor_pointer := pointer
 	if editor_pointer.available { editor_pointer.position.x /= editor_scale; editor_pointer.position.y /= editor_scale }
 	if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
-	if editor_ui_fit_sidebar_content(state, world) {
-		if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
-	}
-	if editor_ui_fit_inspector_width(state, world) {
-		if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
-	}
-	if editor_ui_fit_system_bars(state, world) {
-		if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
-	}
 	if update_split_interaction(
 		state,
 		project_pointer,
 		false,
 	) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }; _ = update_split_interaction(state, project_pointer, false) }
-	if update_split_interaction(
-		state,
-		editor_pointer,
-		true,
-	) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }; if editor_ui_fit_sidebar_content(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; if editor_ui_fit_inspector_width(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; if editor_ui_fit_system_bars(state, world) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }; _ = update_split_interaction(state, editor_pointer, true) }
+	if update_split_interaction(state, editor_pointer, true) {
+		if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
+		_ = update_split_interaction(state, editor_pointer, true)
+	}
 	state.pointer_cursor = split_pointer_cursor(state)
 	if state.active_split_handle >= 0 { project_pointer = {}; editor_pointer = {} }
 	if update_scroll_areas(
@@ -475,16 +479,33 @@ reconcile :: proc(
 		!state.editor_previous_primary_down
 	project_pressed, project_pressed_ok := update_interaction(state, project_pointer, false)
 	pressed, pressed_ok := update_interaction(state, editor_pointer, true)
+	sync_ui_interaction_states(state, world)
 	panel_changed := false
 	if pressed_ok {
+		_ = ecs.mark_ui_activated(world, int(pressed.index))
+		_ = handle_list_press(world, pressed)
+		editor_ui_prepare_input_focus(state, world, int(pressed.index))
 		handle_input_press(state, world, pressed, editor_pointer.position)
-		panel_changed = handle_checkbox_press(state, world, pressed) || panel_changed
-		handle_editor_ecs_press(state, world, pressed, editor_pointer.position)
-		panel_changed =
-			handle_panel_title_press(state, world, pressed, editor_pointer.position) ||
-			panel_changed
+		checkbox_changed := handle_checkbox_press(state, world, pressed)
+		if checkbox_changed {
+			editor_ui_handle_checkbox_change(state, world, pressed)
+		}
+		panel_changed = checkbox_changed || panel_changed
+		editor_ui_handle_activation(state, world, pressed, editor_pointer.position)
+		panel_title_changed := handle_panel_title_press(
+			state,
+			world,
+			pressed,
+			editor_pointer.position,
+		)
+		if panel_title_changed {
+			editor_ui_handle_panel_change(state, world, pressed)
+		}
+		panel_changed = panel_title_changed || panel_changed
 	}
 	if project_pressed_ok {
+		_ = ecs.mark_ui_activated(world, int(project_pressed.index))
+		_ = handle_list_press(world, project_pressed)
 		handle_input_press(state, world, project_pressed, project_pointer.position)
 		panel_changed = handle_checkbox_press(state, world, project_pressed) || panel_changed
 	}
@@ -493,16 +514,9 @@ reconcile :: proc(
 			handle_panel_title_press(state, world, project_pressed, project_pointer.position) ||
 			panel_changed
 	}
+	sync_ui_interaction_states(state, world)
 	if panel_changed {
 		if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err }
-		if editor_ui_fit_sidebar_content(state, world) {
-			if err := layout_all(state, world, project_layout, editor_layout);
-			   err != "" { return err }
-		}
-		if editor_ui_fit_inspector_width(state, world) {
-			if err := layout_all(state, world, project_layout, editor_layout);
-			   err != "" { return err }
-		}
 	}
 	if editor_press_started &&
 	   !pressed_ok &&
@@ -522,15 +536,21 @@ reconcile :: proc(
 		state.editor_visible &&
 		(!state.has_focused_input || state.focused_input_editor) &&
 		(keyboard.undo || keyboard.redo)
-	if editor_history_shortcut {
-		if state.has_focused_input {
-			if !finish_input_edit(state, world) { cancel_input_edit(state, world) }
-			clear_input_focus(state)
-		}
-		_ = editor_history_apply(state, world, keyboard.redo)
-	} else {
+	input_event_entity_index := -1
+	if state.has_focused_input {
+		input_event_entity_index = int(state.focused_input.index)
+	}
+	editor_history_handled :=
+		editor_history_shortcut && editor_ui_handle_history_shortcut(state, world, keyboard)
+	if !editor_history_handled {
 		update_focused_input(state, world, keyboard, delta_seconds)
 		update_input_scrub(state, world, editor_pointer, keyboard)
+	} else {
+		input_event_entity_index = -1
+	}
+	sync_ui_interaction_states(state, world)
+	if input_event_entity_index >= 0 {
+		editor_ui_consume_input_state(state, world, input_event_entity_index)
 	}
 	if state.editor_has_selection {
 		index := int(state.editor_selected_entity.index)
@@ -728,73 +748,37 @@ find_parent_entity :: proc(
 	return -1
 }
 
-handle_editor_ecs_press :: proc(
-	state: ^State,
-	world: ^shared.World,
-	pressed: shared.Entity,
-	position: shared.Vec2,
-) {
-	entity_index := int(pressed.index)
-	for entity_index >= 0 && entity_index < len(world.entities) {
-		entity := world.entities[entity_index]
-		if entity.editor_ui_index >= 0 && entity.editor_ui_index < len(world.editor_uis) {
-			component := world.editor_uis[entity.editor_ui_index]
-			switch component.role {
-				case .Browser_Row, .Browser_Row_Label:
-					if editor_select_entity(
-						state,
-						world,
-						component.target,
-						0,
-					) { state.editor_snapshot_valid = false }
-					return
-				case .Transport_Play:
-					editor_play(state)
-					return
-				case .Transport_Stop:
-					editor_stop(state)
-					return
-				case .Transport_Step:
-					editor_step(state)
-					return
-				case .Viewport:
-					if !state.editor_gizmo_captures_pointer { state.editor_pick_requested = true; state.editor_pick_position = position }
-					return
-				case .None,
-				     .Root,
-				     .Systems_Scroll,
-				     .Systems_Name,
-				     .Systems_Time,
-				     .Systems_Origin,
-				     .Systems_Bar_Fill,
-				     .Browser_Scroll,
-				     .Browser_Header,
-				     .Inspector_Header,
-				     .Inspector_Scroll,
-				     .Inspector_Content,
-				     .Inspector_Panel,
-				     .Inspector_Table,
-				     .Inspector_Cell,
-				     .Inspector_Input,
-				     .Inspector_Checkbox,
-				     .Status:
-			}
-		}
-		layout_index := entity.ui_layout_index
-		if layout_index < 0 || layout_index >= len(world.ui_layouts) { return }
-		entity_index = find_parent_entity(world, world.ui_layouts[layout_index].parent, .Editor)
-	}
-}
-
 layout_all :: proc(
 	state: ^State,
 	world: ^shared.World,
 	project_viewport, editor_viewport: Rect,
 ) -> string {
-	state.next_paint_order = 0
-	state.split_handle_count = 0
-	for &node in state.nodes[:state.node_count] { node.laid_out = false }
-	for i in 0 ..< state.node_count { if state.nodes[i].parent_entity_index < 0 { viewport := project_viewport; if state.nodes[i].origin == .Editor { viewport = editor_viewport }; if err := layout_node(state, world, i, viewport, {}, false, {}, false, {}, false, 0); err != "" { return err } } }
+	for _ in 0 ..< 4 {
+		state.next_paint_order = 0
+		state.split_handle_count = 0
+		state.layout_size_changed = false
+		for &node in state.nodes[:state.node_count] {
+			node.laid_out = false
+			node.fill_width_valid = false
+			node.fill_height_valid = false
+		}
+		for i in 0 ..< state.node_count {
+			if state.nodes[i].parent_entity_index >= 0 {
+				continue
+			}
+			viewport := project_viewport
+			if state.nodes[i].origin == .Editor {
+				viewport = editor_viewport
+			}
+			if err := layout_node(state, world, i, viewport, {}, false, {}, false, {}, false, 0);
+			   err != "" {
+				return err
+			}
+		}
+		if !state.layout_size_changed {
+			break
+		}
+	}
 	return ""
 }
 
@@ -812,6 +796,14 @@ node_layout_size :: proc(
 	layout: shared.UI_Layout_Component,
 ) -> shared.Vec2 {
 	size := layout.size
+	size.x = max(size.x, layout.min_size.x)
+	size.y = max(size.y, layout.min_size.y)
+	if layout.fit_content_width && node.resolved_width_valid {
+		size.x = max(node.resolved_size.x, layout.min_size.x)
+	}
+	if layout.fit_content_height && node.resolved_height_valid {
+		size.y = max(node.resolved_size.y, layout.min_size.y)
+	}
 	if node_panel_collapsed(world, node) {
 		panel := world.ui_panels[node.panel_index]
 		size.y = min(max(panel.title_height, 0), size.y)
@@ -837,6 +829,18 @@ layout_node :: proc(
 	node.laid_out = true
 	layout_size := node_layout_size(world, node^, layout)
 	if node.parent_entity_index < 0 {
+		if layout.fill_width {
+			layout_size.x = max(
+				parent.width - layout.position.x - layout.margin.w - layout.margin.y,
+				layout.min_size.x,
+			)
+		}
+		if layout.fill_height {
+			layout_size.y = max(
+				parent.height - layout.position.y - layout.margin.x - layout.margin.z,
+				layout.min_size.y,
+			)
+		}
 		node.rect = {
 			layout.position.x + layout.margin.w,
 			layout.position.y + layout.margin.x,
@@ -872,10 +876,13 @@ layout_node :: proc(
 		node.scroll_area_index >= 0 && node.scroll_area_index < len(world.ui_scroll_areas)
 	is_panel := node.panel_index >= 0 && node.panel_index < len(world.ui_panels)
 	is_table := node.table_index >= 0 && node.table_index < len(world.ui_tables)
+	is_list := node.list_index >= 0 && node.list_index < len(world.ui_lists)
 	panel: shared.UI_Panel_Component
 	table: shared.UI_Table_Component
+	list: shared.UI_List_Component
 	if is_panel { panel = world.ui_panels[node.panel_index] }
 	if is_table { table = world.ui_tables[node.table_index] }
+	if is_list { list = world.ui_lists[node.list_index] }
 	if is_hstack { stack = world.ui_hstacks[node.hstack_index]; gap = stack.gap }
 	if is_vstack { stack = world.ui_vstacks[node.vstack_index]; gap = stack.gap }
 	content := Rect {
@@ -884,10 +891,11 @@ layout_node :: proc(
 		max(node.rect.width - layout.padding.w - layout.padding.y, 0),
 		max(node.rect.height - layout.padding.x - layout.padding.z, 0),
 	}
+	panel_title_height := f32(0)
 	if is_panel && panel.title != "" {
-		title_height := min(max(panel.title_height, 0), content.height)
-		content.y += title_height
-		content.height -= title_height
+		panel_title_height = min(max(panel.title_height, 0), content.height)
+		content.y += panel_title_height
+		content.height -= panel_title_height
 	}
 	if is_panel && panel.collapsible && panel.collapsed {
 		node.scroll_offset = 0
@@ -900,6 +908,7 @@ layout_node :: proc(
 	if is_scroll_area { if child_has_clip { child_clip = rect_intersection(child_clip, content) } else { child_clip = content }; child_has_clip = true }
 	scroll_offset := node.scroll_offset
 	content_bottom := f32(0)
+	content_right := f32(0)
 	children: [MAX_NODES]int
 	child_count := 0
 	total_margins := f32(0)
@@ -911,19 +920,25 @@ layout_node :: proc(
 		for child_index in 0 ..< state.node_count {
 			child := &state.nodes[child_index]
 			if child.parent_entity_index != int(node.entity.index) { continue }
+			child_layout := world.ui_layouts[child.layout_index]
+			if child_layout.hidden { continue }
 			ordinal := child_count
 			children[ordinal] = child_index
 			child_count += 1
 			if is_table { continue }
-			child_layout := world.ui_layouts[child.layout_index]
 			if is_hstack {
 				total_margins += child_layout.margin.w + child_layout.margin.y
 			} else {
 				total_margins += child_layout.margin.x + child_layout.margin.z
 			}
-			if is_vstack && node_panel_collapsed(world, child^) {
+			if child_layout.fixed_in_fill || (is_vstack && node_panel_collapsed(world, child^)) {
 				fixed_children[ordinal] = true
-				fixed_main_size += node_layout_size(world, child^, child_layout).y
+				fixed_size := node_layout_size(world, child^, child_layout)
+				fixed_child_main_size := fixed_size.y
+				if is_hstack {
+					fixed_child_main_size = fixed_size.x
+				}
+				fixed_main_size += fixed_child_main_size
 				continue
 			}
 			flex_child_count += 1
@@ -953,7 +968,11 @@ layout_node :: proc(
 			resolved[ordinal] = true
 			child := state.nodes[children[ordinal]]
 			child_layout := world.ui_layouts[child.layout_index]
-			child_main_sizes[ordinal] = node_layout_size(world, child, child_layout).y
+			fixed_size := node_layout_size(world, child, child_layout)
+			child_main_sizes[ordinal] = fixed_size.y
+			if is_hstack {
+				child_main_sizes[ordinal] = fixed_size.x
+			}
 		}
 		for _ in 0 ..< child_count {
 			resolved_one := false
@@ -990,10 +1009,35 @@ layout_node :: proc(
 	for child_index in 0 ..< state.node_count {
 		child := &state.nodes[child_index]; if child.parent_entity_index != int(node.entity.index) { continue }
 		child_layout := world.ui_layouts[child.layout_index]
+		if child_layout.hidden { continue }
 		position: shared.Vec2
 		child_flowed := false
 		child_size := node_layout_size(world, child^, child_layout)
 		has_child_size := false
+		if child_layout.fill_width {
+			child.fill_available_size.x = max(
+				content.width - child_layout.margin.w - child_layout.margin.y,
+				child_layout.min_size.x,
+			)
+			child.fill_width_valid = true
+			child_size.x = child.fill_available_size.x
+			if child_layout.fit_content_width && child.resolved_width_valid {
+				child_size.x = max(child_size.x, child.resolved_size.x)
+			}
+			has_child_size = true
+		}
+		if child_layout.fill_height {
+			child.fill_available_size.y = max(
+				content.height - child_layout.margin.x - child_layout.margin.z,
+				child_layout.min_size.y,
+			)
+			child.fill_height_valid = true
+			child_size.y = child.fill_available_size.y
+			if child_layout.fit_content_height && child.resolved_height_valid {
+				child_size.y = max(child_size.y, child.resolved_size.y)
+			}
+			has_child_size = true
+		}
 		if (is_hstack || is_vstack) &&
 		   stack.fill { main_size := child_main_sizes[child_ordinal]; if is_hstack { child_size = {main_size, max(content.height - child_layout.margin.x - child_layout.margin.z, 0)} } else { child_size = {max(content.width - child_layout.margin.w - child_layout.margin.y, 0), main_size} }; has_child_size = true }
 		if is_table {
@@ -1016,6 +1060,15 @@ layout_node :: proc(
 				table_row_height,
 				child_layout.margin.x + child_size.y + child_layout.margin.z,
 			)
+			has_child_size = true
+			child_flowed = true
+		} else if is_list {
+			child_size.x = max(content.width - child_layout.margin.w - child_layout.margin.y, 0)
+			position = {
+				content.x + child_layout.margin.w,
+				content.y + cursor + child_layout.margin.x,
+			}
+			cursor += child_layout.margin.x + child_size.y + child_layout.margin.z + list.gap
 			has_child_size = true
 			child_flowed = true
 		} else if is_hstack {position = {content.x + cursor + child_layout.margin.w, content.y + child_layout.margin.x}; cursor += child_layout.margin.w + child_size.x + child_layout.margin.y; if stack.draggable && child_ordinal < child_count - 1 && state.split_handle_count < MAX_NODES {handle_rect := Rect{content.x + cursor, content.y, max(gap, 8), content.height}; handle_rect.x += (gap - handle_rect.width) * 0.5; state.split_handles[state.split_handle_count] = {
@@ -1054,11 +1107,49 @@ layout_node :: proc(
 			child_layout.margin.z
 		if is_scroll_area { unscrolled_bottom += scroll_offset }
 		content_bottom = max(content_bottom, unscrolled_bottom - content.y)
+		unscrolled_right :=
+			state.nodes[child_index].rect.x +
+			state.nodes[child_index].rect.width +
+			child_layout.margin.y
+		content_right = max(content_right, unscrolled_right - content.x)
 		child_ordinal += 1
 	}
 	if is_table &&
 	   child_count > 0 { content_bottom = max(content_bottom, table_y + table_row_height) }
 	if is_scroll_area { node.scroll_content_height = max(content.height, content_bottom); node.scroll_max = max(node.scroll_content_height - content.height, 0); node.scroll_target = clamp(node.scroll_target, 0, node.scroll_max); node.scroll_offset = clamp(node.scroll_offset, 0, node.scroll_max) }
+	if layout.fit_content_width || layout.fit_content_height {
+		next_size := node.resolved_size
+		if layout.fit_content_width {
+			next_size.x = max(
+				content_right + layout.padding.w + layout.padding.y,
+				layout.min_size.x,
+			)
+			if layout.fill_width && node.fill_width_valid {
+				next_size.x = max(next_size.x, node.fill_available_size.x)
+			}
+		}
+		if layout.fit_content_height {
+			next_size.y = max(
+				content_bottom + layout.padding.x + layout.padding.z + panel_title_height,
+				layout.min_size.y,
+			)
+			if layout.fill_height && node.fill_height_valid {
+				next_size.y = max(next_size.y, node.fill_available_size.y)
+			}
+		}
+		width_changed :=
+			layout.fit_content_width &&
+			(!node.resolved_width_valid || math.abs(node.resolved_size.x - next_size.x) > 0.01)
+		height_changed :=
+			layout.fit_content_height &&
+			(!node.resolved_height_valid || math.abs(node.resolved_size.y - next_size.y) > 0.01)
+		if width_changed || height_changed {
+			node.resolved_size = next_size
+			node.resolved_width_valid = node.resolved_width_valid || layout.fit_content_width
+			node.resolved_height_valid = node.resolved_height_valid || layout.fit_content_height
+			state.layout_size_changed = true
+		}
+	}
 	return ""
 }
 
@@ -1238,14 +1329,10 @@ focus_input :: proc(state: ^State, world: ^shared.World, entity_index: int) {
 	state.input_scrub_armed = false
 	state.input_scrubbing = false
 	state.input_has_original_number = false
-	if entity.editor_ui_index >= 0 && entity.editor_ui_index < len(world.editor_uis) {
-		binding := world.editor_uis[entity.editor_ui_index]
-		if binding.numeric {
-			state.input_original_number, state.input_has_original_number = read_inspector_numeric(
-				world,
-				binding,
-			)
-		}
+	input := world.ui_inputs[entity.ui_input_index]
+	if input.numeric {
+		state.input_original_number = input.number
+		state.input_has_original_number = true
 	}
 }
 
@@ -1275,26 +1362,25 @@ handle_input_press :: proc(
 		}
 	}
 	focus_input(state, world, index)
-	if entity.editor_ui_index >= 0 && entity.editor_ui_index < len(world.editor_uis) {
-		binding := world.editor_uis[entity.editor_ui_index]
-		node_index := find_node(state, entity.id)
-		axis_hit_end := f32(0)
-		if node_index >= 0 &&
-		   entity.ui_layout_index >= 0 &&
-		   entity.ui_layout_index < len(world.ui_layouts) {
-			axis_hit_end =
-				state.nodes[node_index].rect.x +
-				world.ui_layouts[entity.ui_layout_index].padding.w +
-				EDITOR_INPUT_AXIS_WIDTH
-		}
-		if binding.numeric &&
-		   binding.inspector_axis != .None &&
-		   node_index >= 0 &&
-		   position.x <= axis_hit_end {
-			state.input_scrub_armed = state.input_has_original_number
-			state.input_scrub_start_x = position.x
-			state.input_scrub_start_number = state.input_original_number
-		}
+	input := world.ui_inputs[entity.ui_input_index]
+	node_index := find_node(state, entity.id)
+	prefix_hit_end := f32(0)
+	if node_index >= 0 &&
+	   entity.ui_layout_index >= 0 &&
+	   entity.ui_layout_index < len(world.ui_layouts) {
+		prefix_hit_end =
+			state.nodes[node_index].rect.x +
+			world.ui_layouts[entity.ui_layout_index].padding.w +
+			input.prefix_width
+	}
+	if input.numeric &&
+	   input.scrubbable &&
+	   input.prefix_width > 0 &&
+	   node_index >= 0 &&
+	   position.x <= prefix_hit_end {
+		state.input_scrub_armed = state.input_has_original_number
+		state.input_scrub_start_x = position.x
+		state.input_scrub_start_number = state.input_original_number
 	}
 }
 
@@ -1304,6 +1390,8 @@ input_selection :: proc(state: ^State) -> (start, end: int) {
 
 replace_input_selection :: proc(
 	state: ^State,
+	world: ^shared.World,
+	entity_index: int,
 	input: ^shared.UI_Input_Component,
 	replacement: string,
 ) -> bool {
@@ -1313,8 +1401,13 @@ replace_input_selection :: proc(
 	parts := [3]string{input.text[:start], replacement, input.text[end:]}
 	next, err := strings.concatenate(parts[:])
 	if err != nil { return false }
-	delete(input.text)
-	input.text = next
+	value := input^
+	value.text = next
+	if !ecs.set_ui_input(world, entity_index, value) {
+		delete(next)
+		return false
+	}
+	delete(next)
 	state.input_cursor = start + len(replacement)
 	state.input_anchor = state.input_cursor
 	state.input_blink_elapsed = 0
@@ -1331,542 +1424,98 @@ single_line_ascii :: proc(value: string) -> string {
 	return result
 }
 
-set_inspector_vec3_axis :: proc(
-	value: ^shared.Vec3,
-	axis: shared.Editor_Inspector_Axis,
-	number: f32,
-) -> bool {
-	if value == nil { return false }
-	switch axis {
-		case .X:
-			value.x = number
-		case .Y:
-			value.y = number
-		case .Z:
-			value.z = number
-		case .None:
-			return false
+ui_numeric_valid :: proc(input: shared.UI_Input_Component, number: f32) -> bool {
+	if !input.numeric || math.is_nan(number) || math.is_inf(number) {
+		return false
+	}
+	if input.has_minimum && number < input.minimum {
+		return false
+	}
+	if input.has_maximum && number > input.maximum {
+		return false
 	}
 	return true
 }
 
-inspector_numeric_valid :: proc(binding: shared.Editor_UI_Component, number: f32) -> bool {
-	if !binding.numeric || math.is_nan(number) || math.is_inf(number) { return false }
-	if binding.numeric_has_min && number < binding.numeric_min { return false }
-	if binding.numeric_has_max && number > binding.numeric_max { return false }
+apply_numeric_input :: proc(state: ^State, world: ^shared.World, entity_index: int) -> bool {
+	if entity_index < 0 || entity_index >= len(world.entities) {
+		return false
+	}
+	entity := world.entities[entity_index]
+	if entity.ui_input_index < 0 || entity.ui_input_index >= len(world.ui_inputs) {
+		return false
+	}
+	input := &world.ui_inputs[entity.ui_input_index]
+	number, ok := strconv.parse_f32(strings.trim_space(input.text))
+	if !ok || !ui_numeric_valid(input^, number) {
+		return false
+	}
+	input.number = number
 	return true
-}
-
-inspector_target :: proc(
-	world: ^shared.World,
-	binding: shared.Editor_UI_Component,
-) -> (
-	^shared.World_Entity,
-	int,
-	bool,
-) {
-	target_index := int(binding.target.index)
-	if target_index < 0 || target_index >= len(world.entities) { return nil, -1, false }
-	target := &world.entities[target_index]
-	if !target.alive || target.id != binding.target { return nil, -1, false }
-	return target, target_index, true
-}
-
-read_inspector_numeric :: proc(
-	world: ^shared.World,
-	binding: shared.Editor_UI_Component,
-) -> (
-	f32,
-	bool,
-) {
-	target, target_index, ok := inspector_target(world, binding)
-	if !ok { return 0, false }
-	axis_value := proc(value: shared.Vec3, axis: shared.Editor_Inspector_Axis) -> (f32, bool) {
-		switch axis {
-			case .X:
-				return value.x, true
-			case .Y:
-				return value.y, true
-			case .Z:
-				return value.z, true
-			case .None:
-				return 0, false
-		}
-		return 0, false
-	}
-	#partial switch binding.inspector_field {
-		case .Transform_Position, .Transform_Rotation, .Transform_Scale:
-			if target.transform_index < 0 ||
-			   target.transform_index >= len(world.transforms) { return 0, false }
-			value := world.transforms[target.transform_index]
-			#partial switch binding.inspector_field {
-				case .Transform_Position:
-					return axis_value(value.position, binding.inspector_axis)
-				case .Transform_Rotation:
-					return axis_value(value.rotation, binding.inspector_axis)
-				case .Transform_Scale:
-					return axis_value(value.scale, binding.inspector_axis)
-			}
-		case .Camera_Fov, .Camera_Near, .Camera_Far:
-			if target.camera_index < 0 ||
-			   target.camera_index >= len(world.cameras) { return 0, false }
-			value := world.cameras[target.camera_index]
-			#partial switch binding.inspector_field {
-				case .Camera_Fov:
-					return value.fov, true
-				case .Camera_Near:
-					return value.near, true
-				case .Camera_Far:
-					return value.far, true
-			}
-		case .Ambient_Color, .Ambient_Intensity:
-			if target.ambient_light_index < 0 ||
-			   target.ambient_light_index >= len(world.ambient_lights) { return 0, false }
-			value := world.ambient_lights[target.ambient_light_index]
-			if binding.inspector_field ==
-			   .Ambient_Color { return axis_value(value.color, binding.inspector_axis) }
-			return value.intensity, true
-		case .Directional_Direction, .Directional_Color, .Directional_Intensity:
-			if target.directional_light_index < 0 ||
-			   target.directional_light_index >= len(world.directional_lights) { return 0, false }
-			value := world.directional_lights[target.directional_light_index]
-			#partial switch binding.inspector_field {
-				case .Directional_Direction:
-					return axis_value(value.direction, binding.inspector_axis)
-				case .Directional_Color:
-					return axis_value(value.color, binding.inspector_axis)
-				case .Directional_Intensity:
-					return value.intensity, true
-			}
-		case .Point_Color, .Point_Intensity, .Point_Range:
-			if target.point_light_index < 0 ||
-			   target.point_light_index >= len(world.point_lights) { return 0, false }
-			value := world.point_lights[target.point_light_index]
-			#partial switch binding.inspector_field {
-				case .Point_Color:
-					return axis_value(value.color, binding.inspector_axis)
-				case .Point_Intensity:
-					return value.intensity, true
-				case .Point_Range:
-					return value.range, true
-			}
-		case .Custom_Vec3:
-			if binding.custom_storage_index < 0 ||
-			   binding.custom_storage_index >= len(world.custom_components) { return 0, false }
-			storage := &world.custom_components[binding.custom_storage_index]
-			for &component in storage.components {
-				if component.entity_index != target_index ||
-				   binding.custom_field_index < 0 ||
-				   binding.custom_field_index >= len(component.vec3_fields) { continue }
-				return axis_value(
-					component.vec3_fields[binding.custom_field_index].value,
-					binding.inspector_axis,
-				)
-			}
-	}
-	return 0, false
-}
-
-write_inspector_numeric :: proc(
-	state: ^State,
-	world: ^shared.World,
-	binding: shared.Editor_UI_Component,
-	number: f32,
-) -> bool {
-	if !inspector_numeric_valid(binding, number) { return false }
-	target, target_index, ok := inspector_target(world, binding)
-	if !ok { return false }
-	written := false
-	#partial switch binding.inspector_field {
-		case .Transform_Position, .Transform_Rotation, .Transform_Scale:
-			if target.transform_index < 0 ||
-			   target.transform_index >= len(world.transforms) { return false }
-			#partial switch binding.inspector_field {
-				case .Transform_Position:
-					written = set_inspector_vec3_axis(
-						&world.transforms[target.transform_index].position,
-						binding.inspector_axis,
-						number,
-					)
-				case .Transform_Rotation:
-					written = set_inspector_vec3_axis(
-						&world.transforms[target.transform_index].rotation,
-						binding.inspector_axis,
-						number,
-					)
-				case .Transform_Scale:
-					written = set_inspector_vec3_axis(
-						&world.transforms[target.transform_index].scale,
-						binding.inspector_axis,
-						number,
-					)
-			}
-		case .Camera_Fov, .Camera_Near, .Camera_Far:
-			if target.camera_index < 0 ||
-			   target.camera_index >= len(world.cameras) { return false }
-			camera := &world.cameras[target.camera_index]
-			if binding.inspector_field == .Camera_Near && number >= camera.far { return false }
-			if binding.inspector_field == .Camera_Far && number <= camera.near { return false }
-			#partial switch binding.inspector_field {
-				case .Camera_Fov:
-					camera.fov = number
-				case .Camera_Near:
-					camera.near = number
-				case .Camera_Far:
-					camera.far = number
-			}
-			written = true
-		case .Ambient_Color, .Ambient_Intensity:
-			if target.ambient_light_index < 0 ||
-			   target.ambient_light_index >= len(world.ambient_lights) { return false }
-			if binding.inspector_field == .Ambient_Color {
-				written = set_inspector_vec3_axis(
-					&world.ambient_lights[target.ambient_light_index].color,
-					binding.inspector_axis,
-					number,
-				)
-			} else {world.ambient_lights[target.ambient_light_index].intensity = number
-				written = true}
-		case .Directional_Direction, .Directional_Color, .Directional_Intensity:
-			if target.directional_light_index < 0 ||
-			   target.directional_light_index >= len(world.directional_lights) { return false }
-			#partial switch binding.inspector_field {
-				case .Directional_Direction:
-					written = set_inspector_vec3_axis(
-						&world.directional_lights[target.directional_light_index].direction,
-						binding.inspector_axis,
-						number,
-					)
-				case .Directional_Color:
-					written = set_inspector_vec3_axis(
-						&world.directional_lights[target.directional_light_index].color,
-						binding.inspector_axis,
-						number,
-					)
-				case .Directional_Intensity:
-					world.directional_lights[target.directional_light_index].intensity = number
-					written = true
-			}
-		case .Point_Color, .Point_Intensity, .Point_Range:
-			if target.point_light_index < 0 ||
-			   target.point_light_index >= len(world.point_lights) { return false }
-			#partial switch binding.inspector_field {
-				case .Point_Color:
-					written = set_inspector_vec3_axis(
-						&world.point_lights[target.point_light_index].color,
-						binding.inspector_axis,
-						number,
-					)
-				case .Point_Intensity:
-					world.point_lights[target.point_light_index].intensity = number; written = true
-				case .Point_Range:
-					world.point_lights[target.point_light_index].range = number; written = true
-			}
-		case .Custom_Vec3:
-			if binding.custom_storage_index < 0 ||
-			   binding.custom_storage_index >= len(world.custom_components) { return false }
-			storage := &world.custom_components[binding.custom_storage_index]
-			for &component in storage.components {
-				if component.entity_index != target_index ||
-				   binding.custom_field_index < 0 ||
-				   binding.custom_field_index >= len(component.vec3_fields) { continue }
-				written = set_inspector_vec3_axis(
-					&component.vec3_fields[binding.custom_field_index].value,
-					binding.inspector_axis,
-					number,
-				)
-				break
-			}
-	}
-	if written && state != nil { state.editor_snapshot_valid = false }
-	return written
-}
-
-read_inspector_bool :: proc(
-	world: ^shared.World,
-	binding: shared.Editor_UI_Component,
-) -> (
-	bool,
-	bool,
-) {
-	target, _, ok := inspector_target(world, binding)
-	if !ok { return false, false }
-	#partial switch binding.inspector_field {
-		case .UI_Layout_Hidden:
-			if target.ui_layout_index >= 0 && target.ui_layout_index < len(world.ui_layouts) {
-				return world.ui_layouts[target.ui_layout_index].hidden, true
-			}
-		case .UI_HStack_Fill, .UI_HStack_Draggable:
-			if target.ui_hstack_index >= 0 && target.ui_hstack_index < len(world.ui_hstacks) {
-				stack := world.ui_hstacks[target.ui_hstack_index]
-				if binding.inspector_field == .UI_HStack_Fill { return stack.fill, true }
-				return stack.draggable, true
-			}
-		case .UI_VStack_Fill, .UI_VStack_Draggable:
-			if target.ui_vstack_index >= 0 && target.ui_vstack_index < len(world.ui_vstacks) {
-				stack := world.ui_vstacks[target.ui_vstack_index]
-				if binding.inspector_field == .UI_VStack_Fill { return stack.fill, true }
-				return stack.draggable, true
-			}
-		case .UI_Panel_Collapsible, .UI_Panel_Collapsed:
-			if target.ui_panel_index >= 0 && target.ui_panel_index < len(world.ui_panels) {
-				panel := world.ui_panels[target.ui_panel_index]
-				if binding.inspector_field ==
-				   .UI_Panel_Collapsible { return panel.collapsible, true }
-				return panel.collapsed, true
-			}
-		case .UI_Input_Read_Only:
-			if target.ui_input_index >= 0 && target.ui_input_index < len(world.ui_inputs) {
-				return world.ui_inputs[target.ui_input_index].read_only, true
-			}
-		case .UI_Checkbox_Checked, .UI_Checkbox_Read_Only:
-			if target.ui_checkbox_index >= 0 &&
-			   target.ui_checkbox_index < len(world.ui_checkboxes) {
-				checkbox := world.ui_checkboxes[target.ui_checkbox_index]
-				if binding.inspector_field ==
-				   .UI_Checkbox_Checked { return checkbox.checked, true }
-				return checkbox.read_only, true
-			}
-	}
-	return false, false
-}
-
-write_inspector_bool :: proc(
-	state: ^State,
-	world: ^shared.World,
-	binding: shared.Editor_UI_Component,
-	value: bool,
-) -> bool {
-	target, target_index, ok := inspector_target(world, binding)
-	if !ok { return false }
-	written := false
-	#partial switch binding.inspector_field {
-		case .UI_Layout_Hidden:
-			if target.ui_layout_index >= 0 && target.ui_layout_index < len(world.ui_layouts) {
-				world.ui_layouts[target.ui_layout_index].hidden = value
-				ecs.mark_ui_subtree_dirty(world, target_index)
-				written = true
-			}
-		case .UI_HStack_Fill, .UI_HStack_Draggable:
-			if target.ui_hstack_index >= 0 && target.ui_hstack_index < len(world.ui_hstacks) {
-				stack := &world.ui_hstacks[target.ui_hstack_index]
-				if binding.inspector_field == .UI_HStack_Fill {
-					stack.fill = value
-					if !value { stack.draggable = false }
-				} else {
-					stack.draggable = value
-					if value { stack.fill = true }
-				}
-				written = true
-			}
-		case .UI_VStack_Fill, .UI_VStack_Draggable:
-			if target.ui_vstack_index >= 0 && target.ui_vstack_index < len(world.ui_vstacks) {
-				stack := &world.ui_vstacks[target.ui_vstack_index]
-				if binding.inspector_field == .UI_VStack_Fill {
-					stack.fill = value
-					if !value { stack.draggable = false }
-				} else {
-					stack.draggable = value
-					if value { stack.fill = true }
-				}
-				written = true
-			}
-		case .UI_Panel_Collapsible, .UI_Panel_Collapsed:
-			if target.ui_panel_index >= 0 && target.ui_panel_index < len(world.ui_panels) {
-				panel := &world.ui_panels[target.ui_panel_index]
-				if binding.inspector_field == .UI_Panel_Collapsible {
-					panel.collapsible = value
-					if !value { panel.collapsed = false }
-				} else if panel.collapsible || !value {
-					panel.collapsed = value
-				} else {
-					return false
-				}
-				written = true
-			}
-		case .UI_Input_Read_Only:
-			if target.ui_input_index >= 0 && target.ui_input_index < len(world.ui_inputs) {
-				world.ui_inputs[target.ui_input_index].read_only = value
-				written = true
-			}
-		case .UI_Checkbox_Checked, .UI_Checkbox_Read_Only:
-			if target.ui_checkbox_index >= 0 &&
-			   target.ui_checkbox_index < len(world.ui_checkboxes) {
-				checkbox := &world.ui_checkboxes[target.ui_checkbox_index]
-				if binding.inspector_field == .UI_Checkbox_Checked {
-					checkbox.checked = value
-				} else {
-					checkbox.read_only = value
-				}
-				written = true
-			}
-	}
-	if written && state != nil { state.editor_snapshot_valid = false }
-	return written
-}
-
-apply_inspector_input :: proc(state: ^State, world: ^shared.World, entity_index: int) -> bool {
-	if entity_index < 0 || entity_index >= len(world.entities) { return false }
-	entity := world.entities[entity_index]
-	if entity.origin != .Editor ||
-	   entity.editor_ui_index < 0 ||
-	   entity.editor_ui_index >= len(world.editor_uis) ||
-	   entity.ui_input_index < 0 ||
-	   entity.ui_input_index >= len(world.ui_inputs) { return false }
-	binding := world.editor_uis[entity.editor_ui_index]
-	number, ok := strconv.parse_f32(
-		strings.trim_space(world.ui_inputs[entity.ui_input_index].text),
-	)
-	if !ok { return false }
-	return write_inspector_numeric(state, world, binding, number)
-}
-
-editor_history_push :: proc(
-	state: ^State,
-	world: ^shared.World,
-	binding: shared.Editor_UI_Component,
-	before, after: f32,
-) {
-	if state == nil || world == nil || before == after { return }
-	target, _, found := inspector_target(world, binding)
-	if !found { return }
-	command := Editor_Edit_Command {
-		target = binding.target,
-		component_revision = target.component_revision,
-		field = binding.inspector_field,
-		axis = binding.inspector_axis,
-		custom_storage_index = binding.custom_storage_index,
-		custom_field_index = binding.custom_field_index,
-		before = before,
-		after = after,
-	}
-	state.editor_history_count = state.editor_history_cursor
-	if state.editor_history_count >= EDITOR_HISTORY_CAPACITY {
-		copy(state.editor_history[0:EDITOR_HISTORY_CAPACITY - 1], state.editor_history[1:])
-		state.editor_history_count = EDITOR_HISTORY_CAPACITY - 1
-		state.editor_history_cursor = state.editor_history_count
-	}
-	state.editor_history[state.editor_history_count] = command
-	state.editor_history_count += 1
-	state.editor_history_cursor = state.editor_history_count
-}
-
-editor_history_remove :: proc(state: ^State, index: int) {
-	if state == nil || index < 0 || index >= state.editor_history_count { return }
-	if index + 1 < state.editor_history_count {
-		copy(
-			state.editor_history[index:state.editor_history_count - 1],
-			state.editor_history[index + 1:state.editor_history_count],
-		)
-	}
-	state.editor_history_count -= 1
-	if state.editor_history_cursor > index { state.editor_history_cursor -= 1 }
-	state.editor_history_cursor = clamp(state.editor_history_cursor, 0, state.editor_history_count)
-}
-
-editor_history_apply :: proc(state: ^State, world: ^shared.World, redo: bool) -> bool {
-	if state == nil || world == nil { return false }
-	for {
-		index := state.editor_history_cursor
-		if !redo { index -= 1 }
-		if index < 0 || index >= state.editor_history_count { return false }
-		command := state.editor_history[index]
-		binding := shared.Editor_UI_Component {
-			target = command.target,
-			inspector_field = command.field,
-			inspector_axis = command.axis,
-			custom_storage_index = command.custom_storage_index,
-			custom_field_index = command.custom_field_index,
-			numeric = true,
-		}
-		target, _, found := inspector_target(world, binding)
-		value := command.before
-		if redo { value = command.after }
-		if found &&
-		   target.component_revision == command.component_revision &&
-		   write_inspector_numeric(state, world, binding, value) {
-			if redo { state.editor_history_cursor = index + 1 } else { state.editor_history_cursor = index }
-			return true
-		}
-		editor_history_remove(state, index)
-	}
-}
-
-focused_input_binding :: proc(
-	state: ^State,
-	world: ^shared.World,
-) -> (
-	shared.Editor_UI_Component,
-	int,
-	bool,
-) {
-	if state == nil || world == nil || !state.has_focused_input { return {}, -1, false }
-	entity_index := int(state.focused_input.index)
-	if entity_index < 0 || entity_index >= len(world.entities) { return {}, -1, false }
-	entity := world.entities[entity_index]
-	if !entity.alive ||
-	   entity.id != state.focused_input ||
-	   entity.editor_ui_index < 0 ||
-	   entity.editor_ui_index >= len(world.editor_uis) { return {}, -1, false }
-	return world.editor_uis[entity.editor_ui_index], entity_index, true
-}
-
-validate_focused_editor_input :: proc(state: ^State, world: ^shared.World) {
-	if state == nil || world == nil || !state.has_focused_input || !state.focused_input_editor {
-		return
-	}
-	binding, input_entity, found := focused_input_binding(state, world)
-	available := found && !ui_entity_or_ancestor_hidden(world, input_entity)
-	if available && binding.role == .Inspector_Input {
-		_, _, available = inspector_target(world, binding)
-		if available && binding.numeric {
-			_, available = read_inspector_numeric(world, binding)
-		}
-	}
-	if !available { clear_input_focus(state) }
 }
 
 finish_input_edit :: proc(state: ^State, world: ^shared.World) -> bool {
-	binding, entity_index, found := focused_input_binding(state, world)
-	if !found || !binding.numeric { return true }
+	if state == nil || world == nil || !state.has_focused_input {
+		return true
+	}
+	entity_index := int(state.focused_input.index)
+	if entity_index < 0 || entity_index >= len(world.entities) {
+		return false
+	}
 	entity := world.entities[entity_index]
-	if entity.ui_input_index < 0 || entity.ui_input_index >= len(world.ui_inputs) { return false }
+	if !entity.alive ||
+	   entity.id != state.focused_input ||
+	   entity.ui_input_index < 0 ||
+	   entity.ui_input_index >= len(world.ui_inputs) {
+		return false
+	}
 	input := &world.ui_inputs[entity.ui_input_index]
-	number, ok := strconv.parse_f32(strings.trim_space(input.text))
-	if !ok || !inspector_numeric_valid(binding, number) {
-		state.input_valid = false
-		return false
+	if input.numeric {
+		number, ok := strconv.parse_f32(strings.trim_space(input.text))
+		if !ok || !ui_numeric_valid(input^, number) {
+			state.input_valid = false
+			if interaction := ecs.ensure_ui_state(world, entity_index); interaction != nil {
+				interaction.valid = false
+			}
+			return false
+		}
+		input.number = number
+		state.input_original_number = number
+		state.input_has_original_number = true
 	}
-	if !write_inspector_numeric(state, world, binding, number) {
-		state.input_valid = false
-		return false
-	}
-	if state.input_has_original_number {
-		editor_history_push(state, world, binding, state.input_original_number, number)
-	}
-	state.input_original_number = number
-	state.input_has_original_number = true
+	_ = ecs.mark_ui_submitted(world, entity_index)
 	delete(state.input_original_text)
 	state.input_original_text, _ = strings.clone(input.text)
 	state.input_valid = true
+	if interaction := ecs.ensure_ui_state(world, entity_index); interaction != nil {
+		interaction.valid = true
+	}
 	return true
 }
 
 cancel_input_edit :: proc(state: ^State, world: ^shared.World) {
-	binding, entity_index, found := focused_input_binding(state, world)
-	if !found { return }
+	if state == nil || world == nil || !state.has_focused_input {
+		return
+	}
+	entity_index := int(state.focused_input.index)
+	if entity_index < 0 || entity_index >= len(world.entities) {
+		return
+	}
 	entity := world.entities[entity_index]
 	if entity.ui_input_index >= 0 && entity.ui_input_index < len(world.ui_inputs) {
 		input := &world.ui_inputs[entity.ui_input_index]
-		delete(input.text)
-		input.text, _ = strings.clone(state.input_original_text)
+		_ = ecs.set_ui_input_value(world, entity_index, state.input_original_text)
+		if input.numeric && state.input_has_original_number {
+			input.number = state.input_original_number
+		}
 		state.input_cursor = len(input.text)
 		state.input_anchor = 0
 	}
-	if binding.numeric && state.input_has_original_number {
-		_ = write_inspector_numeric(state, world, binding, state.input_original_number)
-	}
+	_ = ecs.mark_ui_cancelled(world, entity_index)
 	state.input_valid = true
+	if interaction := ecs.ensure_ui_state(world, entity_index); interaction != nil {
+		interaction.valid = true
+	}
 }
 
 move_input_focus :: proc(state: ^State, world: ^shared.World, backwards: bool) {
@@ -1899,13 +1548,19 @@ move_input_focus :: proc(state: ^State, world: ^shared.World, backwards: bool) {
 	if best_index >= 0 { focus_input(state, world, int(state.nodes[best_index].entity.index)) }
 }
 
-set_numeric_input_text :: proc(state: ^State, input: ^shared.UI_Input_Component, number: f32) {
+set_numeric_input_text :: proc(
+	state: ^State,
+	world: ^shared.World,
+	entity_index: int,
+	input: ^shared.UI_Input_Component,
+	number: f32,
+) {
 	if input == nil { return }
 	formatted := fmt.tprintf("%.3f", number)
 	trimmed := strings.trim_right(formatted, "0")
 	if strings.has_suffix(trimmed, ".") { trimmed = trimmed[:len(trimmed) - 1] }
-	delete(input.text)
-	input.text, _ = strings.clone(trimmed)
+	_ = ecs.set_ui_input_value(world, entity_index, trimmed)
+	input.number = number
 	state.input_anchor = 0
 	state.input_cursor = len(input.text)
 	state.input_blink_elapsed = 0
@@ -1939,8 +1594,7 @@ update_focused_input :: proc(
 		return
 	}
 	input := &world.ui_inputs[entity.ui_input_index]
-	binding, _, has_binding := focused_input_binding(state, world)
-	numeric := has_binding && binding.numeric
+	numeric := input.numeric
 	state.input_cursor = clamp(state.input_cursor, 0, len(input.text))
 	state.input_anchor = clamp(state.input_anchor, 0, len(input.text))
 	state.input_blink_elapsed += max(delta_seconds, 0)
@@ -1966,41 +1620,44 @@ update_focused_input :: proc(
 		if keyboard.backspace {
 			if start != end || start > 0 {
 				if start == end { state.input_anchor = start - 1 }
-				edited = replace_input_selection(state, input, "") || edited
+				edited = replace_input_selection(state, world, entity_index, input, "") || edited
 			}
 		}
 		start, end = input_selection(state)
 		if keyboard.delete_forward {
 			if start != end || end < len(input.text) {
 				if start == end { state.input_cursor = end + 1 }
-				edited = replace_input_selection(state, input, "") || edited
+				edited = replace_input_selection(state, world, entity_index, input, "") || edited
 			}
 		}
 		if keyboard.text != "" {
 			filtered := single_line_ascii(keyboard.text)
 			if filtered != "" {
-				edited = replace_input_selection(state, input, filtered) || edited
+				edited =
+					replace_input_selection(state, world, entity_index, input, filtered) || edited
 			}
 			delete(filtered)
 		}
 		if numeric && (keyboard.up || keyboard.down) {
 			current, ok := strconv.parse_f32(strings.trim_space(input.text))
-			if !ok || !inspector_numeric_valid(binding, current) {
-				current, ok = read_inspector_numeric(world, binding)
+			if !ok || !ui_numeric_valid(input^, current) {
+				current = input.number
+				ok = ui_numeric_valid(input^, current)
 			}
 			if ok {
 				direction := f32(1)
 				if keyboard.down { direction = -1 }
-				next := current + direction * binding.numeric_step * numeric_modifier(keyboard)
-				if binding.numeric_has_min { next = max(next, binding.numeric_min) }
-				if binding.numeric_has_max { next = min(next, binding.numeric_max) }
-				set_numeric_input_text(state, input, next)
+				next := current + direction * input.step * numeric_modifier(keyboard)
+				if input.has_minimum { next = max(next, input.minimum) }
+				if input.has_maximum { next = min(next, input.maximum) }
+				set_numeric_input_text(state, world, entity_index, input, next)
 				edited = true
 			}
 		}
 		if edited {
+			_ = ecs.mark_ui_changed(world, entity_index)
 			if numeric {
-				state.input_valid = apply_inspector_input(state, world, entity_index)
+				state.input_valid = apply_numeric_input(state, world, entity_index)
 			} else {
 				state.input_valid = true
 			}
@@ -2027,8 +1684,23 @@ update_input_scrub :: proc(
 	keyboard: Keyboard_Input,
 ) {
 	if state == nil || !state.input_scrub_armed { return }
-	binding, entity_index, found := focused_input_binding(state, world)
-	if !found || !binding.numeric || binding.inspector_axis == .None {
+	entity_index := int(state.focused_input.index)
+	if world == nil || entity_index < 0 || entity_index >= len(world.entities) {
+		state.input_scrub_armed = false
+		state.input_scrubbing = false
+		return
+	}
+	entity := world.entities[entity_index]
+	if !entity.alive ||
+	   entity.id != state.focused_input ||
+	   entity.ui_input_index < 0 ||
+	   entity.ui_input_index >= len(world.ui_inputs) {
+		state.input_scrub_armed = false
+		state.input_scrubbing = false
+		return
+	}
+	input := &world.ui_inputs[entity.ui_input_index]
+	if !input.numeric || !input.scrubbable {
 		state.input_scrub_armed = false
 		state.input_scrubbing = false
 		return
@@ -2042,15 +1714,12 @@ update_input_scrub :: proc(
 	delta := pointer.position.x - state.input_scrub_start_x
 	if !state.input_scrubbing && math.abs(delta) >= 3 { state.input_scrubbing = true }
 	if !state.input_scrubbing { return }
-	next :=
-		state.input_scrub_start_number +
-		delta / 4 * binding.numeric_step * numeric_modifier(keyboard)
-	if binding.numeric_has_min { next = max(next, binding.numeric_min) }
-	if binding.numeric_has_max { next = min(next, binding.numeric_max) }
-	entity := world.entities[entity_index]
-	if entity.ui_input_index < 0 || entity.ui_input_index >= len(world.ui_inputs) { return }
-	set_numeric_input_text(state, &world.ui_inputs[entity.ui_input_index], next)
-	state.input_valid = apply_inspector_input(state, world, entity_index)
+	next := state.input_scrub_start_number + delta / 4 * input.step * numeric_modifier(keyboard)
+	if input.has_minimum { next = max(next, input.minimum) }
+	if input.has_maximum { next = min(next, input.maximum) }
+	set_numeric_input_text(state, world, entity_index, input, next)
+	_ = ecs.mark_ui_changed(world, entity_index)
+	state.input_valid = apply_numeric_input(state, world, entity_index)
 }
 
 mark_interaction_chain :: proc(state: ^State, node_index: int, active: bool) {
@@ -2059,6 +1728,53 @@ mark_interaction_chain :: proc(state: ^State, node_index: int, active: bool) {
 		if active { state.nodes[index].active = true } else { state.nodes[index].hovered = true }
 		index = find_node_by_entity_index(state, state.nodes[index].parent_entity_index)
 	}
+}
+
+sync_ui_interaction_states :: proc(state: ^State, world: ^shared.World) {
+	if state == nil || world == nil {
+		return
+	}
+	for &node in state.nodes[:state.node_count] {
+		entity_index := int(node.entity.index)
+		interaction := ecs.ensure_ui_state(world, entity_index)
+		if interaction == nil {
+			continue
+		}
+		interaction.hovered = node.hovered
+		interaction.active = node.active
+		interaction.focused = state.has_focused_input && state.focused_input == node.entity
+		if interaction.focused {
+			interaction.valid = state.input_valid
+		}
+	}
+}
+
+handle_list_press :: proc(world: ^shared.World, pressed: shared.Entity) -> bool {
+	if world == nil { return false }
+	item_index := int(pressed.index)
+	for item_index >= 0 && item_index < len(world.entities) {
+		item := world.entities[item_index]
+		if item.ui_layout_index < 0 || item.ui_layout_index >= len(world.ui_layouts) {
+			return false
+		}
+		parent_index := find_parent_entity(
+			world,
+			world.ui_layouts[item.ui_layout_index].parent,
+			item.origin,
+		)
+		if parent_index < 0 || parent_index >= len(world.entities) { return false }
+		parent := world.entities[parent_index]
+		if parent.ui_list_index >= 0 && parent.ui_list_index < len(world.ui_lists) {
+			list := world.ui_lists[parent.ui_list_index]
+			if list.selected == item.uuid { return false }
+			list.selected = item.uuid
+			_ = ecs.set_ui_list(world, parent_index, list)
+			_ = ecs.mark_ui_changed(world, parent_index)
+			return true
+		}
+		item_index = parent_index
+	}
+	return false
 }
 
 update_interaction :: proc(
@@ -2126,16 +1842,15 @@ handle_panel_title_press :: proc(
 	if !node.laid_out ||
 	   node.panel_index < 0 ||
 	   node.panel_index >= len(world.ui_panels) { return false }
-	panel := &world.ui_panels[node.panel_index]
+	panel := world.ui_panels[node.panel_index]
 	if !panel.collapsible || panel.title == "" { return false }
 	title_height := min(max(panel.title_height, 0), node.rect.height)
 	title_rect := Rect{node.rect.x, node.rect.y, node.rect.width, title_height}
 	if !rect_contains(title_rect, position) ||
 	   node.has_clip && !rect_contains(node.clip, position) { return false }
 	panel.collapsed = !panel.collapsed
-	if node.origin == .Editor && node.editor_role == .Inspector_Panel {
-		refresh_editor_ecs_snapshot(state, world)
-	}
+	_ = ecs.set_ui_panel(world, int(node.entity.index), panel)
+	_ = ecs.mark_ui_changed(world, int(node.entity.index))
 	return true
 }
 
@@ -2151,22 +1866,12 @@ handle_checkbox_press :: proc(
 	if !node.laid_out ||
 	   node.checkbox_index < 0 ||
 	   node.checkbox_index >= len(world.ui_checkboxes) { return false }
-	checkbox := &world.ui_checkboxes[node.checkbox_index]
+	checkbox := world.ui_checkboxes[node.checkbox_index]
 	if checkbox.read_only { return false }
-	next := !checkbox.checked
 	entity_index := int(node.entity.index)
-	if entity_index >= 0 && entity_index < len(world.entities) {
-		entity := world.entities[entity_index]
-		if entity.origin == .Editor &&
-		   entity.editor_ui_index >= 0 &&
-		   entity.editor_ui_index < len(world.editor_uis) {
-			binding := world.editor_uis[entity.editor_ui_index]
-			if binding.role == .Inspector_Checkbox {
-				if !write_inspector_bool(state, world, binding, next) { return false }
-			}
-		}
-	}
-	checkbox.checked = next
+	checkbox.checked = !checkbox.checked
+	if !ecs.set_ui_checkbox(world, entity_index, checkbox) { return false }
+	_ = ecs.mark_ui_changed(world, entity_index)
 	return true
 }
 
@@ -2182,6 +1887,22 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 	background := layout.background
 	border_color := layout.border_color
 	border_width := layout.border_width
+	if node.parent_entity_index >= 0 && node.parent_entity_index < len(world.entities) {
+		parent := world.entities[node.parent_entity_index]
+		if parent.ui_list_index >= 0 && parent.ui_list_index < len(world.ui_lists) {
+			list := world.ui_lists[parent.ui_list_index]
+			selected := list.selected == world.entities[int(node.entity.index)].uuid
+			if selected && list.selection_background.w > 0 {
+				background = list.selection_background
+			}
+			if !selected && node.hovered && list.hover_background.w > 0 {
+				background = list.hover_background
+			}
+			if node.active && list.active_background.w > 0 {
+				background = list.active_background
+			}
+		}
+	}
 	if node.button_index >= 0 && node.button_index < len(world.ui_buttons) {
 		button := world.ui_buttons[node.button_index]
 		if node.active &&
@@ -2194,11 +1915,11 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 	   state.focused_input == node.entity {
 		input := world.ui_inputs[node.input_index]
 		if !state.input_valid {
-			border_color = {0.92, 0.24, 0.28, 1}
-			border_width = max(border_width, 1.5)
+			border_color = input.invalid_border_color
+			border_width = max(border_width, input.invalid_border_width)
 		} else if input.focus_border_color.w > 0 {
 			border_color = input.focus_border_color
-			border_width = max(border_width, 1)
+			border_width = max(border_width, input.focus_border_width)
 		}
 	}
 	if background.w > 0 || border_color.w > 0 && border_width > 0 {
@@ -2231,11 +1952,14 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 					},
 				); err != "" { return err }
 			}
-			text_left := f32(10)
+			text_left := panel.disclosure_margin
 			if panel.collapsible {
-				disclosure_size := min(f32(10), max(title_height - 10, 0))
+				disclosure_size := min(
+					panel.disclosure_size,
+					max(title_height - panel.disclosure_margin, 0),
+				)
 				disclosure_rect := Rect {
-					title_rect.x + 10,
+					title_rect.x + panel.disclosure_margin,
 					title_rect.y + (title_height - disclosure_size) * 0.5,
 					disclosure_size,
 					disclosure_size,
@@ -2246,11 +1970,11 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 						kind = .Disclosure,
 						rect = disclosure_rect,
 						color = panel.title_color,
-						corner_radius = 1.35,
+						corner_radius = panel.disclosure_corner_radius,
 						disclosure_expanded = !panel.collapsed,
 					},
 				); err != "" { return err }
-				text_left = 28
+				text_left = panel.disclosure_margin + disclosure_size + panel.disclosure_gap
 			}
 			text_rect := Rect {
 				title_rect.x + text_left,
@@ -2266,6 +1990,45 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 				text_rect,
 				{},
 			); err != "" { return err }
+		}
+	}
+	if node.progress_index >= 0 && node.progress_index < len(world.ui_progresses) {
+		progress := world.ui_progresses[node.progress_index]
+		track := Rect {
+			node.rect.x + progress.inset.w,
+			node.rect.y + progress.inset.x,
+			max(node.rect.width - progress.inset.w - progress.inset.y, 0),
+			max(node.rect.height - progress.inset.x - progress.inset.z, 0),
+		}
+		if track.width > 0 && track.height > 0 {
+			if progress.background_color.w > 0 {
+				if err := append_paint(
+					state,
+					{
+						kind = .Panel,
+						rect = track,
+						color = progress.background_color,
+						corner_radius = progress.corner_radius,
+					},
+				); err != "" { return err }
+			}
+			ratio := clamp(progress.value / progress.maximum, f32(0), f32(1))
+			fill := track
+			fill.width *= ratio
+			if progress.right_to_left {
+				fill.x = track.x + track.width - fill.width
+			}
+			if fill.width > 0 && progress.fill_color.w > 0 {
+				if err := append_paint(
+					state,
+					{
+						kind = .Panel,
+						rect = fill,
+						color = progress.fill_color,
+						corner_radius = min(progress.corner_radius, fill.width * 0.5),
+					},
+				); err != "" { return err }
+			}
 		}
 	}
 	if node.text_index >= 0 &&
@@ -2301,19 +2064,30 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 				box_background = checkbox.hover_background
 			}
 		}
+		corner_radius := checkbox.corner_radius
+		if corner_radius < 0 {
+			corner_radius = min(box_size * 0.22, 4)
+		}
 		if err := append_paint(
 			state,
 			{
 				kind = .Panel,
 				rect = box_rect,
 				color = box_background,
-				corner_radius = min(box_size * 0.22, 4),
+				corner_radius = corner_radius,
 				border_color = checkbox.border_color,
-				border_width = 1,
+				border_width = checkbox.border_width,
 			},
 		); err != "" { return err }
 		if checkbox.checked {
-			inset := max(box_size * 0.22, 3)
+			inset := checkbox.check_inset
+			if inset < 0 {
+				inset = max(box_size * 0.22, 3)
+			}
+			check_corner_radius := checkbox.check_corner_radius
+			if check_corner_radius < 0 {
+				check_corner_radius = max(box_size * 0.12, 1.25)
+			}
 			if err := append_paint(
 				state,
 				{
@@ -2325,7 +2099,7 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 						max(box_rect.height - inset * 2, 0),
 					},
 					color = checkbox.check_color,
-					corner_radius = max(box_size * 0.12, 1.25),
+					corner_radius = check_corner_radius,
 				},
 			); err != "" { return err }
 		}
@@ -2334,36 +2108,45 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 	   node.button_index <
 		   len(
 			   world.ui_buttons,
-		   ) { button := world.ui_buttons[node.button_index]; select_font(state, button.font); color := button.color; if node.active && button.active_color.w > 0 { color = button.active_color } else if node.hovered && button.hover_color.w > 0 { color = button.hover_color }; if err := append_centered_text(state, button.text, color, button.size, node.rect, layout.padding); err != "" { return err } }
+		   ) { button := world.ui_buttons[node.button_index]; select_font(state, button.font); color := button.color; if node.active && button.active_color.w > 0 { color = button.active_color } else if node.hovered && button.hover_color.w > 0 { color = button.hover_color }; if err := append_centered_text(state, button.text, color, button.size, node.rect, layout.padding, button.alignment); err != "" { return err } }
 	apply_paint_clip(state, paint_start, state.paint_count, node.clip, node.has_clip)
 	for child_index in 0 ..< state.node_count { if state.nodes[child_index].parent_entity_index == int(node.entity.index) { if err := paint_node(state, world, child_index, depth + 1); err != "" { return err } } }
 	if node.scroll_area_index >= 0 &&
 	   node.scroll_area_index < len(world.ui_scroll_areas) &&
 	   node.scroll_max > 0 {
+		scroll_area := world.ui_scroll_areas[node.scroll_area_index]
 		track := Rect {
-			node.rect.x + node.rect.width - 7,
-			node.rect.y + 5,
-			3,
-			max(node.rect.height - 10, 0),
+			node.rect.x +
+			node.rect.width -
+			scroll_area.scrollbar_right -
+			scroll_area.scrollbar_width,
+			node.rect.y + scroll_area.scrollbar_vertical_inset,
+			scroll_area.scrollbar_width,
+			max(node.rect.height - scroll_area.scrollbar_vertical_inset * 2, 0),
 		}
 		thumb_height := max(
 			track.height * track.height / max(node.scroll_content_height, track.height),
-			18,
+			scroll_area.minimum_thumb_size,
 		)
 		thumb_y :=
 			track.y + (track.height - thumb_height) * node.scroll_offset / max(node.scroll_max, 1)
 		start := state.paint_count
 		if err := append_paint(
 			state,
-			{kind = .Panel, rect = track, color = {0.08, 0.09, 0.11, 0.78}, corner_radius = 1.5},
+			{
+				kind = .Panel,
+				rect = track,
+				color = scroll_area.scrollbar_track_color,
+				corner_radius = scroll_area.scrollbar_corner_radius,
+			},
 		); err != "" { return err }
 		if err := append_paint(
 			state,
 			{
 				kind = .Panel,
 				rect = {track.x, thumb_y, track.width, thumb_height},
-				color = {0.34, 0.37, 0.42, 0.92},
-				corner_radius = 1.5,
+				color = scroll_area.scrollbar_thumb_color,
+				corner_radius = scroll_area.scrollbar_corner_radius,
 			},
 		); err != "" { return err }
 		apply_paint_clip(state, start, state.paint_count, node.clip, node.has_clip)
@@ -2620,7 +2403,7 @@ entity_component_count :: proc(world: ^shared.World, entity_index: int) -> int {
 	}
 	entity := world.entities[entity_index]
 	count := 0
-	indices := [14]int {
+	indices := [16]int {
 		entity.transform_index,
 		entity.camera_index,
 		entity.ambient_light_index,
@@ -2634,6 +2417,8 @@ entity_component_count :: proc(world: ^shared.World, entity_index: int) -> int {
 		entity.ui_scroll_area_index,
 		entity.ui_panel_index,
 		entity.ui_table_index,
+		entity.ui_list_index,
+		entity.ui_progress_index,
 		entity.ui_text_index,
 	}
 	for index in indices {
@@ -2770,22 +2555,13 @@ append_input :: proc(
 		max(node.rect.height - padding.x - padding.z, 0),
 	}
 	if content.width <= 0 || content.height <= 0 { return "" }
-	axis := shared.Editor_Inspector_Axis.None
-	if world != nil {
-		entity_index := int(node.entity.index)
-		if entity_index >= 0 && entity_index < len(world.entities) {
-			entity := world.entities[entity_index]
-			if entity.editor_ui_index >= 0 && entity.editor_ui_index < len(world.editor_uis) {
-				axis = world.editor_uis[entity.editor_ui_index].inspector_axis
-			}
-		}
-	}
-	axis_content := content
-	axis_width := f32(0)
-	if axis != .None {
-		axis_width = min(EDITOR_INPUT_AXIS_WIDTH, content.width)
-		content.x += axis_width + EDITOR_INPUT_AXIS_GAP
-		content.width = max(content.width - axis_width - EDITOR_INPUT_AXIS_GAP, 0)
+	_ = world
+	prefix_content := content
+	prefix_width := f32(0)
+	if input.prefix != "" && input.prefix_width > 0 {
+		prefix_width = min(input.prefix_width, content.width)
+		content.x += prefix_width + input.prefix_gap
+		content.width = max(content.width - prefix_width - input.prefix_gap, 0)
 	}
 	focused := state.has_focused_input && state.focused_input == node.entity
 	cursor := len(input.text)
@@ -2802,36 +2578,32 @@ append_input :: proc(
 		if caret_x - scroll_x < 0 { scroll_x = caret_x }
 		state.input_scroll_x = max(scroll_x, 0)
 	}
-	axis_start := state.paint_count
-	if axis != .None {
-		axis_text := "X"
-		axis_color := shared.Vec4{0.92, 0.30, 0.32, 1}
-		if axis == .Y { axis_text = "Y"; axis_color = {0.34, 0.82, 0.42, 1} }
-		if axis == .Z { axis_text = "Z"; axis_color = {0.34, 0.55, 0.96, 1} }
+	prefix_start := state.paint_count
+	if input.prefix != "" && prefix_width > 0 {
 		if err := append_paint(
 			state,
 			{
 				kind = .Panel,
-				rect = {axis_content.x, axis_content.y, axis_width, axis_content.height},
-				color = {axis_color.x, axis_color.y, axis_color.z, 0.12},
-				corner_radius = 2,
+				rect = {prefix_content.x, prefix_content.y, prefix_width, prefix_content.height},
+				color = input.prefix_background,
+				corner_radius = input.prefix_corner_radius,
 			},
 		); err != "" { return err }
 		if err := append_text_at(
 			state,
-			axis_text,
-			axis_color,
+			input.prefix,
+			input.prefix_color,
 			input.size,
-			axis_content.x + 3,
-			axis_content.y +
-			max((axis_content.height - input.size) * 0.5, 0) +
+			prefix_content.x + input.prefix_text_padding,
+			prefix_content.y +
+			max((prefix_content.height - input.size) * 0.5, 0) +
 			state.font.ascender * input.size,
-			axis_content.x + 3,
+			prefix_content.x + input.prefix_text_padding,
 		); err != "" { return err }
 	}
-	axis_clip := axis_content
-	if node.has_clip { axis_clip = rect_intersection(axis_clip, node.clip) }
-	apply_paint_clip(state, axis_start, state.paint_count, axis_clip, true)
+	prefix_clip := prefix_content
+	if node.has_clip { prefix_clip = rect_intersection(prefix_clip, node.clip) }
+	apply_paint_clip(state, prefix_start, state.paint_count, prefix_clip, true)
 	clip := content
 	if node.has_clip { clip = rect_intersection(clip, node.clip) }
 	start := state.paint_count
@@ -2847,7 +2619,7 @@ append_input :: proc(
 				kind = .Panel,
 				rect = {x0, content.y, max(x1 - x0, 0), content.height},
 				color = input.selection_background,
-				corner_radius = 2,
+				corner_radius = input.selection_corner_radius,
 			},
 		); err != "" { return err }
 	}
@@ -2864,12 +2636,21 @@ append_input :: proc(
 	); err != "" { return err }
 	if focused && int(state.input_blink_elapsed * 2) % 2 == 0 {
 		caret_x := content.x + text_advance_to(state, input.text, input.size, cursor) - scroll_x
+		caret_color := input.caret_color
+		if caret_color.w <= 0 {
+			caret_color = input.color
+		}
 		if err := append_paint(
 			state,
 			{
 				kind = .Panel,
-				rect = {caret_x, content.y + 2, 1, max(content.height - 4, 0)},
-				color = input.color,
+				rect = {
+					caret_x,
+					content.y + input.caret_inset,
+					input.caret_width,
+					max(content.height - input.caret_inset * 2, 0),
+				},
+				color = caret_color,
 			},
 		); err != "" { return err }
 	}
@@ -2908,6 +2689,7 @@ append_centered_text :: proc(
 	size: f32,
 	rect: Rect,
 	padding: shared.Vec4,
+	alignment: shared.UI_Text_Alignment = .Center,
 ) -> string {
 	bounds, has_ink := measure_text_ink(state, text, size)
 	if !has_ink { return "" }
@@ -2917,7 +2699,14 @@ append_centered_text :: proc(
 		rect.width - padding.w - padding.y,
 		rect.height - padding.x - padding.z,
 	}
-	x := content.x + (content.width - bounds.width) * 0.5 - bounds.x
+	x := content.x - bounds.x
+	switch alignment {
+		case .Left:
+		case .Center:
+			x += (content.width - bounds.width) * 0.5
+		case .Right:
+			x += content.width - bounds.width
+	}
 	baseline := content.y + (content.height - bounds.height) * 0.5 - bounds.y
 	return append_text_at(state, text, color, size, x, baseline, x)
 }

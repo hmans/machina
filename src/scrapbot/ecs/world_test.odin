@@ -3,7 +3,6 @@ package ecs
 import project "../project"
 import resources "../resources"
 import shared "../shared"
-import "core:strings"
 import "core:testing"
 
 MULTI_CUBE_SCENE :: `[[entities]]
@@ -459,8 +458,8 @@ test_scene_entity_uuid_is_stable_and_independent_from_name :: proc(t: ^testing.T
 	testing.expect(t, world.entities[0].uuid == id)
 	entity_index, found := entity_index_by_uuid(&world, id)
 	testing.expect(t, found && entity_index == 0)
-	delete(world.entities[0].name)
-	world.entities[0].name, _ = strings.clone("Renamed Label")
+	delete_world_string(&world, world.entities[0].name)
+	world.entities[0].name = clone_world_string(&world, "Renamed Label")
 	entity_index, found = entity_index_by_uuid(&world, id)
 	testing.expect(t, found && entity_index == 0)
 }

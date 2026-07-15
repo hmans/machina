@@ -362,12 +362,18 @@ name = "HUD"
 [entities.ui_layout]
 position = [20, 30]
 size = [400, 200]
+min_size = [320, 160]
 padding = [12, 12, 12, 12]
 background = [0.1, 0.2, 0.3, 0.9]
 border_color = [0.4, 0.5, 0.6, 1.0]
 border_width = 2
 corner_radius = 6
 hidden = true
+fill_width = true
+fill_height = true
+fit_content_width = true
+fit_content_height = true
+fixed_in_fill = true
 [entities.ui_vstack]
 gap = 8
 fill = true
@@ -379,11 +385,22 @@ title_color = [0.9, 0.9, 0.9, 1]
 title_background = [0.12, 0.13, 0.14, 1]
 title_size = 11
 title_height = 28
+disclosure_size = 9
+disclosure_margin = 7
+disclosure_gap = 6
+disclosure_corner_radius = 0
 collapsible = true
 collapsed = true
 [entities.ui_scroll_area]
 scroll_speed = 64
 smoothness = 12
+scrollbar_width = 5
+scrollbar_right = 6
+scrollbar_vertical_inset = 7
+minimum_thumb_size = 20
+scrollbar_corner_radius = 0
+scrollbar_track_color = [0.01, 0.02, 0.03, 1]
+scrollbar_thumb_color = [0.7, 0.8, 0.9, 1]
 [[entities]]
 id = "a6000000-0000-4000-8000-00000000000b"
 name = "Title"
@@ -418,16 +435,27 @@ row_gap = 4
 	testing.expect(t, scene.entities[0].has_ui_scroll_area)
 	testing.expect(t, scene.entities[0].ui_scroll_area.scroll_speed == 64)
 	testing.expect(t, scene.entities[0].ui_scroll_area.smoothness == 12)
+	testing.expect(t, scene.entities[0].ui_scroll_area.scrollbar_width == 5)
+	testing.expect(t, scene.entities[0].ui_scroll_area.scrollbar_corner_radius == 0)
+	testing.expect(t, scene.entities[0].ui_scroll_area.scrollbar_thumb_color.x == 0.7)
 	testing.expect(t, scene.entities[0].has_ui_panel)
 	testing.expect(t, scene.entities[0].ui_panel.title == "METRICS")
 	testing.expect(t, scene.entities[0].ui_panel.title_size == 11)
 	testing.expect(t, scene.entities[0].ui_panel.title_height == 28)
+	testing.expect(t, scene.entities[0].ui_panel.disclosure_size == 9)
+	testing.expect(t, scene.entities[0].ui_panel.disclosure_corner_radius == 0)
 	testing.expect(t, scene.entities[0].ui_panel.collapsible)
 	testing.expect(t, scene.entities[0].ui_panel.collapsed)
 	testing.expect(t, scene.entities[0].ui_layout.border_color == Vec4{0.4, 0.5, 0.6, 1})
 	testing.expect(t, scene.entities[0].ui_layout.border_width == 2)
 	testing.expect(t, scene.entities[0].ui_layout.corner_radius == 6)
 	testing.expect(t, scene.entities[0].ui_layout.hidden)
+	testing.expect(t, scene.entities[0].ui_layout.min_size == Vec2{320, 160})
+	testing.expect(t, scene.entities[0].ui_layout.fill_width)
+	testing.expect(t, scene.entities[0].ui_layout.fill_height)
+	testing.expect(t, scene.entities[0].ui_layout.fit_content_width)
+	testing.expect(t, scene.entities[0].ui_layout.fit_content_height)
+	testing.expect(t, scene.entities[0].ui_layout.fixed_in_fill)
 	hud_id, hud_id_ok := shared.entity_uuid_parse("a6000000-0000-4000-8000-00000000000a")
 	testing.expect(t, hud_id_ok && scene.entities[1].ui_layout.parent == hud_id)
 	testing.expect(t, scene.entities[1].ui_text.text == "HELLO")
@@ -436,6 +464,77 @@ row_gap = 4
 	testing.expect(t, scene.entities[2].ui_table.columns == 3)
 	testing.expect(t, scene.entities[2].ui_table.column_gap == 6)
 	testing.expect(t, scene.entities[2].ui_table.row_gap == 4)
+}
+
+@(test)
+test_scene_parses_selectable_ui_list :: proc(t: ^testing.T) {
+	selected_id, selected_id_ok := shared.entity_uuid_parse("a6000000-0000-4000-8000-000000000031")
+	testing.expect(t, selected_id_ok)
+	scene, result := parse_scene(
+		`[[entities]]
+id = "a6000000-0000-4000-8000-000000000030"
+name = "List"
+[entities.ui_layout]
+size = [240, 160]
+[entities.ui_list]
+selected = "a6000000-0000-4000-8000-000000000031"
+gap = 3
+selection_background = [0.1, 0.5, 0.4, 1]
+hover_background = [0.2, 0.3, 0.4, 1]
+active_background = [0.3, 0.4, 0.5, 1]
+[[entities]]
+id = "a6000000-0000-4000-8000-000000000031"
+name = "Item"
+[entities.ui_layout]
+parent = "a6000000-0000-4000-8000-000000000030"
+size = [240, 30]
+[entities.ui_text]
+text = "Item"
+size = 14
+`,
+	)
+	defer destroy_scene(&scene)
+	testing.expectf(t, result.err == .None, "parse failed: %s", result.message)
+	testing.expect(t, len(scene.entities) == 2)
+	testing.expect(t, scene.entities[0].has_ui_list)
+	list := scene.entities[0].ui_list
+	testing.expect(t, list.selected == selected_id)
+	testing.expect(t, list.gap == 3)
+	testing.expect(t, list.selection_background == Vec4{0.1, 0.5, 0.4, 1})
+	testing.expect(t, list.hover_background == Vec4{0.2, 0.3, 0.4, 1})
+	testing.expect(t, list.active_background == Vec4{0.3, 0.4, 0.5, 1})
+}
+
+@(test)
+test_scene_parses_styled_ui_progress :: proc(t: ^testing.T) {
+	scene, result := parse_scene(
+		`[[entities]]
+id = "a6000000-0000-4000-8000-000000000032"
+name = "Progress"
+[entities.ui_layout]
+size = [240, 20]
+[entities.ui_progress]
+value = 25
+maximum = 100
+fill_color = [0.1, 0.8, 0.6, 1]
+background_color = [0.02, 0.03, 0.04, 1]
+inset = [4, 8, 4, 8]
+corner_radius = 3
+right_to_left = true
+`,
+	)
+	defer destroy_scene(&scene)
+	testing.expectf(t, result.err == .None, "parse failed: %s", result.message)
+	testing.expect(t, len(scene.entities) == 1)
+	testing.expect(t, scene.entities[0].has_ui_progress)
+	progress := scene.entities[0].ui_progress
+	testing.expect(t, progress.value == 25)
+	testing.expect(t, progress.maximum == 100)
+	testing.expect(t, progress.fill_color == Vec4{0.1, 0.8, 0.6, 1})
+	testing.expect(t, progress.background_color == Vec4{0.02, 0.03, 0.04, 1})
+	testing.expect(t, progress.inset == Vec4{4, 8, 4, 8})
+	testing.expect(t, progress.corner_radius == 3)
+	testing.expect(t, progress.right_to_left)
 }
 
 @(test)
@@ -465,10 +564,32 @@ name = "Name Input"
 size = [240, 32]
 [entities.ui_input]
 text = "Scrapbot"
+prefix = "X"
 color = [0.9, 0.9, 0.9, 1]
+prefix_color = [0.9, 0.3, 0.3, 1]
+prefix_background = [0.9, 0.3, 0.3, 0.12]
 size = 13
+prefix_width = 14
 selection_background = [0.1, 0.5, 0.4, 0.5]
 focus_border_color = [0.1, 0.8, 0.7, 1]
+invalid_border_color = [1, 0.1, 0.2, 1]
+caret_color = [0.2, 1, 0.8, 1]
+number = 42
+step = 0.5
+minimum = 0
+maximum = 100
+prefix_gap = 4
+prefix_corner_radius = 0
+prefix_text_padding = 2
+selection_corner_radius = 0
+focus_border_width = 2
+invalid_border_width = 3
+caret_width = 2
+caret_inset = 3
+numeric = true
+has_minimum = true
+has_maximum = true
+scrubbable = true
 read_only = false
 `,
 	)
@@ -478,7 +599,16 @@ read_only = false
 	input := scene.entities[0].ui_input
 	testing.expect(t, scene.entities[0].has_ui_input)
 	testing.expect(t, input.text == "Scrapbot")
+	testing.expect(t, input.prefix == "X")
 	testing.expect(t, input.size == 13)
+	testing.expect(t, input.prefix_width == 14)
+	testing.expect(t, input.number == 42 && input.step == 0.5)
+	testing.expect(t, input.minimum == 0 && input.maximum == 100)
+	testing.expect(t, input.prefix_gap == 4 && input.prefix_corner_radius == 0)
+	testing.expect(t, input.selection_corner_radius == 0)
+	testing.expect(t, input.focus_border_width == 2 && input.invalid_border_width == 3)
+	testing.expect(t, input.caret_width == 2 && input.caret_inset == 3)
+	testing.expect(t, input.numeric && input.has_minimum && input.has_maximum && input.scrubbable)
 	testing.expect(t, input.selection_background == Vec4{0.1, 0.5, 0.4, 0.5})
 	testing.expect(t, input.focus_border_color == Vec4{0.1, 0.8, 0.7, 1})
 }
@@ -495,6 +625,10 @@ size = [32, 32]
 checked = true
 box_size = 20
 checked_background = [0.1, 0.6, 0.5, 1]
+corner_radius = 0
+border_width = 2
+check_inset = 5
+check_corner_radius = 0
 read_only = true
 `,
 	)
@@ -506,6 +640,8 @@ read_only = true
 	testing.expect(t, checkbox.checked)
 	testing.expect(t, checkbox.box_size == 20)
 	testing.expect(t, checkbox.checked_background == Vec4{0.1, 0.6, 0.5, 1})
+	testing.expect(t, checkbox.corner_radius == 0 && checkbox.border_width == 2)
+	testing.expect(t, checkbox.check_inset == 5 && checkbox.check_corner_radius == 0)
 	testing.expect(t, checkbox.read_only)
 }
 

@@ -1,12 +1,12 @@
 package script
 
 
-import base_runtime "base:runtime"
-import c "core:c"
 import component "../component"
 import ecs "../ecs"
 import resources "../resources"
 import shared "../shared"
+import base_runtime "base:runtime"
+import c "core:c"
 
 scrapbot_spawn :: proc "c" (L: Lua_State) -> c.int {
 	runtime := cast(^Runtime)lua_getthreaddata(L)
@@ -23,7 +23,8 @@ scrapbot_spawn :: proc "c" (L: Lua_State) -> c.int {
 		lua_getfield(L, 1, "name")
 		name_data := lua_tolstring(L, -1, &name_length)
 		if name_data != nil {
-			if err := ecs.init_spawn_command(&spawn, luau_string(name_data, name_length)); err != "" {
+			if err := ecs.init_spawn_command(&spawn, luau_string(name_data, name_length));
+			   err != "" {
 				lua_settop(L, -2)
 				return luau_push_error(L, err)
 			}
@@ -40,7 +41,10 @@ scrapbot_spawn :: proc "c" (L: Lua_State) -> c.int {
 	if err := ecs.queue_spawn_command(&runtime.commands, spawn); err != "" {
 		return luau_push_error(L, err)
 	}
-	return 0
+	id_buffer: [36]u8
+	id := shared.entity_uuid_to_string(spawn.uuid, id_buffer[:])
+	lua_pushlstring(L, cstring(raw_data(id)), c.size_t(len(id)))
+	return 1
 }
 
 scrapbot_despawn :: proc "c" (L: Lua_State) -> c.int {
@@ -85,27 +89,89 @@ scrapbot_add_component :: proc "c" (L: Lua_State) -> c.int {
 		if err != "" {
 			return luau_push_error(L, err)
 		}
-		if err = ecs.queue_add_transform(&runtime.commands, entity.index, entity.generation, transform); err != "" {
+		if err = ecs.queue_add_transform(
+			&runtime.commands,
+			entity.index,
+			entity.generation,
+			transform,
+		); err != "" {
 			return luau_push_error(L, err)
 		}
 		return 0
 	}
 	if component_ref.name == "scrapbot.geometry" || component_ref.name == "scrapbot.material" {
-		if err := require_system_access(runtime,component_ref.name,.Write); err != "" {return luau_push_error(L,err)}
-		expected := "geometry"; if component_ref.name == "scrapbot.material" {expected = "material"}
-		index,generation,ok := resource_handle_fields(L,3,expected); if !ok {return luau_push_error(L,"render component expects a matching resource handle")}
+		if err := require_system_access(runtime, component_ref.name, .Write);
+		   err != "" { return luau_push_error(L, err) }
+		expected := "geometry"; if component_ref.name == "scrapbot.material" { expected = "material" }
+		index, generation, ok := resource_handle_fields(
+			L,
+			3,
+			expected,
+		); if !ok { return luau_push_error(L, "render component expects a matching resource handle") }
 		if component_ref.name == "scrapbot.geometry" {
-			if _,valid:=resources.get_geometry(runtime.resource_registry,{index,generation}); !valid {return luau_push_error(L,"geometry resource handle is stale")}
-			if err:=ecs.queue_add_geometry(&runtime.commands,entity.index,entity.generation,{index,generation}); err!="" {return luau_push_error(L,err)}
+			if _, valid := resources.get_geometry(runtime.resource_registry, {index, generation});
+			   !valid { return luau_push_error(L, "geometry resource handle is stale") }
+			if err := ecs.queue_add_geometry(
+				&runtime.commands,
+				entity.index,
+				entity.generation,
+				{index, generation},
+			); err != "" { return luau_push_error(L, err) }
 		} else {
-			if _,valid:=resources.get_material(runtime.resource_registry,{index,generation}); !valid {return luau_push_error(L,"material resource handle is stale")}
-			if err:=ecs.queue_add_material(&runtime.commands,entity.index,entity.generation,{index,generation}); err!="" {return luau_push_error(L,err)}
+			if _, valid := resources.get_material(runtime.resource_registry, {index, generation});
+			   !valid { return luau_push_error(L, "material resource handle is stale") }
+			if err := ecs.queue_add_material(
+				&runtime.commands,
+				entity.index,
+				entity.generation,
+				{index, generation},
+			); err != "" { return luau_push_error(L, err) }
 		}
 		return 0
 	}
-	if component_ref.name == "scrapbot.shadow_caster" || component_ref.name == "scrapbot.shadow_receiver" {
-		if err := require_system_access(runtime, component_ref.name, .Write); err != "" {return luau_push_error(L, err)}
-		if err := ecs.queue_add_marker(&runtime.commands, entity.index, entity.generation, component_ref.name); err != "" {return luau_push_error(L, err)}
+	if component_ref.name == "scrapbot.shadow_caster" ||
+	   component_ref.name == "scrapbot.shadow_receiver" {
+		if err := require_system_access(runtime, component_ref.name, .Write);
+		   err != "" { return luau_push_error(L, err) }
+		if err := ecs.queue_add_marker(
+			&runtime.commands,
+			entity.index,
+			entity.generation,
+			component_ref.name,
+		); err != "" { return luau_push_error(L, err) }
+		return 0
+	}
+	if ui_component_name_is_mutable(component_ref.name) {
+		if err := require_system_access(runtime, component_ref.name, .Write); err != "" {
+			return luau_push_error(L, err)
+		}
+		kind := ecs.ui_component_command_kind(component_ref.name)
+		base := ecs.queued_ui_component(
+			&runtime.commands,
+			int(entity.index),
+			entity.generation,
+			kind,
+		)
+		ui_component: ecs.UI_Component_Command
+		if err := read_ui_component_command_from_luau(
+			L,
+			runtime.world,
+			int(entity.index),
+			component_ref.name,
+			3,
+			&ui_component,
+			base,
+		); err != "" {
+			return luau_push_error(L, err)
+		}
+		if err := ecs.queue_add_ui_component(
+			&runtime.commands,
+			entity.index,
+			entity.generation,
+			ui_component,
+		); err != "" {
+			return luau_push_error(L, err)
+		}
 		return 0
 	}
 
@@ -113,10 +179,16 @@ scrapbot_add_component :: proc "c" (L: Lua_State) -> c.int {
 		return luau_push_error(L, err)
 	}
 	command_component: ecs.Command_Component
-	if err := read_custom_component_payload(L, runtime, component_ref, 3, &command_component); err != "" {
+	if err := read_custom_component_payload(L, runtime, component_ref, 3, &command_component);
+	   err != "" {
 		return luau_push_error(L, err)
 	}
-	if err := ecs.queue_add_custom_component(&runtime.commands, entity.index, entity.generation, command_component); err != "" {
+	if err := ecs.queue_add_custom_component(
+		&runtime.commands,
+		entity.index,
+		entity.generation,
+		command_component,
+	); err != "" {
 		return luau_push_error(L, err)
 	}
 	return 0
@@ -135,13 +207,28 @@ scrapbot_remove_component :: proc "c" (L: Lua_State) -> c.int {
 	if component_err != "" {
 		return luau_push_error(L, component_err)
 	}
-	if component_ref.name != "scrapbot.transform" && component_ref.name != "scrapbot.geometry" && component_ref.name != "scrapbot.material" && component_ref.name != "scrapbot.shadow_caster" && component_ref.name != "scrapbot.shadow_receiver" && !component_ref_is_custom_schema_component(&runtime.registry, component_ref) {
-		return luau_push_error(L, "runtime component removal does not support this engine component")
+	if component_ref.name != "scrapbot.transform" &&
+	   component_ref.name != "scrapbot.geometry" &&
+	   component_ref.name != "scrapbot.material" &&
+	   component_ref.name != "scrapbot.shadow_caster" &&
+	   component_ref.name != "scrapbot.shadow_receiver" &&
+	   !ui_component_name_is_mutable(component_ref.name) &&
+	   !component_ref_is_custom_schema_component(&runtime.registry, component_ref) {
+		return luau_push_error(
+			L,
+			"runtime component removal does not support this engine component",
+		)
 	}
 	if err := require_system_access(runtime, component_ref.name, .Write); err != "" {
 		return luau_push_error(L, err)
 	}
-	if err := ecs.queue_remove_component(&runtime.commands, entity.index, entity.generation, component_ref.id, component_ref.name); err != "" {
+	if err := ecs.queue_remove_component(
+		&runtime.commands,
+		entity.index,
+		entity.generation,
+		component_ref.id,
+		component_ref.name,
+	); err != "" {
 		return luau_push_error(L, err)
 	}
 	return 0
@@ -187,20 +274,44 @@ read_spawn_components :: proc "c" (
 				return err
 			}
 		} else if component_name == "scrapbot.geometry" {
-			if err := require_system_access(runtime, component_name, .Write); err != "" {return err}
+			if err := require_system_access(runtime, component_name, .Write);
+			   err != "" { return err }
 			index, generation, ok := resource_handle_fields(L, -1, "geometry")
-			if !ok {return "scrapbot.geometry expects a geometry resource handle"}
-			if _, valid := resources.get_geometry(runtime.resource_registry, {index,generation}); !valid {return "scrapbot.geometry references a stale resource"}
-			ecs.spawn_set_geometry(spawn, {index,generation})
+			if !ok { return "scrapbot.geometry expects a geometry resource handle" }
+			if _, valid := resources.get_geometry(runtime.resource_registry, {index, generation});
+			   !valid { return "scrapbot.geometry references a stale resource" }
+			ecs.spawn_set_geometry(spawn, {index, generation})
 		} else if component_name == "scrapbot.material" {
-			if err := require_system_access(runtime, component_name, .Write); err != "" {return err}
+			if err := require_system_access(runtime, component_name, .Write);
+			   err != "" { return err }
 			index, generation, ok := resource_handle_fields(L, -1, "material")
-			if !ok {return "scrapbot.material expects a material resource handle"}
-			if _, valid := resources.get_material(runtime.resource_registry, {index,generation}); !valid {return "scrapbot.material references a stale resource"}
-			ecs.spawn_set_material(spawn, {index,generation})
-		} else if component_name == "scrapbot.shadow_caster" || component_name == "scrapbot.shadow_receiver" {
-			if err := require_system_access(runtime, component_name, .Write); err != "" {return err}
-			if err := ecs.spawn_set_marker(spawn, component_name); err != "" {return err}
+			if !ok { return "scrapbot.material expects a material resource handle" }
+			if _, valid := resources.get_material(runtime.resource_registry, {index, generation});
+			   !valid { return "scrapbot.material references a stale resource" }
+			ecs.spawn_set_material(spawn, {index, generation})
+		} else if component_name == "scrapbot.shadow_caster" ||
+		   component_name == "scrapbot.shadow_receiver" {
+			if err := require_system_access(runtime, component_name, .Write);
+			   err != "" { return err }
+			if err := ecs.spawn_set_marker(spawn, component_name); err != "" { return err }
+		} else if ui_component_name_is_mutable(component_name) {
+			if err := require_system_access(runtime, component_name, .Write); err != "" {
+				return err
+			}
+			ui_component: ecs.UI_Component_Command
+			if err := read_ui_component_command_from_luau(
+				L,
+				runtime.world,
+				-1,
+				component_name,
+				-1,
+				&ui_component,
+			); err != "" {
+				return err
+			}
+			if err := ecs.spawn_add_ui_component(spawn, ui_component); err != "" {
+				return err
+			}
 		} else {
 			command_component: ecs.Command_Component
 			definition, registered := component.find_definition(&runtime.registry, component_name)
@@ -210,8 +321,17 @@ read_spawn_components :: proc "c" (
 			if err := require_system_access(runtime, definition.name, .Write); err != "" {
 				return err
 			}
-			component_ref := Component_Reference{name = definition.name, id = definition.id}
-			if err := read_custom_component_payload(L, runtime, component_ref, -1, &command_component); err != "" {
+			component_ref := Component_Reference {
+				name = definition.name,
+				id = definition.id,
+			}
+			if err := read_custom_component_payload(
+				L,
+				runtime,
+				component_ref,
+				-1,
+				&command_component,
+			); err != "" {
 				return err
 			}
 			if err := ecs.spawn_add_custom_component(spawn, command_component); err != "" {
@@ -224,15 +344,33 @@ read_spawn_components :: proc "c" (
 	return ""
 }
 
-resource_handle_fields :: proc "c" (L: Lua_State, index: c.int, expected_kind: string) -> (u32, u32, bool) {
+resource_handle_fields :: proc "c" (
+	L: Lua_State,
+	index: c.int,
+	expected_kind: string,
+) -> (
+	u32,
+	u32,
+	bool,
+) {
 	lua_getfield(L, index, "kind"); kind, kind_ok := luau_required_string(L, -1); lua_settop(L, -2)
-	if !kind_ok || kind != expected_kind {return 0,0,false}
-	is_number: c.int; lua_getfield(L, index, "index"); handle_index := lua_tointegerx(L, -1, &is_number); lua_settop(L, -2); if is_number == 0 || handle_index < 0 {return 0,0,false}
-	lua_getfield(L, index, "generation"); generation := lua_tointegerx(L, -1, &is_number); lua_settop(L, -2); if is_number == 0 || generation <= 0 {return 0,0,false}
+	if !kind_ok || kind != expected_kind { return 0, 0, false }
+	is_number: c.int; lua_getfield(L, index, "index"); handle_index := lua_tointegerx(L, -1, &is_number); lua_settop(L, -2); if is_number == 0 || handle_index < 0 { return 0, 0, false }
+	lua_getfield(
+		L,
+		index,
+		"generation",
+	); generation := lua_tointegerx(L, -1, &is_number); lua_settop(L, -2); if is_number == 0 || generation <= 0 { return 0, 0, false }
 	return u32(handle_index), u32(generation), true
 }
 
-read_transform_payload :: proc "c" (L: Lua_State, payload_index: c.int) -> (transform: Transform_Component, err: string) {
+read_transform_payload :: proc "c" (
+	L: Lua_State,
+	payload_index: c.int,
+) -> (
+	transform: Transform_Component,
+	err: string,
+) {
 	transform.scale = Vec3{1, 1, 1}
 
 	if value, found, ok := optional_vec3_field(L, payload_index, "position"); found {
@@ -257,7 +395,13 @@ read_transform_payload :: proc "c" (L: Lua_State, payload_index: c.int) -> (tran
 	return transform, ""
 }
 
-read_full_transform_table :: proc "c" (L: Lua_State, payload_index: c.int) -> (transform: Transform_Component, err: string) {
+read_full_transform_table :: proc "c" (
+	L: Lua_State,
+	payload_index: c.int,
+) -> (
+	transform: Transform_Component,
+	err: string,
+) {
 	value, ok := required_vec3_field(L, payload_index, "position")
 	if !ok {
 		return transform, "scrapbot.transform.position must be a vec3"
@@ -296,13 +440,16 @@ read_custom_component_payload :: proc "c" (
 		return "runtime component payload references an unregistered component"
 	}
 	if definition.owner != .Project && definition.owner != .Library {
-		return "runtime component mutation only supports scrapbot.transform and schema-backed custom components"
+		return(
+			"runtime component mutation only supports scrapbot.transform and schema-backed custom components" \
+		)
 	}
-	if err := ecs.init_command_component(command_component, component_ref.id, component_ref.name); err != "" {
+	if err := ecs.init_command_component(command_component, component_ref.id, component_ref.name);
+	   err != "" {
 		return err
 	}
 
-	for i in 0..<definition.field_count {
+	for i in 0 ..< definition.field_count {
 		field := definition.fields[i]
 		if field.field_type != component.Field_Type.Vec3 {
 			return "unsupported component field type"
@@ -332,9 +479,12 @@ custom_component_matches_command :: proc(
 		return false
 	}
 
-	for i in 0..<command_component.vec3_field_count {
+	for i in 0 ..< command_component.vec3_field_count {
 		command_field := &command_component.vec3_fields[i]
-		value, ok := custom_component_vec3_field(world_component, ecs.command_field_name(command_field))
+		value, ok := custom_component_vec3_field(
+			world_component,
+			ecs.command_field_name(command_field),
+		)
 		if !ok || value != command_field.value {
 			return false
 		}
@@ -346,7 +496,10 @@ custom_component_matches_command :: proc(
 custom_component_vec3_field :: proc(
 	world_component: Custom_Component,
 	name: string,
-) -> (value: Vec3, ok: bool) {
+) -> (
+	value: Vec3,
+	ok: bool,
+) {
 	for field in world_component.vec3_fields {
 		if field.name == name {
 			return field.value, true
@@ -362,7 +515,7 @@ apply_custom_component_command :: proc(
 	if world_component == nil {
 		return
 	}
-	for i in 0..<command_component.vec3_field_count {
+	for i in 0 ..< command_component.vec3_field_count {
 		command_field := &command_component.vec3_fields[i]
 		field_name := ecs.command_field_name(command_field)
 		for &world_field in world_component.vec3_fields {
@@ -374,7 +527,14 @@ apply_custom_component_command :: proc(
 	}
 }
 
-optional_vec3_field :: proc "c" (L: Lua_State, index: c.int, name: cstring) -> (value: Vec3, found, ok: bool) {
+optional_vec3_field :: proc "c" (
+	L: Lua_State,
+	index: c.int,
+	name: cstring,
+) -> (
+	value: Vec3,
+	found, ok: bool,
+) {
 	lua_getfield(L, index, name)
 	if lua_type(L, -1) == LUA_TNIL {
 		lua_settop(L, -2)
@@ -385,7 +545,14 @@ optional_vec3_field :: proc "c" (L: Lua_State, index: c.int, name: cstring) -> (
 	return value, true, ok
 }
 
-required_vec3_field :: proc "c" (L: Lua_State, index: c.int, name: cstring) -> (value: Vec3, ok: bool) {
+required_vec3_field :: proc "c" (
+	L: Lua_State,
+	index: c.int,
+	name: cstring,
+) -> (
+	value: Vec3,
+	ok: bool,
+) {
 	lua_getfield(L, index, name)
 	value, ok = vec3_argument(L, -1)
 	lua_settop(L, -2)

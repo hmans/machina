@@ -22,6 +22,9 @@ export type Scrapbot = {
 	ui_scroll_area: ScrapbotUiScrollAreaComponent,
 	ui_panel: ScrapbotUiPanelComponent,
 	ui_table: ScrapbotUiTableComponent,
+	ui_list: ScrapbotUiListComponent,
+	ui_progress: ScrapbotUiProgressComponent,
+	ui_state: ScrapbotUiStateComponent,
 	ui_text: ScrapbotUiTextComponent,
 	ui_button: ScrapbotUiButtonComponent,
 	ui_input: ScrapbotUiInputComponent,
@@ -48,7 +51,7 @@ export type Scrapbot = {
 	view: (<T, R>(component: ScrapbotComponent<T, R>) -> {ScrapbotQueryItem<R>}) & ((components: {ScrapbotComponent<any, any>}) -> {ScrapbotQueryComponentsItem}) & ((query: ScrapbotAnyQuery) -> {ScrapbotQueryComponentsItem}),
 	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
 	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
-	spawn: (options: ScrapbotSpawnOptions?) -> (),
+	spawn: (options: ScrapbotSpawnOptions?) -> string,
 	despawn: (entity: ScrapbotEntity) -> (),
 	add_component: (<T>(entity: ScrapbotEntity, component: ScrapbotComponent<T, any>, payload: T) -> ()) & ((entity: ScrapbotEntity, component: string, payload: any) -> ()),
 	remove_component: (entity: ScrapbotEntity, component: ScrapbotComponent<any, any> | string) -> (),
@@ -81,6 +84,22 @@ export type ScrapbotVec3 = {
 
 export type Vec3 = ScrapbotVec3
 
+export type ScrapbotVec2 = {
+	x: number,
+	y: number,
+}
+
+export type Vec2 = ScrapbotVec2
+
+export type ScrapbotVec4 = {
+	x: number,
+	y: number,
+	z: number,
+	w: number,
+}
+
+export type Vec4 = ScrapbotVec4
+
 export type ScrapbotReadonlyVec3 = {
 	read x: number,
 	read y: number,
@@ -88,6 +107,22 @@ export type ScrapbotReadonlyVec3 = {
 }
 
 export type ReadonlyVec3 = ScrapbotReadonlyVec3
+
+export type ScrapbotReadonlyVec2 = {
+	read x: number,
+	read y: number,
+}
+
+export type ReadonlyVec2 = ScrapbotReadonlyVec2
+
+export type ScrapbotReadonlyVec4 = {
+	read x: number,
+	read y: number,
+	read z: number,
+	read w: number,
+}
+
+export type ReadonlyVec4 = ScrapbotReadonlyVec4
 
 export type ScrapbotComponent<T, R> = {
 	id: number,
@@ -271,81 +306,361 @@ export type ReadonlyScrapbotShadowReceiver = {
 export type ScrapbotShadowReceiverComponent = ScrapbotComponent<ScrapbotShadowReceiver, ReadonlyScrapbotShadowReceiver>
 
 export type ScrapbotUiLayout = {
+	parent: string?,
+	position: Vec2?,
+	size: Vec2?,
+	min_size: Vec2?,
+	margin: Vec4?,
+	padding: Vec4?,
+	background: Vec4?,
+	border_color: Vec4?,
+	border_width: number?,
+	corner_radius: number?,
+	hidden: boolean?,
+	fill_width: boolean?,
+	fill_height: boolean?,
+	fit_content_width: boolean?,
+	fit_content_height: boolean?,
+	fixed_in_fill: boolean?,
 }
 
 export type ReadonlyScrapbotUiLayout = {
+	read parent: string,
+	read position: ReadonlyVec2,
+	read size: ReadonlyVec2,
+	read min_size: ReadonlyVec2,
+	read margin: ReadonlyVec4,
+	read padding: ReadonlyVec4,
+	read background: ReadonlyVec4,
+	read border_color: ReadonlyVec4,
+	read border_width: number,
+	read corner_radius: number,
+	read hidden: boolean,
+	read fill_width: boolean,
+	read fill_height: boolean,
+	read fit_content_width: boolean,
+	read fit_content_height: boolean,
+	read fixed_in_fill: boolean,
 }
 
 export type ScrapbotUiLayoutComponent = ScrapbotComponent<ScrapbotUiLayout, ReadonlyScrapbotUiLayout>
 
 export type ScrapbotUiHstack = {
+	gap: number?,
+	fill: boolean?,
+	draggable: boolean?,
+	min_size: number?,
 }
 
 export type ReadonlyScrapbotUiHstack = {
+	read gap: number,
+	read fill: boolean,
+	read draggable: boolean,
+	read min_size: number,
 }
 
 export type ScrapbotUiHstackComponent = ScrapbotComponent<ScrapbotUiHstack, ReadonlyScrapbotUiHstack>
 
 export type ScrapbotUiVstack = {
+	gap: number?,
+	fill: boolean?,
+	draggable: boolean?,
+	min_size: number?,
 }
 
 export type ReadonlyScrapbotUiVstack = {
+	read gap: number,
+	read fill: boolean,
+	read draggable: boolean,
+	read min_size: number,
 }
 
 export type ScrapbotUiVstackComponent = ScrapbotComponent<ScrapbotUiVstack, ReadonlyScrapbotUiVstack>
 
 export type ScrapbotUiScrollArea = {
+	scroll_speed: number?,
+	smoothness: number?,
+	scrollbar_width: number?,
+	scrollbar_right: number?,
+	scrollbar_vertical_inset: number?,
+	minimum_thumb_size: number?,
+	scrollbar_corner_radius: number?,
+	scrollbar_track_color: Vec4?,
+	scrollbar_thumb_color: Vec4?,
 }
 
 export type ReadonlyScrapbotUiScrollArea = {
+	read scroll_speed: number,
+	read smoothness: number,
+	read scrollbar_width: number,
+	read scrollbar_right: number,
+	read scrollbar_vertical_inset: number,
+	read minimum_thumb_size: number,
+	read scrollbar_corner_radius: number,
+	read scrollbar_track_color: ReadonlyVec4,
+	read scrollbar_thumb_color: ReadonlyVec4,
 }
 
 export type ScrapbotUiScrollAreaComponent = ScrapbotComponent<ScrapbotUiScrollArea, ReadonlyScrapbotUiScrollArea>
 
 export type ScrapbotUiPanel = {
+	title: string?,
+	font: string?,
+	title_color: Vec4?,
+	title_background: Vec4?,
+	title_size: number?,
+	title_height: number?,
+	disclosure_size: number?,
+	disclosure_margin: number?,
+	disclosure_gap: number?,
+	disclosure_corner_radius: number?,
+	collapsible: boolean?,
+	collapsed: boolean?,
 }
 
 export type ReadonlyScrapbotUiPanel = {
+	read title: string,
+	read font: string,
+	read title_color: ReadonlyVec4,
+	read title_background: ReadonlyVec4,
+	read title_size: number,
+	read title_height: number,
+	read disclosure_size: number,
+	read disclosure_margin: number,
+	read disclosure_gap: number,
+	read disclosure_corner_radius: number,
+	read collapsible: boolean,
+	read collapsed: boolean,
 }
 
 export type ScrapbotUiPanelComponent = ScrapbotComponent<ScrapbotUiPanel, ReadonlyScrapbotUiPanel>
 
 export type ScrapbotUiTable = {
+	columns: number?,
+	column_gap: number?,
+	row_gap: number?,
 }
 
 export type ReadonlyScrapbotUiTable = {
+	read columns: number,
+	read column_gap: number,
+	read row_gap: number,
 }
 
 export type ScrapbotUiTableComponent = ScrapbotComponent<ScrapbotUiTable, ReadonlyScrapbotUiTable>
 
+export type ScrapbotUiList = {
+	selected: string?,
+	gap: number?,
+	selection_background: Vec4?,
+	hover_background: Vec4?,
+	active_background: Vec4?,
+}
+
+export type ReadonlyScrapbotUiList = {
+	read selected: string,
+	read gap: number,
+	read selection_background: ReadonlyVec4,
+	read hover_background: ReadonlyVec4,
+	read active_background: ReadonlyVec4,
+}
+
+export type ScrapbotUiListComponent = ScrapbotComponent<ScrapbotUiList, ReadonlyScrapbotUiList>
+
 export type ScrapbotUiText = {
+	text: string?,
+	font: string?,
+	color: Vec4?,
+	size: number?,
+	alignment: string?,
 }
 
 export type ReadonlyScrapbotUiText = {
+	read text: string,
+	read font: string,
+	read color: ReadonlyVec4,
+	read size: number,
+	read alignment: string,
 }
 
 export type ScrapbotUiTextComponent = ScrapbotComponent<ScrapbotUiText, ReadonlyScrapbotUiText>
 
+export type ScrapbotUiProgress = {
+	value: number?,
+	maximum: number?,
+	fill_color: Vec4?,
+	background_color: Vec4?,
+	inset: Vec4?,
+	corner_radius: number?,
+	right_to_left: boolean?,
+}
+
+export type ReadonlyScrapbotUiProgress = {
+	read value: number,
+	read maximum: number,
+	read fill_color: ReadonlyVec4,
+	read background_color: ReadonlyVec4,
+	read inset: ReadonlyVec4,
+	read corner_radius: number,
+	read right_to_left: boolean,
+}
+
+export type ScrapbotUiProgressComponent = ScrapbotComponent<ScrapbotUiProgress, ReadonlyScrapbotUiProgress>
+
+export type ScrapbotUiState = {
+	hovered: boolean?,
+	active: boolean?,
+	focused: boolean?,
+	activated: boolean?,
+	changed: boolean?,
+	valid: boolean?,
+	submitted: boolean?,
+	cancelled: boolean?,
+	activation_revision: number?,
+	change_revision: number?,
+	submit_revision: number?,
+	cancel_revision: number?,
+}
+
+export type ReadonlyScrapbotUiState = {
+	read hovered: boolean,
+	read active: boolean,
+	read focused: boolean,
+	read activated: boolean,
+	read changed: boolean,
+	read valid: boolean,
+	read submitted: boolean,
+	read cancelled: boolean,
+	read activation_revision: number,
+	read change_revision: number,
+	read submit_revision: number,
+	read cancel_revision: number,
+}
+
+export type ScrapbotUiStateComponent = ScrapbotComponent<never, ReadonlyScrapbotUiState>
+
 export type ScrapbotUiButton = {
+	text: string?,
+	font: string?,
+	color: Vec4?,
+	size: number?,
+	alignment: string?,
+	hover_background: Vec4?,
+	active_background: Vec4?,
+	hover_color: Vec4?,
+	active_color: Vec4?,
 }
 
 export type ReadonlyScrapbotUiButton = {
+	read text: string,
+	read font: string,
+	read color: ReadonlyVec4,
+	read size: number,
+	read alignment: string,
+	read hover_background: ReadonlyVec4,
+	read active_background: ReadonlyVec4,
+	read hover_color: ReadonlyVec4,
+	read active_color: ReadonlyVec4,
 }
 
 export type ScrapbotUiButtonComponent = ScrapbotComponent<ScrapbotUiButton, ReadonlyScrapbotUiButton>
 
 export type ScrapbotUiInput = {
+	text: string?,
+	font: string?,
+	prefix: string?,
+	color: Vec4?,
+	prefix_color: Vec4?,
+	prefix_background: Vec4?,
+	size: number?,
+	prefix_width: number?,
+	selection_background: Vec4?,
+	focus_border_color: Vec4?,
+	invalid_border_color: Vec4?,
+	caret_color: Vec4?,
+	number: number?,
+	step: number?,
+	minimum: number?,
+	maximum: number?,
+	prefix_gap: number?,
+	prefix_corner_radius: number?,
+	prefix_text_padding: number?,
+	selection_corner_radius: number?,
+	focus_border_width: number?,
+	invalid_border_width: number?,
+	caret_width: number?,
+	caret_inset: number?,
+	read_only: boolean?,
+	numeric: boolean?,
+	has_minimum: boolean?,
+	has_maximum: boolean?,
+	scrubbable: boolean?,
 }
 
 export type ReadonlyScrapbotUiInput = {
+	read text: string,
+	read font: string,
+	read prefix: string,
+	read color: ReadonlyVec4,
+	read prefix_color: ReadonlyVec4,
+	read prefix_background: ReadonlyVec4,
+	read size: number,
+	read prefix_width: number,
+	read selection_background: ReadonlyVec4,
+	read focus_border_color: ReadonlyVec4,
+	read invalid_border_color: ReadonlyVec4,
+	read caret_color: ReadonlyVec4,
+	read number: number,
+	read step: number,
+	read minimum: number,
+	read maximum: number,
+	read prefix_gap: number,
+	read prefix_corner_radius: number,
+	read prefix_text_padding: number,
+	read selection_corner_radius: number,
+	read focus_border_width: number,
+	read invalid_border_width: number,
+	read caret_width: number,
+	read caret_inset: number,
+	read read_only: boolean,
+	read numeric: boolean,
+	read has_minimum: boolean,
+	read has_maximum: boolean,
+	read scrubbable: boolean,
 }
 
 export type ScrapbotUiInputComponent = ScrapbotComponent<ScrapbotUiInput, ReadonlyScrapbotUiInput>
 
 export type ScrapbotUiCheckbox = {
+	checked: boolean?,
+	box_size: number?,
+	background: Vec4?,
+	checked_background: Vec4?,
+	border_color: Vec4?,
+	check_color: Vec4?,
+	hover_background: Vec4?,
+	active_background: Vec4?,
+	corner_radius: number?,
+	border_width: number?,
+	check_inset: number?,
+	check_corner_radius: number?,
+	read_only: boolean?,
 }
 
 export type ReadonlyScrapbotUiCheckbox = {
+	read checked: boolean,
+	read box_size: number,
+	read background: ReadonlyVec4,
+	read checked_background: ReadonlyVec4,
+	read border_color: ReadonlyVec4,
+	read check_color: ReadonlyVec4,
+	read hover_background: ReadonlyVec4,
+	read active_background: ReadonlyVec4,
+	read corner_radius: number,
+	read border_width: number,
+	read check_inset: number,
+	read check_corner_radius: number,
+	read read_only: boolean,
 }
 
 export type ScrapbotUiCheckboxComponent = ScrapbotComponent<ScrapbotUiCheckbox, ReadonlyScrapbotUiCheckbox>

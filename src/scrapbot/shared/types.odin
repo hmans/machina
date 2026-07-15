@@ -1,5 +1,8 @@
 package shared
 
+import runtime "base:runtime"
+import "core:math"
+
 PROJECT_FILE :: "project.toml"
 DEFAULT_SCENE :: "scenes/main.scene.toml"
 DEFAULT_SCRIPT :: "scripts/main.luau"
@@ -83,6 +86,10 @@ Scene_Entity :: struct {
 	ui_panel: UI_Panel_Component,
 	has_ui_table: bool,
 	ui_table: UI_Table_Component,
+	has_ui_list: bool,
+	ui_list: UI_List_Component,
+	has_ui_progress: bool,
+	ui_progress: UI_Progress_Component,
 	has_ui_text: bool,
 	ui_text: UI_Text_Component,
 	has_ui_button: bool,
@@ -166,6 +173,7 @@ UI_Layout_Component :: struct {
 	parent: Entity_UUID,
 	position: Vec2,
 	size: Vec2,
+	min_size: Vec2,
 	margin: Vec4,
 	padding: Vec4,
 	background: Vec4,
@@ -173,6 +181,11 @@ UI_Layout_Component :: struct {
 	border_width: f32,
 	corner_radius: f32,
 	hidden: bool,
+	fill_width: bool,
+	fill_height: bool,
+	fit_content_width: bool,
+	fit_content_height: bool,
+	fixed_in_fill: bool,
 }
 UI_Stack_Component :: struct {
 	gap: f32,
@@ -182,6 +195,13 @@ UI_Stack_Component :: struct {
 }
 UI_Scroll_Area_Component :: struct {
 	scroll_speed, smoothness: f32,
+	scrollbar_width: f32,
+	scrollbar_right: f32,
+	scrollbar_vertical_inset: f32,
+	minimum_thumb_size: f32,
+	scrollbar_corner_radius: f32,
+	scrollbar_track_color: Vec4,
+	scrollbar_thumb_color: Vec4,
 }
 UI_Panel_Component :: struct {
 	title: string,
@@ -190,6 +210,10 @@ UI_Panel_Component :: struct {
 	title_background: Vec4,
 	title_size: f32,
 	title_height: f32,
+	disclosure_size: f32,
+	disclosure_margin: f32,
+	disclosure_gap: f32,
+	disclosure_corner_radius: f32,
 	collapsible: bool,
 	collapsed: bool,
 }
@@ -197,6 +221,36 @@ UI_Table_Component :: struct {
 	columns: int,
 	column_gap: f32,
 	row_gap: f32,
+}
+UI_List_Component :: struct {
+	selected: Entity_UUID,
+	gap: f32,
+	selection_background: Vec4,
+	hover_background: Vec4,
+	active_background: Vec4,
+}
+UI_Progress_Component :: struct {
+	value: f32,
+	maximum: f32,
+	fill_color: Vec4,
+	background_color: Vec4,
+	inset: Vec4,
+	corner_radius: f32,
+	right_to_left: bool,
+}
+UI_State_Component :: struct {
+	hovered: bool,
+	active: bool,
+	focused: bool,
+	activated: bool,
+	changed: bool,
+	valid: bool,
+	submitted: bool,
+	cancelled: bool,
+	activation_revision: u64,
+	change_revision: u64,
+	submit_revision: u64,
+	cancel_revision: u64,
 }
 UI_Text_Alignment :: enum {
 	Left,
@@ -215,6 +269,7 @@ UI_Button_Component :: struct {
 	font: string,
 	color: Vec4,
 	size: f32,
+	alignment: UI_Text_Alignment,
 	hover_background: Vec4,
 	active_background: Vec4,
 	hover_color: Vec4,
@@ -223,11 +278,33 @@ UI_Button_Component :: struct {
 UI_Input_Component :: struct {
 	text: string,
 	font: string,
+	prefix: string,
 	color: Vec4,
+	prefix_color: Vec4,
+	prefix_background: Vec4,
 	size: f32,
+	prefix_width: f32,
 	selection_background: Vec4,
 	focus_border_color: Vec4,
+	invalid_border_color: Vec4,
+	caret_color: Vec4,
+	number: f32,
+	step: f32,
+	minimum: f32,
+	maximum: f32,
+	prefix_gap: f32,
+	prefix_corner_radius: f32,
+	prefix_text_padding: f32,
+	selection_corner_radius: f32,
+	focus_border_width: f32,
+	invalid_border_width: f32,
+	caret_width: f32,
+	caret_inset: f32,
 	read_only: bool,
+	numeric: bool,
+	has_minimum: bool,
+	has_maximum: bool,
+	scrubbable: bool,
 }
 
 Font_Glyph :: struct {
@@ -243,7 +320,218 @@ UI_Checkbox_Component :: struct {
 	check_color: Vec4,
 	hover_background: Vec4,
 	active_background: Vec4,
+	corner_radius: f32,
+	border_width: f32,
+	check_inset: f32,
+	check_corner_radius: f32,
 	read_only: bool,
+}
+
+ui_layout_default :: proc "contextless" () -> UI_Layout_Component {
+	return {}
+}
+
+ui_stack_default :: proc "contextless" () -> UI_Stack_Component {
+	return {}
+}
+
+ui_scroll_area_default :: proc "contextless" () -> UI_Scroll_Area_Component {
+	return {
+		scroll_speed = 48,
+		smoothness = 14,
+		scrollbar_width = 3,
+		scrollbar_right = 4,
+		scrollbar_vertical_inset = 5,
+		minimum_thumb_size = 18,
+		scrollbar_corner_radius = 1.5,
+		scrollbar_track_color = {0.08, 0.09, 0.11, 0.78},
+		scrollbar_thumb_color = {0.34, 0.37, 0.42, 0.92},
+	}
+}
+
+ui_panel_default :: proc "contextless" () -> UI_Panel_Component {
+	return {
+		title_color = {1, 1, 1, 1},
+		title_size = 12,
+		title_height = 32,
+		disclosure_size = 10,
+		disclosure_margin = 10,
+		disclosure_gap = 8,
+		disclosure_corner_radius = 1.35,
+	}
+}
+
+ui_table_default :: proc "contextless" () -> UI_Table_Component {
+	return {columns = 1}
+}
+
+ui_list_default :: proc "contextless" () -> UI_List_Component {
+	return {
+		selection_background = {0.045, 0.095, 0.105, 1},
+		hover_background = {0.028, 0.038, 0.050, 1},
+		active_background = {0.040, 0.055, 0.072, 1},
+	}
+}
+
+ui_progress_default :: proc "contextless" () -> UI_Progress_Component {
+	return {maximum = 1, fill_color = {1, 1, 1, 1}}
+}
+
+ui_text_default :: proc "contextless" () -> UI_Text_Component {
+	return {color = {1, 1, 1, 1}, size = 16}
+}
+
+ui_button_default :: proc "contextless" () -> UI_Button_Component {
+	return {color = {1, 1, 1, 1}, size = 16, alignment = .Center}
+}
+
+ui_input_default :: proc "contextless" () -> UI_Input_Component {
+	return {
+		color = {1, 1, 1, 1},
+		prefix_color = {1, 1, 1, 1},
+		size = 16,
+		step = 1,
+		prefix_gap = 3,
+		prefix_corner_radius = 2,
+		prefix_text_padding = 3,
+		selection_corner_radius = 2,
+		focus_border_width = 1,
+		invalid_border_width = 1.5,
+		caret_width = 1,
+		caret_inset = 2,
+		selection_background = {0.15, 0.45, 0.40, 0.55},
+		focus_border_color = {0.15, 0.85, 0.72, 1},
+		invalid_border_color = {0.92, 0.24, 0.28, 1},
+	}
+}
+
+ui_checkbox_default :: proc "contextless" () -> UI_Checkbox_Component {
+	return {
+		box_size = 18,
+		background = {0.025, 0.030, 0.040, 1},
+		checked_background = {0.08, 0.55, 0.46, 1},
+		border_color = {0.24, 0.27, 0.32, 1},
+		check_color = {0.95, 0.97, 0.98, 1},
+		hover_background = {0.12, 0.64, 0.54, 1},
+		active_background = {0.06, 0.42, 0.36, 1},
+		corner_radius = -1,
+		border_width = 1,
+		check_inset = -1,
+		check_corner_radius = -1,
+	}
+}
+
+ui_layout_is_valid :: proc "contextless" (value: UI_Layout_Component) -> bool {
+	return(
+		value.size.x > 0 &&
+		value.size.y > 0 &&
+		value.border_width >= 0 &&
+		value.corner_radius >= 0 &&
+		value.min_size.x >= 0 &&
+		value.min_size.y >= 0 &&
+		ui_vec4_is_non_negative(value.margin) &&
+		ui_vec4_is_non_negative(value.padding) \
+	)
+}
+
+ui_stack_is_valid :: proc "contextless" (value: UI_Stack_Component) -> bool {
+	return value.gap >= 0 && value.min_size >= 0 && (!value.draggable || value.fill)
+}
+
+ui_scroll_area_is_valid :: proc "contextless" (value: UI_Scroll_Area_Component) -> bool {
+	return(
+		value.scroll_speed > 0 &&
+		value.smoothness > 0 &&
+		value.scrollbar_width >= 0 &&
+		value.scrollbar_right >= 0 &&
+		value.scrollbar_vertical_inset >= 0 &&
+		value.minimum_thumb_size >= 0 &&
+		value.scrollbar_corner_radius >= 0 \
+	)
+}
+
+ui_panel_is_valid :: proc "contextless" (value: UI_Panel_Component) -> bool {
+	if value.title != "" && (value.title_size <= 0 || value.title_height <= 0) {
+		return false
+	}
+	if value.collapsible && value.title == "" {
+		return false
+	}
+	if value.disclosure_size < 0 ||
+	   value.disclosure_margin < 0 ||
+	   value.disclosure_gap < 0 ||
+	   value.disclosure_corner_radius < 0 {
+		return false
+	}
+	return !value.collapsed || value.collapsible
+}
+
+ui_table_is_valid :: proc "contextless" (value: UI_Table_Component) -> bool {
+	return value.columns >= 1 && value.columns <= 64 && value.column_gap >= 0 && value.row_gap >= 0
+}
+
+ui_list_is_valid :: proc "contextless" (value: UI_List_Component) -> bool {
+	return value.gap >= 0
+}
+
+ui_progress_is_valid :: proc "contextless" (value: UI_Progress_Component) -> bool {
+	return value.maximum > 0 && value.corner_radius >= 0 && ui_vec4_is_non_negative(value.inset)
+}
+
+ui_text_is_valid :: proc "contextless" (value: UI_Text_Component) -> bool {
+	return value.text != "" && value.size > 0
+}
+
+ui_button_is_valid :: proc "contextless" (value: UI_Button_Component) -> bool {
+	return value.text != "" && value.size > 0
+}
+
+ui_input_is_valid :: proc "contextless" (value: UI_Input_Component) -> bool {
+	if value.size <= 0 ||
+	   value.prefix_width < 0 ||
+	   value.prefix_gap < 0 ||
+	   value.prefix_corner_radius < 0 ||
+	   value.prefix_text_padding < 0 ||
+	   value.selection_corner_radius < 0 ||
+	   value.focus_border_width < 0 ||
+	   value.invalid_border_width < 0 ||
+	   value.caret_width < 0 ||
+	   value.caret_inset < 0 {
+		return false
+	}
+	if !value.numeric {
+		return true
+	}
+	if math.is_nan(value.number) || math.is_inf(value.number) || value.step <= 0 {
+		return false
+	}
+	if value.has_minimum && (math.is_nan(value.minimum) || math.is_inf(value.minimum)) {
+		return false
+	}
+	if value.has_maximum && (math.is_nan(value.maximum) || math.is_inf(value.maximum)) {
+		return false
+	}
+	if value.has_minimum && value.number < value.minimum {
+		return false
+	}
+	if value.has_maximum && value.number > value.maximum {
+		return false
+	}
+	return !value.has_minimum || !value.has_maximum || value.minimum <= value.maximum
+}
+
+ui_checkbox_is_valid :: proc "contextless" (value: UI_Checkbox_Component) -> bool {
+	return(
+		value.box_size > 0 &&
+		value.corner_radius >= -1 &&
+		value.border_width >= 0 &&
+		value.check_inset >= -1 &&
+		value.check_corner_radius >= -1 \
+	)
+}
+
+ui_vec4_is_non_negative :: proc "contextless" (value: Vec4) -> bool {
+	return value.x >= 0 && value.y >= 0 && value.z >= 0 && value.w >= 0
 }
 
 Editor_Inspector_Field :: enum {
@@ -323,12 +611,11 @@ Editor_UI_Role :: enum {
 	Transport_Stop,
 	Transport_Step,
 	Systems_Scroll,
+	Systems_Row,
 	Systems_Name,
 	Systems_Time,
 	Systems_Origin,
-	Systems_Bar_Fill,
 	Browser_Scroll,
-	Browser_Header,
 	Browser_Row,
 	Browser_Row_Label,
 	Inspector_Header,
@@ -351,12 +638,8 @@ Editor_UI_Component :: struct {
 	inspector_axis: Editor_Inspector_Axis,
 	custom_storage_index: int,
 	custom_field_index: int,
-	numeric: bool,
-	numeric_step: f32,
-	numeric_min: f32,
-	numeric_max: f32,
-	numeric_has_min: bool,
-	numeric_has_max: bool,
+	input_original_number: f32,
+	input_has_original_number: bool,
 }
 
 Mesh_Component :: struct {
@@ -423,6 +706,9 @@ World_Entity :: struct {
 	ui_scroll_area_index: int,
 	ui_panel_index: int,
 	ui_table_index: int,
+	ui_list_index: int,
+	ui_progress_index: int,
+	ui_state_index: int,
 	ui_text_index: int,
 	ui_button_index: int,
 	ui_input_index: int,
@@ -478,6 +764,7 @@ Render_List :: struct {
 }
 
 World :: struct {
+	string_allocator: runtime.Allocator,
 	instance_uuid: Entity_UUID,
 	time: Time_Resource,
 	entities: [dynamic]World_Entity,
@@ -510,10 +797,26 @@ World :: struct {
 	ui_scroll_areas: [dynamic]UI_Scroll_Area_Component,
 	ui_panels: [dynamic]UI_Panel_Component,
 	ui_tables: [dynamic]UI_Table_Component,
+	ui_lists: [dynamic]UI_List_Component,
+	ui_progresses: [dynamic]UI_Progress_Component,
+	ui_states: [dynamic]UI_State_Component,
 	ui_texts: [dynamic]UI_Text_Component,
 	ui_buttons: [dynamic]UI_Button_Component,
 	ui_inputs: [dynamic]UI_Input_Component,
 	ui_checkboxes: [dynamic]UI_Checkbox_Component,
+	free_ui_layout_indices: [dynamic]int,
+	free_ui_hstack_indices: [dynamic]int,
+	free_ui_vstack_indices: [dynamic]int,
+	free_ui_scroll_area_indices: [dynamic]int,
+	free_ui_panel_indices: [dynamic]int,
+	free_ui_table_indices: [dynamic]int,
+	free_ui_list_indices: [dynamic]int,
+	free_ui_progress_indices: [dynamic]int,
+	free_ui_state_indices: [dynamic]int,
+	free_ui_text_indices: [dynamic]int,
+	free_ui_button_indices: [dynamic]int,
+	free_ui_input_indices: [dynamic]int,
+	free_ui_checkbox_indices: [dynamic]int,
 	editor_transform_gizmos: [dynamic]Editor_Transform_Gizmo_Component,
 	editor_scene_cameras: [dynamic]Editor_Scene_Camera_Component,
 	editor_uis: [dynamic]Editor_UI_Component,

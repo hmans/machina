@@ -27,6 +27,9 @@ export type Scrapbot = {
 	ui_scroll_area: ScrapbotUiScrollAreaComponent,
 	ui_panel: ScrapbotUiPanelComponent,
 	ui_table: ScrapbotUiTableComponent,
+	ui_list: ScrapbotUiListComponent,
+	ui_progress: ScrapbotUiProgressComponent,
+	ui_state: ScrapbotUiStateComponent,
 	ui_text: ScrapbotUiTextComponent,
 	ui_button: ScrapbotUiButtonComponent,
 	ui_input: ScrapbotUiInputComponent,
@@ -53,7 +56,7 @@ export type Scrapbot = {
 	view: (<T, R>(component: ScrapbotComponent<T, R>) -> {ScrapbotQueryItem<R>}) & ((components: {ScrapbotComponent<any, any>}) -> {ScrapbotQueryComponentsItem}) & ((query: ScrapbotAnyQuery) -> {ScrapbotQueryComponentsItem}),
 	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
 	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
-	spawn: (options: ScrapbotSpawnOptions?) -> (),
+	spawn: (options: ScrapbotSpawnOptions?) -> string,
 	despawn: (entity: ScrapbotEntity) -> (),
 	add_component: (<T>(entity: ScrapbotEntity, component: ScrapbotComponent<T, any>, payload: T) -> ()) & ((entity: ScrapbotEntity, component: string, payload: any) -> ()),
 	remove_component: (entity: ScrapbotEntity, component: ScrapbotComponent<any, any> | string) -> (),
@@ -86,6 +89,22 @@ export type ScrapbotVec3 = {
 
 export type Vec3 = ScrapbotVec3
 
+export type ScrapbotVec2 = {
+	x: number,
+	y: number,
+}
+
+export type Vec2 = ScrapbotVec2
+
+export type ScrapbotVec4 = {
+	x: number,
+	y: number,
+	z: number,
+	w: number,
+}
+
+export type Vec4 = ScrapbotVec4
+
 export type ScrapbotReadonlyVec3 = {
 	read x: number,
 	read y: number,
@@ -93,6 +112,22 @@ export type ScrapbotReadonlyVec3 = {
 }
 
 export type ReadonlyVec3 = ScrapbotReadonlyVec3
+
+export type ScrapbotReadonlyVec2 = {
+	read x: number,
+	read y: number,
+}
+
+export type ReadonlyVec2 = ScrapbotReadonlyVec2
+
+export type ScrapbotReadonlyVec4 = {
+	read x: number,
+	read y: number,
+	read z: number,
+	read w: number,
+}
+
+export type ReadonlyVec4 = ScrapbotReadonlyVec4
 
 export type ScrapbotComponent<T, R> = {
 	id: number,
@@ -201,7 +236,17 @@ write_luau_component_type :: proc(builder: ^strings.Builder, definition: Definit
 	strings.write_string(builder, "{\n")
 	for i in 0 ..< definition.field_count {
 		field := definition.fields[i]
-		fmt.sbprintf(builder, "\t%s: %s,\n", field.name, luau_field_type_name(field.field_type))
+		optional := ""
+		if strings.has_prefix(definition.name, "scrapbot.ui_") {
+			optional = "?"
+		}
+		fmt.sbprintf(
+			builder,
+			"\t%s: %s%s,\n",
+			field.name,
+			luau_field_type_name(field.field_type),
+			optional,
+		)
 	}
 	strings.write_string(builder, "}\n\n")
 
@@ -222,15 +267,30 @@ write_luau_component_type :: proc(builder: ^strings.Builder, definition: Definit
 		builder,
 		"export type %sComponent = ScrapbotComponent<%s, %s>\n\n",
 		type_name,
-		type_name,
+		luau_component_write_type(definition, type_name),
 		readonly_type_name,
 	)
 }
 
+luau_component_write_type :: proc(definition: Definition, type_name: string) -> string {
+	if definition.name == "scrapbot.ui_state" {
+		return "never"
+	}
+	return type_name
+}
+
 luau_field_type_name :: proc(field_type: Field_Type) -> string {
 	#partial switch field_type {
+		case .Bool:
+			return "boolean"
+		case .String:
+			return "string"
+		case .Vec2:
+			return "Vec2"
 		case .Vec3:
 			return "Vec3"
+		case .Vec4:
+			return "Vec4"
 		case .Number:
 			return "number"
 	}
@@ -239,8 +299,16 @@ luau_field_type_name :: proc(field_type: Field_Type) -> string {
 
 luau_readonly_field_type_name :: proc(field_type: Field_Type) -> string {
 	#partial switch field_type {
+		case .Bool:
+			return "boolean"
+		case .String:
+			return "string"
+		case .Vec2:
+			return "ReadonlyVec2"
 		case .Vec3:
 			return "ReadonlyVec3"
+		case .Vec4:
+			return "ReadonlyVec4"
 		case .Number:
 			return "number"
 	}

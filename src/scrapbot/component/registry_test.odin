@@ -1,8 +1,9 @@
 package component
 
-import "core:testing"
-import "core:strings"
 import shared "../shared"
+import "core:reflect"
+import "core:strings"
+import "core:testing"
 
 @(test)
 test_registry_contains_engine_components :: proc(t: ^testing.T) {
@@ -24,12 +25,69 @@ test_registry_contains_engine_components :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_public_ui_registry_fields_exactly_match_component_structs :: proc(t: ^testing.T) {
+	registry: Registry
+	init_registry(&registry)
+	cases := [?]struct {
+		name: string,
+		component_type: typeid,
+	} {
+		{"scrapbot.ui_layout", shared.UI_Layout_Component},
+		{"scrapbot.ui_hstack", shared.UI_Stack_Component},
+		{"scrapbot.ui_vstack", shared.UI_Stack_Component},
+		{"scrapbot.ui_scroll_area", shared.UI_Scroll_Area_Component},
+		{"scrapbot.ui_panel", shared.UI_Panel_Component},
+		{"scrapbot.ui_table", shared.UI_Table_Component},
+		{"scrapbot.ui_list", shared.UI_List_Component},
+		{"scrapbot.ui_progress", shared.UI_Progress_Component},
+		{"scrapbot.ui_state", shared.UI_State_Component},
+		{"scrapbot.ui_text", shared.UI_Text_Component},
+		{"scrapbot.ui_button", shared.UI_Button_Component},
+		{"scrapbot.ui_input", shared.UI_Input_Component},
+		{"scrapbot.ui_checkbox", shared.UI_Checkbox_Component},
+	}
+	for schema in cases {
+		definition, found := find_definition(&registry, schema.name)
+		testing.expectf(t, found, "%s is missing from the registry", schema.name)
+		if !found {
+			continue
+		}
+		names := reflect.struct_field_names(schema.component_type)
+		testing.expectf(
+			t,
+			definition.field_count == len(names),
+			"%s exposes %d of %d struct fields",
+			schema.name,
+			definition.field_count,
+			len(names),
+		)
+		if definition.field_count != len(names) {
+			continue
+		}
+		for name, index in names {
+			testing.expectf(
+				t,
+				definition.fields[index].name == name,
+				"%s field %d is %s, expected %s",
+				schema.name,
+				index,
+				definition.fields[index].name,
+				name,
+			)
+		}
+	}
+}
+
+@(test)
 test_registry_rejects_project_component_name_collisions :: proc(t: ^testing.T) {
 	registry: Registry
 	init_registry(&registry)
 
 	err := register_project_component(&registry, Definition{name = "scrapbot.transform"})
-	testing.expect(t, err == "project scripts can only define single-token project component names")
+	testing.expect(
+		t,
+		err == "project scripts can only define single-token project component names",
+	)
 
 	err = register_project_component(&registry, Definition{name = "autorotate"})
 	testing.expect(t, err == "")
@@ -63,8 +121,14 @@ test_registry_registers_library_components :: proc(t: ^testing.T) {
 	err = register_library_component(&registry, Definition{name = "scrapbot.transform"})
 	testing.expect(t, err == "library components cannot use the scrapbot namespace")
 
-	definition := Definition{name = "scrappyphysics.rigidbody", field_count = 1}
-	definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
+	definition := Definition {
+		name = "scrappyphysics.rigidbody",
+		field_count = 1,
+	}
+	definition.fields[0] = Field_Definition {
+		name = "velocity",
+		field_type = .Vec3,
+	}
 	err = register_library_component(&registry, definition)
 	testing.expect(t, err == "")
 
@@ -75,7 +139,10 @@ test_registry_registers_library_components :: proc(t: ^testing.T) {
 	testing.expect(t, rigidbody.field_count == 1)
 
 	err = register_project_component(&registry, Definition{name = "scrappyphysics.rigidbody"})
-	testing.expect(t, err == "project scripts can only define single-token project component names")
+	testing.expect(
+		t,
+		err == "project scripts can only define single-token project component names",
+	)
 }
 
 @(test)
@@ -83,12 +150,20 @@ test_registry_validates_scene_component_fields :: proc(t: ^testing.T) {
 	registry: Registry
 	init_registry(&registry)
 
-	definition := Definition{name = "autorotate", field_count = 1}
-	definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
+	definition := Definition {
+		name = "autorotate",
+		field_count = 1,
+	}
+	definition.fields[0] = Field_Definition {
+		name = "velocity",
+		field_type = .Vec3,
+	}
 	err := register_project_component(&registry, definition)
 	testing.expect(t, err == "")
 
-	scene_component := shared.Custom_Component{name = "autorotate"}
+	scene_component := shared.Custom_Component {
+		name = "autorotate",
+	}
 	append(&scene_component.vec3_fields, shared.Named_Vec3{name = "velocity"})
 	defer delete(scene_component.vec3_fields)
 
@@ -98,7 +173,7 @@ test_registry_validates_scene_component_fields :: proc(t: ^testing.T) {
 	testing.expect(
 		t,
 		validate_custom_component(&registry, scene_component) ==
-			`scene component "autorotate" has field "speed" that is not defined by scripts/main.luau`,
+		`scene component "autorotate" has field "speed" that is not defined by scripts/main.luau`,
 	)
 }
 
@@ -107,12 +182,20 @@ test_registry_validates_library_scene_component_fields :: proc(t: ^testing.T) {
 	registry: Registry
 	init_registry(&registry)
 
-	definition := Definition{name = "scrappyphysics.rigidbody", field_count = 1}
-	definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
+	definition := Definition {
+		name = "scrappyphysics.rigidbody",
+		field_count = 1,
+	}
+	definition.fields[0] = Field_Definition {
+		name = "velocity",
+		field_type = .Vec3,
+	}
 	err := register_library_component(&registry, definition)
 	testing.expect(t, err == "")
 
-	scene_component := shared.Custom_Component{name = "scrappyphysics.rigidbody"}
+	scene_component := shared.Custom_Component {
+		name = "scrappyphysics.rigidbody",
+	}
 	append(&scene_component.vec3_fields, shared.Named_Vec3{name = "velocity"})
 	defer delete(scene_component.vec3_fields)
 
@@ -122,7 +205,7 @@ test_registry_validates_library_scene_component_fields :: proc(t: ^testing.T) {
 	testing.expect(
 		t,
 		validate_custom_component(&registry, scene_component) ==
-			`scene component "scrappyphysics.rigidbody" has field "mass" that is not defined by its registered schema`,
+		`scene component "scrappyphysics.rigidbody" has field "mass" that is not defined by its registered schema`,
 	)
 }
 
@@ -131,7 +214,9 @@ test_registry_rejects_unknown_namespaced_scene_components :: proc(t: ^testing.T)
 	registry: Registry
 	init_registry(&registry)
 
-	scene_component := shared.Custom_Component{name = "scrappyphysics.rigidbody"}
+	scene_component := shared.Custom_Component {
+		name = "scrappyphysics.rigidbody",
+	}
 	err := validate_custom_component(&registry, scene_component)
 	testing.expect(t, err == `scene component "scrappyphysics.rigidbody" is not registered`)
 }
@@ -140,12 +225,24 @@ test_registry_rejects_unknown_namespaced_scene_components :: proc(t: ^testing.T)
 test_luau_types_include_registered_components :: proc(t: ^testing.T) {
 	registry: Registry
 	init_registry(&registry)
-	definition := Definition{name = "autorotate", field_count = 1}
-	definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
+	definition := Definition {
+		name = "autorotate",
+		field_count = 1,
+	}
+	definition.fields[0] = Field_Definition {
+		name = "velocity",
+		field_type = .Vec3,
+	}
 	err := register_project_component(&registry, definition)
 	testing.expect(t, err == "")
-	library_definition := Definition{name = "scrappyphysics.rigidbody", field_count = 1}
-	library_definition.fields[0] = Field_Definition{name = "velocity", field_type = .Vec3}
+	library_definition := Definition {
+		name = "scrappyphysics.rigidbody",
+		field_count = 1,
+	}
+	library_definition.fields[0] = Field_Definition {
+		name = "velocity",
+		field_type = .Vec3,
+	}
 	library_err := register_library_component(&registry, library_definition)
 	testing.expect(t, library_err == "")
 
@@ -162,17 +259,41 @@ test_luau_types_include_registered_components :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(text, "\tvelocity: Vec3,"))
 	testing.expect(t, strings.contains(text, "export type ReadonlyAutorotate = {"))
 	testing.expect(t, strings.contains(text, "\tread velocity: ReadonlyVec3,"))
-	testing.expect(t, strings.contains(text, "export type AutorotateComponent = ScrapbotComponent<Autorotate, ReadonlyAutorotate>"))
-	testing.expect(t, strings.contains(text, "library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,"))
+	testing.expect(
+		t,
+		strings.contains(
+			text,
+			"export type AutorotateComponent = ScrapbotComponent<Autorotate, ReadonlyAutorotate>",
+		),
+	)
+	testing.expect(
+		t,
+		strings.contains(
+			text,
+			"library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,",
+		),
+	)
 	testing.expect(t, strings.contains(text, "export type ScrappyphysicsRigidbody = {"))
-	testing.expect(t, strings.contains(text, "export type ScrappyphysicsRigidbodyComponent = ScrapbotComponent<ScrappyphysicsRigidbody, ReadonlyScrappyphysicsRigidbody>"))
+	testing.expect(
+		t,
+		strings.contains(
+			text,
+			"export type ScrappyphysicsRigidbodyComponent = ScrapbotComponent<ScrappyphysicsRigidbody, ReadonlyScrappyphysicsRigidbody>",
+		),
+	)
 	testing.expect(t, strings.contains(text, "export type ScrapbotQuery2<A, RA, B, RB> = {"))
 	testing.expect(t, strings.contains(text, "\t_arity: \"2\","))
 	testing.expect(t, strings.contains(text, "\t_read_type_a: RA?,"))
 	testing.expect(t, strings.contains(text, "\t_read_type_b: RB?,"))
 	testing.expect(t, strings.contains(text, "\tsystem: (...any) -> (),"))
 	testing.expect(t, strings.contains(text, "callback: (ScrapbotEntity, RA, RB) -> ()) -> (),"))
-	testing.expect(t, strings.contains(text, "<A, RA, B, RB>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>) -> ScrapbotQuery2<A, RA, B, RB>"))
+	testing.expect(
+		t,
+		strings.contains(
+			text,
+			"<A, RA, B, RB>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>) -> ScrapbotQuery2<A, RA, B, RB>",
+		),
+	)
 	testing.expect(t, !strings.contains(text, "query3:"))
 }
 

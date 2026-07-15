@@ -4,7 +4,7 @@ import shared "../shared"
 import "core:fmt"
 
 MAX_COMPONENTS :: 128
-MAX_COMPONENT_FIELDS :: 16
+MAX_COMPONENT_FIELDS :: 32
 
 Custom_Component :: shared.Custom_Component
 Component_ID :: shared.Component_ID
@@ -16,7 +16,11 @@ Owner :: enum {
 }
 
 Field_Type :: enum {
+	Bool,
+	String,
+	Vec2,
 	Vec3,
+	Vec4,
 	Number,
 }
 
@@ -82,16 +86,200 @@ init_registry :: proc(registry: ^Registry) {
 	register_engine_component(registry, "scrapbot.material", {})
 	register_engine_component(registry, "scrapbot.shadow_caster", {})
 	register_engine_component(registry, "scrapbot.shadow_receiver", {})
-	register_engine_component(registry, "scrapbot.ui_layout", {})
-	register_engine_component(registry, "scrapbot.ui_hstack", {})
-	register_engine_component(registry, "scrapbot.ui_vstack", {})
-	register_engine_component(registry, "scrapbot.ui_scroll_area", {})
-	register_engine_component(registry, "scrapbot.ui_panel", {})
-	register_engine_component(registry, "scrapbot.ui_table", {})
-	register_engine_component(registry, "scrapbot.ui_text", {})
-	register_engine_component(registry, "scrapbot.ui_button", {})
-	register_engine_component(registry, "scrapbot.ui_input", {})
-	register_engine_component(registry, "scrapbot.ui_checkbox", {})
+	register_engine_component(
+		registry,
+		"scrapbot.ui_layout",
+		{
+			Field_Definition{name = "parent", field_type = .String},
+			Field_Definition{name = "position", field_type = .Vec2},
+			Field_Definition{name = "size", field_type = .Vec2},
+			Field_Definition{name = "min_size", field_type = .Vec2},
+			Field_Definition{name = "margin", field_type = .Vec4},
+			Field_Definition{name = "padding", field_type = .Vec4},
+			Field_Definition{name = "background", field_type = .Vec4},
+			Field_Definition{name = "border_color", field_type = .Vec4},
+			Field_Definition{name = "border_width", field_type = .Number},
+			Field_Definition{name = "corner_radius", field_type = .Number},
+			Field_Definition{name = "hidden", field_type = .Bool},
+			Field_Definition{name = "fill_width", field_type = .Bool},
+			Field_Definition{name = "fill_height", field_type = .Bool},
+			Field_Definition{name = "fit_content_width", field_type = .Bool},
+			Field_Definition{name = "fit_content_height", field_type = .Bool},
+			Field_Definition{name = "fixed_in_fill", field_type = .Bool},
+		},
+	)
+	stack_fields := [?]Field_Definition {
+		{name = "gap", field_type = .Number},
+		{name = "fill", field_type = .Bool},
+		{name = "draggable", field_type = .Bool},
+		{name = "min_size", field_type = .Number},
+	}
+	register_engine_component(registry, "scrapbot.ui_hstack", stack_fields[:])
+	register_engine_component(registry, "scrapbot.ui_vstack", stack_fields[:])
+	register_engine_component(
+		registry,
+		"scrapbot.ui_scroll_area",
+		{
+			Field_Definition{name = "scroll_speed", field_type = .Number},
+			Field_Definition{name = "smoothness", field_type = .Number},
+			Field_Definition{name = "scrollbar_width", field_type = .Number},
+			Field_Definition{name = "scrollbar_right", field_type = .Number},
+			Field_Definition{name = "scrollbar_vertical_inset", field_type = .Number},
+			Field_Definition{name = "minimum_thumb_size", field_type = .Number},
+			Field_Definition{name = "scrollbar_corner_radius", field_type = .Number},
+			Field_Definition{name = "scrollbar_track_color", field_type = .Vec4},
+			Field_Definition{name = "scrollbar_thumb_color", field_type = .Vec4},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.ui_panel",
+		{
+			Field_Definition{name = "title", field_type = .String},
+			Field_Definition{name = "font", field_type = .String},
+			Field_Definition{name = "title_color", field_type = .Vec4},
+			Field_Definition{name = "title_background", field_type = .Vec4},
+			Field_Definition{name = "title_size", field_type = .Number},
+			Field_Definition{name = "title_height", field_type = .Number},
+			Field_Definition{name = "disclosure_size", field_type = .Number},
+			Field_Definition{name = "disclosure_margin", field_type = .Number},
+			Field_Definition{name = "disclosure_gap", field_type = .Number},
+			Field_Definition{name = "disclosure_corner_radius", field_type = .Number},
+			Field_Definition{name = "collapsible", field_type = .Bool},
+			Field_Definition{name = "collapsed", field_type = .Bool},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.ui_table",
+		{
+			Field_Definition{name = "columns", field_type = .Number},
+			Field_Definition{name = "column_gap", field_type = .Number},
+			Field_Definition{name = "row_gap", field_type = .Number},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.ui_list",
+		{
+			Field_Definition{name = "selected", field_type = .String},
+			Field_Definition{name = "gap", field_type = .Number},
+			Field_Definition{name = "selection_background", field_type = .Vec4},
+			Field_Definition{name = "hover_background", field_type = .Vec4},
+			Field_Definition{name = "active_background", field_type = .Vec4},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.ui_text",
+		{
+			Field_Definition{name = "text", field_type = .String},
+			Field_Definition{name = "font", field_type = .String},
+			Field_Definition{name = "color", field_type = .Vec4},
+			Field_Definition{name = "size", field_type = .Number},
+			Field_Definition{name = "alignment", field_type = .String},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.ui_progress",
+		{
+			Field_Definition{name = "value", field_type = .Number},
+			Field_Definition{name = "maximum", field_type = .Number},
+			Field_Definition{name = "fill_color", field_type = .Vec4},
+			Field_Definition{name = "background_color", field_type = .Vec4},
+			Field_Definition{name = "inset", field_type = .Vec4},
+			Field_Definition{name = "corner_radius", field_type = .Number},
+			Field_Definition{name = "right_to_left", field_type = .Bool},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.ui_state",
+		{
+			Field_Definition{name = "hovered", field_type = .Bool},
+			Field_Definition{name = "active", field_type = .Bool},
+			Field_Definition{name = "focused", field_type = .Bool},
+			Field_Definition{name = "activated", field_type = .Bool},
+			Field_Definition{name = "changed", field_type = .Bool},
+			Field_Definition{name = "valid", field_type = .Bool},
+			Field_Definition{name = "submitted", field_type = .Bool},
+			Field_Definition{name = "cancelled", field_type = .Bool},
+			Field_Definition{name = "activation_revision", field_type = .Number},
+			Field_Definition{name = "change_revision", field_type = .Number},
+			Field_Definition{name = "submit_revision", field_type = .Number},
+			Field_Definition{name = "cancel_revision", field_type = .Number},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.ui_button",
+		{
+			Field_Definition{name = "text", field_type = .String},
+			Field_Definition{name = "font", field_type = .String},
+			Field_Definition{name = "color", field_type = .Vec4},
+			Field_Definition{name = "size", field_type = .Number},
+			Field_Definition{name = "alignment", field_type = .String},
+			Field_Definition{name = "hover_background", field_type = .Vec4},
+			Field_Definition{name = "active_background", field_type = .Vec4},
+			Field_Definition{name = "hover_color", field_type = .Vec4},
+			Field_Definition{name = "active_color", field_type = .Vec4},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.ui_input",
+		{
+			Field_Definition{name = "text", field_type = .String},
+			Field_Definition{name = "font", field_type = .String},
+			Field_Definition{name = "prefix", field_type = .String},
+			Field_Definition{name = "color", field_type = .Vec4},
+			Field_Definition{name = "prefix_color", field_type = .Vec4},
+			Field_Definition{name = "prefix_background", field_type = .Vec4},
+			Field_Definition{name = "size", field_type = .Number},
+			Field_Definition{name = "prefix_width", field_type = .Number},
+			Field_Definition{name = "selection_background", field_type = .Vec4},
+			Field_Definition{name = "focus_border_color", field_type = .Vec4},
+			Field_Definition{name = "invalid_border_color", field_type = .Vec4},
+			Field_Definition{name = "caret_color", field_type = .Vec4},
+			Field_Definition{name = "number", field_type = .Number},
+			Field_Definition{name = "step", field_type = .Number},
+			Field_Definition{name = "minimum", field_type = .Number},
+			Field_Definition{name = "maximum", field_type = .Number},
+			Field_Definition{name = "prefix_gap", field_type = .Number},
+			Field_Definition{name = "prefix_corner_radius", field_type = .Number},
+			Field_Definition{name = "prefix_text_padding", field_type = .Number},
+			Field_Definition{name = "selection_corner_radius", field_type = .Number},
+			Field_Definition{name = "focus_border_width", field_type = .Number},
+			Field_Definition{name = "invalid_border_width", field_type = .Number},
+			Field_Definition{name = "caret_width", field_type = .Number},
+			Field_Definition{name = "caret_inset", field_type = .Number},
+			Field_Definition{name = "read_only", field_type = .Bool},
+			Field_Definition{name = "numeric", field_type = .Bool},
+			Field_Definition{name = "has_minimum", field_type = .Bool},
+			Field_Definition{name = "has_maximum", field_type = .Bool},
+			Field_Definition{name = "scrubbable", field_type = .Bool},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.ui_checkbox",
+		{
+			Field_Definition{name = "checked", field_type = .Bool},
+			Field_Definition{name = "box_size", field_type = .Number},
+			Field_Definition{name = "background", field_type = .Vec4},
+			Field_Definition{name = "checked_background", field_type = .Vec4},
+			Field_Definition{name = "border_color", field_type = .Vec4},
+			Field_Definition{name = "check_color", field_type = .Vec4},
+			Field_Definition{name = "hover_background", field_type = .Vec4},
+			Field_Definition{name = "active_background", field_type = .Vec4},
+			Field_Definition{name = "corner_radius", field_type = .Number},
+			Field_Definition{name = "border_width", field_type = .Number},
+			Field_Definition{name = "check_inset", field_type = .Number},
+			Field_Definition{name = "check_corner_radius", field_type = .Number},
+			Field_Definition{name = "read_only", field_type = .Bool},
+		},
+	)
 	register_engine_component(registry, "scrapbot.internal.render_instance", {})
 }
 

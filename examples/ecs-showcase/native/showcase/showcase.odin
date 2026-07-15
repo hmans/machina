@@ -3,20 +3,45 @@ package showcase
 import "core:math"
 import scrapbot "scrapbot:extension"
 
-Spin_Component :: scrapbot.Component{name = "showcase.spin"}
-Spin_Angular_Velocity :: scrapbot.Vec3_Field{component = Spin_Component, name = "angular_velocity"}
+Spin_Component :: scrapbot.Component {
+	name = "showcase.spin",
+}
+Spin_Angular_Velocity :: scrapbot.Vec3_Field {
+	component = Spin_Component,
+	name = "angular_velocity",
+}
 
-Lifetime_Component :: scrapbot.Component{name = "showcase.lifetime"}
-Lifetime_Timer :: scrapbot.Vec3_Field{component = Lifetime_Component, name = "timer"}
+Lifetime_Component :: scrapbot.Component {
+	name = "showcase.lifetime",
+}
+Lifetime_Timer :: scrapbot.Vec3_Field {
+	component = Lifetime_Component,
+	name = "timer",
+}
 
-Velocity_Component :: scrapbot.Component{name = "showcase.velocity"}
-Velocity_Value :: scrapbot.Vec3_Field{component = Velocity_Component, name = "value"}
+Velocity_Component :: scrapbot.Component {
+	name = "showcase.velocity",
+}
+Velocity_Value :: scrapbot.Vec3_Field {
+	component = Velocity_Component,
+	name = "value",
+}
 
-Emitter_Component :: scrapbot.Component{name = "showcase.emitter"}
-Emitter_State :: scrapbot.Vec3_Field{component = Emitter_Component, name = "state"}
+Emitter_Component :: scrapbot.Component {
+	name = "showcase.emitter",
+}
+Emitter_State :: scrapbot.Vec3_Field {
+	component = Emitter_Component,
+	name = "state",
+}
 
-Light_Orbit_Component :: scrapbot.Component{name = "showcase.light_orbit"}
-Light_Orbit_Settings :: scrapbot.Vec3_Field{component = Light_Orbit_Component, name = "settings"}
+Light_Orbit_Component :: scrapbot.Component {
+	name = "showcase.light_orbit",
+}
+Light_Orbit_Settings :: scrapbot.Vec3_Field {
+	component = Light_Orbit_Component,
+	name = "settings",
+}
 
 Fountain_Geometry: scrapbot.Resource_Handle
 Fountain_Material: scrapbot.Resource_Handle
@@ -32,42 +57,32 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	Fountain_Geometry = scrapbot.register_generated_geometry(&reg, "cube", &generated_cube)
 	Fountain_Material = scrapbot.material(&reg, "fountain", {0.95, 0.38, 0.18, 1})
 
-	spin_fields := [?]scrapbot.Field {
-		scrapbot.vec3(Spin_Angular_Velocity),
-	}
+	spin_fields := [?]scrapbot.Field{scrapbot.vec3(Spin_Angular_Velocity)}
 	scrapbot.component(&reg, Spin_Component, spin_fields[:])
 
-	lifetime_fields := [?]scrapbot.Field {
-		scrapbot.vec3(Lifetime_Timer),
-	}
+	lifetime_fields := [?]scrapbot.Field{scrapbot.vec3(Lifetime_Timer)}
 	scrapbot.component(&reg, Lifetime_Component, lifetime_fields[:])
 
-	velocity_fields := [?]scrapbot.Field {
-		scrapbot.vec3(Velocity_Value),
-	}
+	velocity_fields := [?]scrapbot.Field{scrapbot.vec3(Velocity_Value)}
 	scrapbot.component(&reg, Velocity_Component, velocity_fields[:])
 
-	emitter_fields := [?]scrapbot.Field {
-		scrapbot.vec3(Emitter_State),
-	}
+	emitter_fields := [?]scrapbot.Field{scrapbot.vec3(Emitter_State)}
 	scrapbot.component(&reg, Emitter_Component, emitter_fields[:])
 
-	light_orbit_fields := [?]scrapbot.Field {
-		scrapbot.vec3(Light_Orbit_Settings),
-	}
+	light_orbit_fields := [?]scrapbot.Field{scrapbot.vec3(Light_Orbit_Settings)}
 	scrapbot.component(&reg, Light_Orbit_Component, light_orbit_fields[:])
 
 	spin_accesses := [?]scrapbot.Access {
 		scrapbot.write(scrapbot.Transform_Component),
 		scrapbot.read(Spin_Component),
 	}
-	scrapbot.system(&reg, "showcase.spin", spin_accesses[:], spin_system)
+	scrapbot.system(&reg, "autorotate", spin_accesses[:], autorotate_system)
 
 	lifetime_accesses := [?]scrapbot.Access {
 		scrapbot.read(Lifetime_Component),
 		scrapbot.write(Lifetime_Component),
 	}
-	scrapbot.system(&reg, "showcase.lifetime", lifetime_accesses[:], lifetime_system)
+	scrapbot.system(&reg, "lifetime", lifetime_accesses[:], lifetime_system)
 
 	velocity_accesses := [?]scrapbot.Access {
 		scrapbot.write(scrapbot.Transform_Component),
@@ -75,12 +90,12 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 		scrapbot.read(Velocity_Component),
 		scrapbot.write(Velocity_Component),
 	}
-	scrapbot.system(&reg, "showcase.velocity", velocity_accesses[:], velocity_system)
+	scrapbot.system(&reg, "rigidbody", velocity_accesses[:], rigidbody_system)
 
 	emitter_accesses := [?]scrapbot.Access {
 		scrapbot.write(scrapbot.Transform_Component),
-		scrapbot.write(scrapbot.Component{name="scrapbot.geometry"}),
-		scrapbot.write(scrapbot.Component{name="scrapbot.material"}),
+		scrapbot.write(scrapbot.Component{name = "scrapbot.geometry"}),
+		scrapbot.write(scrapbot.Component{name = "scrapbot.material"}),
 		scrapbot.write(scrapbot.Shadow_Caster_Component),
 		scrapbot.read(Emitter_Component),
 		scrapbot.write(Emitter_Component),
@@ -88,30 +103,27 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 		scrapbot.write(Velocity_Component),
 		scrapbot.write(Spin_Component),
 	}
-	scrapbot.system(&reg, "showcase.fountain", emitter_accesses[:], fountain_system)
+	scrapbot.system(&reg, "emit", emitter_accesses[:], emit_system)
 
 	light_orbit_accesses := [?]scrapbot.Access {
 		scrapbot.write(scrapbot.Transform_Component),
 		scrapbot.read(scrapbot.Point_Light_Component),
 		scrapbot.read(Light_Orbit_Component),
 	}
-	scrapbot.system(&reg, "showcase.light_orbit", light_orbit_accesses[:], light_orbit_system)
+	scrapbot.system(&reg, "orbit", light_orbit_accesses[:], orbit_system)
 
 	return scrapbot.err(&reg)
 }
 
-spin_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
-	components := [?]scrapbot.Component {
-		scrapbot.Transform_Component,
-		Spin_Component,
-	}
+autorotate_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
+	components := [?]scrapbot.Component{scrapbot.Transform_Component, Spin_Component}
 	spin_query := scrapbot.query(components[:])
 
 	count := scrapbot.count(ctx, spin_query)
 	if count < 0 {
 		return "failed to query showcase spinners"
 	}
-	for i in 0..<count {
+	for i in 0 ..< count {
 		entity, entity_ok := scrapbot.entity_at(ctx, spin_query, i)
 		if !entity_ok {
 			continue
@@ -139,7 +151,7 @@ spin_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	return nil
 }
 
-light_orbit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
+orbit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		scrapbot.Transform_Component,
 		scrapbot.Point_Light_Component,
@@ -151,7 +163,7 @@ light_orbit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstr
 	if count < 0 {
 		return "failed to query orbiting point lights"
 	}
-	for i in 0..<count {
+	for i in 0 ..< count {
 		entity, entity_ok := scrapbot.entity_at(ctx, light_query, i)
 		if !entity_ok {
 			continue
@@ -176,16 +188,14 @@ light_orbit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstr
 }
 
 lifetime_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
-	components := [?]scrapbot.Component {
-		Lifetime_Component,
-	}
+	components := [?]scrapbot.Component{Lifetime_Component}
 	lifetime_query := scrapbot.query(components[:])
 
 	count := scrapbot.count(ctx, lifetime_query)
 	if count < 0 {
 		return "failed to query lifetimes"
 	}
-	for i in 0..<count {
+	for i in 0 ..< count {
 		entity, entity_ok := scrapbot.entity_at(ctx, lifetime_query, i)
 		if !entity_ok {
 			continue
@@ -212,7 +222,7 @@ lifetime_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring
 	return nil
 }
 
-velocity_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
+rigidbody_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 	components := [?]scrapbot.Component {
 		scrapbot.Transform_Component,
 		Velocity_Component,
@@ -222,9 +232,9 @@ velocity_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring
 
 	count := scrapbot.count(ctx, velocity_query)
 	if count < 0 {
-		return "failed to query fountain bodies"
+		return "failed to query rigidbodies"
 	}
-	for i in 0..<count {
+	for i in 0 ..< count {
 		entity, entity_ok := scrapbot.entity_at(ctx, velocity_query, i)
 		if !entity_ok {
 			continue
@@ -266,18 +276,15 @@ velocity_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring
 	return nil
 }
 
-fountain_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
-	components := [?]scrapbot.Component {
-		scrapbot.Transform_Component,
-		Emitter_Component,
-	}
+emit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
+	components := [?]scrapbot.Component{scrapbot.Transform_Component, Emitter_Component}
 	emitter_query := scrapbot.query(components[:])
 
 	count := scrapbot.count(ctx, emitter_query)
 	if count < 0 {
 		return "failed to query fountain emitters"
 	}
-	for i in 0..<count {
+	for i in 0 ..< count {
 		entity, entity_ok := scrapbot.entity_at(ctx, emitter_query, i)
 		if !entity_ok {
 			continue
@@ -355,6 +362,12 @@ spawn_fountain_cube :: proc "contextless" (
 		scrapbot.payload(Velocity_Component, velocity_fields[:]),
 		scrapbot.payload(Spin_Component, spin_fields[:]),
 	}
-	spawn := scrapbot.spawn_options("Fountain Cube", &transform, &Fountain_Geometry, &Fountain_Material, payloads[:])
+	spawn := scrapbot.spawn_options(
+		"Fountain Cube",
+		&transform,
+		&Fountain_Geometry,
+		&Fountain_Material,
+		payloads[:],
+	)
 	return scrapbot.spawn(ctx, &spawn)
 }

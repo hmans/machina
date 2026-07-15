@@ -4,7 +4,6 @@ import ecs "../ecs"
 import resources "../resources"
 import shared "../shared"
 import "core:math"
-import "core:strings"
 import "core:testing"
 
 ui_test_id :: proc(name: string) -> shared.Entity_UUID {
@@ -54,7 +53,185 @@ test_embedded_mtsdf_font_has_expected_atlas_and_proportional_metrics :: proc(t: 
 }
 
 @(test)
+test_progress_paints_overridable_track_and_right_anchored_fill :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = ui_test_id("Progress"),
+			name = "Progress",
+			has_ui_layout = true,
+			ui_layout = {position = {20, 20}, size = {200, 20}},
+			has_ui_progress = true,
+			ui_progress = {
+				value = 25,
+				maximum = 100,
+				fill_color = {0.2, 0.8, 0.6, 1},
+				background_color = {0.1, 0.1, 0.1, 1},
+				inset = {4, 10, 4, 10},
+				corner_radius = 3,
+				right_to_left = true,
+			},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	testing.expect(t, reconcile(state, &world, 320, 120) == "")
+	testing.expect(t, state.paint_count == 2)
+	if state.paint_count == 2 {
+		track := state.paint[0]
+		fill := state.paint[1]
+		testing.expect(t, track.kind == .Panel)
+		testing.expect(t, track.rect == (Rect{30, 24, 180, 12}))
+		testing.expect(t, track.color == (shared.Vec4{0.1, 0.1, 0.1, 1}))
+		testing.expect(t, track.corner_radius == 3)
+		testing.expect(t, fill.rect == (Rect{165, 24, 45, 12}))
+		testing.expect(t, fill.color == (shared.Vec4{0.2, 0.8, 0.6, 1}))
+		testing.expect(t, fill.corner_radius == 3)
+	}
+}
+
+@(test)
+test_layout_fill_and_fit_content_are_reusable_and_ignore_hidden_children :: proc(t: ^testing.T) {
+	root_id := ui_test_id("Responsive Root")
+	content_id := ui_test_id("Responsive Content")
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = root_id,
+			name = "Responsive Root",
+			has_ui_layout = true,
+			ui_layout = {size = {200, 100}, padding = {10, 10, 10, 10}},
+			has_ui_scroll_area = true,
+			ui_scroll_area = shared.ui_scroll_area_default(),
+		},
+		shared.Scene_Entity {
+			id = content_id,
+			name = "Responsive Content",
+			has_ui_layout = true,
+			ui_layout = {
+				parent = root_id,
+				size = {10, 10},
+				min_size = {120, 80},
+				fill_width = true,
+				fill_height = true,
+				fit_content_height = true,
+			},
+			has_ui_vstack = true,
+			ui_vstack = {gap = 5},
+		},
+		shared.Scene_Entity {
+			id = ui_test_id("Responsive Child A"),
+			name = "Responsive Child A",
+			has_ui_layout = true,
+			ui_layout = {parent = content_id, size = {40, 60}},
+		},
+		shared.Scene_Entity {
+			id = ui_test_id("Responsive Child B"),
+			name = "Responsive Child B",
+			has_ui_layout = true,
+			ui_layout = {parent = content_id, size = {40, 60}},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	testing.expect(t, reconcile(state, &world, 320, 180) == "")
+	content_layout := world.ui_layouts[world.entities[1].ui_layout_index]
+	content_node := find_node_by_entity_index(state, 1)
+	testing.expectf(
+		t,
+		content_layout.size.y == 10,
+		"authored height changed during layout: %.2f",
+		content_layout.size.y,
+	)
+	testing.expectf(
+		t,
+		content_node >= 0 && state.nodes[content_node].rect.height == 125,
+		"expected fitted height 125, got %.2f",
+		state.nodes[content_node].rect.height,
+	)
+	testing.expect(t, content_node >= 0 && state.nodes[content_node].rect.width == 180)
+	root_node := find_node_by_entity_index(state, 0)
+	testing.expectf(
+		t,
+		root_node >= 0 && state.nodes[root_node].scroll_max == 45,
+		"expected scroll max 45, got %.2f",
+		state.nodes[root_node].scroll_max,
+	)
+
+	world.ui_layouts[world.entities[3].ui_layout_index].hidden = true
+	testing.expect(t, reconcile(state, &world, 320, 180) == "")
+	content_layout = world.ui_layouts[world.entities[1].ui_layout_index]
+	testing.expect(t, content_layout.size.y == 10)
+	testing.expect(t, state.nodes[content_node].rect.height == 80)
+	testing.expect(t, state.nodes[root_node].scroll_max == 0)
+}
+
+@(test)
+test_fill_stack_can_keep_fixed_children_while_siblings_grow :: proc(t: ^testing.T) {
+	root_id := ui_test_id("Fixed Fill Root")
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = root_id,
+			name = "Fixed Fill Root",
+			has_ui_layout = true,
+			ui_layout = {size = {200, 150}},
+			has_ui_vstack = true,
+			ui_vstack = {fill = true},
+		},
+		shared.Scene_Entity {
+			id = ui_test_id("Fixed Fill Header"),
+			name = "Fixed Fill Header",
+			has_ui_layout = true,
+			ui_layout = {parent = root_id, size = {200, 20}, fixed_in_fill = true},
+		},
+		shared.Scene_Entity {
+			id = ui_test_id("Fixed Fill Body"),
+			name = "Fixed Fill Body",
+			has_ui_layout = true,
+			ui_layout = {parent = root_id, size = {200, 80}},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	testing.expect(t, reconcile(state, &world, 320, 180) == "")
+	header := find_node_by_entity_index(state, 1)
+	body := find_node_by_entity_index(state, 2)
+	testing.expect(t, header >= 0 && state.nodes[header].rect.height == 20)
+	testing.expect(t, body >= 0 && state.nodes[body].rect.height == 130)
+}
+
+@(test)
 test_checkbox_paints_sdf_mark_and_toggles_unless_read_only :: proc(t: ^testing.T) {
+	checkbox_style := shared.ui_checkbox_default()
+	checkbox_style.checked = true
+	checkbox_style.box_size = 20
+	checkbox_style.background = {0.02, 0.03, 0.04, 1}
+	checkbox_style.checked_background = {0.08, 0.55, 0.46, 1}
+	checkbox_style.border_color = {0.24, 0.27, 0.32, 1}
+	checkbox_style.check_color = {1, 1, 1, 1}
+	checkbox_style.corner_radius = 0
+	checkbox_style.border_width = 2
+	checkbox_style.check_inset = 5
+	checkbox_style.check_corner_radius = 0
 	scene := shared.Scene{}
 	defer delete(scene.entities)
 	append(
@@ -65,14 +242,7 @@ test_checkbox_paints_sdf_mark_and_toggles_unless_read_only :: proc(t: ^testing.T
 			has_ui_layout = true,
 			ui_layout = {position = {20, 20}, size = {80, 32}},
 			has_ui_checkbox = true,
-			ui_checkbox = {
-				checked = true,
-				box_size = 20,
-				background = {0.02, 0.03, 0.04, 1},
-				checked_background = {0.08, 0.55, 0.46, 1},
-				border_color = {0.24, 0.27, 0.32, 1},
-				check_color = {1, 1, 1, 1},
-			},
+			ui_checkbox = checkbox_style,
 		},
 	)
 	world := ecs.build_world(&scene)
@@ -82,11 +252,17 @@ test_checkbox_paints_sdf_mark_and_toggles_unless_read_only :: proc(t: ^testing.T
 	testing.expect(t, init(state) == "")
 	defer destroy(state)
 	testing.expect(t, reconcile(state, &world, 200, 120) == "")
+	checkbox_state := &world.ui_states[world.entities[0].ui_state_index]
 	found_checkmark := false
+	found_square_box := false
 	for command in state.paint[:state.paint_count] {
 		found_checkmark = found_checkmark || command.kind == .Checkmark
+		found_square_box =
+			found_square_box ||
+			(command.kind == .Panel && command.corner_radius == 0 && command.border_width == 2)
 	}
 	testing.expect(t, found_checkmark)
+	testing.expect(t, found_square_box)
 	pointer := Pointer_Input {
 		position = {30, 30},
 		primary_down = true,
@@ -94,12 +270,101 @@ test_checkbox_paints_sdf_mark_and_toggles_unless_read_only :: proc(t: ^testing.T
 	}
 	testing.expect(t, reconcile(state, &world, 200, 120, pointer) == "")
 	testing.expect(t, !world.ui_checkboxes[0].checked)
+	testing.expect(t, checkbox_state.changed && checkbox_state.change_revision == 1)
 	pointer.primary_down = false
 	testing.expect(t, reconcile(state, &world, 200, 120, pointer) == "")
+	testing.expect(t, !checkbox_state.changed)
 	world.ui_checkboxes[0].read_only = true
 	pointer.primary_down = true
 	testing.expect(t, reconcile(state, &world, 200, 120, pointer) == "")
 	testing.expect(t, !world.ui_checkboxes[0].checked)
+}
+
+@(test)
+test_selectable_list_lays_out_full_width_rows_and_selects_direct_child :: proc(t: ^testing.T) {
+	list_id := ui_test_id("List")
+	first_id := ui_test_id("First")
+	second_id := ui_test_id("Second")
+	selection_color := shared.Vec4{0.1, 0.5, 0.4, 1}
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = list_id,
+			name = "List",
+			has_ui_layout = true,
+			ui_layout = {size = {200, 100}},
+			has_ui_list = true,
+			ui_list = {
+				gap = 3,
+				selection_background = selection_color,
+				hover_background = {0.2, 0.2, 0.2, 1},
+				active_background = {0.3, 0.3, 0.3, 1},
+			},
+		},
+		shared.Scene_Entity {
+			id = first_id,
+			name = "First",
+			has_ui_layout = true,
+			ui_layout = {parent = list_id, size = {40, 30}},
+			has_ui_text = true,
+			ui_text = {text = "First", color = {1, 1, 1, 1}, size = 12},
+		},
+		shared.Scene_Entity {
+			id = second_id,
+			name = "Second",
+			has_ui_layout = true,
+			ui_layout = {parent = list_id, size = {60, 30}},
+			has_ui_text = true,
+			ui_text = {text = "Second", color = {1, 1, 1, 1}, size = 12},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	testing.expect(t, reconcile(state, &world, 200, 100) == "")
+	first_node := find_node_by_entity_index(state, 1)
+	second_node := find_node_by_entity_index(state, 2)
+	testing.expect(t, first_node >= 0 && second_node >= 0)
+	if first_node < 0 || second_node < 0 { return }
+	testing.expect(t, state.nodes[first_node].rect.width == 200)
+	testing.expect(t, state.nodes[second_node].rect.width == 200)
+	testing.expect(t, state.nodes[second_node].rect.y == 33)
+	point := shared.Vec2 {
+		state.nodes[second_node].rect.x + 20,
+		state.nodes[second_node].rect.y + 15,
+	}
+	testing.expect(
+		t,
+		reconcile(
+			state,
+			&world,
+			200,
+			100,
+			{position = point, primary_down = true, available = true},
+		) ==
+		"",
+	)
+	testing.expect(t, world.ui_lists[0].selected == second_id)
+	list_state := world.ui_states[world.entities[0].ui_state_index]
+	testing.expect(t, list_state.changed && list_state.change_revision == 1)
+	testing.expect(
+		t,
+		reconcile(state, &world, 200, 100, {position = point, available = true}) == "",
+	)
+	selected_painted := false
+	for command in state.paint[:state.paint_count] {
+		if command.kind == .Panel &&
+		   command.rect == state.nodes[second_node].rect &&
+		   command.color == selection_color {
+			selected_painted = true
+		}
+	}
+	testing.expect(t, selected_painted)
 }
 
 @(test)
@@ -129,8 +394,8 @@ test_reconcile_tracks_ui_entity_appearance_and_disappearance :: proc(t: ^testing
 		},
 	)
 	world := ecs.build_world(&scene); defer ecs.destroy_world(&world)
-	delete(world.entities[0].name)
-	world.entities[0].name, _ = strings.clone("Renamed Root Label")
+	ecs.delete_world_string(&world, world.entities[0].name)
+	world.entities[0].name = ecs.clone_world_string(&world, "Renamed Root Label")
 	state := new(
 		State,
 	); defer free(state); testing.expect(t, init(state) == ""); defer destroy(state)
@@ -313,6 +578,14 @@ test_panel_title_reserves_child_space_and_paints_a_title_band :: proc(t: ^testin
 
 @(test)
 test_collapsible_panel_title_toggles_content_layout_and_disclosure :: proc(t: ^testing.T) {
+	panel_style := shared.ui_panel_default()
+	panel_style.title = "TRANSFORM"
+	panel_style.title_color = {1, 1, 1, 1}
+	panel_style.title_size = 10
+	panel_style.title_height = 24
+	panel_style.disclosure_size = 9
+	panel_style.disclosure_corner_radius = 0
+	panel_style.collapsible = true
 	scene := shared.Scene{}
 	defer delete(scene.entities)
 	append(
@@ -331,13 +604,7 @@ test_collapsible_panel_title_toggles_content_layout_and_disclosure :: proc(t: ^t
 			has_ui_layout = true,
 			ui_layout = {parent = ui_test_id("Root"), size = {240, 100}},
 			has_ui_panel = true,
-			ui_panel = {
-				title = "TRANSFORM",
-				title_color = {1, 1, 1, 1},
-				title_size = 10,
-				title_height = 24,
-				collapsible = true,
-			},
+			ui_panel = panel_style,
 			has_ui_vstack = true,
 		},
 		shared.Scene_Entity {
@@ -382,7 +649,10 @@ test_collapsible_panel_title_toggles_content_layout_and_disclosure :: proc(t: ^t
 	testing.expect(t, state.nodes[sibling_node].rect.height == 176)
 	found_collapsed_disclosure := false
 	for command in state.paint[:state.paint_count] {
-		if command.kind == .Disclosure && !command.disclosure_expanded {
+		if command.kind == .Disclosure &&
+		   !command.disclosure_expanded &&
+		   command.rect.width == 9 &&
+		   command.corner_radius == 0 {
 			found_collapsed_disclosure = true
 			break
 		}
@@ -494,6 +764,96 @@ test_single_line_input_selects_edits_navigates_and_tabs_in_paint_order :: proc(t
 		reconcile(state, &world, 200, 100, {}, 0, 0, 1.0 / 60.0, {tab = true, shift = true}) == "",
 	)
 	testing.expect(t, state.focused_input == world.entities[0].id)
+}
+
+@(test)
+test_numeric_input_exposes_reusable_validation_submit_cancel_and_scrub_state :: proc(
+	t: ^testing.T,
+) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			name = "Numeric Input",
+			has_ui_layout = true,
+			ui_layout = {position = {10, 10}, size = {160, 28}, padding = {6, 8, 5, 8}},
+			has_ui_input = true,
+			ui_input = {
+				text = "1",
+				prefix = "X",
+				color = {1, 1, 1, 1},
+				prefix_color = {0.9, 0.3, 0.3, 1},
+				prefix_background = {0.9, 0.3, 0.3, 0.12},
+				size = 12,
+				prefix_width = UI_INPUT_PREFIX_WIDTH,
+				prefix_gap = 4,
+				prefix_corner_radius = 0,
+				prefix_text_padding = 2,
+				selection_corner_radius = 0,
+				focus_border_width = 2,
+				invalid_border_width = 3,
+				caret_width = 2,
+				caret_inset = 3,
+				number = 1,
+				step = 0.5,
+				minimum = 0,
+				maximum = 2,
+				numeric = true,
+				has_minimum = true,
+				has_maximum = true,
+				scrubbable = true,
+			},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+
+	press := Pointer_Input {
+		position = {40, 20},
+		primary_down = true,
+		available = true,
+	}
+	testing.expect(t, reconcile(state, &world, 200, 80, press) == "")
+	found_square_prefix := false
+	for command in state.paint[:state.paint_count] {
+		if command.kind == .Panel &&
+		   command.color == world.ui_inputs[0].prefix_background &&
+		   command.corner_radius == 0 {
+			found_square_prefix = true
+			break
+		}
+	}
+	testing.expect(t, found_square_prefix)
+	testing.expect(t, reconcile(state, &world, 200, 80, {}, 0, 0, 1.0 / 60.0, {up = true}) == "")
+	input := &world.ui_inputs[world.entities[0].ui_input_index]
+	interaction := &world.ui_states[world.entities[0].ui_state_index]
+	testing.expect(t, input.number == 1.5 && input.text == "1.5")
+	testing.expect(t, interaction.changed && interaction.change_revision == 1)
+	testing.expect(
+		t,
+		reconcile(state, &world, 200, 80, {}, 0, 0, 1.0 / 60.0, {enter = true}) == "",
+	)
+	testing.expect(t, interaction.submitted && interaction.submit_revision == 1)
+	testing.expect(t, interaction.valid)
+
+	testing.expect(t, reconcile(state, &world, 200, 80, press) == "")
+	testing.expect(
+		t,
+		reconcile(state, &world, 200, 80, {}, 0, 0, 1.0 / 60.0, {text = "bad"}) == "",
+	)
+	testing.expect(t, !interaction.valid)
+	testing.expect(
+		t,
+		reconcile(state, &world, 200, 80, {}, 0, 0, 1.0 / 60.0, {escape = true}) == "",
+	)
+	testing.expect(t, input.text == "1.5" && input.number == 1.5)
+	testing.expect(t, interaction.cancelled && interaction.cancel_revision == 1)
+	testing.expect(t, interaction.valid)
 }
 
 @(test)
@@ -684,6 +1044,36 @@ test_ui_text_right_alignment_uses_the_padded_content_edge :: proc(t: ^testing.T)
 }
 
 @(test)
+test_ui_button_alignment_uses_the_padded_content_edge :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			name = "Action",
+			has_ui_layout = true,
+			ui_layout = {position = {10, 20}, size = {100, 30}, padding = {4, 7, 3, 5}},
+			has_ui_button = true,
+			ui_button = {text = "GO", color = {1, 1, 1, 1}, size = 12, alignment = .Right},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	testing.expect(t, reconcile(state, &world, 120, 60) == "")
+	rightmost_ink := f32(-10000)
+	for command in state.paint[:state.paint_count] {
+		if command.kind == .Glyph {
+			rightmost_ink = max(rightmost_ink, command.rect.x + command.rect.width)
+		}
+	}
+	testing.expect(t, math.abs(rightmost_ink - 103) < 0.001)
+}
+
+@(test)
 test_ui_text_selects_a_project_font_atlas_layer :: proc(t: ^testing.T) {
 	registry: resources.Registry
 	defer resources.destroy_registry(&registry)
@@ -835,6 +1225,7 @@ test_pointer_states_belong_to_elements_and_buttons_consume_them :: proc(t: ^test
 				text = "GO",
 				color = {1, 1, 1, 1},
 				size = 16,
+				alignment = .Center,
 				hover_background = {0.2, 0.4, 0.6, 1},
 				active_background = {0.05, 0.1, 0.15, 1},
 			},
@@ -851,6 +1242,8 @@ test_pointer_states_belong_to_elements_and_buttons_consume_them :: proc(t: ^test
 		reconcile(state, &world, 1280, 720, {position = {30, 30}, available = true}) == "",
 	)
 	testing.expect(t, state.nodes[button].hovered && !state.nodes[button].active)
+	button_state := &world.ui_states[world.entities[button].ui_state_index]
+	testing.expect(t, button_state.hovered && !button_state.active && !button_state.activated)
 	testing.expect(t, state.paint[0].color == shared.Vec4{0.2, 0.4, 0.6, 1})
 	ink_min_x, ink_min_y, ink_max_x, ink_max_y := f32(10000), f32(10000), f32(-10000), f32(-10000)
 	for command in state.paint[:state.paint_count] { if command.kind == .Glyph { ink_min_x = min(ink_min_x, command.rect.x); ink_min_y = min(ink_min_y, command.rect.y); ink_max_x = max(ink_max_x, command.rect.x + command.rect.width); ink_max_y = max(ink_max_y, command.rect.y + command.rect.height) } }
@@ -870,6 +1263,8 @@ test_pointer_states_belong_to_elements_and_buttons_consume_them :: proc(t: ^test
 		"",
 	)
 	testing.expect(t, state.nodes[button].hovered && state.nodes[button].active)
+	testing.expect(t, button_state.hovered && button_state.active && button_state.activated)
+	testing.expect(t, button_state.activation_revision == 1)
 	testing.expect(t, state.paint[0].color == shared.Vec4{0.05, 0.1, 0.15, 1})
 
 	testing.expect(
@@ -884,6 +1279,7 @@ test_pointer_states_belong_to_elements_and_buttons_consume_them :: proc(t: ^test
 		"",
 	)
 	testing.expect(t, !state.nodes[button].hovered && state.nodes[button].active)
+	testing.expect(t, !button_state.hovered && button_state.active && !button_state.activated)
 
 	testing.expect(
 		t,
@@ -894,6 +1290,12 @@ test_pointer_states_belong_to_elements_and_buttons_consume_them :: proc(t: ^test
 
 @(test)
 test_scroll_area_clips_descendants_and_smoothly_approaches_wheel_target :: proc(t: ^testing.T) {
+	scroll_style := shared.ui_scroll_area_default()
+	scroll_style.scroll_speed = 60
+	scroll_style.smoothness = 12
+	scroll_style.scrollbar_width = 5
+	scroll_style.scrollbar_corner_radius = 0
+	scroll_style.scrollbar_thumb_color = {0.7, 0.8, 0.9, 1}
 	scene := shared.Scene{}; defer delete(scene.entities)
 	append(
 		&scene.entities,
@@ -908,7 +1310,7 @@ test_scroll_area_clips_descendants_and_smoothly_approaches_wheel_target :: proc(
 				background = {0.08, 0.09, 0.11, 1},
 			},
 			has_ui_scroll_area = true,
-			ui_scroll_area = {scroll_speed = 60, smoothness = 12},
+			ui_scroll_area = scroll_style,
 		},
 		shared.Scene_Entity {
 			id = ui_test_id("Pane"),
@@ -957,6 +1359,17 @@ test_scroll_area_clips_descendants_and_smoothly_approaches_wheel_target :: proc(
 	expected_clip := Rect{30, 30, 180, 80}
 	for command in state.paint[:state.paint_count] { if command.has_clip && command.clip == expected_clip { clipped_paint = true; break } }
 	testing.expect(t, clipped_paint)
+	found_custom_thumb := false
+	for command in state.paint[:state.paint_count] {
+		if command.kind == .Panel &&
+		   command.color == scroll_style.scrollbar_thumb_color &&
+		   command.rect.width == 5 &&
+		   command.corner_radius == 0 {
+			found_custom_thumb = true
+			break
+		}
+	}
+	testing.expect(t, found_custom_thumb)
 
 	initial_pane_y := state.nodes[pane].rect.y
 	testing.expect(
@@ -1357,6 +1770,11 @@ test_editor_sidebar_sections_share_collapsible_panel_styling :: proc(t: ^testing
 	inspector := find_editor_name_node(state, &world, EDITOR_UI_INSPECTOR_HEADER_NAME)
 	sections := [3]int{systems, scene_panel, inspector}
 	expected_titles := [3]string{"SYSTEMS / 0", "SCENE", "INSPECTOR"}
+	expected_backgrounds := [3]shared.Vec4 {
+		EDITOR_LIST_BACKGROUND,
+		EDITOR_LIST_BACKGROUND,
+		EDITOR_SECTION_BACKGROUND,
+	}
 	for node_index, section_index in sections {
 		testing.expect(t, node_index >= 0)
 		if node_index < 0 { continue }
@@ -1370,7 +1788,7 @@ test_editor_sidebar_sections_share_collapsible_panel_styling :: proc(t: ^testing
 		testing.expect(t, panel.title_height == EDITOR_SECTION_TITLE_HEIGHT)
 		testing.expect(t, panel.title_color == EDITOR_SECTION_TITLE_COLOR)
 		testing.expect(t, panel.title_background == EDITOR_SECTION_TITLE_BACKGROUND)
-		testing.expect(t, layout.background == EDITOR_SECTION_BACKGROUND)
+		testing.expect(t, layout.background == expected_backgrounds[section_index])
 		testing.expect(t, layout.border_color == EDITOR_SECTION_BORDER)
 		testing.expect(t, layout.corner_radius == EDITOR_SECTION_RADIUS)
 	}
@@ -1497,7 +1915,7 @@ test_editor_nested_scroll_prefers_inner_panes_and_sidebar_padding_targets_outer 
 }
 
 @(test)
-test_editor_scene_count_is_clipped_inside_a_narrow_left_sidebar :: proc(t: ^testing.T) {
+test_editor_scene_panel_is_a_flush_scrollable_selectable_list :: proc(t: ^testing.T) {
 	scene := shared.Scene{}
 	defer delete(scene.entities)
 	for _ in 0 ..< 31 {
@@ -1511,14 +1929,26 @@ test_editor_scene_count_is_clipped_inside_a_narrow_left_sidebar :: proc(t: ^test
 	defer destroy(state)
 	state.editor_visible = true
 	testing.expect(t, reconcile(state, &world, 800, 500) == "")
-	header := find_editor_role_node(state, .Browser_Header)
-	testing.expect(t, header >= 0)
-	if header < 0 { return }
-	node := state.nodes[header]
-	viewport := editor_viewport(state, 800, 500)
-	testing.expect(t, node.has_clip)
-	testing.expect(t, node.rect.x + node.rect.width > node.clip.x + node.clip.width)
-	testing.expect(t, node.clip.x + node.clip.width <= viewport.x)
+	scene_node := find_editor_role_node(state, .Browser_Scroll)
+	first_row, row_found := editor_ui_entity(&world, .Browser_Row, 0)
+	testing.expect(t, scene_node >= 0 && row_found)
+	if scene_node < 0 || !row_found { return }
+	scene_panel := state.nodes[scene_node]
+	row_node := find_node_by_entity_index(state, first_row)
+	testing.expect(t, scene_panel.list_index >= 0)
+	testing.expect(t, scene_panel.scroll_area_index >= 0)
+	testing.expect(t, scene_panel.panel_index >= 0)
+	testing.expect(t, world.ui_layouts[scene_panel.layout_index].padding == shared.Vec4{})
+	testing.expect(t, row_node >= 0)
+	if row_node >= 0 {
+		row := state.nodes[row_node]
+		testing.expect(t, math.abs(row.rect.x - scene_panel.rect.x) < 0.01)
+		testing.expect(t, math.abs(row.rect.width - scene_panel.rect.width) < 0.01)
+		testing.expect(
+			t,
+			math.abs(row.rect.y - scene_panel.rect.y - EDITOR_SECTION_TITLE_HEIGHT) < 0.01,
+		)
+	}
 }
 
 @(test)
@@ -1649,6 +2079,12 @@ test_editor_browser_scrolls_selects_runtime_entities_and_clears_stale_selection 
 	testing.expect(t, state.editor_selected_entity == world.entities[24].id)
 	testing.expect(t, world.entities[24].origin == .Runtime)
 	testing.expect(t, entity_component_count(&world, 24) == 1)
+	browser_entity := world.entities[int(state.nodes[browser_index].entity.index)]
+	testing.expect(
+		t,
+		world.ui_lists[browser_entity.ui_list_index].selected ==
+		world.entities[runtime_row_entity].uuid,
+	)
 
 	world.entities[24].alive = false
 	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 300) == "")
@@ -1671,7 +2107,7 @@ test_editor_browser_uses_name_color_instead_of_provenance_labels :: proc(t: ^tes
 	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
 
 	scene_color := shared.Vec4{0.82, 0.85, 0.90, 1}
-	runtime_color := shared.Vec4{0.54, 0.57, 0.63, 1}
+	runtime_color := EDITOR_RUNTIME_ENTITY_COLOR
 	scene_label, runtime_label := -1, -1
 	for component in world.editor_uis {
 		if component.role != .Browser_Row_Label { continue }
@@ -2010,8 +2446,8 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			text_viewport_left :=
 				state.nodes[x_node].rect.x +
 				layout.padding.w +
-				EDITOR_INPUT_AXIS_WIDTH +
-				EDITOR_INPUT_AXIS_GAP
+				UI_INPUT_PREFIX_WIDTH +
+				UI_INPUT_PREFIX_GAP
 			input_color := world.ui_inputs[world.entities[position_inputs[0]].ui_input_index].color
 			for command in state.paint[:state.paint_count] {
 				if command.kind == .Glyph &&
@@ -2146,6 +2582,12 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 				) ==
 				"",
 			)
+			testing.expect(t, state.editor_history_count > 0)
+			if state.editor_history_count > 0 {
+				command := state.editor_history[state.editor_history_count - 1]
+				testing.expect(t, math.abs(command.before - 4.99) < 0.001)
+				testing.expect(t, math.abs(command.after - scrubbed) < 0.001)
+			}
 			testing.expect(
 				t,
 				reconcile(state, &world, 1280, 720, {}, 1280, 300, 0, {undo = true}) == "",
@@ -2271,7 +2713,6 @@ test_editor_history_bounds_branches_and_skips_stale_commands :: proc(t: ^testing
 		target = world.entities[0].id,
 		inspector_field = .Transform_Position,
 		inspector_axis = .X,
-		numeric = true,
 	}
 	second := first
 	second.target = world.entities[1].id
@@ -2354,7 +2795,9 @@ test_editor_entity_and_component_snapshots_refresh_at_five_hz :: proc(t: ^testin
 }
 
 @(test)
-test_editor_system_profile_uses_panel_table_and_scroll_components :: proc(t: ^testing.T) {
+test_editor_system_profile_uses_selectable_list_panel_and_scroll_components :: proc(
+	t: ^testing.T,
+) {
 	scene := shared.Scene{}
 	defer delete(scene.entities)
 	world := ecs.build_world(&scene)
@@ -2392,17 +2835,28 @@ test_editor_system_profile_uses_panel_table_and_scroll_components :: proc(t: ^te
 	if found {
 		entity := world.entities[systems]
 		testing.expect(t, entity.ui_panel_index >= 0)
-		testing.expect(t, entity.ui_table_index >= 0)
+		testing.expect(t, entity.ui_list_index >= 0)
 		testing.expect(t, entity.ui_scroll_area_index >= 0)
 		testing.expect(t, world.ui_panels[entity.ui_panel_index].title == "SYSTEMS / 3")
-		testing.expect(t, world.ui_tables[entity.ui_table_index].columns == 2)
+		layout := world.ui_layouts[entity.ui_layout_index]
+		testing.expect(t, layout.padding == (shared.Vec4{}))
+		testing.expect(t, layout.background == EDITOR_LIST_BACKGROUND)
 	}
+	first_row, first_row_found := editor_ui_entity(&world, .Systems_Row, 0)
 	name_cell, name_found := editor_ui_entity(&world, .Systems_Name, 0)
 	time_cell, time_found := editor_ui_entity(&world, .Systems_Time, 0)
 	luau_cell, luau_found := editor_ui_entity(&world, .Systems_Name, 1)
 	luau_time_cell, luau_time_found := editor_ui_entity(&world, .Systems_Time, 1)
 	fallback_cell, fallback_found := editor_ui_entity(&world, .Systems_Name, 2)
-	testing.expect(t, name_found && time_found && luau_found && luau_time_found && fallback_found)
+	testing.expect(
+		t,
+		first_row_found &&
+		name_found &&
+		time_found &&
+		luau_found &&
+		luau_time_found &&
+		fallback_found,
+	)
 	if name_found {
 		text := world.ui_texts[world.entities[name_cell].ui_text_index]
 		testing.expect(t, text.text == "Physics")
@@ -2426,10 +2880,51 @@ test_editor_system_profile_uses_panel_table_and_scroll_components :: proc(t: ^te
 		text := world.ui_texts[world.entities[fallback_cell].ui_text_index]
 		testing.expect(t, text.text == "Luau System 2")
 	}
+	if found && first_row_found && name_found {
+		row_layout := world.ui_layouts[world.entities[first_row].ui_layout_index]
+		testing.expect(t, row_layout.padding.y == 8 && row_layout.padding.w == 8)
+		name_layout := world.ui_layouts[world.entities[name_cell].ui_layout_index]
+		testing.expect(t, name_layout.padding.w == 16)
+		systems_node := find_node_by_entity_index(state, systems)
+		row_node := find_node_by_entity_index(state, first_row)
+		testing.expect(t, systems_node >= 0 && row_node >= 0)
+		if systems_node >= 0 && row_node >= 0 {
+			testing.expect(
+				t,
+				math.abs(state.nodes[row_node].rect.x - state.nodes[systems_node].rect.x) < 0.01,
+			)
+			testing.expect(
+				t,
+				math.abs(state.nodes[row_node].rect.width - state.nodes[systems_node].rect.width) <
+				0.01,
+			)
+		}
+		name_node := find_node_by_entity_index(state, name_cell)
+		testing.expect(t, name_node >= 0)
+		if name_node >= 0 {
+			name_rect := state.nodes[name_node].rect
+			testing.expect(
+				t,
+				reconcile(
+					state,
+					&world,
+					1280,
+					720,
+					{
+						position = {name_rect.x + 10, name_rect.y + name_rect.height * 0.5},
+						primary_down = true,
+						available = true,
+					},
+				) ==
+				"",
+			)
+			list := world.ui_lists[world.entities[systems].ui_list_index]
+			testing.expect(t, list.selected == world.entities[first_row].uuid)
+		}
+	}
 	project_origin, project_origin_found := editor_ui_entity(&world, .Systems_Origin, 0)
 	luau_origin, luau_origin_found := editor_ui_entity(&world, .Systems_Origin, 1)
-	bar_fill, bar_fill_found := editor_ui_entity(&world, .Systems_Bar_Fill, 0)
-	testing.expect(t, project_origin_found && luau_origin_found && bar_fill_found)
+	testing.expect(t, project_origin_found && luau_origin_found)
 	if project_origin_found {
 		layout := world.ui_layouts[world.entities[project_origin].ui_layout_index]
 		testing.expect(t, layout.background == system_profile_origin_color(.Project_Odin))
@@ -2438,32 +2933,14 @@ test_editor_system_profile_uses_panel_table_and_scroll_components :: proc(t: ^te
 		layout := world.ui_layouts[world.entities[luau_origin].ui_layout_index]
 		testing.expect(t, layout.background == system_profile_origin_color(.Luau))
 	}
-	if bar_fill_found {
-		fill_layout := world.ui_layouts[world.entities[bar_fill].ui_layout_index]
-		testing.expect(t, fill_layout.background == system_profile_origin_color(.Project_Odin))
-		fill_node := find_node_by_entity_index(state, bar_fill)
-		systems_node := find_node_by_entity_index(state, systems)
-		testing.expect(t, fill_node >= 0 && systems_node >= 0)
-		if fill_node >= 0 && systems_node >= 0 {
-			systems_layout := world.ui_layouts[state.nodes[systems_node].layout_index]
-			content_width :=
-				state.nodes[systems_node].rect.width -
-				systems_layout.padding.w -
-				systems_layout.padding.y
-			testing.expect(
-				t,
-				math.abs(state.nodes[fill_node].rect.width - content_width * 0.15) < 0.01,
-			)
-			testing.expect(
-				t,
-				math.abs(
-					state.nodes[fill_node].rect.x +
-					state.nodes[fill_node].rect.width -
-					(state.nodes[systems_node].rect.x + systems_layout.padding.w + content_width),
-				) <
-				0.01,
-			)
-		}
+	first_row_entity := world.entities[first_row]
+	testing.expect(t, first_row_entity.ui_progress_index >= 0)
+	if first_row_entity.ui_progress_index >= 0 {
+		progress := world.ui_progresses[first_row_entity.ui_progress_index]
+		testing.expect(t, progress.fill_color == system_profile_origin_color(.Project_Odin))
+		testing.expect(t, progress.value == f32(profile.entries[0].average_nanoseconds))
+		testing.expect(t, progress.maximum == f32(SYSTEM_PROFILE_BAR_MAX_NANOSECONDS))
+		testing.expect(t, progress.right_to_left)
 	}
 	testing.expect(
 		t,
