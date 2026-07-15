@@ -32,6 +32,16 @@ save_scene_world :: proc(
 	if read_err != nil {
 		return fmt.tprintf("failed to read %s: %v", scene_path, read_err)
 	}
+	if scene_has_structural_changes(world, &loaded.scene, dirty_entities) {
+		return save_scene_world_structural(
+			scene_path,
+			string(source_bytes),
+			world,
+			&loaded.scene,
+			dirty_lookup,
+			dirty_entities,
+		)
+	}
 
 	builder := strings.builder_make()
 	defer strings.builder_destroy(&builder)

@@ -186,11 +186,11 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
 - Editing
   - [x] Live transform, camera, light, and custom Vec3 inspector editing
   - [x] UUID-addressed authoring transactions with inspector and gizmo undo/redo
-  - [ ] Component management
-  - [ ] Entity management
+  - [x] Component add/remove management with undo/redo
+  - [x] Entity create, duplicate, rename, delete, and runtime promotion
   - [x] Explicit stopped-mode scene persistence by stable entity UUID
   - [ ] Multi-selection editing
-  - [ ] Editor transactions
+  - [x] Bounded field and structural editor transactions
 - Scene Tools
   - [x] Play, Pause, scene-reloading Stop, single-frame Step, and explicit Save controls
   - [x] RMB-captured WASD/Space/Ctrl scene-camera navigation

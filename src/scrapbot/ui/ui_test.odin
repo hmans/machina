@@ -2113,13 +2113,97 @@ test_editor_scene_panel_is_a_flush_scrollable_selectable_list :: proc(t: ^testin
 	testing.expect(t, row_node >= 0)
 	if row_node >= 0 {
 		row := state.nodes[row_node]
+		tools_node := find_node_by_entity_index(
+			state,
+			world.entity_by_uuid[shared.entity_uuid_from_engine_name(EDITOR_UI_SCENE_TOOLS_NAME)],
+		)
 		testing.expect(t, math.abs(row.rect.x - scene_panel.rect.x) < 0.01)
 		testing.expect(t, math.abs(row.rect.width - scene_panel.rect.width) < 0.01)
-		testing.expect(
-			t,
-			math.abs(row.rect.y - scene_panel.rect.y - EDITOR_SECTION_TITLE_HEIGHT) < 0.01,
-		)
+		testing.expect(t, tools_node >= 0)
+		if tools_node >= 0 {
+			tools := state.nodes[tools_node]
+			testing.expect(t, math.abs(row.rect.y - tools.rect.y - tools.rect.height) < 0.01)
+		}
 	}
+}
+
+@(test)
+test_editor_structural_authoring_is_uuid_addressed_and_undoable :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = ui_test_id("Structural Authoring"),
+			name = "Original",
+			has_transform = true,
+			transform = {scale = {1, 1, 1}},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
+
+	duplicate, duplicated := editor_authoring_duplicate_entity(state, &world, 0)
+	testing.expect(t, duplicated)
+	duplicate_index, duplicate_found := ecs.entity_index_by_uuid(
+		&world,
+		world.entities[duplicate.index].uuid,
+	)
+	testing.expect(t, duplicate_found && duplicate_index != 0)
+	duplicate_uuid := world.entities[duplicate_index].uuid
+	testing.expect(t, duplicate_uuid != world.entities[0].uuid)
+	testing.expect(t, world.entities[duplicate_index].origin == .Scene)
+	testing.expect(t, editor_history_apply(state, &world, false))
+	_, duplicate_found = ecs.entity_index_by_uuid(&world, duplicate_uuid)
+	testing.expect(t, !duplicate_found)
+	testing.expect(t, !state.editor_has_selection)
+	testing.expect(t, editor_history_apply(state, &world, true))
+	duplicate_index, duplicate_found = ecs.entity_index_by_uuid(&world, duplicate_uuid)
+	testing.expect(t, duplicate_found)
+	testing.expect(t, state.editor_has_selection)
+
+	testing.expect(t, editor_authoring_rename_entity(state, &world, duplicate_index, "Renamed"))
+	testing.expect(t, world.entities[duplicate_index].name == "Renamed")
+	testing.expect(t, editor_history_apply(state, &world, false))
+	testing.expect(t, world.entities[duplicate_index].name == "Original Copy")
+	testing.expect(t, editor_history_apply(state, &world, true))
+	testing.expect(t, world.entities[duplicate_index].name == "Renamed")
+
+	testing.expect(
+		t,
+		editor_authoring_set_component(state, &world, duplicate_index, .Point_Light, true),
+	)
+	testing.expect(t, world.entities[duplicate_index].point_light_index >= 0)
+	testing.expect(t, editor_history_apply(state, &world, false))
+	testing.expect(t, world.entities[duplicate_index].point_light_index < 0)
+	testing.expect(t, editor_history_apply(state, &world, true))
+	testing.expect(t, world.entities[duplicate_index].point_light_index >= 0)
+
+	runtime_index, runtime_created := ecs.create_world_entity(&world, "Runtime", {}, .Runtime)
+	testing.expect(t, runtime_created)
+	runtime_uuid := world.entities[runtime_index].uuid
+	testing.expect(t, editor_authoring_promote_entity(state, &world, runtime_index))
+	testing.expect(t, world.entities[runtime_index].origin == .Scene)
+	testing.expect(t, editor_history_apply(state, &world, false))
+	runtime_index, runtime_created = ecs.entity_index_by_uuid(&world, runtime_uuid)
+	testing.expect(t, runtime_created && world.entities[runtime_index].origin == .Runtime)
+	testing.expect(t, editor_history_apply(state, &world, true))
+	testing.expect(t, world.entities[runtime_index].origin == .Scene)
+
+	testing.expect(t, editor_authoring_delete_entity(state, &world, duplicate_index))
+	_, duplicate_found = ecs.entity_index_by_uuid(&world, duplicate_uuid)
+	testing.expect(t, !duplicate_found)
+	testing.expect(t, editor_history_apply(state, &world, false))
+	_, duplicate_found = ecs.entity_index_by_uuid(&world, duplicate_uuid)
+	testing.expect(t, duplicate_found)
+	testing.expect(t, state.editor_scene_dirty)
+	testing.expect(t, len(state.editor_dirty_entities) == 2)
 }
 
 @(test)

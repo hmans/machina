@@ -139,9 +139,15 @@ Editor_Edit_Change :: struct {
 	before_boolean: bool,
 	after_boolean: bool,
 }
+Editor_Structural_Change :: struct {
+	target_uuid: shared.Entity_UUID,
+	before: ^ecs.Entity_Snapshot,
+	after: ^ecs.Entity_Snapshot,
+}
 Editor_Edit_Transaction :: struct {
 	changes: [EDITOR_TRANSACTION_MAX_CHANGES]Editor_Edit_Change,
 	change_count: int,
+	structural: ^Editor_Structural_Change,
 }
 State :: struct {
 	nodes: [MAX_NODES]Node,
@@ -294,8 +300,7 @@ editor_stop :: proc(state: ^State) {
 	state.editor_scene_save_failed = false
 	clear(&state.editor_dirty_entities)
 	clear(&state.editor_dirty_entity_lookup)
-	state.editor_history_count = 0
-	state.editor_history_cursor = 0
+	editor_history_clear(state)
 	state.editor_snapshot_valid = false
 }
 
@@ -320,6 +325,22 @@ editor_mark_scene_dirty :: proc(state: ^State, entity: ^shared.World_Entity) {
 	if !state.editor_dirty_entity_lookup[entity.uuid] {
 		state.editor_dirty_entity_lookup[entity.uuid] = true
 		append(&state.editor_dirty_entities, entity.uuid)
+	}
+	state.editor_scene_dirty = true
+	state.editor_scene_save_failed = false
+	state.editor_snapshot_valid = false
+}
+
+editor_mark_scene_uuid_dirty :: proc(state: ^State, id: shared.Entity_UUID) {
+	if state == nil || !state.editor_simulation_stopped || id == (shared.Entity_UUID{}) {
+		return
+	}
+	if state.editor_dirty_entity_lookup == nil {
+		state.editor_dirty_entity_lookup = make(map[shared.Entity_UUID]bool)
+	}
+	if !state.editor_dirty_entity_lookup[id] {
+		state.editor_dirty_entity_lookup[id] = true
+		append(&state.editor_dirty_entities, id)
 	}
 	state.editor_scene_dirty = true
 	state.editor_scene_save_failed = false
@@ -379,6 +400,7 @@ consume_simulation_delta :: proc(state: ^State, delta_seconds: f32) -> (f32, boo
 
 destroy :: proc(state: ^State) {
 	if state == nil { return }
+	editor_history_clear(state)
 	delete(state.input_original_text)
 	delete(state.editor_dirty_entities)
 	delete(state.editor_dirty_entity_lookup)

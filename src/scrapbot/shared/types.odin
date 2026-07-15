@@ -622,6 +622,10 @@ Editor_UI_Role :: enum {
 	Transport_Stop,
 	Transport_Step,
 	Transport_Save,
+	Entity_Create,
+	Entity_Duplicate,
+	Entity_Delete,
+	Entity_Promote,
 	Systems_Scroll,
 	Systems_Row,
 	Systems_Name,
@@ -631,6 +635,7 @@ Editor_UI_Role :: enum {
 	Browser_Row,
 	Browser_Row_Label,
 	Inspector_Header,
+	Inspector_Entity_Name,
 	Inspector_Scroll,
 	Inspector_Content,
 	Inspector_Panel,
@@ -638,6 +643,7 @@ Editor_UI_Role :: enum {
 	Inspector_Cell,
 	Inspector_Input,
 	Inspector_Checkbox,
+	Inspector_Component_Toggle,
 	Status,
 }
 

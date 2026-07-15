@@ -1,0 +1,456 @@
+package ecs
+
+import shared "../shared"
+import "core:strings"
+
+Entity_Snapshot :: struct {
+	entity: shared.Scene_Entity,
+	origin: shared.Entity_Origin,
+}
+
+capture_entity_snapshot :: proc(world: ^World, entity_index: int) -> (Entity_Snapshot, bool) {
+	if !entity_is_alive(world, entity_index) {
+		return {}, false
+	}
+
+	source := world.entities[entity_index]
+	snapshot := Entity_Snapshot {
+		origin = source.origin,
+		entity = {
+			id = source.uuid,
+			name = clone_snapshot_string(source.name),
+			has_shadow_caster = source.has_shadow_caster,
+			has_shadow_receiver = source.has_shadow_receiver,
+			geometry_resource = clone_snapshot_string(source.geometry_resource),
+			material_resource = clone_snapshot_string(source.material_resource),
+		},
+	}
+	entity := &snapshot.entity
+
+	if source.transform_index >= 0 && source.transform_index < len(world.transforms) {
+		entity.has_transform = true
+		entity.transform = world.transforms[source.transform_index]
+	}
+	if source.camera_index >= 0 && source.camera_index < len(world.cameras) {
+		entity.has_camera = true
+		entity.camera = world.cameras[source.camera_index]
+	}
+	if source.ambient_light_index >= 0 && source.ambient_light_index < len(world.ambient_lights) {
+		entity.has_ambient_light = true
+		entity.ambient_light = world.ambient_lights[source.ambient_light_index]
+	}
+	if source.directional_light_index >= 0 &&
+	   source.directional_light_index < len(world.directional_lights) {
+		entity.has_directional_light = true
+		entity.directional_light = world.directional_lights[source.directional_light_index]
+	}
+	if source.point_light_index >= 0 && source.point_light_index < len(world.point_lights) {
+		entity.has_point_light = true
+		entity.point_light = world.point_lights[source.point_light_index]
+	}
+	if source.mesh_index >= 0 && source.mesh_index < len(world.meshes) {
+		entity.has_mesh = true
+		entity.mesh = world.meshes[source.mesh_index]
+		entity.mesh.primitive = clone_snapshot_string(entity.mesh.primitive)
+	}
+	entity.has_geometry = source.geometry_resource != ""
+	entity.has_material = source.material_resource != ""
+
+	capture_ui_components(world, source, entity)
+	for storage in world.custom_components {
+		for component in storage.components {
+			if component.entity_index != entity_index {
+				continue
+			}
+			copy: shared.Custom_Component
+			copy.component_id = component.component_id
+			copy.name = clone_snapshot_string(component.name)
+			for field in component.vec3_fields {
+				append(
+					&copy.vec3_fields,
+					shared.Named_Vec3 {
+						name = clone_snapshot_string(field.name),
+						value = field.value,
+					},
+				)
+			}
+			append(&entity.custom_components, copy)
+		}
+	}
+	return snapshot, true
+}
+
+destroy_entity_snapshot :: proc(snapshot: ^Entity_Snapshot) {
+	if snapshot == nil {
+		return
+	}
+	entity := &snapshot.entity
+	delete(entity.name)
+	delete(entity.geometry_resource)
+	delete(entity.material_resource)
+	delete(entity.mesh.primitive)
+	delete(entity.ui_panel.title)
+	delete(entity.ui_panel.font)
+	delete(entity.ui_text.text)
+	delete(entity.ui_text.font)
+	delete(entity.ui_button.text)
+	delete(entity.ui_button.font)
+	delete(entity.ui_input.text)
+	delete(entity.ui_input.font)
+	delete(entity.ui_input.prefix)
+	for &component in entity.custom_components {
+		delete(component.name)
+		for field in component.vec3_fields {
+			delete(field.name)
+		}
+		delete(component.vec3_fields)
+	}
+	delete(entity.custom_components)
+	snapshot^ = {}
+}
+
+apply_entity_snapshot :: proc(world: ^World, snapshot: ^Entity_Snapshot) -> (int, bool) {
+	if world == nil || snapshot == nil || snapshot.entity.id == (shared.Entity_UUID{}) {
+		return -1, false
+	}
+	entity_index, found := entity_index_by_uuid(world, snapshot.entity.id)
+	if !found {
+		entity_index, found = create_world_entity(
+			world,
+			snapshot.entity.name,
+			snapshot.entity.id,
+			snapshot.origin,
+			true,
+		)
+		if !found {
+			return -1, false
+		}
+	}
+
+	value := &snapshot.entity
+	entity := &world.entities[entity_index]
+	entity.origin = snapshot.origin
+	set_entity_name(world, entity_index, value.name)
+	set_optional_transform(world, entity_index, value.has_transform, value.transform)
+	set_optional_camera(world, entity_index, value.has_camera, value.camera)
+	set_optional_ambient_light(world, entity_index, value.has_ambient_light, value.ambient_light)
+	set_optional_directional_light(
+		world,
+		entity_index,
+		value.has_directional_light,
+		value.directional_light,
+	)
+	set_optional_point_light(world, entity_index, value.has_point_light, value.point_light)
+	if value.has_mesh {
+		add_mesh(world, entity_index, value.mesh.primitive)
+	} else {
+		remove_mesh(world, entity_index)
+	}
+	set_entity_resource(world, entity_index, true, value.geometry_resource)
+	set_entity_resource(world, entity_index, false, value.material_resource)
+	entity.has_shadow_caster = value.has_shadow_caster
+	entity.has_shadow_receiver = value.has_shadow_receiver
+	apply_ui_snapshot(world, entity_index, value)
+	replace_custom_components(world, entity_index, value.custom_components[:])
+	bump_component_revision(world, entity_index)
+	mark_render_entity_dirty(world, entity_index)
+	if entity.ui_layout_index >= 0 {
+		mark_ui_subtree_dirty(world, entity_index)
+	}
+	return entity_index, true
+}
+
+delete_entity_by_uuid :: proc(world: ^World, id: shared.Entity_UUID) -> bool {
+	entity_index, found := entity_index_by_uuid(world, id)
+	if !found {
+		return false
+	}
+	despawn_entity(world, entity_index, world.entities[entity_index].id.generation)
+	return true
+}
+
+set_entity_name :: proc(world: ^World, entity_index: int, name: string) -> bool {
+	if !entity_is_alive(world, entity_index) {
+		return false
+	}
+	entity := &world.entities[entity_index]
+	if entity.name == name {
+		return true
+	}
+	next := clone_world_string(world, name)
+	delete_world_string(world, entity.name)
+	entity.name = next
+	return true
+}
+
+promote_entity_to_scene :: proc(world: ^World, entity_index: int) -> bool {
+	if !entity_is_alive(world, entity_index) {
+		return false
+	}
+	world.entities[entity_index].origin = .Scene
+	return true
+}
+
+clone_snapshot_string :: proc(value: string) -> string {
+	result, _ := strings.clone(value)
+	return result
+}
+
+capture_ui_components :: proc(world: ^World, source: World_Entity, entity: ^shared.Scene_Entity) {
+	if source.ui_layout_index >= 0 && source.ui_layout_index < len(world.ui_layouts) {
+		entity.has_ui_layout = true
+		entity.ui_layout = world.ui_layouts[source.ui_layout_index]
+	}
+	if source.ui_hstack_index >= 0 && source.ui_hstack_index < len(world.ui_hstacks) {
+		entity.has_ui_hstack = true
+		entity.ui_hstack = world.ui_hstacks[source.ui_hstack_index]
+	}
+	if source.ui_vstack_index >= 0 && source.ui_vstack_index < len(world.ui_vstacks) {
+		entity.has_ui_vstack = true
+		entity.ui_vstack = world.ui_vstacks[source.ui_vstack_index]
+	}
+	if source.ui_scroll_area_index >= 0 &&
+	   source.ui_scroll_area_index < len(world.ui_scroll_areas) {
+		entity.has_ui_scroll_area = true
+		entity.ui_scroll_area = world.ui_scroll_areas[source.ui_scroll_area_index]
+	}
+	if source.ui_panel_index >= 0 && source.ui_panel_index < len(world.ui_panels) {
+		entity.has_ui_panel = true
+		entity.ui_panel = world.ui_panels[source.ui_panel_index]
+		entity.ui_panel.title = clone_snapshot_string(entity.ui_panel.title)
+		entity.ui_panel.font = clone_snapshot_string(entity.ui_panel.font)
+	}
+	if source.ui_table_index >= 0 && source.ui_table_index < len(world.ui_tables) {
+		entity.has_ui_table = true
+		entity.ui_table = world.ui_tables[source.ui_table_index]
+	}
+	if source.ui_list_index >= 0 && source.ui_list_index < len(world.ui_lists) {
+		entity.has_ui_list = true
+		entity.ui_list = world.ui_lists[source.ui_list_index]
+	}
+	if source.ui_progress_index >= 0 && source.ui_progress_index < len(world.ui_progresses) {
+		entity.has_ui_progress = true
+		entity.ui_progress = world.ui_progresses[source.ui_progress_index]
+	}
+	if source.ui_text_index >= 0 && source.ui_text_index < len(world.ui_texts) {
+		entity.has_ui_text = true
+		entity.ui_text = world.ui_texts[source.ui_text_index]
+		entity.ui_text.text = clone_snapshot_string(entity.ui_text.text)
+		entity.ui_text.font = clone_snapshot_string(entity.ui_text.font)
+	}
+	if source.ui_button_index >= 0 && source.ui_button_index < len(world.ui_buttons) {
+		entity.has_ui_button = true
+		entity.ui_button = world.ui_buttons[source.ui_button_index]
+		entity.ui_button.text = clone_snapshot_string(entity.ui_button.text)
+		entity.ui_button.font = clone_snapshot_string(entity.ui_button.font)
+	}
+	if source.ui_input_index >= 0 && source.ui_input_index < len(world.ui_inputs) {
+		entity.has_ui_input = true
+		entity.ui_input = world.ui_inputs[source.ui_input_index]
+		entity.ui_input.text = clone_snapshot_string(entity.ui_input.text)
+		entity.ui_input.font = clone_snapshot_string(entity.ui_input.font)
+		entity.ui_input.prefix = clone_snapshot_string(entity.ui_input.prefix)
+	}
+	if source.ui_checkbox_index >= 0 && source.ui_checkbox_index < len(world.ui_checkboxes) {
+		entity.has_ui_checkbox = true
+		entity.ui_checkbox = world.ui_checkboxes[source.ui_checkbox_index]
+	}
+}
+
+set_optional_transform :: proc(
+	world: ^World,
+	entity_index: int,
+	present: bool,
+	value: Transform_Component,
+) {
+	if present {
+		add_transform(world, entity_index, value)
+	} else {
+		remove_transform(world, entity_index)
+	}
+}
+
+set_optional_camera :: proc(
+	world: ^World,
+	entity_index: int,
+	present: bool,
+	value: shared.Camera_Component,
+) {
+	entity := &world.entities[entity_index]
+	if present {
+		if entity.camera_index >= 0 && entity.camera_index < len(world.cameras) {
+			world.cameras[entity.camera_index] = value
+		} else {
+			entity.camera_index = reusable_camera_slot(world)
+			if entity.camera_index >= 0 { world.cameras[entity.camera_index] = value } else {
+				entity.camera_index = len(world.cameras)
+				append(&world.cameras, value)
+			}
+		}
+	} else {
+		entity.camera_index = INVALID_COMPONENT_INDEX
+	}
+}
+
+set_optional_ambient_light :: proc(
+	world: ^World,
+	entity_index: int,
+	present: bool,
+	value: Ambient_Light_Component,
+) {
+	entity := &world.entities[entity_index]
+	if present {
+		if entity.ambient_light_index >= 0 &&
+		   entity.ambient_light_index < len(world.ambient_lights) {
+			world.ambient_lights[entity.ambient_light_index] = value
+		} else {
+			entity.ambient_light_index = reusable_ambient_light_slot(world)
+			if entity.ambient_light_index >=
+			   0 { world.ambient_lights[entity.ambient_light_index] = value } else {
+				entity.ambient_light_index = len(world.ambient_lights)
+				append(&world.ambient_lights, value)
+			}
+		}
+	} else {
+		entity.ambient_light_index = INVALID_COMPONENT_INDEX
+	}
+}
+
+set_optional_directional_light :: proc(
+	world: ^World,
+	entity_index: int,
+	present: bool,
+	value: Directional_Light_Component,
+) {
+	entity := &world.entities[entity_index]
+	if present {
+		if entity.directional_light_index >= 0 &&
+		   entity.directional_light_index < len(world.directional_lights) {
+			world.directional_lights[entity.directional_light_index] = value
+		} else {
+			entity.directional_light_index = reusable_directional_light_slot(world)
+			if entity.directional_light_index >=
+			   0 { world.directional_lights[entity.directional_light_index] = value } else {
+				entity.directional_light_index = len(world.directional_lights)
+				append(&world.directional_lights, value)
+			}
+		}
+	} else {
+		entity.directional_light_index = INVALID_COMPONENT_INDEX
+	}
+}
+
+set_optional_point_light :: proc(
+	world: ^World,
+	entity_index: int,
+	present: bool,
+	value: Point_Light_Component,
+) {
+	entity := &world.entities[entity_index]
+	if present {
+		if entity.point_light_index >= 0 && entity.point_light_index < len(world.point_lights) {
+			world.point_lights[entity.point_light_index] = value
+		} else {
+			entity.point_light_index = reusable_point_light_slot(world)
+			if entity.point_light_index >=
+			   0 { world.point_lights[entity.point_light_index] = value } else {
+				entity.point_light_index = len(world.point_lights)
+				append(&world.point_lights, value)
+			}
+		}
+	} else {
+		entity.point_light_index = INVALID_COMPONENT_INDEX
+	}
+}
+
+reusable_camera_slot :: proc(world: ^World) -> int {
+	for index in 0 ..< len(world.cameras) {
+		used := false
+		for entity in world.entities { if entity.alive && entity.camera_index == index { used = true; break } }
+		if !used { return index }
+	}
+	return -1
+}
+
+reusable_ambient_light_slot :: proc(world: ^World) -> int {
+	for index in 0 ..< len(world.ambient_lights) {
+		used := false
+		for entity in world.entities { if entity.alive && entity.ambient_light_index == index { used = true; break } }
+		if !used { return index }
+	}
+	return -1
+}
+
+reusable_directional_light_slot :: proc(world: ^World) -> int {
+	for index in 0 ..< len(world.directional_lights) {
+		used := false
+		for entity in world.entities { if entity.alive && entity.directional_light_index == index { used = true; break } }
+		if !used { return index }
+	}
+	return -1
+}
+
+reusable_point_light_slot :: proc(world: ^World) -> int {
+	for index in 0 ..< len(world.point_lights) {
+		used := false
+		for entity in world.entities { if entity.alive && entity.point_light_index == index { used = true; break } }
+		if !used { return index }
+	}
+	return -1
+}
+
+set_entity_resource :: proc(world: ^World, entity_index: int, geometry: bool, value: string) {
+	entity := &world.entities[entity_index]
+	if geometry {
+		if entity.geometry_resource == value {
+			return
+		}
+		delete_world_string(world, entity.geometry_resource)
+		entity.geometry_resource = clone_world_string(world, value)
+		remove_geometry(world, entity_index)
+	} else {
+		if entity.material_resource == value {
+			return
+		}
+		delete_world_string(world, entity.material_resource)
+		entity.material_resource = clone_world_string(world, value)
+		remove_material(world, entity_index)
+	}
+}
+
+apply_ui_snapshot :: proc(world: ^World, entity_index: int, value: ^shared.Scene_Entity) {
+	if value.has_ui_layout { _ = set_ui_layout(world, entity_index, value.ui_layout) } else { remove_ui_component(world, entity_index, "scrapbot.ui_layout") }
+	if value.has_ui_hstack { _ = set_ui_hstack(world, entity_index, value.ui_hstack) } else { remove_ui_component(world, entity_index, "scrapbot.ui_hstack") }
+	if value.has_ui_vstack { _ = set_ui_vstack(world, entity_index, value.ui_vstack) } else { remove_ui_component(world, entity_index, "scrapbot.ui_vstack") }
+	if value.has_ui_scroll_area { _ = set_ui_scroll_area(world, entity_index, value.ui_scroll_area) } else { remove_ui_component(world, entity_index, "scrapbot.ui_scroll_area") }
+	if value.has_ui_panel { _ = set_ui_panel(world, entity_index, value.ui_panel) } else { remove_ui_component(world, entity_index, "scrapbot.ui_panel") }
+	if value.has_ui_table { _ = set_ui_table(world, entity_index, value.ui_table) } else { remove_ui_component(world, entity_index, "scrapbot.ui_table") }
+	if value.has_ui_list { _ = set_ui_list(world, entity_index, value.ui_list) } else { remove_ui_component(world, entity_index, "scrapbot.ui_list") }
+	if value.has_ui_progress { _ = set_ui_progress(world, entity_index, value.ui_progress) } else { remove_ui_component(world, entity_index, "scrapbot.ui_progress") }
+	if value.has_ui_text { _ = set_ui_text(world, entity_index, value.ui_text) } else { remove_ui_component(world, entity_index, "scrapbot.ui_text") }
+	if value.has_ui_button { _ = set_ui_button(world, entity_index, value.ui_button) } else { remove_ui_component(world, entity_index, "scrapbot.ui_button") }
+	if value.has_ui_input { _ = set_ui_input(world, entity_index, value.ui_input) } else { remove_ui_component(world, entity_index, "scrapbot.ui_input") }
+	if value.has_ui_checkbox { _ = set_ui_checkbox(world, entity_index, value.ui_checkbox) } else { remove_ui_component(world, entity_index, "scrapbot.ui_checkbox") }
+}
+
+replace_custom_components :: proc(
+	world: ^World,
+	entity_index: int,
+	components: []shared.Custom_Component,
+) {
+	for &storage in world.custom_components {
+		for component in storage.components {
+			if component.entity_index == entity_index {
+				remove_custom_component(
+					world,
+					entity_index,
+					component.component_id,
+					component.name,
+				)
+			}
+		}
+	}
+	for component in components {
+		add_scene_custom_component(world, entity_index, component)
+	}
+}

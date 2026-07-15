@@ -40,6 +40,7 @@ Current decisions:
 | ADR-025 | Use one public ECS UI contract |
 | ADR-026 | Separate authoring persistence from runtime playback |
 | ADR-027 | Use authoring transactions for editor changes |
+| ADR-028 | Persist structural authoring by UUID-scoped entity blocks |
 
 ## FDRs
 

@@ -15,6 +15,7 @@ EDITOR_UI_LEFT_NAME :: "__scrapbot_editor_left"
 EDITOR_UI_LEFT_CONTENT_NAME :: "__scrapbot_editor_left_content"
 EDITOR_UI_SYSTEMS_NAME :: "__scrapbot_editor_systems"
 EDITOR_UI_SCENE_NAME :: "__scrapbot_editor_scene"
+EDITOR_UI_SCENE_TOOLS_NAME :: "__scrapbot_editor_scene_tools"
 EDITOR_UI_VIEWPORT_NAME :: "__scrapbot_editor_viewport"
 EDITOR_UI_RIGHT_NAME :: "__scrapbot_editor_right"
 EDITOR_UI_RIGHT_CONTENT_NAME :: "__scrapbot_editor_right_content"
@@ -84,6 +85,37 @@ editor_ui_handle_activation :: proc(
 				case .Transport_Save:
 					editor_save(state)
 					return
+				case .Entity_Create:
+					_, _ = editor_authoring_create_entity(state, world)
+					return
+				case .Entity_Duplicate:
+					if selected, ok := editor_selected_world_index(state, world); ok {
+						_, _ = editor_authoring_duplicate_entity(state, world, selected)
+					}
+					return
+				case .Entity_Delete:
+					if selected, ok := editor_selected_world_index(state, world); ok {
+						_ = editor_authoring_delete_entity(state, world, selected)
+					}
+					return
+				case .Entity_Promote:
+					if selected, ok := editor_selected_world_index(state, world); ok {
+						_ = editor_authoring_promote_entity(state, world, selected)
+					}
+					return
+				case .Inspector_Component_Toggle:
+					if selected, ok := editor_selected_world_index(state, world); ok {
+						component := Editor_Authoring_Component(component.slot)
+						present := editor_entity_has_component(world, selected, component)
+						_ = editor_authoring_set_component(
+							state,
+							world,
+							selected,
+							component,
+							!present,
+						)
+					}
+					return
 				case .Viewport:
 					if !state.editor_gizmo_captures_pointer {
 						state.editor_pick_requested = true
@@ -99,6 +131,7 @@ editor_ui_handle_activation :: proc(
 				     .Systems_Origin,
 				     .Browser_Scroll,
 				     .Inspector_Header,
+				     .Inspector_Entity_Name,
 				     .Inspector_Scroll,
 				     .Inspector_Content,
 				     .Inspector_Panel,
@@ -411,7 +444,7 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		{size = {306, 30}},
 	)
 	editor_ui_add_hstack(world, transport, {gap = 4})
-	_ = editor_ui_create_transport_button(
+	create_button := editor_ui_create_transport_button(
 		world,
 		"__scrapbot_editor_play",
 		EDITOR_UI_TRANSPORT_NAME,
@@ -534,6 +567,46 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		},
 	)
 	editor_ui_add_scroll(world, scene)
+	scene_tools := editor_ui_create_box(
+		world,
+		EDITOR_UI_SCENE_TOOLS_NAME,
+		EDITOR_UI_SCENE_NAME,
+		.None,
+		{size = {2000, 34}, padding = {2, 6, 2, 6}, background = EDITOR_SECTION_BACKGROUND},
+	)
+	editor_ui_add_hstack(world, scene_tools, {gap = 4})
+	_ = editor_ui_create_transport_button(
+		world,
+		"__scrapbot_editor_entity_create",
+		EDITOR_UI_SCENE_TOOLS_NAME,
+		"+",
+		.Entity_Create,
+	)
+	world.ui_layouts[world.entities[create_button].ui_layout_index].size.x = 32
+	duplicate_button := editor_ui_create_transport_button(
+		world,
+		"__scrapbot_editor_entity_duplicate",
+		EDITOR_UI_SCENE_TOOLS_NAME,
+		"DUP",
+		.Entity_Duplicate,
+	)
+	world.ui_layouts[world.entities[duplicate_button].ui_layout_index].size.x = 48
+	delete_button := editor_ui_create_transport_button(
+		world,
+		"__scrapbot_editor_entity_delete",
+		EDITOR_UI_SCENE_TOOLS_NAME,
+		"DEL",
+		.Entity_Delete,
+	)
+	world.ui_layouts[world.entities[delete_button].ui_layout_index].size.x = 42
+	promote_button := editor_ui_create_transport_button(
+		world,
+		"__scrapbot_editor_entity_promote",
+		EDITOR_UI_SCENE_TOOLS_NAME,
+		"KEEP",
+		.Entity_Promote,
+	)
+	world.ui_layouts[world.entities[promote_button].ui_layout_index].size.x = 48
 
 	_ = editor_ui_create_box(
 		world,
@@ -584,15 +657,34 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		EDITOR_UI_INSPECTOR_HEADER_NAME,
 		EDITOR_UI_RIGHT_CONTENT_NAME,
 		.None,
-		editor_ui_section_layout({EDITOR_RIGHT_SIDEBAR_WIDTH, 110}),
+		editor_ui_section_layout({EDITOR_RIGHT_SIDEBAR_WIDTH, 132}),
 	)
 	editor_ui_add_section_panel(world, right_header, "INSPECTOR")
+	name_input := editor_ui_create_box(
+		world,
+		"__scrapbot_editor_inspector_entity_name",
+		EDITOR_UI_INSPECTOR_HEADER_NAME,
+		.Inspector_Entity_Name,
+		{
+			position = {10, 42},
+			size = {2000, 28},
+			background = {0.012, 0.017, 0.024, 1},
+			border_color = EDITOR_SECTION_BORDER,
+			border_width = 1,
+			corner_radius = 4,
+			fill_width = true,
+		},
+	)
+	name_value := shared.ui_input_default()
+	name_value.text = ""
+	name_value.size = EDITOR_TEXT_SIZE
+	editor_ui_add_input(world, name_input, name_value)
 	inspector_header := editor_ui_create_box(
 		world,
 		"__scrapbot_editor_inspector_identity",
 		EDITOR_UI_INSPECTOR_HEADER_NAME,
 		.Inspector_Header,
-		{position = {0, 34}, size = {2000, 58}},
+		{position = {10, 82}, size = {2000, 36}},
 	)
 	editor_ui_add_text(
 		world,
@@ -1036,7 +1128,41 @@ Inspector_ECS_Builder :: struct {
 	cell_count: int,
 	input_count: int,
 	checkbox_count: int,
+	toggle_count: int,
 	row_count: int,
+}
+
+editor_ui_ensure_component_toggle :: proc(
+	world: ^shared.World,
+	component: Editor_Authoring_Component,
+	parent: string,
+) -> int {
+	slot := int(component)
+	if button, found := editor_ui_entity(world, .Inspector_Component_Toggle, slot); found {
+		editor_ui_set_parent(world, button, parent)
+		return button
+	}
+	name := fmt.tprintf("__scrapbot_editor_component_toggle_%d", slot)
+	button := editor_ui_create_box(
+		world,
+		name,
+		parent,
+		.Inspector_Component_Toggle,
+		{
+			size = {1, INSPECTOR_CONTROL_HEIGHT},
+			background = {0.013, 0.018, 0.025, 1},
+			border_color = {0.075, 0.090, 0.115, 1},
+			border_width = 1,
+			corner_radius = 4,
+			fill_width = true,
+		},
+		slot,
+	)
+	editor_ui_add_button(world, button)
+	value := &world.ui_buttons[world.entities[button].ui_button_index]
+	value.size = EDITOR_TEXT_SIZE
+	value.color = {0.70, 0.73, 0.78, 1}
+	return button
 }
 
 editor_ui_set_numeric_metadata :: proc(
@@ -1275,9 +1401,195 @@ editor_ui_finish_inspector :: proc(builder: ^Inspector_ECS_Builder) {
 			case .Inspector_Checkbox:
 				if component.slot >=
 				   builder.checkbox_count { editor_ui_set_hidden(builder.world, component.entity_index, true) }
+			case .Inspector_Component_Toggle:
+				editor_ui_set_hidden(
+					builder.world,
+					component.entity_index,
+					builder.toggle_count == 0,
+				)
 			case:
 		}
 	}
+}
+
+editor_ui_build_component_controls :: proc(builder: ^Inspector_ECS_Builder, entity_index: int) {
+	editor_ui_begin_inspector_component(builder, "COMPONENTS")
+	components := [?]Editor_Authoring_Component {
+		.Transform,
+		.Camera,
+		.Ambient_Light,
+		.Directional_Light,
+		.Point_Light,
+		.Mesh,
+		.Geometry,
+		.Material,
+		.Shadow_Caster,
+		.Shadow_Receiver,
+		.UI_Layout,
+		.UI_HStack,
+		.UI_VStack,
+		.UI_Scroll_Area,
+		.UI_Panel,
+		.UI_Table,
+		.UI_List,
+		.UI_Progress,
+		.UI_Text,
+		.UI_Button,
+		.UI_Input,
+		.UI_Checkbox,
+	}
+	for component in components {
+		parent := builder.world.entities[builder.table_entity].name
+		label_cell := editor_ui_ensure_inspector_cell(
+			builder.world,
+			builder.cell_count,
+			parent,
+			false,
+		)
+		builder.cell_count += 1
+		value_cell := editor_ui_ensure_inspector_cell(
+			builder.world,
+			builder.cell_count,
+			parent,
+			true,
+		)
+		builder.cell_count += 1
+		editor_ui_set_hidden(builder.world, label_cell, false)
+		editor_ui_set_hidden(builder.world, value_cell, false)
+		editor_ui_set_text(builder.world, label_cell, editor_component_name(component))
+		button := editor_ui_ensure_component_toggle(
+			builder.world,
+			component,
+			builder.world.entities[value_cell].name,
+		)
+		editor_ui_set_hidden(builder.world, button, false)
+		present := editor_entity_has_component(builder.world, entity_index, component)
+		label := "ADD"
+		if present { label = "REMOVE" }
+		button_value := builder.world.ui_buttons[builder.world.entities[button].ui_button_index]
+		button_value.text = label
+		_ = ecs.set_ui_button(builder.world, button, button_value)
+		builder.row_count += 1
+		builder.toggle_count += 1
+	}
+}
+
+editor_component_name :: proc(component: Editor_Authoring_Component) -> string {
+	switch component {
+		case .Transform:
+			return "Transform"
+		case .Camera:
+			return "Camera"
+		case .Ambient_Light:
+			return "Ambient Light"
+		case .Directional_Light:
+			return "Directional Light"
+		case .Point_Light:
+			return "Point Light"
+		case .Mesh:
+			return "Mesh"
+		case .Geometry:
+			return "Geometry"
+		case .Material:
+			return "Material"
+		case .Shadow_Caster:
+			return "Shadow Caster"
+		case .Shadow_Receiver:
+			return "Shadow Receiver"
+		case .UI_Layout:
+			return "UI Layout"
+		case .UI_HStack:
+			return "UI HStack"
+		case .UI_VStack:
+			return "UI VStack"
+		case .UI_Scroll_Area:
+			return "UI Scroll Area"
+		case .UI_Panel:
+			return "UI Panel"
+		case .UI_Table:
+			return "UI Table"
+		case .UI_List:
+			return "UI List"
+		case .UI_Progress:
+			return "UI Progress"
+		case .UI_Text:
+			return "UI Text"
+		case .UI_Button:
+			return "UI Button"
+		case .UI_Input:
+			return "UI Input"
+		case .UI_Checkbox:
+			return "UI Checkbox"
+	}
+	return "Component"
+}
+
+editor_entity_has_component :: proc(
+	world: ^shared.World,
+	entity_index: int,
+	component: Editor_Authoring_Component,
+) -> bool {
+	if !ecs.entity_is_alive(world, entity_index) { return false }
+	entity := world.entities[entity_index]
+	switch component {
+		case .Transform:
+			return entity.transform_index >= 0
+		case .Camera:
+			return entity.camera_index >= 0
+		case .Ambient_Light:
+			return entity.ambient_light_index >= 0
+		case .Directional_Light:
+			return entity.directional_light_index >= 0
+		case .Point_Light:
+			return entity.point_light_index >= 0
+		case .Mesh:
+			return entity.mesh_index >= 0
+		case .Geometry:
+			return entity.geometry_resource != ""
+		case .Material:
+			return entity.material_resource != ""
+		case .Shadow_Caster:
+			return entity.has_shadow_caster
+		case .Shadow_Receiver:
+			return entity.has_shadow_receiver
+		case .UI_Layout:
+			return entity.ui_layout_index >= 0
+		case .UI_HStack:
+			return entity.ui_hstack_index >= 0
+		case .UI_VStack:
+			return entity.ui_vstack_index >= 0
+		case .UI_Scroll_Area:
+			return entity.ui_scroll_area_index >= 0
+		case .UI_Panel:
+			return entity.ui_panel_index >= 0
+		case .UI_Table:
+			return entity.ui_table_index >= 0
+		case .UI_List:
+			return entity.ui_list_index >= 0
+		case .UI_Progress:
+			return entity.ui_progress_index >= 0
+		case .UI_Text:
+			return entity.ui_text_index >= 0
+		case .UI_Button:
+			return entity.ui_button_index >= 0
+		case .UI_Input:
+			return entity.ui_input_index >= 0
+		case .UI_Checkbox:
+			return entity.ui_checkbox_index >= 0
+	}
+	return false
+}
+
+editor_selected_world_index :: proc(state: ^State, world: ^shared.World) -> (int, bool) {
+	if state == nil || world == nil || !state.editor_has_selection {
+		return -1, false
+	}
+	index := int(state.editor_selected_entity.index)
+	if !ecs.entity_is_alive(world, index) ||
+	   world.entities[index].id != state.editor_selected_entity {
+		return -1, false
+	}
+	return index, true
 }
 
 editor_ui_build_inspector_panels :: proc(
@@ -1725,6 +2037,9 @@ editor_ui_build_inspector_panels :: proc(
 			break
 		}
 	}
+	if state.editor_simulation_stopped && entity.origin == .Scene {
+		editor_ui_build_component_controls(&builder, entity_index)
+	}
 	editor_ui_finish_inspector(&builder)
 }
 
@@ -1789,11 +2104,28 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 				if entity.origin == .Runtime { origin = "RUNTIME ENTITY" }
 				id_buffer: [36]u8
 				id := shared.entity_uuid_to_string(entity.uuid, id_buffer[:])
-				editor_ui_set_text(
-					world,
-					header,
-					fmt.tprintf("%s\n%s  /  %s", entity.name, origin, id),
-				)
+				editor_ui_set_text(world, header, fmt.tprintf("%s  /  %s", origin, id))
+			}
+		}
+	}
+	if name_input, found := editor_ui_entity(world, .Inspector_Entity_Name); found {
+		hidden := !state.editor_has_selection
+		editor_ui_set_hidden(world, name_input, hidden)
+		if !hidden {
+			selected_index := int(state.editor_selected_entity.index)
+			if selected_index >= 0 && selected_index < len(world.entities) {
+				input := &world.ui_inputs[world.entities[name_input].ui_input_index]
+				input.read_only =
+					!state.editor_simulation_stopped ||
+					world.entities[selected_index].origin != .Scene
+				if !state.has_focused_input ||
+				   state.focused_input != world.entities[name_input].id {
+					_ = ecs.set_ui_input_value(
+						world,
+						name_input,
+						world.entities[selected_index].name,
+					)
+				}
 			}
 		}
 	}
@@ -1838,7 +2170,7 @@ editor_ui_input_binding :: proc(
 		return {}, nil, false
 	}
 	binding := &world.editor_uis[entity.editor_ui_index]
-	if binding.role != .Inspector_Input {
+	if binding.role != .Inspector_Input && binding.role != .Inspector_Entity_Name {
 		return {}, nil, false
 	}
 	return binding, &world.ui_inputs[entity.ui_input_index], true
@@ -1858,7 +2190,7 @@ editor_ui_prepare_input_focus :: proc(state: ^State, world: ^shared.World, entit
 
 editor_ui_consume_input_state :: proc(state: ^State, world: ^shared.World, entity_index: int) {
 	binding, input, found := editor_ui_input_binding(world, entity_index)
-	if !found || !input.numeric {
+	if !found {
 		return
 	}
 	entity := world.entities[entity_index]
@@ -1866,6 +2198,17 @@ editor_ui_consume_input_state :: proc(state: ^State, world: ^shared.World, entit
 		return
 	}
 	interaction := world.ui_states[entity.ui_state_index]
+	if binding.role == .Inspector_Entity_Name {
+		if interaction.submitted {
+			if selected, ok := editor_selected_world_index(state, world); ok {
+				_ = editor_authoring_rename_entity(state, world, selected, input.text)
+			}
+		}
+		return
+	}
+	if !input.numeric {
+		return
+	}
 	if (interaction.changed || interaction.submitted || interaction.cancelled) &&
 	   !binding.input_has_original_number {
 		if number, ok := read_inspector_numeric(world, binding^); ok {

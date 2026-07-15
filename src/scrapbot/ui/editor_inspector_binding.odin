@@ -464,10 +464,15 @@ editor_history_push_transform :: proc(
 }
 
 editor_history_push_transaction :: proc(state: ^State, transaction: Editor_Edit_Transaction) {
-	if state == nil || transaction.change_count <= 0 { return }
+	if state == nil || (transaction.change_count <= 0 && transaction.structural == nil) { return }
+	for index in state.editor_history_cursor ..< state.editor_history_count {
+		editor_history_destroy_transaction(&state.editor_history[index])
+	}
 	state.editor_history_count = state.editor_history_cursor
 	if state.editor_history_count >= EDITOR_HISTORY_CAPACITY {
+		editor_history_destroy_transaction(&state.editor_history[0])
 		copy(state.editor_history[0:EDITOR_HISTORY_CAPACITY - 1], state.editor_history[1:])
+		state.editor_history[EDITOR_HISTORY_CAPACITY - 1] = {}
 		state.editor_history_count = EDITOR_HISTORY_CAPACITY - 1
 		state.editor_history_cursor = state.editor_history_count
 	}
@@ -478,6 +483,7 @@ editor_history_push_transaction :: proc(state: ^State, transaction: Editor_Edit_
 
 editor_history_remove :: proc(state: ^State, index: int) {
 	if state == nil || index < 0 || index >= state.editor_history_count { return }
+	editor_history_destroy_transaction(&state.editor_history[index])
 	if index + 1 < state.editor_history_count {
 		copy(
 			state.editor_history[index:state.editor_history_count - 1],
@@ -485,6 +491,7 @@ editor_history_remove :: proc(state: ^State, index: int) {
 		)
 	}
 	state.editor_history_count -= 1
+	state.editor_history[state.editor_history_count] = {}
 	if state.editor_history_cursor > index { state.editor_history_cursor -= 1 }
 	state.editor_history_cursor = clamp(state.editor_history_cursor, 0, state.editor_history_count)
 }
@@ -496,6 +503,41 @@ editor_history_apply :: proc(state: ^State, world: ^shared.World, redo: bool) ->
 		if !redo { index -= 1 }
 		if index < 0 || index >= state.editor_history_count { return false }
 		transaction := state.editor_history[index]
+		if transaction.structural != nil {
+			change := transaction.structural
+			desired := change.before
+			if redo { desired = change.after }
+			applied := false
+			deleting_selected := false
+			selected: shared.Entity
+			if desired == nil {
+				if entity_index, found := ecs.entity_index_by_uuid(world, change.target_uuid);
+				   found {
+					deleting_selected =
+						state.editor_has_selection &&
+						state.editor_selected_entity == world.entities[entity_index].id
+				}
+				applied = ecs.delete_entity_by_uuid(world, change.target_uuid)
+			} else if entity_index, ok := ecs.apply_entity_snapshot(world, desired); ok {
+				applied = true
+				selected = world.entities[entity_index].id
+			}
+			if applied {
+				editor_mark_scene_uuid_dirty(state, change.target_uuid)
+				if desired == nil {
+					if deleting_selected {
+						state.editor_has_selection = false
+					}
+				} else {
+					state.editor_selected_entity = selected
+					state.editor_has_selection = true
+				}
+				if redo { state.editor_history_cursor = index + 1 } else { state.editor_history_cursor = index }
+				return true
+			}
+			editor_history_remove(state, index)
+			continue
+		}
 		valid := true
 		for change in transaction.changes[:transaction.change_count] {
 			entity_index, found := ecs.entity_index_by_uuid(world, change.target_uuid)
@@ -537,6 +579,34 @@ editor_history_apply :: proc(state: ^State, world: ^shared.World, redo: bool) ->
 		}
 		editor_history_remove(state, index)
 	}
+}
+
+editor_history_destroy_transaction :: proc(transaction: ^Editor_Edit_Transaction) {
+	if transaction == nil || transaction.structural == nil {
+		return
+	}
+	change := transaction.structural
+	if change.before != nil {
+		ecs.destroy_entity_snapshot(change.before)
+		free(change.before)
+	}
+	if change.after != nil {
+		ecs.destroy_entity_snapshot(change.after)
+		free(change.after)
+	}
+	free(change)
+	transaction^ = {}
+}
+
+editor_history_clear :: proc(state: ^State) {
+	if state == nil {
+		return
+	}
+	for index in 0 ..< state.editor_history_count {
+		editor_history_destroy_transaction(&state.editor_history[index])
+	}
+	state.editor_history_count = 0
+	state.editor_history_cursor = 0
 }
 
 focused_input_binding :: proc(
