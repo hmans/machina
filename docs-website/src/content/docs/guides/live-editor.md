@@ -19,7 +19,17 @@ Pass `--editor` to start with the editor already open:
 bin/scrapbot run examples/ecs-showcase --backend wgpu --window --editor
 ```
 
-The project keeps running when the editor opens or closes. Its world and project-authored UI fill all currently available center space without enforcing a fixed aspect ratio. Drag either vertical separator beside the viewport to resize the scene or inspector sidebar; the center viewport automatically fills the remainder and the panes keep their proportions as the window changes. Each complete sidebar also has a contrasting 10-pixel frame around its smooth scroll viewport, with a small gutter between separate tool sections, so the dock hierarchy stays legible and every section remains reachable in a short window. Wheel input over a nested Systems, scene-browser, or inspector pane scrolls that pane; wheel input over sidebar padding or non-scrollable chrome scrolls the complete sidebar. During a native window resize, the simulation, surface, camera aspect, viewport, and editor layout continue updating throughout the drag.
+Opening or closing the editor does not change the project's current playback state. Its world and project-authored UI fill all currently available center space without enforcing a fixed aspect ratio. Drag either vertical separator beside the viewport to resize the scene or inspector sidebar; the center viewport automatically fills the remainder and the panes keep their proportions as the window changes. Each complete sidebar also has a contrasting 10-pixel frame around its smooth scroll viewport, with a small gutter between separate tool sections, so the dock hierarchy stays legible and every section remains reachable in a short window. Systems, Scene, Inspector, and component sections share the same titled card, colors, disclosure arrow, and collapse behavior; click any title band to fold that section. Wheel input over a nested Systems, scene-browser, or inspector pane scrolls that pane; wheel input over sidebar padding or non-scrollable chrome scrolls the complete sidebar. During a native window resize, the simulation, surface, camera aspect, viewport, and editor layout continue updating throughout the drag.
+
+The top bar contains the Scrapbot title and the project simulation controls. The bottom bar reports only the current simulation state.
+
+| Control | Behavior |
+| --- | --- |
+| Play | Run project systems with normal frame deltas. |
+| Pause | Freeze project systems and world time at their current state. Rendering, editor UI, scene-camera navigation, picking, and gizmos remain responsive. |
+| Step | While pausing normal playback, run one fixed 1/60-second project update. |
+
+Pause does not reload the scene or discard runtime changes in this slice; Play resumes from the frozen world.
 
 ## Navigate the scene view
 
@@ -39,7 +49,7 @@ Closing and reopening the editor preserves the scene-camera viewpoint for the cu
 
 ## Browse and inspect entities
 
-The top-left systems panel lists the native and Luau systems currently registered with the runtime. Its right-aligned timing column shows average callback time per frame, published every ten successful frames. Drag the horizontal separator below the panel to trade height between the profiler and the complete Scene pane. Native systems use their registered names; Luau systems currently use ordinal labels. These values measure callback execution only, excluding scheduler setup, deferred-command application, rendering, and GPU work.
+The top-left systems panel lists the native and Luau systems currently registered with the runtime. Its right-aligned timing column shows average callback time per frame in milliseconds with three decimal places, published every ten successful frames. Drag the horizontal separator below the panel to trade height between the profiler and the complete Scene pane. Native systems use their registered names. Luau systems use the optional `name` from their system options and fall back to ordinal labels when unnamed. These values measure callback execution only, excluding scheduler setup, deferred-command application, rendering, and GPU work.
 
 The scene sidebar lists scene-authored and runtime-spawned entities, including objects that do not come from the scene TOML. Scene-authored names use normal white text and runtime-spawned names use muted gray. Transient editor-origin entities—including the shell itself and scene camera—stay hidden from the browser and inspector.
 

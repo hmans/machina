@@ -14,6 +14,7 @@
 - [x] Add geometry/material ECS references and internal render reconciliation.
 - [x] Cache geometry and material resources in the WGPU backend.
 - [x] Add ECS ambient, directional, and point lights to the WGPU backend.
+- [x] Track renderable, camera, and light membership incrementally without full-world render extraction scans.
 - [x] Add directional shadow maps with explicit shadow caster and receiver components.
 - [ ] Add light selection or clustered lighting beyond the initial fixed limits.
 - [ ] Add visual comparison for offscreen render output.
@@ -23,6 +24,7 @@
 - [x] Add scene-defined UI layout and text components.
 - [x] Incrementally synchronize appearing and disappearing UI entities into retained state.
 - [x] Render panel and scalable MTSDF text paint commands after world geometry.
+- [x] Auto-atlas named project TTF/OTF resources and retain embedded Inter as fallback.
 - [x] Add row, column, and overlay hierarchy layout.
 - [x] Add per-edge margins and padding, SDF-rounded backgrounds, horizontal and vertical stack components, and button controls.
 - [ ] Expose UI creation and mutation through Luau and native extensions.
@@ -31,6 +33,7 @@
 - [x] Add nested paint/hit-test clipping and smooth vertical scroll areas.
 - [x] Add proportional fill stacks with draggable separators and minimum pane sizes.
 - [x] Add reusable single-line input controls with selection, cursor commands, focus, and Tab traversal.
+- [x] Add reusable boolean checkbox controls with SDF rendering and inspector bindings.
 - [ ] Add canvas scaling and richer sizing/alignment.
 
 ## Project Runtime
@@ -46,6 +49,7 @@
 - [x] Add a shared frame time resource with raw and smoothed delta time.
 - [x] Reflect component registry metadata into editor/tooling APIs.
 - [x] Add scheduled systems with declared component access.
+- [x] Add optional project-facing names for Luau systems and expose them in the profiler.
 - [x] Execute a project-local Luau entry script during `scrapbot run`.
 - [x] Add Luau LSP metadata for the built-in `scrapbot` global.
 - [x] Add a first Luau system bridge for project-local systems.
@@ -92,6 +96,7 @@
 - [x] Add an editor-origin ECS scene camera with RMB-captured WASD, Space, and Ctrl fly navigation.
 - [x] Add live inspector editing for transform, camera, light, and custom Vec3 fields.
 - [x] Add numeric validation, keyboard stepping, axis-label scrubbing, and bounded inspector undo/redo.
+- [x] Add top-bar Play, Pause, and fixed-frame Step simulation controls.
 - [ ] Generalize component value editing across every reflected field type.
 
 ## Documentation And Examples

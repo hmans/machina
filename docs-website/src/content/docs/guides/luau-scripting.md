@@ -60,6 +60,7 @@ Systems can be tied to a query and receive one callback per matching entity.
 
 ```lua
 scrapbot.system(Autorotating, {
+	name = "Autorotate",
 	writes = { scrapbot.transform },
 }, function(time: ScrapbotTime, entity: ScrapbotEntity, transform: ScrapbotTransform, autorotate: Autorotate)
 	transform.rotation.y += autorotate.velocity.y * time.delta_time
@@ -67,6 +68,8 @@ end)
 ```
 
 Query components are declared as reads automatically. Writes must be declared explicitly. If a system mutates a payload without matching write access, Scrapbot fails the frame step and leaves the world unchanged.
+
+The optional `name` is shown in live editor tooling, including the system performance panel. Unnamed systems remain valid and receive an ordinal fallback label.
 
 Every system receives a read-only `ScrapbotTime` snapshot. Use `delta_time` for simulation, `smooth_delta_time` for presentation smoothing, `elapsed_time` for runtime-relative clocks, and `frame_index` for deterministic frame counting.
 

@@ -1,7 +1,7 @@
 # FDR-004: Luau scripting
 
 **Status:** Active
-**Last reviewed:** 2026-07-13
+**Last reviewed:** 2026-07-15
 
 ## Overview
 
@@ -33,6 +33,7 @@ Luau scripting lets project directories include fast-iteration game code without
 - The `scrapbot` API exposes public transform, camera, geometry, material, lighting, shadow, UI layout, horizontal-stack, vertical-stack, text, and button component handles.
 - Scripts can define full named indexed geometry, generate cubes, planes, icospheres, UV spheres, pyramids, and capped cylinders, and define shared Lambert-lit base-color or project-PNG-textured materials.
 - Scripts can register frame systems with `scrapbot.system(function(time) ... end)`.
+- Scripts can give systems a project-facing name through the optional system-options `name` field. Named systems use that label in editor tooling; unnamed legacy registrations retain an ordinal fallback.
 - Scripts can declare system component access with `scrapbot.system({ reads = {...}, writes = {...} }, function(time) ... end)`.
 - Every system receives the same read-only time resource snapshot with delta time, smoothed delta time, elapsed time, and frame index.
 - Script system access declarations accept component handles, query objects for reads, or registered component-name strings.
@@ -116,9 +117,9 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 ### 8. Feed Luau system declarations into the scheduler
 
-**Decision:** Let Luau systems declare component reads and writes in an options table before the callback.
-**Why:** The same script API that users write now should produce the scheduling metadata needed for future parallel execution.
-**Tradeoff:** Access declarations are manually maintained for now. The runtime validates component names and enforces writes that go through Scrapbot APIs or query-system payload write-back, but it does not yet statically prove that system bodies only touch declared components.
+**Decision:** Let Luau systems declare a project-facing name plus component reads and writes in an options table before the callback.
+**Why:** The same script API that users write now should produce both the scheduling metadata needed for parallel execution and the identity needed by live tooling.
+**Tradeoff:** Names and access declarations are manually maintained for now. The runtime validates the option shapes and component names and enforces writes that go through Scrapbot APIs or query-system payload write-back, but it does not yet statically prove that system bodies only touch declared components.
 
 ### 9. Expose entity and component lifecycle through deferred commands
 

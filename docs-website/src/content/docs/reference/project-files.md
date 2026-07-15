@@ -16,6 +16,10 @@ default_scene = "scenes/main.scene.toml"
 [[native_extensions]]
 name = "scrappyphysics"
 source = "native/scrappyphysics"
+
+[[fonts]]
+name = "display"
+source = "assets/fonts/Display.otf"
 ```
 
 Fields:
@@ -27,6 +31,13 @@ Fields:
 | `[[native_extensions]]` | No | Repeated table for project-local native extension targets. |
 | `native_extensions.name` | Yes | Build output base name. Must be an identifier token. |
 | `native_extensions.source` | Yes | Safe relative path to an Odin package directory. |
+| `[[fonts]]` | No | Repeated table for project-local UI font resources; at most 15. |
+| `fonts.name` | Yes | Resource name used by UI components. Must be a unique identifier token. |
+| `fonts.source` | Yes | Safe path under `assets/` ending in `.ttf` or `.otf`. |
+
+Scrapbot automatically generates a 512×512 printable-ASCII MTSDF atlas and glyph metadata under `build/fonts/` when a declared source or the compiler settings change. Install `msdf-atlas-gen` so `scrapbot check`, `build`, or `run` can satisfy a cache miss (`brew install msdf-atlas-gen` on macOS), or point `SCRAPBOT_MSDF_ATLAS_GEN` at the executable. Packaged projects contain the generated artifacts and do not need the generator or platform font APIs at runtime. Font licensing remains the project's responsibility.
+
+Embedded Inter is always available as the default and runtime fallback. The current font slice supports printable ASCII only; unsupported characters render as `?`, and shaping, kerning, variable-font axes, and Unicode fallback chains are not implemented yet.
 
 ## Scene entities
 
@@ -136,6 +147,7 @@ size = [412, 52]
 
 [entities.ui_text]
 text = "SCRAPBOT UI"
+font = "display"
 color = [0.15, 0.95, 0.82, 1]
 size = 32
 alignment = "left"
@@ -182,6 +194,25 @@ focus_border_color = [0.15, 0.85, 0.72, 1]
 read_only = false
 
 [[entities]]
+id = "d4000000-0000-4000-8000-000000000019"
+name = "Enabled"
+
+[entities.ui_layout]
+parent = "d4000000-0000-4000-8000-000000000010"
+size = [40, 40]
+
+[entities.ui_checkbox]
+checked = true
+box_size = 20
+background = [0.025, 0.03, 0.04, 1]
+checked_background = [0.08, 0.55, 0.46, 1]
+border_color = [0.24, 0.27, 0.32, 1]
+check_color = [0.95, 0.97, 0.98, 1]
+hover_background = [0.12, 0.64, 0.54, 1]
+active_background = [0.06, 0.42, 0.36, 1]
+read_only = false
+
+[[entities]]
 id = "d4000000-0000-4000-8000-000000000014"
 name = "Feature Scroll"
 
@@ -208,11 +239,15 @@ size = [396, 360]
 gap = 8
 ```
 
-Positions and sizes are screen pixels from the top-left. `margin` and `padding` use `[top, right, bottom, left]`. `border_color` and non-negative `border_width` add an inset signed-distance border that follows `corner_radius`. `hidden = true` removes the box and its descendant subtree from layout, paint, and interaction without despawning their entities. Add `ui_hstack` or `ui_vstack` with a non-negative `gap` to arrange children in scene order; an element without either stack overlays its children inside the parent's padded content box. Set `fill = true` to treat authored child sizes as proportions along the stack axis and fill the available cross-axis. Add `draggable = true` to turn the gaps into pointer-draggable separators; `min_size` sets the non-negative minimum pane extent on the stack axis. Draggable stacks must also enable fill. A `ui_text` can set `alignment` to `"left"`, `"center"`, or `"right"` within its padded content box. Backgrounds, borders, and corner radii are rendered from the same signed-distance rounded rectangle. Parent UUIDs must resolve to another UI layout entity, cycles are rejected, and one entity cannot combine both stack directions or more than one of `ui_text`, `ui_button`, and `ui_input`.
+Positions and sizes are screen pixels from the top-left. `margin` and `padding` use `[top, right, bottom, left]`. `border_color` and non-negative `border_width` add an inset signed-distance border that follows `corner_radius`. `hidden = true` removes the box and its descendant subtree from layout, paint, and interaction without despawning their entities. Add `ui_hstack` or `ui_vstack` with a non-negative `gap` to arrange children in scene order; an element without either stack overlays its children inside the parent's padded content box. Set `fill = true` to treat authored child sizes as proportions along the stack axis and fill the available cross-axis. Add `draggable = true` to turn the gaps into pointer-draggable separators; `min_size` sets the non-negative minimum pane extent on the stack axis. Draggable separators show the matching horizontal- or vertical-resize system cursor while hovered or dragged. Draggable stacks must also enable fill. A `ui_text` can set `alignment` to `"left"`, `"center"`, or `"right"` within its padded content box. Backgrounds, borders, corner radii, checkbox boxes, and checkbox marks are rendered with signed-distance shapes. Parent UUIDs must resolve to another UI layout entity, cycles are rejected, and one entity cannot combine both stack directions or more than one of `ui_text`, `ui_button`, `ui_input`, and `ui_checkbox`.
 
 Pointer hit testing gives the topmost element under the pointer hover state. Pressing the primary button captures active state on that element until release. Buttons can consume those generic states through `hover_background`, `active_background`, `hover_color`, and `active_color`; a zero-alpha state color falls back to the normal layout background or button text color. Button activation events are not emitted yet.
 
+Set `font` on `ui_text`, `ui_button`, `ui_input`, or `ui_panel` to a name declared in `project.toml`; omit it to use Inter. A panel's selection applies to its title, while child controls select their own fonts independently.
+
 Clicking a `ui_input` focuses it and selects all its text. Focused inputs support typed single-line ASCII text, Left/Right/Home/End movement, Shift selection, Backspace/Delete, Select All, and paint-order Tab/Shift+Tab traversal. Enter accepts the current value and removes focus; Escape restores the text present when focus began. The component's `text` field changes during editing. Set `read_only = true` to retain focus, selection, and traversal without allowing mutation. Clipboard operations, IME composition, Unicode shaping, multiline editing, and public change/commit events are not implemented yet.
+
+A `ui_checkbox` stores its current boolean in `checked` and toggles on primary-button press. `box_size` controls the square inside the element's layout box; the remaining fields style its unchecked, checked, hover, active, border, and SDF checkmark colors. Set `read_only = true` to display state without accepting pointer changes. Public checkbox change events are not implemented yet.
 
 A `ui_scroll_area` clips descendants to its padded content rectangle and scrolls vertically when the pointer wheel is over it. Give its nested pane an explicit size larger than the viewport; that pane may contain overlays or stacks of any size. `scroll_speed` is the target movement per wheel unit and `smoothness` controls frame-time interpolation toward that target. Both must be positive. Nested scroll clips intersect, and only the topmost hovered scroll area consumes a wheel update.
 

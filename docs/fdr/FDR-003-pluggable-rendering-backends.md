@@ -61,9 +61,9 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 
 ### 6. Use ECS renderable queries as the first backend boundary
 
-**Decision:** Change-driven engine synchronization derives internal render-instance components from valid transform, geometry, and material references and maintains a dense active-renderable set. ECS builds a short-lived render list from that state.
-**Why:** Backends need coherent scene instances, not just global component counts, and this keeps GPU code out of ECS storage without rescanning unchanged membership every frame. See ADR-024.
-**Tradeoff:** Every structural render mutation must mark its entity dirty, and the first uniform layout caps a frame at 64 instances.
+**Decision:** Change-driven engine synchronization derives internal render-instance components from valid transform, geometry, and material references and maintains dense active sets for renderables, cameras, and each light kind. ECS builds a short-lived render list from those sets.
+**Why:** Backends need coherent scene instances, not just global component counts, and this keeps GPU code out of ECS storage without rescanning unchanged membership across the complete world every frame. See ADR-024.
+**Tradeoff:** Every structural render mutation must mark its entity dirty, active sets must repair indices after swap removal, and the first uniform layout caps a frame at 64 instances.
 
 ### 7. Share geometry and material resources by handle
 
@@ -75,9 +75,9 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 ### 8. Extract ECS lights into a bounded frame packet
 
-**Decision:** Ambient, directional, and point lights are public ECS components. ECS extraction accumulates ambient light and copies up to four directional and sixteen point lights into each render list, following ADR-011.
+**Decision:** Ambient, directional, and point lights are public ECS components. ECS extraction iterates their compact active sets, accumulates ambient light, and copies up to four directional and sixteen point lights into each render list, following ADR-011.
 **Why:** Lights remain scriptable scene state without exposing ECS storage to renderer backends, and fixed limits keep the first uniform layout predictable.
-**Tradeoff:** Excess lights are ignored in entity order until a future light-selection or clustered-lighting path replaces the fixed packet.
+**Tradeoff:** Excess lights are ignored in active-membership order until a future light-selection or clustered-lighting path replaces the fixed packet.
 
 ### 9. Accumulate lighting in linear space and tone map the result
 

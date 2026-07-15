@@ -1,7 +1,7 @@
 # FDR-005: System scheduling
 
 **Status:** Active
-**Last reviewed:** 2026-07-13
+**Last reviewed:** 2026-07-15
 
 ## Overview
 
@@ -14,7 +14,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 - Systems with read/write or write/write overlap are placed in separate batches.
 - Systems without access declarations remain valid but execute exclusively because their data access is unknown.
 - Luau systems may still use the legacy callback-only registration form.
-- Luau systems may use an options table with `reads` and `writes` arrays before the callback.
+- Luau systems may use an options table with an optional project-facing `name` and `reads` and `writes` arrays before the callback.
 - Luau access declarations may reference project component handles or registered component-name strings.
 - Native extension systems declare component reads and writes through the native extension ABI.
 - Component handles carry runtime component IDs, giving scheduler-facing declarations and runtime query paths a shared component-type identity.
@@ -26,7 +26,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 - Each parallel native system receives a private deferred-command buffer; commands merge deterministically in system order after the stage completes.
 - Every system in a frame observes the same read-only world time resource snapshot.
 - `scrapbot run --scheduler-trace` reports worker count, parallel stage count, and maximum parallel width for the run.
-- The runtime measures each native and Luau callback at its execution boundary. The editor publishes per-system averages after each ten successful frames; failed frames do not enter the sample.
+- The runtime measures each native and Luau callback at its execution boundary. The editor publishes per-system averages after each ten successful frames and uses project-facing Luau names when provided; failed frames do not enter the sample.
 - Structural world changes requested from Luau systems are queued in a deferred command buffer and applied after all scheduled systems finish for the frame.
 - Deferred commands currently support spawning named entities with initial transform/project component payloads, despawning entities without shifting existing entity indices, and adding/removing `scrapbot.transform` or project components.
 - Runtime spawns reuse dead entity slots and world-level free pools for transform, mesh, geometry, material, and render-instance storage regardless of the previous entity archetype. Reused entity slots retain their incremented generation, so handles from the previous entity lifetime remain stale.

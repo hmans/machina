@@ -39,6 +39,8 @@ Built-in handles:
 - `scrapbot.ui_scroll_area`
 - `scrapbot.ui_text`
 - `scrapbot.ui_button`
+- `scrapbot.ui_input`
+- `scrapbot.ui_checkbox`
 
 Light query payloads expose `color` and `intensity`; directional lights also expose `direction`, and point lights expose `range`. Systems can animate a point light by writing the same entity's transform.
 
@@ -93,20 +95,22 @@ Every callback receives a read-only `ScrapbotTime` value as its first argument:
 | API | Meaning |
 | --- | --- |
 | `scrapbot.system(callback)` | Register a frame system. |
-| `scrapbot.system(options, callback)` | Register a system with explicit access declarations. |
+| `scrapbot.system(options, callback)` | Register a system with an optional project-facing name and access declarations. |
 | `scrapbot.system(query, callback)` | Register a query-driven system. |
 | `scrapbot.system(query, options, callback)` | Register a query-driven system with explicit write access. |
 
-Access declarations use:
+System options use:
 
 ```lua
 {
+	name = "Movement",
 	reads = { ComponentOrQuery },
 	writes = { Component },
 }
 ```
 
 Query components are read automatically. Payload mutation requires write access.
+The optional name appears in editor tooling. It must be a non-empty string of at most 96 bytes.
 
 ## Transform helpers
 

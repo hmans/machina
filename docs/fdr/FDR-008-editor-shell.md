@@ -1,19 +1,21 @@
 # FDR-008: Editor shell
 
 **Status:** Active
-**Last reviewed:** 2026-07-14
+**Last reviewed:** 2026-07-15
 
 ## Overview
 
-The editor shell turns a running Scrapbot project into its own editing workspace without stopping play. It keeps the project visible in the center while transient editor-origin ECS UI entities provide the surrounding tools.
+The editor shell turns a running Scrapbot project into its own editing workspace with live playback control. It keeps the project visible in the center while transient editor-origin ECS UI entities provide the surrounding tools.
 
 ## Behavior
 
 - A windowed WGPU project starts with editor chrome hidden unless `--editor` is passed.
 - Pressing `Ctrl+Esc` toggles the editor shell without restarting or pausing the project.
 - The shell provides a top bar, bottom status bar, left scene sidebar, and right entity/component inspector sidebar.
+- The top bar contains only the Scrapbot brand and Play, Pause, and Step controls. Play runs project systems with normal frame deltas; Pause freezes project systems and world time while editor rendering and tools remain responsive; Step advances one fixed 1/60-second project update and remains paused.
+- The bottom bar contains only the current simulation status, such as `RUNNING` or `PAUSED`; runtime statistics and keyboard hints stay in their relevant tool surfaces or documentation instead of the persistent chrome. Both bars use ordinary ECS HStacks for layout.
 - The vertical boundaries around the project viewport are draggable. Resizing either sidebar preserves a minimum center viewport and the center automatically fills the remaining width.
-- Each complete sidebar is a smooth scroll viewport with a contrasting 10-pixel frame around a minimum-height content pane, so the dock inset remains visually clear and short windows can reach every tool section. Separate Systems and Scene sections use a six-pixel gutter; related headers and content remain connected. Nested Systems, scene-browser, and inspector scroll areas receive wheel input when hovered; hovering sidebar padding or non-scrollable chrome addresses the outer sidebar.
+- Each complete sidebar is a smooth scroll viewport with a contrasting 10-pixel frame around a minimum-height content pane, so the dock inset remains visually clear and short windows can reach every tool section. Systems, Scene, Inspector identity, and component sections use the same titled, collapsible ECS panel treatment: one title height, disclosure icon, charcoal title/body colors, border, radius, and inner padding. Separate Systems and Scene sections use a six-pixel gutter. Nested Systems, scene-browser, and inspector scroll areas receive wheel input when hovered; hovering sidebar padding or non-scrollable chrome addresses the outer sidebar.
 - Editor chrome uses neutral near-black and charcoal surfaces, gray-to-white text, quiet gray selection, and restrained mint accents for a dense professional tool aesthetic.
 - Header bands, inspector surfaces, viewport seams, and selection use the shared ECS box border fields; pooled browser rows use hidden subtrees rather than leaving the ECS lifecycle. The default desktop density uses 30-pixel scene rows, 24-pixel inspector rows, and a wider inspector pane so labels and three-axis controls remain comfortable without becoming oversized.
 - The running project's world and project-authored UI always share the complete available viewport. With the editor closed that is the full window; with the editor open it is the remaining center workspace.
@@ -25,7 +27,7 @@ The editor shell turns a running Scrapbot project into its own editing workspace
 - Releasing the right mouse button restores normal pointer interaction. Closing and reopening the editor preserves the scene-camera viewpoint for the current run.
 - Project cameras derive their view direction from transform rotation, and rendering, viewport picking, and transform gizmos use the same camera orientation.
 - The scene sidebar lists scene-authored and runtime-spawned entities and supports pixel-continuous pointer-wheel and trackpad scrolling, clipped partial rows, hover, and stable selection.
-- Above the scene browser, a systems panel lists registered native and Luau systems with right-aligned average callback times per frame. It publishes a new average every ten successful frames and refreshes immediately when the system topology or published sample changes. A horizontal separator resizes the systems and scene panes.
+- Above the scene browser, a systems panel lists registered native and Luau systems with right-aligned average callback times per frame, always formatted in milliseconds with three decimal places. Native systems use their registered names; Luau systems use their optional project-facing names and fall back to an ordinal label when unnamed. The profiler publishes a new average every ten successful frames and refreshes immediately when the system topology, system name, or published sample changes. A horizontal separator resizes the systems and scene panes.
 - Scene-authored entity names use normal white editor text and runtime-spawned entity names use muted gray. Editor-origin entities are hidden from the browser and cannot be selected in the inspector.
 - Selection follows the entity's generation-aware identity and clears if that entity despawns.
 - The inspector shows the selected entity's name, stable UUID, provenance, attached components, field names, and current values. Components are vertically stacked collapsible titled panels, and each panel renders its fields in a two-column property table inside an independently scrollable sidebar. Values use reusable input controls: transform, camera, light, and custom Vec3 fields are live-editable, while unsupported field types remain selectable and read-only. Vec3 value cells compose three equal-width X, Y, and Z inputs with a fill HStack; scalar value cells contain one full-width input.
@@ -96,7 +98,7 @@ The editor shell turns a running Scrapbot project into its own editing workspace
 
 ### 9. Reserve color for identity and state
 
-**Decision:** Build editor hierarchy from neutral dark surfaces and legible gray text, using Scrapbot mint as a thin identity and status signal rather than a panel tint. Use one 12-pixel text size throughout editor chrome and tooling; express hierarchy only through normal or bold weight and full-strength or faded color. Pair that invariant with modestly padded controls and enough default inspector width for three-axis editing.
+**Decision:** Build editor hierarchy from neutral dark surfaces and legible gray text, using Scrapbot mint as a thin identity and status signal rather than a panel tint. Use one 12-pixel text size throughout editor chrome and tooling; express hierarchy only through normal or bold weight and full-strength or faded color. Give every sidebar section the same collapsible titled-card tokens instead of styling Systems, Scene, identity, and component panels independently. Pair those invariants with modestly padded controls and enough default inspector width for three-axis editing.
 **Why:** Low-chroma chrome keeps attention on live project content and dense inspection data while retaining a recognizable Scrapbot accent.
 **Tradeoff:** Provenance and gizmo colors remain intentionally saturated semantic exceptions and must continue to meet contrast requirements.
 
@@ -114,14 +116,14 @@ The editor shell turns a running Scrapbot project into its own editing workspace
 
 ### 12. Compose inspection from reusable panel and table entities
 
-**Decision:** Pool editor-origin panel, table, label, and input-cell entities and rebuild their values at the editor's snapshot cadence.
+**Decision:** Pool editor-origin panel, table, label, and input-cell entities and rebuild their values at the editor's snapshot cadence. Place the inspector identity card and every component panel as direct siblings in one scrollable sidebar VStack so they share the same width, horizontal inset, titled-card styling, and collapse behavior.
 **Why:** Dogfooding the public UI primitives gives components real visual hierarchy and makes future editable property controls a cell-level evolution instead of a multiline-text rewrite.
 **Tradeoff:** The property tables use two equal-width columns; configurable proportions and type-specific controls come later.
 
 ### 13. Reuse the ECS input control for inspector traversal
 
-**Decision:** Express inspector values as ordinary `ui_input` entities, with editor-only bindings describing the selected component field and optional Vec3 axis behind each writable control. Compose one or three controls inside the table's value cell through a fill HStack.
-**Why:** The editor dogfoods public focus, selection, cursor, and paint-order traversal behavior instead of maintaining a separate text editor inside the inspector.
+**Decision:** Express inspector scalar/text values as ordinary `ui_input` entities and boolean values as ordinary `ui_checkbox` entities, with editor-only bindings describing the selected component field and optional Vec3 axis behind each writable control. Compose one or three controls inside the table's value cell through a fill HStack.
+**Why:** The editor dogfoods public focus, selection, cursor, pointer, and boolean-control behavior instead of maintaining separate inspector widgets.
 **Tradeoff:** The internal binding layer is field-specific and runtime-only; it is not a general public data-binding or command-event API.
 
 ### 14. Preview immediately and commit one runtime command per gesture
@@ -134,7 +136,13 @@ The editor shell turns a running Scrapbot project into its own editing workspace
 
 **Decision:** Render the scheduler's fixed-storage ten-frame timing snapshot through a titled, two-column, smoothly scrollable ECS UI panel above the scene list. Nest that panel and the complete scene pane in a draggable fill VStack, and right-align the timing cells through the ordinary text component.
 **Why:** System costs should be visible in the same live world the editor inspects, and the panel should dogfood the ordinary panel, table, text, and scroll-area components.
-**Tradeoff:** Native systems use their registered names, while Luau systems currently receive ordinal fallback labels. Times cover callback execution only and are diagnostic samples rather than a full frame profiler.
+**Tradeoff:** Unnamed legacy Luau systems still receive ordinal fallback labels. Times cover callback execution only and are diagnostic samples rather than a full frame profiler.
+
+### 16. Gate project simulation without freezing editor services
+
+**Decision:** Store transport state in the editor UI state and gate the project frame-system callback at the render-loop boundary. Continue rendering and processing editor UI, scene-camera, picking, and gizmo systems while project simulation is paused. Consume Step as one fixed 1/60-second project update.
+**Why:** Transport controls must stop project mutation without making the editor itself unresponsive, and a fixed step gives frame-by-frame inspection stable time semantics.
+**Tradeoff:** Pause freezes the current runtime world in place; restoring the original scene state or maintaining separate edit/play worlds remains future work.
 
 ## Related
 

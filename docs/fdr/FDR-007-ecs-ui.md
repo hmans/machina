@@ -12,7 +12,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 - Every UI entity describes a rectangular box with an explicit size, optional position, per-edge margin and padding, background color, SDF border color and width, corner radius, and hidden state.
 - A hidden box removes its complete descendant subtree from retained layout, painting, and pointer interaction without despawning any entities.
 - UI entities form a parent-by-UUID hierarchy validated when the scene loads. Entity names remain editable labels.
-- Horizontal and vertical stack components arrange child boxes in scene order with a configurable gap; boxes without a stack component overlay their children. Fill stacks treat child sizes as proportions, fill the cross-axis, and can expose draggable separators with minimum pane sizes.
+- Horizontal and vertical stack components arrange child boxes in scene order with a configurable gap; boxes without a stack component overlay their children. Fill stacks treat child sizes as proportions, fill the cross-axis, and can expose draggable separators with minimum pane sizes. Hovering or dragging a separator selects the matching horizontal- or vertical-resize system cursor.
 - Table containers arrange children in row-major order across 1–64 equal-width columns, with independent column and row gaps. A partial final row remains left aligned.
 - Panel decoration adds an optional title band with its own text and background styling and reserves that band above nested content. Titled panels can opt into pointer-driven collapse/expansion; collapsed state lives in the ECS component, contracts the panel to its title band, removes descendants from layout and interaction, and is indicated by an antialiased SDF disclosure chevron. Panels can compose with overlay, stack, or table layout.
 - Scroll-area containers accept an explicitly oversized child pane, clip descendants to their padded content rectangle, and smoothly approach wheel-driven vertical offsets.
@@ -20,6 +20,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 - Every element receives retained hover and active state from topmost pointer hit testing. Active state is captured on primary-button press and held until release.
 - Text controls provide labels with RGBA color, pixel size, and left, center, or right alignment within the padded content box. Buttons consume generic element state with optional hover and active background and text colors.
 - Single-line input controls store authored text in their ECS component while the retained UI state owns focus, cursor, selection, horizontal reveal, and blink state. Clicking selects all text.
+- Checkbox controls store their boolean state and styling in an ECS component, consume generic hover/active state, toggle on primary press, and render their box and checkmark analytically with SDFs. Read-only checkboxes retain their visual state without accepting pointer changes.
 - Focused inputs accept typed text, Left/Right/Home/End cursor movement, Shift-extended selection, Backspace/Delete, and Select All. Tab and Shift+Tab traverse inputs in paint order; Enter commits and leaves the field, while Escape restores the value present when focus began.
 - Backgrounds and inset borders use GPU-evaluated signed-distance rounded rectangles, including square corners at a zero radius.
 - Structural dirty notifications add, update, or remove only affected retained nodes when UI components or entities appear and disappear. Unchanged frames do not rescan world membership.
@@ -27,6 +28,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 - UI rendering does not require a world camera or renderable geometry.
 - The built-in Inter font is embedded and redistributed under the SIL Open Font License 1.1.
 - Text uses a precomputed MTSDF atlas and derivative-based GPU antialiasing, so one atlas remains sharp across UI text sizes.
+- Projects may declare up to 15 named TTF/OTF resources. Text, buttons, inputs, and panel titles choose a font by resource name; Scrapbot auto-generates stale atlas artifacts and falls back to embedded Inter when a runtime resource is unavailable.
 
 ## Design Decisions
 
@@ -50,7 +52,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 ### 4. Compose controls from a shared box model
 
-**Decision:** Keep geometry and visual box styling in one layout component, then add independent stack, table, panel, text, button, and input components to an entity.
+**Decision:** Keep geometry and visual box styling in one layout component, then add independent stack, table, panel, text, button, input, and checkbox components to an entity.
 **Why:** A shared box model makes margins, padding, backgrounds, and rounded corners consistent while ECS composition keeps layout and content roles explicit. See ADR-014.
 **Tradeoff:** Invalid combinations require scene validation. Buttons expose visual press feedback, but activation commands still await the UI event system.
 
@@ -60,11 +62,11 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 **Why:** Pointer interaction is a property of an element's screen area, not of a button. This lets future controls reuse one topmost-hit and press-capture model. See ADR-014.
 **Tradeoff:** Interaction state is currently renderer-owned derived state and is not yet queryable or mutable through the public ECS APIs.
 
-### 6. Embed one screen-oriented scalable font
+### 6. Embed a fallback and compile project fonts automatically
 
-**Decision:** Precompute an MTSDF atlas for Inter with `msdf-atlas-gen` and reconstruct glyph coverage in the UI shader.
-**Why:** Scrapbot needs dependable text in packaged games and agent framegrabs without system-font discovery or platform font APIs.
-**Tradeoff:** The first text path is ASCII-only and does not provide shaping, fallback, localization, kerning, or user-supplied fonts. Regenerating the built-in font requires the external atlas compiler.
+**Decision:** Embed a precomputed MTSDF atlas for Inter, auto-compile declared project TTF/OTF files into cached MTSDF artifacts, and select their fixed texture-array layer per glyph command.
+**Why:** Projects can own their visual identity while packaged games and agent framegrabs remain deterministic and independent of system font discovery or platform font APIs. Inter keeps engine/editor text and failed resource lookups legible.
+**Tradeoff:** Project asset compilation requires `msdf-atlas-gen` when a cache is absent or stale. The current path is ASCII-only and does not provide shaping, localization, kerning, variable axes, arbitrary fallback chains, or dynamic atlas growth.
 
 ### 7. Keep smooth scrolling derived and clip paint on the GPU
 
@@ -93,4 +95,4 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 - What Luau mutation API best preserves ECS scheduling and deferred structural changes?
 - What command-event API should report release-inside button activation?
-- When should text gain shaping, font fallback, and glyph-atlas streaming?
+- When should text gain shaping, Unicode fallback chains, and glyph-atlas streaming?
