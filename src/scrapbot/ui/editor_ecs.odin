@@ -845,11 +845,17 @@ INSPECTOR_PANEL_TITLE_HEIGHT :: EDITOR_SECTION_TITLE_HEIGHT
 INSPECTOR_CELL_HEIGHT :: f32(28)
 INSPECTOR_TABLE_ROW_GAP :: f32(3)
 INSPECTOR_PANEL_GAP :: f32(10)
+INSPECTOR_PANEL_PADDING :: shared.Vec4{10, 0, 12, 0}
+INSPECTOR_LABEL_CELL_PADDING :: shared.Vec4{5, 8, 3, 12}
+INSPECTOR_VALUE_CELL_PADDING :: shared.Vec4{0, 12, 0, 8}
 
 editor_ui_ensure_inspector_panel :: proc(world: ^shared.World, slot: int) -> (int, int) {
 	panel, panel_found := editor_ui_entity(world, .Inspector_Panel, slot)
 	table, table_found := editor_ui_entity(world, .Inspector_Table, slot)
-	if panel_found && table_found { return panel, table }
+	if panel_found && table_found {
+		world.ui_layouts[world.entities[panel].ui_layout_index].padding = INSPECTOR_PANEL_PADDING
+		return panel, table
+	}
 	panel_name := fmt.tprintf("__scrapbot_editor_inspector_panel_%d", slot)
 	table_name := fmt.tprintf("__scrapbot_editor_inspector_table_%d", slot)
 	panel = editor_ui_create_box(
@@ -860,7 +866,9 @@ editor_ui_ensure_inspector_panel :: proc(world: ^shared.World, slot: int) -> (in
 		editor_ui_section_layout({332, 70}),
 		slot,
 	)
-	world.ui_layouts[world.entities[panel].ui_layout_index].fit_content_height = true
+	panel_layout := &world.ui_layouts[world.entities[panel].ui_layout_index]
+	panel_layout.padding = INSPECTOR_PANEL_PADDING
+	panel_layout.fit_content_height = true
 	editor_ui_add_section_panel(world, panel, "COMPONENT")
 	editor_ui_add_vstack(world, panel, {})
 	table = editor_ui_create_box(
@@ -876,7 +884,7 @@ editor_ui_ensure_inspector_panel :: proc(world: ^shared.World, slot: int) -> (in
 		table,
 		{
 			columns = 2,
-			column_gap = 10,
+			column_gap = 0,
 			row_gap = INSPECTOR_TABLE_ROW_GAP,
 			proportional_columns = true,
 			resizable_columns = true,
@@ -896,7 +904,11 @@ editor_ui_ensure_inspector_cell :: proc(
 		editor_ui_set_parent(world, cell, parent)
 		layout := &world.ui_layouts[world.entities[cell].ui_layout_index]
 		layout.size.x = 1
-		if value_cell { layout.size.x = 2 }
+		layout.padding = INSPECTOR_LABEL_CELL_PADDING
+		if value_cell {
+			layout.size.x = 2
+			layout.padding = INSPECTOR_VALUE_CELL_PADDING
+		}
 		return cell
 	}
 	name := fmt.tprintf("__scrapbot_editor_inspector_cell_%d", slot)
@@ -905,13 +917,13 @@ editor_ui_ensure_inspector_cell :: proc(
 		name,
 		parent,
 		.Inspector_Cell,
-		{size = {1, INSPECTOR_CELL_HEIGHT}, padding = {5, 3, 3, 3}},
+		{size = {1, INSPECTOR_CELL_HEIGHT}, padding = INSPECTOR_LABEL_CELL_PADDING},
 		slot,
 	)
 	if value_cell {
 		layout := &world.ui_layouts[world.entities[cell].ui_layout_index]
 		layout.size.x = 2
-		layout.padding = {}
+		layout.padding = INSPECTOR_VALUE_CELL_PADDING
 		editor_ui_add_hstack(world, cell, {gap = 6, fill = true})
 	} else {
 		editor_ui_add_text(world, cell, "", {0.46, 0.49, 0.55, 1}, EDITOR_TEXT_SIZE)

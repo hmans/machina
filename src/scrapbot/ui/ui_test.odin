@@ -2352,6 +2352,17 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 		testing.expect(t, math.abs(header.rect.x - panel.rect.x) < 0.01)
 		testing.expect(t, math.abs(header.rect.width - panel.rect.width) < 0.01)
 	}
+	first_table_node := find_editor_role_node(state, .Inspector_Table)
+	first_cell_node := find_editor_role_node(state, .Inspector_Cell)
+	testing.expect(t, first_panel_node >= 0 && first_table_node >= 0 && first_cell_node >= 0)
+	if first_panel_node >= 0 && first_table_node >= 0 && first_cell_node >= 0 {
+		panel := state.nodes[first_panel_node]
+		table := state.nodes[first_table_node]
+		cell := state.nodes[first_cell_node]
+		testing.expect(t, math.abs(table.rect.x - panel.rect.x) < 0.01)
+		testing.expect(t, math.abs(table.rect.width - panel.rect.width) < 0.01)
+		testing.expect(t, math.abs(cell.rect.x - table.rect.x) < 0.01)
+	}
 	panel_count, table_count, cell_count, input_count, checkbox_count := 0, 0, 0, 0, 0
 	found_transform, found_button := false, false
 	found_position := false
@@ -2367,28 +2378,30 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			case .Inspector_Panel:
 				panel_count += 1
 				panel := world.ui_panels[entity.ui_panel_index]
+				layout := world.ui_layouts[entity.ui_layout_index]
 				testing.expect(t, panel.title_height == INSPECTOR_PANEL_TITLE_HEIGHT)
 				testing.expect(t, panel.title_size == EDITOR_TEXT_SIZE)
+				testing.expect(t, layout.padding == INSPECTOR_PANEL_PADDING)
 				found_transform = found_transform || panel.title == "TRANSFORM"
 				found_button = found_button || panel.title == "UI BUTTON"
 			case .Inspector_Table:
 				table_count += 1
 				table := world.ui_tables[entity.ui_table_index]
 				testing.expect(t, table.columns == 2)
-				testing.expect(t, table.column_gap == 10)
+				testing.expect(t, table.column_gap == 0)
 				testing.expect(t, table.proportional_columns)
 				testing.expect(t, table.resizable_columns)
 				testing.expect(t, table.min_column_width == 72)
 			case .Inspector_Cell:
 				cell_count += 1
-				testing.expect(
-					t,
-					world.ui_layouts[entity.ui_layout_index].size.y == INSPECTOR_CELL_HEIGHT,
-				)
+				layout := world.ui_layouts[entity.ui_layout_index]
+				testing.expect(t, layout.size.y == INSPECTOR_CELL_HEIGHT)
 				if entity.ui_hstack_index >= 0 {
 					testing.expect(t, world.ui_hstacks[entity.ui_hstack_index].gap == 6)
+					testing.expect(t, layout.padding == INSPECTOR_VALUE_CELL_PADDING)
 				}
 				if entity.ui_text_index >= 0 {
+					testing.expect(t, layout.padding == INSPECTOR_LABEL_CELL_PADDING)
 					testing.expect(
 						t,
 						world.ui_texts[entity.ui_text_index].size == EDITOR_TEXT_SIZE,
