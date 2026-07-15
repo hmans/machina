@@ -48,7 +48,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [ ] Scene migrations
 - Reloading
   - [x] Live reload
-  - [ ] Structured diagnostics
+  - [x] Structured diagnostics
 - Distribution
   - [x] Host game builds
   - [ ] Package dependencies
@@ -58,13 +58,15 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
 ### ECS Runtime
 
 - World Model
-  - [ ] Shared ECS runtime
-  - [ ] Reflected components
+  - [x] Shared ECS runtime
+  - [x] Reflected components
+  - [x] Stable project-wide entity UUIDs
   - [x] Generation-aware entities
   - [x] Component registry
   - [x] Component lifecycles
   - [x] ID-keyed custom component storage
   - [x] Engine-owned frame time resource
+  - [x] Incremental render and retained-UI membership reconciliation
   - [ ] World snapshots
 - Scheduling
   - [x] Scheduled systems
@@ -145,7 +147,9 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] Element hover and active hit-testing state
   - [ ] UI command events
   - [x] Smooth clipped vertical scroll areas
-  - [x] Titled panels and equal-column tables
+  - [x] Collapsible titled panels
+  - [x] Equal or proportional tables with draggable column separators
+  - [x] Selectable lists and progress indicators
   - [ ] Canvas scaling
   - [x] Built-in scalable UI text
   - [x] MTSDF-based font rendering
@@ -172,7 +176,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] Resizable panels
   - [ ] Dockable editor workspace
 - Inspection
-  - [ ] System profiler
+  - [x] System profiler
   - [x] Entity browser
   - [x] Entity selection
   - [x] Component field/value inspector with editable common fields
@@ -210,11 +214,13 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [ ] Offscreen render verification
   - [ ] Editor screenshot tests
   - [x] Native extension tests
+  - [x] Lifecycle CPU/RAM growth gate
+  - [x] Linux AddressSanitizer lane
 - Project Support
   - [x] Example projects
-  - [ ] Documentation site
-  - [ ] Agent workflow docs
-  - [ ] CI workflow
+  - [x] Documentation site
+  - [x] Agent workflow docs
+  - [x] macOS, Linux, and Windows CI workflow
   - [ ] Docs checks
   - [ ] Benchmark trend reporting
 
