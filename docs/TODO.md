@@ -27,13 +27,17 @@
 - [x] Auto-atlas named project TTF/OTF resources and retain embedded Inter as fallback.
 - [x] Add row, column, and overlay hierarchy layout.
 - [x] Add per-edge margins and padding, SDF-rounded backgrounds, horizontal and vertical stack components, and button controls.
-- [ ] Expose UI creation and mutation through Luau and native extensions.
+- [x] Expose UI creation and mutation through Luau and native extensions.
 - [x] Add pointer input, topmost-element hit testing, retained hover/active state, and button hover/press styling.
 - [ ] Emit button activation and other UI command events.
 - [x] Add nested paint/hit-test clipping and smooth vertical scroll areas.
 - [x] Add proportional fill stacks with draggable separators and minimum pane sizes.
+- [x] Add reusable per-axis fill, minimum-size, and fit-to-content layout policies.
+- [x] Add reusable styled progress indicators.
 - [x] Add reusable single-line input controls with selection, cursor commands, focus, and Tab traversal.
 - [x] Add reusable boolean checkbox controls with SDF rendering and inspector bindings.
+- [x] Add reusable selectable lists with full-width rows, UUID-backed selection, and composable scrolling.
+- [x] Expose the complete public UI payload/state/mutation contract through the native extension ABI with fixed-layout payloads and bounded inline strings.
 - [ ] Add canvas scaling and richer sizing/alignment.
 
 ## Project Runtime
@@ -86,9 +90,9 @@
 ## Editor
 
 - [x] Add a transient ECS-built editor shell toggled with Ctrl+Esc.
-- [x] Add a smoothly scrolling system list with five-frame updates over rolling 50-frame callback-time averages.
+- [x] Add a selectable, smoothly scrolling system list with five-frame updates over rolling 50-frame callback-time averages.
 - [x] Keep the running project live across the complete available viewport with a dynamic camera aspect ratio.
-- [x] Add a smoothly scrolling entity browser with scene/runtime provenance and stable selection.
+- [x] Add a flush selectable entity list with smooth scrolling, scene/runtime provenance, and stable selection.
 - [x] Add a smoothly scrolling component field/value inspector for the selected entity.
 - [x] Add nearest-triangle entity picking in the live viewport.
 - [x] Add functional world-space X/Y/Z translation handles for selected entities.

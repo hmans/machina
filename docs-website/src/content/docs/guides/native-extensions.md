@@ -63,9 +63,11 @@ scrapbot.system(&reg, "scrappyphysics.motion", accesses[:], motion_system)
 return scrapbot.err(&reg)
 ```
 
-The callback receives `scrapbot.System_Context`. The context includes a read-only `time` snapshot and can query entities by component names, read/write `scrapbot.transform`, and read/write vec3 fields on schema-backed custom components. Native and Luau systems share the same scheduler.
+The callback receives `scrapbot.System_Context`. The context includes a read-only `time` snapshot and can query entities by component names, read/write `scrapbot.transform`, read/write vec3 fields on schema-backed custom components, and consume the same public ECS UI payloads used by scenes, Luau, and editor chrome. Native and Luau systems share the same scheduler.
 
 Native systems with complete, non-conflicting access declarations run concurrently on Scrapbot's worker pool. Conflicting systems preserve registration order, Luau systems remain serial, and systems without access declarations execute exclusively. Parallel native systems queue lifecycle commands privately; Scrapbot merges those commands deterministically after the stage.
+
+System names follow the same ownership convention in Odin and Luau: use one token such as `rigidbody` for project-owned behavior, and a dotted multi-token name such as `scrappyphysics.motion` for engine or library behavior. The runtime does not enforce this convention yet because registration does not carry explicit ownership metadata.
 
 ```odin
 motion_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
@@ -112,6 +114,54 @@ motion_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 Project system callbacks are ordinary contextless Odin procedures. The extension helper retains their bindings and routes the host's C-compatible callback through an internal trampoline; only the exported `scrapbot_extension_register` entry point needs `proc "c"` in project source.
 
 The raw C-compatible package remains available as `scrapbot:extension_api` for non-Odin bindings and ABI reference work.
+
+## Build ECS UI from native systems
+
+Declare reads and writes for the UI components a system uses, just like gameplay components:
+
+```odin
+accesses := [?]scrapbot.Access {
+	scrapbot.write(scrapbot.UI_Layout_Component),
+	scrapbot.write(scrapbot.UI_Text_Component),
+	scrapbot.read(scrapbot.UI_State_Component),
+}
+scrapbot.system(&reg, "native_ui", accesses[:], native_ui_system)
+```
+
+Constructors accept the complete public value and style payload. Defaults are reusable starting points, and every field—including background, border, text colors, and corner radius—can be overridden per entity. A zero corner radius produces square corners.
+
+```odin
+layout := scrapbot.ui_layout_default()
+layout.size = {320, 64}
+layout.padding = {12, 16, 12, 16}
+layout.background = {0.025, 0.030, 0.040, 1}
+layout.border_color = {0.20, 0.23, 0.28, 1}
+layout.border_width = 1
+layout.corner_radius = 8
+
+text_style := scrapbot.ui_text_default()
+text_style.size = 16
+text_style.color = {0.90, 0.92, 0.95, 1}
+text_payload, text_ok := scrapbot.ui_text(text_style, "Native ECS UI", "Inter")
+if !text_ok {
+	return "native UI text exceeds the ABI buffer"
+}
+
+components := [?]scrapbot.UI_Component_Payload {
+	scrapbot.ui_layout(layout),
+	text_payload,
+}
+spawn := scrapbot.spawn_options_with_ui("Native UI", components[:])
+uuid, err := scrapbot.spawn_with_uuid(ctx, &spawn)
+if err != nil {
+	return err
+}
+_ = uuid // stable project-wide identity, also usable as a UI parent
+```
+
+Use `scrapbot.get_ui` for a typed read/modify/write cycle and `scrapbot.set_ui` for the deferred update. The same payload supports responsive layout fields such as `min_size`, `fill_width`, and `fit_content_height`, reusable `scrapbot.ui_progress` values, and numeric/scrubbable `scrapbot.ui_input` controls with optional prefix badges. `scrapbot.UI_State_Component` is readable but renderer-owned and cannot be written. Its activation, change, submit, and cancel revisions are stable edge counters for native systems that react less frequently than rendering; `valid` exposes numeric validation.
+
+The raw ABI stores text, font names, and input prefixes in fixed inline buffers rather than passing allocator-owned Odin strings across the dynamic-library boundary. The Odin helper handles those buffers through `ui_text`, `ui_panel`, `ui_button`, `ui_input`, `ui_payload_text`, `ui_payload_font`, and `ui_payload_prefix`.
 
 ## Queue lifecycle commands
 

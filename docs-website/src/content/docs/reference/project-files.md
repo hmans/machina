@@ -234,22 +234,75 @@ name = "Feature Pane"
 [entities.ui_layout]
 parent = "d4000000-0000-4000-8000-000000000014"
 size = [396, 360]
+min_size = [240, 160]
+fill_width = true
+fill_height = true
+fit_content_height = true
 
 [entities.ui_vstack]
 gap = 8
 ```
 
-Positions and sizes are screen pixels from the top-left. `margin` and `padding` use `[top, right, bottom, left]`. `border_color` and non-negative `border_width` add an inset signed-distance border that follows `corner_radius`. `hidden = true` removes the box and its descendant subtree from layout, paint, and interaction without despawning their entities. Add `ui_hstack` or `ui_vstack` with a non-negative `gap` to arrange children in scene order; an element without either stack overlays its children inside the parent's padded content box. Set `fill = true` to treat authored child sizes as proportions along the stack axis and fill the available cross-axis. Add `draggable = true` to turn the gaps into pointer-draggable separators; `min_size` sets the non-negative minimum pane extent on the stack axis. Draggable separators show the matching horizontal- or vertical-resize system cursor while hovered or dragged. Draggable stacks must also enable fill. A `ui_text` can set `alignment` to `"left"`, `"center"`, or `"right"` within its padded content box. Backgrounds, borders, corner radii, checkbox boxes, and checkbox marks are rendered with signed-distance shapes. Parent UUIDs must resolve to another UI layout entity, cycles are rejected, and one entity cannot combine both stack directions or more than one of `ui_text`, `ui_button`, `ui_input`, and `ui_checkbox`.
+Positions and sizes are screen pixels from the top-left. `margin` and `padding` use `[top, right, bottom, left]`. Layout `min_size` is a per-axis lower bound. `fill_width` and `fill_height` expand an element to the corresponding available parent axis; `fit_content_width` and `fit_content_height` expand or shrink it around visible children. Fill and fit can be combined, producing the larger of available space, visible content, and `min_size`. Resolved sizes remain renderer state and do not overwrite the authored `size` value. `border_color` and non-negative `border_width` add an inset signed-distance border that follows `corner_radius`. `hidden = true` removes the box and its descendant subtree from layout, paint, interaction, and parent content measurement without despawning their entities. Add `ui_hstack` or `ui_vstack` with a non-negative `gap` to arrange children in scene order; an element without either stack overlays its children inside the parent's padded content box. Set stack `fill = true` to treat authored child sizes as proportions along the stack axis and fill the available cross-axis. Set a child's layout `fixed_in_fill = true` to preserve its authored main-axis size while flexible siblings divide the remainder. Add `draggable = true` to turn the gaps into pointer-draggable separators; stack `min_size` sets the non-negative minimum pane extent on the stack axis. Draggable separators show the matching horizontal- or vertical-resize system cursor while hovered or dragged. Draggable stacks must also enable fill. A `ui_text` can set `alignment` to `"left"`, `"center"`, or `"right"` within its padded content box. Backgrounds, borders, corner radii, progress bars, checkbox boxes, and checkbox marks are rendered with signed-distance shapes. Parent UUIDs must resolve to another UI layout entity, cycles are rejected, and one entity cannot combine multiple flow containers (`ui_hstack`, `ui_vstack`, `ui_table`, or `ui_list`) or more than one of `ui_text`, `ui_button`, `ui_input`, and `ui_checkbox`.
 
-Pointer hit testing gives the topmost element under the pointer hover state. Pressing the primary button captures active state on that element until release. Buttons can consume those generic states through `hover_background`, `active_background`, `hover_color`, and `active_color`; a zero-alpha state color falls back to the normal layout background or button text color. Button activation events are not emitted yet.
+A `ui_progress` component paints an optional track and a clamped fill inside its ordinary layout box. `inset` uses `[top, right, bottom, left]`; `right_to_left` anchors the fill to the opposite edge. A zero-alpha `background_color` omits the track:
+
+```toml
+[[entities]]
+id = "d4000000-0000-4000-8000-000000000016"
+name = "Frame Budget"
+
+[entities.ui_layout]
+size = [320, 16]
+
+[entities.ui_progress]
+value = 3.25
+maximum = 10
+fill_color = [0.25, 0.75, 1, 1]
+background_color = [0.08, 0.09, 0.11, 1]
+inset = [5, 0, 5, 0]
+corner_radius = 2
+right_to_left = true
+```
+
+The renderer automatically attaches a read-only `ui_state` component to every laid-out element. Project systems can query it for hover, active, focus, activation, change, validation, submission, and cancellation state. Transient booleans describe the most recent UI pass; the matching revision counters are monotonic counters for reliable edge detection. Projects do not author or mutate `ui_state`.
+
+Pointer hit testing gives the topmost element under the pointer hover state. Pressing the primary button captures active state on that element until release and advances its public activation revision. Buttons can consume those generic states through `hover_background`, `active_background`, `hover_color`, and `active_color`; a zero-alpha state color falls back to the normal layout background or button text color. Button labels use `alignment = "left"`, `"center"`, or `"right"` inside the padded box and default to centered.
 
 Set `font` on `ui_text`, `ui_button`, `ui_input`, or `ui_panel` to a name declared in `project.toml`; omit it to use Inter. A panel's selection applies to its title, while child controls select their own fonts independently.
 
-Clicking a `ui_input` focuses it and selects all its text. Focused inputs support typed single-line ASCII text, Left/Right/Home/End movement, Shift selection, Backspace/Delete, Select All, and paint-order Tab/Shift+Tab traversal. Enter accepts the current value and removes focus; Escape restores the text present when focus began. The component's `text` field changes during editing. Set `read_only = true` to retain focus, selection, and traversal without allowing mutation. Clipboard operations, IME composition, Unicode shaping, multiline editing, and public change/commit events are not implemented yet.
+Clicking a `ui_input` focuses it and selects all its text. Focused inputs support typed single-line ASCII text, Left/Right/Home/End movement, Shift selection, Backspace/Delete, Select All, and paint-order Tab/Shift+Tab traversal. Enter submits the current value and removes focus; Escape restores the value present when focus began. The component's `text` field changes during editing, while `ui_state.changed`, `submitted`, and `cancelled` plus their revision counters expose reusable interaction edges.
 
-A `ui_checkbox` stores its current boolean in `checked` and toggles on primary-button press. `box_size` controls the square inside the element's layout box; the remaining fields style its unchecked, checked, hover, active, border, and SDF checkmark colors. Set `read_only = true` to display state without accepting pointer changes. Public checkbox change events are not implemented yet.
+Set `numeric = true` to give an input a numeric `number`, positive `step`, optional `minimum`/`maximum`, Up/Down stepping, validation through `ui_state.valid`, and optional pointer scrubbing with `scrubbable = true`. `prefix`, `prefix_width`, `prefix_color`, and `prefix_background` provide a reusable leading badge such as the inspector's X/Y/Z controls. Set `read_only = true` to retain focus, selection, and traversal without allowing mutation. Clipboard operations, IME composition, Unicode shaping, and multiline editing are not implemented yet.
+
+Control chrome is authored rather than editor-private. Scroll areas expose scrollbar width, right margin, vertical inset, minimum thumb size, track/thumb colors, and corner radius. Panels expose disclosure size, margin, gap, and corner radius. Inputs expose prefix gap/padding/radius, selection radius, focus and invalid borders, and caret color/width/inset. Checkboxes expose box and check radii, border width, and check inset. Set any corner radius to `0` for square corners; checkbox radii and check inset use `-1` as the automatic size-relative default.
+
+A `ui_checkbox` stores its current boolean in `checked` and toggles on primary-button press. `box_size` controls the square inside the element's layout box; the remaining fields style its unchecked, checked, hover, active, border, and SDF checkmark colors. Set `read_only = true` to display state without accepting pointer changes. A successful toggle advances the element's public `ui_state.change_revision`.
 
 A `ui_scroll_area` clips descendants to its padded content rectangle and scrolls vertically when the pointer wheel is over it. Give its nested pane an explicit size larger than the viewport; that pane may contain overlays or stacks of any size. `scroll_speed` is the target movement per wheel unit and `smoothness` controls frame-time interpolation toward that target. Both must be positive. Nested scroll clips intersect, and only the topmost hovered scroll area consumes a wheel update.
+
+A `ui_list` lays out its direct children as full-width selectable rows in scene order. Clicking a row or any of its descendants stores that row's UUID in the list's ECS-owned `selected` field. `gap` controls row spacing, while `selection_background`, `hover_background`, and `active_background` style interaction states. Combine it with `ui_scroll_area` on the same entity for long lists:
+
+```toml
+[[entities]]
+id = "d4000000-0000-4000-8000-000000000030"
+name = "Entity List"
+
+[entities.ui_layout]
+size = [280, 400]
+
+[entities.ui_list]
+gap = 2
+selection_background = [0.045, 0.095, 0.105, 1]
+hover_background = [0.028, 0.038, 0.050, 1]
+active_background = [0.040, 0.055, 0.072, 1]
+
+[entities.ui_scroll_area]
+scroll_speed = 64
+smoothness = 14
+```
+
+Each direct child supplies its own row height and may use an overlay or another flow container for its contents. A list cannot share its entity with another flow container.
 
 Panels add a styled title band without choosing how their children flow, so they can compose with an overlay, stack, or nested table. Set `collapsible = true` on a titled panel to make its title band interactive. Its ECS-owned `collapsed` value selects the initial/current state: collapsed panels contract to the title height and omit descendants from layout, paint, focus traversal, and pointer interaction. A small SDF disclosure chevron shows the current state. Tables place children in row-major order across 1–64 equal-width columns. Child heights determine row height; `column_gap` and `row_gap` control spacing. A partial final row starts at the first column.
 
@@ -291,7 +344,7 @@ column_gap = 8
 row_gap = 4
 ```
 
-Each child of `Stats Table` occupies the next table cell. A table is a flow container and therefore cannot share an entity with `ui_hstack` or `ui_vstack`; a panel is decoration and may share an entity with either stack.
+Each child of `Stats Table` occupies the next table cell. A table is a flow container and therefore cannot share an entity with `ui_hstack`, `ui_vstack`, or `ui_list`; a panel is decoration and may share an entity with any flow container.
 
 ## Custom component sections
 

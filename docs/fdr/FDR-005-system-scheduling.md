@@ -14,7 +14,7 @@ System scheduling lets Scrapbot reason about which systems can run together by c
 - Systems with read/write or write/write overlap are placed in separate batches.
 - Systems without access declarations remain valid but execute exclusively because their data access is unknown.
 - Luau systems may still use the legacy callback-only registration form.
-- Luau systems may use an options table with an optional project-facing `name` and `reads` and `writes` arrays before the callback.
+- Luau systems may use an options table with an optional project-facing `name` and `reads` and `writes` arrays before the callback. Project-owned systems use single-token names; dotted multi-token names identify engine or library ownership.
 - Luau access declarations may reference project component handles or registered component-name strings.
 - Native extension systems declare component reads and writes through the native extension ABI.
 - Component handles carry runtime component IDs, giving scheduler-facing declarations and runtime query paths a shared component-type identity.

@@ -33,7 +33,7 @@ Luau scripting lets project directories include fast-iteration game code without
 - The `scrapbot` API exposes public transform, camera, geometry, material, lighting, shadow, UI layout, horizontal-stack, vertical-stack, text, and button component handles.
 - Scripts can define full named indexed geometry, generate cubes, planes, icospheres, UV spheres, pyramids, and capped cylinders, and define shared Lambert-lit base-color or project-PNG-textured materials.
 - Scripts can register frame systems with `scrapbot.system(function(time) ... end)`.
-- Scripts can give systems a project-facing name through the optional system-options `name` field. Named systems use that label in editor tooling; unnamed legacy registrations retain an ordinal fallback.
+- Scripts can give systems a project-facing name through the optional system-options `name` field. Project-owned names use one token; dotted multi-token names are reserved for engine or library systems. Named systems use that label in editor tooling; unnamed legacy registrations retain an ordinal fallback.
 - Scripts can declare system component access with `scrapbot.system({ reads = {...}, writes = {...} }, function(time) ... end)`.
 - Every system receives the same read-only time resource snapshot with delta time, smoothed delta time, elapsed time, and frame index.
 - Script system access declarations accept component handles, query objects for reads, or registered component-name strings.
@@ -117,9 +117,9 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 ### 8. Feed Luau system declarations into the scheduler
 
-**Decision:** Let Luau systems declare a project-facing name plus component reads and writes in an options table before the callback.
+**Decision:** Let Luau systems declare a project-facing name plus component reads and writes in an options table before the callback. Use the component ownership convention for system names: one token for project systems and dotted multi-token names for engine or library systems.
 **Why:** The same script API that users write now should produce both the scheduling metadata needed for parallel execution and the identity needed by live tooling.
-**Tradeoff:** Names and access declarations are manually maintained for now. The runtime validates the option shapes and component names and enforces writes that go through Scrapbot APIs or query-system payload write-back, but it does not yet statically prove that system bodies only touch declared components.
+**Tradeoff:** Names and access declarations are manually maintained for now. The naming convention is not runtime-enforced because system registration does not yet carry explicit project, engine, or library ownership. The runtime validates the option shapes and component names and enforces writes that go through Scrapbot APIs or query-system payload write-back, but it does not yet statically prove that system bodies only touch declared components.
 
 ### 9. Expose entity and component lifecycle through deferred commands
 

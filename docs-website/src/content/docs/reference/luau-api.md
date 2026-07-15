@@ -36,6 +36,11 @@ Built-in handles:
 - `scrapbot.ui_layout`
 - `scrapbot.ui_hstack`
 - `scrapbot.ui_vstack`
+- `scrapbot.ui_panel`
+- `scrapbot.ui_table`
+- `scrapbot.ui_list`
+- `scrapbot.ui_progress`
+- `scrapbot.ui_state`
 - `scrapbot.ui_scroll_area`
 - `scrapbot.ui_text`
 - `scrapbot.ui_button`
@@ -46,7 +51,9 @@ Light query payloads expose `color` and `intensity`; directional lights also exp
 
 Shadow caster and receiver handles have empty marker payloads. They can be queried and used with deferred `spawn`, `add_component`, and `remove_component` calls.
 
-UI box, stack, scroll-area, text, and button handles currently expose entity presence for queries. UI creation and property mutation remain scene-authored in this first slice; deferred runtime UI commands and button activation are planned next.
+UI query payloads expose the same complete layout, value, and style fields used by the editor. Layout payloads include `min_size`, per-axis `fill_width`/`fill_height`, per-axis `fit_content_width`/`fit_content_height`, and `fixed_in_fill` for fixed bars or headers inside a fill stack. `scrapbot.ui_progress` provides a reusable value/maximum indicator with track, fill, inset, corner, and direction styling. Scrollbars, panel disclosures, input prefixes/selections/borders/carets, and checkbox boxes/checkmarks expose their geometry, colors, borders, and corner radii as ordinary mutable fields. `scrapbot.ui_input` also exposes reusable numeric values, bounds, stepping, and scrubbing. Every laid-out element receives a renderer-owned, read-only `scrapbot.ui_state` payload with hover/active/focus, activation/change, validity, submit/cancel edges, and monotonic revision counters. Transient booleans describe the most recent UI pass; revision counters let systems detect edges reliably.
+
+`scrapbot.add_component` can attach or update any public UI component on a live entity, and UI payload fields are optional so systems can supply only the values they need. `scrapbot.remove_component` removes public UI components through the structural dirty path. Runtime-spawned entities can therefore acquire the exact same components used by scene TOML and editor chrome.
 
 ## Render resources
 
@@ -125,9 +132,9 @@ Query-driven transform payload mutation is preferred for new systems.
 
 | API | Meaning |
 | --- | --- |
-| `scrapbot.spawn(options?)` | Queue entity creation. |
+| `scrapbot.spawn(options?)` | Queue entity creation and return its stable UUID for references such as UI parents. |
 | `scrapbot.despawn(entity)` | Queue entity removal. |
-| `scrapbot.add_component(entity, component, payload)` | Queue component addition. |
+| `scrapbot.add_component(entity, component, payload)` | Queue a component add or update. UI payloads merge with existing values, preserving omitted fields. |
 | `scrapbot.remove_component(entity, component)` | Queue component removal. |
 
 Lifecycle commands apply after the scheduled frame step.

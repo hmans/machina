@@ -3,7 +3,7 @@ title: Native Extension ABI
 description: The current C-compatible ABI used by project native extensions.
 ---
 
-The native extension ABI lives in `src/scrapbot/extension_api`. Odin extension authors should normally import `scrapbot:extension`, which wraps this raw ABI with component and field descriptors plus typed helpers such as `scrapbot.component`, `scrapbot.system`, `scrapbot.read`, `scrapbot.query`, `scrapbot.get`, and deferred lifecycle helpers.
+The native extension ABI lives in `src/scrapbot/extension_api`. Odin extension authors should normally import `scrapbot:extension`, which wraps this raw ABI with component and field descriptors plus typed helpers such as `scrapbot.component`, `scrapbot.system`, `scrapbot.read`, `scrapbot.query`, `scrapbot.get`, public ECS UI constructors, and deferred lifecycle helpers.
 
 ## Entry point
 
@@ -23,6 +23,8 @@ API :: struct {
 	userdata: rawptr,
 	register_library_component: Register_Library_Component_Proc,
 	register_system: Register_System_Proc,
+	register_geometry: Register_Geometry_Proc,
+	register_material: Register_Material_Proc,
 }
 ```
 
@@ -100,10 +102,21 @@ The context includes:
 - query helpers for component-name terms;
 - `get_transform` and `set_transform`;
 - `get_vec3_field` and `set_vec3_field` for schema-backed custom components;
+- `get_ui_component` and `set_ui_component` for complete public ECS UI value and style payloads;
 - full indexed geometry and shared material registration;
-- deferred lifecycle helpers for resource-backed renderable spawns, despawn, transform, schema-backed payloads, and removal.
+- deferred lifecycle helpers for resource-backed renderable spawns, public UI spawns, despawn, transform, schema-backed payloads, UI payloads, and removal.
 
 Return `nil` on success or a static error string on failure. The host enforces declared access through the callback context.
+
+## ECS UI payloads
+
+`UI_Component_Payload` is the fixed-layout transport for every public `scrapbot.ui_*` component. It includes the complete box, responsive sizing policy, progress value, control value, and style structures used by scene TOML, Luau, and editor chrome. The component name selects the relevant typed member. `UI_Layout_Payload` carries minimum size, per-axis fill and fit-to-content flags, and fixed-child behavior inside fill stacks; `UI_Progress_Payload` carries value, maximum, track/fill styling, inset, corner radius, and direction. Scroll-area payloads include complete scrollbar geometry and colors; panel payloads include disclosure styling; input and checkbox payloads include their complete focus, validation, prefix, caret, border, checkmark, and corner styling.
+
+Text, font resource names, and input prefixes use bounded byte arrays inside the payload instead of allocator-owned Odin strings. The current limits are 1,023 text bytes, 255 font-name bytes, and 63 prefix bytes. Callers must copy values they want to retain; the payload itself remains caller-owned.
+
+`scrapbot.ui_state` is readable through the same API and publishes hover, active, focus, activation, change, validity, submit/cancel edges, and their monotonic revision counters. It is renderer-owned and cannot be passed to `set_ui_component`.
+
+UI mutation and removal are deferred through the callback's command buffer. A `Spawn_Options` value can include up to eight UI payloads and an optional output UUID pointer. The UUID is filled when the spawn command is accepted, allowing other entities in the same deferred batch to refer to the new UI entity by stable identity.
 
 ## Current limits
 

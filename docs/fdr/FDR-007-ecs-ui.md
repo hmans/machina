@@ -1,7 +1,7 @@
 # FDR-007: ECS UI
 
 **Status:** Active
-**Last reviewed:** 2026-07-14
+**Last reviewed:** 2026-07-15
 
 ## Overview
 
@@ -9,21 +9,26 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 ## Behavior
 
-- Every UI entity describes a rectangular box with an explicit size, optional position, per-edge margin and padding, background color, SDF border color and width, corner radius, and hidden state.
+- Every UI entity describes a rectangular box with an explicit size, optional minimum size, per-axis fill and fit-to-content policies, optional position, per-edge margin and padding, background color, SDF border color and width, corner radius, and hidden state.
 - A hidden box removes its complete descendant subtree from retained layout, painting, and pointer interaction without despawning any entities.
 - UI entities form a parent-by-UUID hierarchy validated when the scene loads. Entity names remain editable labels.
 - Horizontal and vertical stack components arrange child boxes in scene order with a configurable gap; boxes without a stack component overlay their children. Fill stacks treat child sizes as proportions, fill the cross-axis, and can expose draggable separators with minimum pane sizes. Hovering or dragging a separator selects the matching horizontal- or vertical-resize system cursor.
 - Table containers arrange children in row-major order across 1–64 equal-width columns, with independent column and row gaps. A partial final row remains left aligned.
-- Panel decoration adds an optional title band with its own text and background styling and reserves that band above nested content. Titled panels can opt into pointer-driven collapse/expansion; collapsed state lives in the ECS component, contracts the panel to its title band, removes descendants from layout and interaction, and is indicated by an antialiased SDF disclosure chevron. Panels can compose with overlay, stack, or table layout.
-- Scroll-area containers accept an explicitly oversized child pane, clip descendants to their padded content rectangle, and smoothly approach wheel-driven vertical offsets.
+- Selectable-list containers arrange direct children vertically as full-width rows, store the selected child by stable UUID, and provide shared selected, hover, and active backgrounds. Lists compose with panels and scroll areas; clicking nested row content selects its direct row ancestor.
+- Progress components render an optional track and a clamped fill with configurable inset, color, corner radius, maximum, and left-to-right or right-to-left direction. They compose with any ordinary layout box.
+- Panel decoration adds an optional title band with its own text and background styling and reserves that band above nested content. Titled panels can opt into pointer-driven collapse/expansion; collapsed state lives in the ECS component, contracts the panel to its title band, removes descendants from layout and interaction, and is indicated by an antialiased SDF disclosure chevron with overridable size, spacing, and radius. Panels can compose with overlay, stack, or table layout.
+- Scroll-area containers accept an explicitly oversized child pane, clip descendants to their padded content rectangle, and smoothly approach wheel-driven vertical offsets. Scrollbar width, placement, minimum thumb size, colors, and radius are public component styles.
 - Nested scroll clips intersect, the topmost hovered scroll area receives wheel input, and overflowing areas render a proportional scrollbar.
-- Every element receives retained hover and active state from topmost pointer hit testing. Active state is captured on primary-button press and held until release.
-- Text controls provide labels with RGBA color, pixel size, and left, center, or right alignment within the padded content box. Buttons consume generic element state with optional hover and active background and text colors.
+- Every laid-out element receives a public `ui_state` component. Topmost pointer hit testing updates hover and active state, focus follows reusable inputs, and primary presses increment an activation revision. Lists, panels, inputs, and checkboxes increment a change revision when user interaction changes their ECS value. Inputs additionally expose validation, submit, and cancel edges with monotonic revisions.
+- Text controls provide labels with RGBA color, pixel size, and left, center, or right alignment within the padded content box. Buttons consume generic element state with optional hover and active background and text colors, and independently align their vertically centered label left, center, or right.
 - Single-line input controls store authored text in their ECS component while the retained UI state owns focus, cursor, selection, horizontal reveal, and blink state. Clicking selects all text.
-- Checkbox controls store their boolean state and styling in an ECS component, consume generic hover/active state, toggle on primary press, and render their box and checkmark analytically with SDFs. Read-only checkboxes retain their visual state without accepting pointer changes.
-- Focused inputs accept typed text, Left/Right/Home/End cursor movement, Shift-extended selection, Backspace/Delete, and Select All. Tab and Shift+Tab traverse inputs in paint order; Enter commits and leaves the field, while Escape restores the value present when focus began.
+- Checkbox controls store their boolean state and complete box, border, radius, checkmark, hover, and active styling in an ECS component, consume generic hover/active state, toggle on primary press, and render their box and checkmark analytically with SDFs. Read-only checkboxes retain their visual state without accepting pointer changes.
+- Focused inputs accept typed text, Left/Right/Home/End cursor movement, Shift-extended selection, Backspace/Delete, and Select All. Tab and Shift+Tab traverse inputs in paint order; Enter submits and leaves the field, while Escape restores the value present when focus began. Numeric inputs provide bounds, stepping, validation, pointer scrubbing, and optional styled prefix badges through the same public component. Prefix spacing/radius, selection radius, focus/invalid borders, and caret geometry/colors are public styles.
 - Backgrounds and inset borders use GPU-evaluated signed-distance rounded rectangles, including square corners at a zero radius.
-- Structural dirty notifications add, update, or remove only affected retained nodes when UI components or entities appear and disappear. Unchanged frames do not rescan world membership.
+- Structural dirty notifications add, update, or remove only affected retained nodes when UI components or entities appear and disappear. Typed ECS setters are shared by project Luau and programmatic engine/editor composition, while scene parsing produces the same public component structs; unchanged frames do not rescan world membership.
+- Generated Luau queries expose the complete value and styling payload of every public UI component. `add_component` updates or attaches those same components to live entities, while `remove_component` removes them through the structural dirty path.
+- Luau UI additions, removals, and runtime spawns are deferred with other structural ECS commands. Partial UI payloads merge with current values, runtime spawn returns the entity's stable UUID for parent references, and removed/despawned UI component slots are reclaimed.
+- Native extensions expose the same complete public UI values, styles, state revisions, deferred mutation, removal, and runtime spawning through fixed-layout typed payloads. Bounded inline text and font buffers keep allocator-owned Odin strings from crossing the extension ABI; UI state remains renderer-owned and read-only.
 - WGPU paints UI after world geometry, including in headless framegrabs.
 - UI rendering does not require a world camera or renderable geometry.
 - The built-in Inter font is embedded and redistributed under the SIL Open Font License 1.1.
@@ -46,21 +51,21 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 ### 3. Use explicit pixels with opt-in proportional fill
 
-**Decision:** Use top-left pixel coordinates and explicit sizes with overlay, horizontal-stack, and vertical-stack flow. A stack can opt into fill layout, where authored child sizes seed proportional weights and each child fills the cross-axis. Fill stacks may make their gaps draggable and enforce a shared minimum pane size.
+**Decision:** Use top-left pixel coordinates and explicit sizes with overlay, horizontal-stack, and vertical-stack flow. A stack can opt into fill layout, where authored child sizes seed proportional weights and each child fills the cross-axis. A child can set `fixed_in_fill` to keep its authored main-axis extent while siblings divide the remainder. Fill stacks may make their gaps draggable and enforce a shared minimum pane size. Individual boxes can independently fill either available axis, fit either axis to visible children, and clamp the result to an authored minimum size.
 **Why:** Fixed boxes remain deterministic, while an explicit fill policy supports responsive application and editor layouts without introducing a complete constraint language.
-**Tradeoff:** There is no percentage syntax, general box alignment, automatic content measurement, per-child grow policy, or horizontal scrolling yet. Split weights are retained runtime state rather than scene data.
+**Tradeoff:** There is no percentage syntax, general box alignment, weighted per-child grow policy outside fill stacks, or horizontal scrolling yet. Split weights and resolved fit-to-content sizes are retained runtime state rather than scene data.
 
 ### 4. Compose controls from a shared box model
 
-**Decision:** Keep geometry and visual box styling in one layout component, then add independent stack, table, panel, text, button, input, and checkbox components to an entity.
+**Decision:** Keep geometry and visual box styling in one layout component, then add independent stack, table, list, progress, panel, text, button, input, and checkbox components to an entity.
 **Why:** A shared box model makes margins, padding, backgrounds, and rounded corners consistent while ECS composition keeps layout and content roles explicit. See ADR-014.
-**Tradeoff:** Invalid combinations require scene validation. Buttons expose visual press feedback, but activation commands still await the UI event system.
+**Tradeoff:** Invalid combinations require scene validation. Generic activation/change revisions expose interaction edges, while higher-level command routing remains the responsibility of project or editor systems.
 
 ### 5. Keep pointer state generic and derived
 
-**Decision:** Hit-test all retained element boxes and store hover and active state on the retained nodes; controls decide whether and how to consume those states.
-**Why:** Pointer interaction is a property of an element's screen area, not of a button. This lets future controls reuse one topmost-hit and press-capture model. See ADR-014.
-**Tradeoff:** Interaction state is currently renderer-owned derived state and is not yet queryable or mutable through the public ECS APIs.
+**Decision:** Hit-test all retained element boxes and publish hover, active, focus, activation, and change state through the renderer-owned, read-only `ui_state` ECS component; controls decide whether and how to consume those states.
+**Why:** Pointer interaction is a property of an element's screen area, not of a button. Projects and the editor can consume the same stable revision counters without renderer code assigning meaning to a click. See ADR-014 and ADR-025.
+**Tradeoff:** Transient booleans describe the most recent UI pass and are observed by project systems on the following frame. Revision counters must be retained by consumers that need to detect every edge.
 
 ### 6. Embed a fallback and compile project fonts automatically
 
@@ -84,15 +89,20 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 **Decision:** Store an input's current text and styling in its public ECS component, but retain transient focus, cursor, selection, original value, horizontal offset, and caret blink state in the UI reconciler.
 **Why:** Systems and tools can observe the value through the ordinary world while frame-local interaction survives reconciliation without polluting scene data.
-**Tradeoff:** This first control is single-line and ASCII-only. It does not yet provide clipboard operations, IME composition, Unicode shaping, multiline editing, validation events, or a public commit/change event API.
+**Tradeoff:** This first control is single-line and ASCII-only. It does not yet provide clipboard operations, IME composition, Unicode shaping, or multiline editing.
+
+### 10. Make list selection ECS-owned
+
+**Decision:** Let `ui_list` vertically lay out its direct children, fill their width, and store the selected child UUID in the component. Derive hover and active state through the existing pointer chain, and compose scrolling through `ui_scroll_area` instead of embedding a second scrolling model.
+**Why:** Project UI and editor tooling need the same reusable navigation primitive, while stable UUID selection survives retained reconciliation and nested labels or row content remain clickable.
+**Tradeoff:** Lists currently support one selected direct child, vertical layout, and pointer selection only. Keyboard navigation, activation events, multi-selection, virtualization, disabled rows, and programmatic scroll-to-selection remain future work.
 
 ## Related
 
-- **ADRs:** ADR-003, ADR-013, ADR-014, ADR-020, ADR-023, ADR-024
+- **ADRs:** ADR-003, ADR-013, ADR-014, ADR-020, ADR-023, ADR-024, ADR-025
 - **FDRs:** FDR-002, FDR-003, FDR-005, FDR-008
 
 ## Open Questions
 
-- What Luau mutation API best preserves ECS scheduling and deferred structural changes?
-- What command-event API should report release-inside button activation?
+- Should release-inside activation become a separate state edge from primary press?
 - When should text gain shaping, Unicode fallback chains, and glyph-atlas streaming?

@@ -69,7 +69,7 @@ end)
 
 Query components are declared as reads automatically. Writes must be declared explicitly. If a system mutates a payload without matching write access, Scrapbot fails the frame step and leaves the world unchanged.
 
-The optional `name` is shown in live editor tooling, including the system performance panel. Unnamed systems remain valid and receive an ordinal fallback label.
+The optional `name` is shown in live editor tooling, including the system performance panel. Use a single token such as `autorotate` for a project-owned system. Dotted multi-token names such as `physics.rigidbody` are reserved for engine or library systems, matching component ownership. Unnamed systems remain valid and receive an ordinal fallback label. This convention is not yet runtime-enforced.
 
 Every system receives a read-only `ScrapbotTime` snapshot. Use `delta_time` for simulation, `smooth_delta_time` for presentation smoothing, `elapsed_time` for runtime-relative clocks, and `frame_index` for deterministic frame counting.
 
