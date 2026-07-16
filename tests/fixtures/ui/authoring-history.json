@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "timeout_frames": 180,
+  "actions": [
+    {"action": "click", "target": {"text": "STOP", "origin": "editor"}},
+    {"action": "wait", "frames": 2},
+    {"action": "click", "target": {"text": "Icosphere", "origin": "editor"}},
+    {"action": "wait", "frames": 2},
+    {"action": "type", "target": {"name": "__scrapbot_editor_inspector_input_0", "origin": "editor"}, "text": "9"},
+    {"action": "key", "key": "enter"},
+    {"action": "wait", "frames": 2},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "STOPPED  /  UNSAVED"},
+    {"action": "click", "target": {"text": "UNDO", "origin": "editor"}},
+    {"action": "wait", "frames": 2},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "STOPPED"},
+    {"action": "click", "target": {"text": "REDO", "origin": "editor"}},
+    {"action": "wait", "frames": 2},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "STOPPED  /  UNSAVED"},
+    {"action": "click", "target": {"text": "REVERT", "origin": "editor"}},
+    {"action": "wait", "frames": 3},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "STOPPED"},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_inspector_input_0", "origin": "editor"}, "expect": "text", "text": "-3.30"},
+    {"action": "capture", "target": {"name": "__scrapbot_editor_transport", "origin": "editor"}, "padding": 8}
+  ]
+}

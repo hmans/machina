@@ -196,6 +196,57 @@ test_editor_save_runs_once_and_clears_dirty_only_after_success :: proc(t: ^testi
 }
 
 @(test)
+test_editor_revert_runs_once_and_clears_history_only_after_success :: proc(t: ^testing.T) {
+	world: World
+	state := new(ui.State)
+	defer free(state)
+	testing.expect(t, ui.init(state) == "")
+	defer ui.destroy(state)
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
+	state.editor_scene_dirty = true
+	state.editor_history_count = 1
+	state.editor_history_cursor = 1
+	revert_count := 0
+	config := Run_Config {
+		runtime_revert = test_count_runtime_world_action,
+		runtime_revert_data = &revert_count,
+		ui_state = state,
+	}
+	ui.editor_revert(state)
+	testing.expect(t, run_frame_system_unmeasured(&config, &world, 0.1) == "")
+	testing.expect(t, revert_count == 1)
+	testing.expect(t, !state.editor_scene_dirty)
+	testing.expect(t, !state.editor_scene_revert_failed)
+	testing.expect(t, state.editor_history_count == 0)
+	testing.expect(t, run_frame_system_unmeasured(&config, &world, 0.1) == "")
+	testing.expect(t, revert_count == 1)
+}
+
+@(test)
+test_editor_revert_failure_preserves_dirty_world_and_history :: proc(t: ^testing.T) {
+	world: World
+	state := new(ui.State)
+	defer free(state)
+	testing.expect(t, ui.init(state) == "")
+	defer ui.destroy(state)
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
+	state.editor_scene_dirty = true
+	state.editor_history_count = 1
+	state.editor_history_cursor = 1
+	config := Run_Config {
+		runtime_revert = test_fail_runtime_world_action,
+		ui_state = state,
+	}
+	ui.editor_revert(state)
+	testing.expect(t, run_frame_system_unmeasured(&config, &world, 0.1) == "")
+	testing.expect(t, state.editor_scene_dirty)
+	testing.expect(t, state.editor_scene_revert_failed)
+	testing.expect(t, state.editor_history_count == 1)
+}
+
+@(test)
 test_null_renderer_reports_runtime_growth_windows :: proc(t: ^testing.T) {
 	world: World
 	defer ecs.destroy_world(&world)
@@ -265,6 +316,10 @@ test_count_runtime_world_action :: proc(data: rawptr, world: ^World) -> string {
 	count^ += 1
 	world.time = {}
 	return ""
+}
+
+test_fail_runtime_world_action :: proc(_: rawptr, _: ^World) -> string {
+	return "expected test failure"
 }
 
 test_count_runtime_save :: proc(data: rawptr, _: ^World, _: []shared.Entity_UUID) -> string {

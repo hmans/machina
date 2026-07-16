@@ -193,7 +193,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [ ] Multi-selection editing
   - [x] Bounded field and structural editor transactions
 - Scene Tools
-  - [x] Play/Pause/Step with an in-memory authoring baseline, non-destructive Stop, and explicit Save
+  - [x] Play/Pause/Step with an in-memory authoring baseline, non-destructive Stop, stopped-mode Undo/Redo, explicit Save, and scene-only Revert
   - [x] RMB-captured WASD/Space/Ctrl scene-camera navigation
   - [x] World/local translation, rotation, and scale gizmo orientation
   - [x] Translation, rotation, and scale gizmo modes

@@ -51,6 +51,8 @@ bin/scrapbot run examples/ecs-showcase \
 
 `tests/fixtures/ui/playback-authoring.json` covers the editor transport boundary: it stops initial playback, creates an unsaved authored entity, plays, stops again, and asserts that the entity survives restoration.
 
+`tests/fixtures/ui/authoring-history.json` covers the authoring-history boundary: it edits a scene Transform, verifies dirty state across Undo and Redo, uses Revert to reload scene entities without restarting project code, asserts the disk-authored value, and captures the transport controls.
+
 Scripts use schema version 1 and execute actions sequentially:
 
 ```json

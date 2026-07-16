@@ -386,7 +386,11 @@ editor_history_push :: proc(
 	binding: shared.Editor_UI_Component,
 	before, after: f32,
 ) {
-	if state == nil || world == nil || before == after { return }
+	if state == nil || world == nil { return }
+	if before == after {
+		editor_recompute_scene_dirty(state)
+		return
+	}
 	target, _, found := inspector_target(world, binding)
 	if !found { return }
 	transaction: Editor_Edit_Transaction
@@ -411,7 +415,11 @@ editor_history_push_bool :: proc(
 	binding: shared.Editor_UI_Component,
 	before, after: bool,
 ) {
-	if state == nil || world == nil || before == after { return }
+	if state == nil || world == nil { return }
+	if before == after {
+		editor_recompute_scene_dirty(state)
+		return
+	}
 	target, _, found := inspector_target(world, binding)
 	if !found { return }
 	transaction: Editor_Edit_Transaction
@@ -428,6 +436,91 @@ editor_history_push_bool :: proc(
 	}
 	transaction.change_count = 1
 	editor_history_push_transaction(state, transaction)
+}
+
+editor_history_begin_bool_transaction :: proc(
+	world: ^shared.World,
+	binding: shared.Editor_UI_Component,
+) -> (
+	Editor_Edit_Transaction,
+	bool,
+) {
+	if world == nil {
+		return {}, false
+	}
+	target, _, found := inspector_target(world, binding)
+	if !found {
+		return {}, false
+	}
+	fields := [2]shared.Editor_Inspector_Field{binding.inspector_field, binding.inspector_field}
+	field_count := 1
+	#partial switch binding.inspector_field {
+		case .UI_HStack_Fill, .UI_HStack_Draggable:
+			fields = {.UI_HStack_Fill, .UI_HStack_Draggable}
+			field_count = 2
+		case .UI_VStack_Fill, .UI_VStack_Draggable:
+			fields = {.UI_VStack_Fill, .UI_VStack_Draggable}
+			field_count = 2
+		case .UI_Panel_Collapsible, .UI_Panel_Collapsed:
+			fields = {.UI_Panel_Collapsible, .UI_Panel_Collapsed}
+			field_count = 2
+		case:
+	}
+	transaction: Editor_Edit_Transaction
+	for field, index in fields[:field_count] {
+		field_binding := binding
+		field_binding.inspector_field = field
+		value, available := read_inspector_bool(world, field_binding)
+		if !available {
+			return {}, false
+		}
+		transaction.changes[index] = {
+			target_uuid = target.uuid,
+			component_revision = target.component_revision,
+			field = field,
+			axis = binding.inspector_axis,
+			custom_storage_index = binding.custom_storage_index,
+			custom_field_index = binding.custom_field_index,
+			kind = .Boolean,
+			before_boolean = value,
+		}
+	}
+	transaction.change_count = field_count
+	return transaction, true
+}
+
+editor_history_finish_bool_transaction :: proc(
+	state: ^State,
+	world: ^shared.World,
+	transaction: Editor_Edit_Transaction,
+) {
+	if state == nil || world == nil {
+		return
+	}
+	completed: Editor_Edit_Transaction
+	changes := transaction.changes
+	for change in changes[:transaction.change_count] {
+		entity_index, found := ecs.entity_index_by_uuid(world, change.target_uuid)
+		if !found {
+			continue
+		}
+		binding := shared.Editor_UI_Component {
+			target = world.entities[entity_index].id,
+			inspector_field = change.field,
+			inspector_axis = change.axis,
+			custom_storage_index = change.custom_storage_index,
+			custom_field_index = change.custom_field_index,
+		}
+		after, available := read_inspector_bool(world, binding)
+		if !available || after == change.before_boolean {
+			continue
+		}
+		next := change
+		next.after_boolean = after
+		completed.changes[completed.change_count] = next
+		completed.change_count += 1
+	}
+	editor_history_push_transaction(state, completed)
 }
 
 editor_history_push_transform :: proc(
@@ -464,12 +557,32 @@ editor_history_push_transform :: proc(
 }
 
 editor_history_push_transaction :: proc(state: ^State, transaction: Editor_Edit_Transaction) {
-	if state == nil || (transaction.change_count <= 0 && transaction.structural == nil) { return }
+	if state == nil { return }
+	if !state.editor_simulation_stopped {
+		discarded := transaction
+		editor_history_destroy_transaction(&discarded)
+		return
+	}
+	if transaction.change_count <= 0 && transaction.structural == nil {
+		editor_recompute_scene_dirty(state)
+		return
+	}
+	if state.editor_history_clean_valid &&
+	   state.editor_history_clean_cursor > state.editor_history_cursor {
+		state.editor_history_clean_valid = false
+	}
 	for index in state.editor_history_cursor ..< state.editor_history_count {
 		editor_history_destroy_transaction(&state.editor_history[index])
 	}
 	state.editor_history_count = state.editor_history_cursor
 	if state.editor_history_count >= EDITOR_HISTORY_CAPACITY {
+		if state.editor_history_clean_valid {
+			if state.editor_history_clean_cursor == 0 {
+				state.editor_history_clean_valid = false
+			} else {
+				state.editor_history_clean_cursor -= 1
+			}
+		}
 		editor_history_destroy_transaction(&state.editor_history[0])
 		copy(state.editor_history[0:EDITOR_HISTORY_CAPACITY - 1], state.editor_history[1:])
 		state.editor_history[EDITOR_HISTORY_CAPACITY - 1] = {}
@@ -479,10 +592,14 @@ editor_history_push_transaction :: proc(state: ^State, transaction: Editor_Edit_
 	state.editor_history[state.editor_history_count] = transaction
 	state.editor_history_count += 1
 	state.editor_history_cursor = state.editor_history_count
+	editor_recompute_scene_dirty(state)
 }
 
 editor_history_remove :: proc(state: ^State, index: int) {
 	if state == nil || index < 0 || index >= state.editor_history_count { return }
+	if state.editor_history_clean_valid && state.editor_history_clean_cursor > index {
+		state.editor_history_clean_cursor -= 1
+	}
 	editor_history_destroy_transaction(&state.editor_history[index])
 	if index + 1 < state.editor_history_count {
 		copy(
@@ -494,6 +611,7 @@ editor_history_remove :: proc(state: ^State, index: int) {
 	state.editor_history[state.editor_history_count] = {}
 	if state.editor_history_cursor > index { state.editor_history_cursor -= 1 }
 	state.editor_history_cursor = clamp(state.editor_history_cursor, 0, state.editor_history_count)
+	editor_recompute_scene_dirty(state)
 }
 
 editor_history_apply :: proc(state: ^State, world: ^shared.World, redo: bool) -> bool {
@@ -533,6 +651,7 @@ editor_history_apply :: proc(state: ^State, world: ^shared.World, redo: bool) ->
 					state.editor_has_selection = true
 				}
 				if redo { state.editor_history_cursor = index + 1 } else { state.editor_history_cursor = index }
+				editor_recompute_scene_dirty(state)
 				return true
 			}
 			editor_history_remove(state, index)
@@ -574,6 +693,7 @@ editor_history_apply :: proc(state: ^State, world: ^shared.World, redo: bool) ->
 			}
 			if applied {
 				if redo { state.editor_history_cursor = index + 1 } else { state.editor_history_cursor = index }
+				editor_recompute_scene_dirty(state)
 				return true
 			}
 		}
@@ -607,6 +727,8 @@ editor_history_clear :: proc(state: ^State) {
 	}
 	state.editor_history_count = 0
 	state.editor_history_cursor = 0
+	state.editor_history_clean_cursor = 0
+	state.editor_history_clean_valid = true
 }
 
 focused_input_binding :: proc(

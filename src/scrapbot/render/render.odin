@@ -90,6 +90,8 @@ Run_Config :: struct {
 	runtime_playback_stop_data: rawptr,
 	runtime_save: Runtime_Save_Proc,
 	runtime_save_data: rawptr,
+	runtime_revert: Runtime_World_Proc,
+	runtime_revert_data: rawptr,
 	resource_registry: ^resources.Registry,
 	stats: ^Render_Stats,
 	collect_runtime_stats: bool,
@@ -401,6 +403,19 @@ run_frame_system_unmeasured :: proc(
 		ui.complete_scene_save(config.ui_state, save_err == "")
 		if save_err != "" {
 			fmt.eprintf("[editor] failed to save scene: %s\n", save_err)
+		}
+	}
+	if ui.consume_scene_revert_request(config.ui_state) {
+		selected_uuid, had_selection := ui.editor_selected_uuid(config.ui_state, world)
+		revert_err := "editor revert requires a runtime revert callback"
+		if config.runtime_revert != nil {
+			revert_err = config.runtime_revert(config.runtime_revert_data, world)
+		}
+		ui.complete_scene_revert(config.ui_state, revert_err == "")
+		if revert_err == "" {
+			ui.editor_world_restored(config.ui_state, world, selected_uuid, had_selection)
+		} else {
+			fmt.eprintf("[editor] failed to revert scene: %s\n", revert_err)
 		}
 	}
 	simulation_delta, run_simulation := ui.consume_simulation_delta(config.ui_state, delta_seconds)

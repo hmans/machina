@@ -1834,13 +1834,32 @@ test_editor_transport_buttons_preserve_unsaved_authoring_across_playback :: proc
 	pause := find_editor_role_node(state, .Transport_Pause)
 	stop := find_editor_role_node(state, .Transport_Stop)
 	step := find_editor_role_node(state, .Transport_Step)
+	undo := find_editor_role_node(state, .Transport_Undo)
+	redo := find_editor_role_node(state, .Transport_Redo)
 	save := find_editor_role_node(state, .Transport_Save)
+	revert := find_editor_role_node(state, .Transport_Revert)
 	status := find_editor_role_node(state, .Status)
 	testing.expect(
 		t,
-		play >= 0 && pause >= 0 && stop >= 0 && step >= 0 && save >= 0 && status >= 0,
+		play >= 0 &&
+		pause >= 0 &&
+		stop >= 0 &&
+		step >= 0 &&
+		undo >= 0 &&
+		redo >= 0 &&
+		save >= 0 &&
+		revert >= 0 &&
+		status >= 0,
 	)
-	if play < 0 || pause < 0 || stop < 0 || step < 0 || save < 0 || status < 0 {
+	if play < 0 ||
+	   pause < 0 ||
+	   stop < 0 ||
+	   step < 0 ||
+	   undo < 0 ||
+	   redo < 0 ||
+	   save < 0 ||
+	   revert < 0 ||
+	   status < 0 {
 		return
 	}
 	pause_entity := world.entities[int(state.nodes[pause].entity.index)]
@@ -1849,6 +1868,12 @@ test_editor_transport_buttons_preserve_unsaved_authoring_across_playback :: proc
 	testing.expect(t, world.ui_buttons[stop_entity.ui_button_index].text == "STOP")
 	save_entity := world.entities[int(state.nodes[save].entity.index)]
 	testing.expect(t, world.ui_buttons[save_entity.ui_button_index].text == "SAVE")
+	undo_entity := world.entities[int(state.nodes[undo].entity.index)]
+	testing.expect(t, world.ui_buttons[undo_entity.ui_button_index].text == "UNDO")
+	redo_entity := world.entities[int(state.nodes[redo].entity.index)]
+	testing.expect(t, world.ui_buttons[redo_entity.ui_button_index].text == "REDO")
+	revert_entity := world.entities[int(state.nodes[revert].entity.index)]
+	testing.expect(t, world.ui_buttons[revert_entity.ui_button_index].text == "REVERT")
 	status_entity := world.entities[int(state.nodes[status].entity.index)]
 	testing.expect(t, world.ui_texts[status_entity.ui_text_index].text == "RUNNING")
 
@@ -2341,10 +2366,13 @@ test_editor_structural_authoring_is_uuid_addressed_and_undoable :: proc(t: ^test
 	_, duplicate_found = ecs.entity_index_by_uuid(&world, duplicate_uuid)
 	testing.expect(t, !duplicate_found)
 	testing.expect(t, !state.editor_has_selection)
+	testing.expect(t, !state.editor_scene_dirty)
+	testing.expect(t, len(state.editor_dirty_entities) == 0)
 	testing.expect(t, editor_history_apply(state, &world, true))
 	duplicate_index, duplicate_found = ecs.entity_index_by_uuid(&world, duplicate_uuid)
 	testing.expect(t, duplicate_found)
 	testing.expect(t, state.editor_has_selection)
+	testing.expect(t, state.editor_scene_dirty)
 
 	testing.expect(t, editor_authoring_rename_entity(state, &world, duplicate_index, "Renamed"))
 	testing.expect(t, world.entities[duplicate_index].name == "Renamed")
@@ -3058,6 +3086,8 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 		}
 	}
 	testing.expect(t, format_vec3({1, 2.5, -3}) == "(1.00, 2.50, -3.00)")
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
 	position_input := position_inputs[0]
 	testing.expect(t, position_input >= 0)
 	if position_input >= 0 {
@@ -3075,6 +3105,7 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			reconcile(state, &world, 1280, 720, {}, 1280, 300, 1.0 / 60.0, {escape = true}) == "",
 		)
 		testing.expect(t, world.transforms[0].position == shared.Vec3{1, 2.5, -3})
+		testing.expect(t, !state.editor_scene_dirty)
 		focus_input(state, &world, position_inputs[0])
 		testing.expect(
 			t,
@@ -3417,6 +3448,8 @@ test_editor_history_bounds_branches_and_skips_stale_commands :: proc(t: ^testing
 	defer free(state)
 	testing.expect(t, init(state) == "")
 	defer destroy(state)
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
 	first := shared.Editor_UI_Component {
 		target = world.entities[0].id,
 		inspector_field = .Transform_Position,
@@ -3506,11 +3539,101 @@ test_editor_history_transactions_undo_and_redo_boolean_changes :: proc(t: ^testi
 	testing.expect(t, state.editor_scene_dirty && len(state.editor_dirty_entities) == 1)
 	testing.expect(t, editor_history_apply(state, &world, true))
 	testing.expect(t, world.ui_checkboxes[world.entities[0].ui_checkbox_index].checked)
-	testing.expect(t, len(state.editor_dirty_entities) == 1)
+	testing.expect(t, !state.editor_scene_dirty)
+	testing.expect(t, len(state.editor_dirty_entities) == 0)
 	editor_stop(state)
 	testing.expect(t, state.editor_history_count == 1)
-	testing.expect(t, state.editor_scene_dirty && len(state.editor_dirty_entities) == 1)
+	testing.expect(t, !state.editor_scene_dirty && len(state.editor_dirty_entities) == 0)
 	testing.expect(t, !consume_playback_stop_request(state))
+}
+
+@(test)
+test_editor_history_is_stopped_only_and_tracks_the_saved_cursor :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = ui_test_id("Saved Cursor"),
+			name = "Saved Cursor",
+			has_transform = true,
+			transform = {scale = {1, 1, 1}},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
+	binding := shared.Editor_UI_Component {
+		target = world.entities[0].id,
+		inspector_field = .Transform_Position,
+		inspector_axis = .X,
+	}
+	testing.expect(t, write_inspector_numeric(state, &world, binding, 2))
+	editor_history_push(state, &world, binding, 0, 2)
+	testing.expect(t, state.editor_scene_dirty)
+	complete_scene_save(state, true)
+	testing.expect(t, !state.editor_scene_dirty)
+
+	state.editor_simulation_stopped = false
+	state.editor_simulation_playing = true
+	testing.expect(t, !editor_undo(state, &world))
+	testing.expect(t, world.transforms[world.entities[0].transform_index].position.x == 2)
+
+	state.editor_simulation_stopped = true
+	state.editor_simulation_playing = false
+	testing.expect(t, editor_undo(state, &world))
+	testing.expect(t, state.editor_scene_dirty)
+	testing.expect(t, editor_redo(state, &world))
+	testing.expect(t, !state.editor_scene_dirty)
+	testing.expect(t, len(state.editor_dirty_entities) == 0)
+}
+
+@(test)
+test_editor_boolean_transaction_restores_dependent_stack_fields :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = ui_test_id("Dependent Booleans"),
+			name = "Dependent Booleans",
+			has_ui_layout = true,
+			ui_layout = {size = {80, 32}},
+			has_ui_hstack = true,
+			ui_hstack = {fill = true, draggable = true},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
+	binding := shared.Editor_UI_Component {
+		target = world.entities[0].id,
+		inspector_field = .UI_HStack_Fill,
+	}
+	transaction, ok := editor_history_begin_bool_transaction(&world, binding)
+	testing.expect(t, ok)
+	testing.expect(t, write_inspector_bool(state, &world, binding, false))
+	editor_history_finish_bool_transaction(state, &world, transaction)
+	stack_index := world.entities[0].ui_hstack_index
+	testing.expect(t, !world.ui_hstacks[stack_index].fill)
+	testing.expect(t, !world.ui_hstacks[stack_index].draggable)
+	testing.expect(t, state.editor_history[0].change_count == 2)
+	testing.expect(t, editor_undo(state, &world))
+	testing.expect(t, world.ui_hstacks[stack_index].fill)
+	testing.expect(t, world.ui_hstacks[stack_index].draggable)
+	testing.expect(t, editor_redo(state, &world))
+	testing.expect(t, !world.ui_hstacks[stack_index].fill)
+	testing.expect(t, !world.ui_hstacks[stack_index].draggable)
 }
 
 @(test)

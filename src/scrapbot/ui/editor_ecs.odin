@@ -86,8 +86,17 @@ editor_ui_handle_activation :: proc(
 				case .Transport_Step:
 					editor_step(state)
 					return
+				case .Transport_Undo:
+					_ = editor_undo(state, world)
+					return
+				case .Transport_Redo:
+					_ = editor_redo(state, world)
+					return
 				case .Transport_Save:
 					editor_save(state)
+					return
+				case .Transport_Revert:
+					editor_revert(state)
 					return
 				case .Gizmo_Space_World:
 					editor_set_gizmo_space(state, .World)
@@ -243,10 +252,10 @@ editor_ui_handle_checkbox_change :: proc(
 	binding := world.editor_uis[entity.editor_ui_index]
 	if binding.role != .Inspector_Checkbox { return }
 	checkbox := world.ui_checkboxes[entity.ui_checkbox_index]
-	before, before_ok := read_inspector_bool(world, binding)
+	transaction, transaction_ok := editor_history_begin_bool_transaction(world, binding)
 	if write_inspector_bool(state, world, binding, checkbox.checked) {
-		if before_ok {
-			editor_history_push_bool(state, world, binding, before, checkbox.checked)
+		if transaction_ok {
+			editor_history_finish_bool_transaction(state, world, transaction)
 		}
 		return
 	}
@@ -507,7 +516,7 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		"__scrapbot_editor_brand",
 		EDITOR_UI_TOP_NAME,
 		.None,
-		{size = {340, 30}},
+		{size = {180, 30}},
 	)
 	editor_ui_add_text(world, brand, "SCRAPBOT", text, EDITOR_TEXT_SIZE)
 	transport := editor_ui_create_box(
@@ -515,10 +524,10 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		EDITOR_UI_TRANSPORT_NAME,
 		EDITOR_UI_TOP_NAME,
 		.None,
-		{size = {306, 30}},
+		{size = {502, 30}},
 	)
 	editor_ui_add_hstack(world, transport, {gap = 4})
-	create_button := editor_ui_create_transport_button(
+	_ = editor_ui_create_transport_button(
 		world,
 		"__scrapbot_editor_play",
 		EDITOR_UI_TRANSPORT_NAME,
@@ -548,11 +557,33 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 	)
 	_ = editor_ui_create_transport_button(
 		world,
+		"__scrapbot_editor_undo",
+		EDITOR_UI_TRANSPORT_NAME,
+		"UNDO",
+		.Transport_Undo,
+	)
+	_ = editor_ui_create_transport_button(
+		world,
+		"__scrapbot_editor_redo",
+		EDITOR_UI_TRANSPORT_NAME,
+		"REDO",
+		.Transport_Redo,
+	)
+	_ = editor_ui_create_transport_button(
+		world,
 		"__scrapbot_editor_save",
 		EDITOR_UI_TRANSPORT_NAME,
 		"SAVE",
 		.Transport_Save,
 	)
+	revert_button := editor_ui_create_transport_button(
+		world,
+		"__scrapbot_editor_revert",
+		EDITOR_UI_TRANSPORT_NAME,
+		"REVERT",
+		.Transport_Revert,
+	)
+	world.ui_layouts[world.entities[revert_button].ui_layout_index].size.x = 68
 	workspace := editor_ui_create_box(
 		world,
 		EDITOR_UI_WORKSPACE_NAME,
@@ -649,7 +680,7 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		{size = {2000, 34}, padding = {2, 6, 2, 6}, background = EDITOR_SECTION_BACKGROUND},
 	)
 	editor_ui_add_hstack(world, scene_tools, {gap = 4})
-	_ = editor_ui_create_transport_button(
+	create_button := editor_ui_create_transport_button(
 		world,
 		"__scrapbot_editor_entity_create",
 		EDITOR_UI_SCENE_TOOLS_NAME,
@@ -968,7 +999,10 @@ editor_ui_update_transport :: proc(state: ^State, world: ^shared.World) {
 		   component.role != .Transport_Pause &&
 		   component.role != .Transport_Stop &&
 		   component.role != .Transport_Step &&
-		   component.role != .Transport_Save { continue }
+		   component.role != .Transport_Undo &&
+		   component.role != .Transport_Redo &&
+		   component.role != .Transport_Save &&
+		   component.role != .Transport_Revert { continue }
 		if component.entity_index < 0 || component.entity_index >= len(world.entities) { continue }
 		entity := world.entities[component.entity_index]
 		if !entity.alive ||
@@ -989,12 +1023,43 @@ editor_ui_update_transport :: proc(state: ^State, world: ^shared.World) {
 		button.color = {0.64, 0.67, 0.73, 1}
 		button.hover_background = {0.026, 0.034, 0.045, 1}
 		button.active_background = {0.010, 0.014, 0.020, 1}
+		available := true
+		#partial switch component.role {
+			case .Transport_Undo:
+				available = state.editor_simulation_stopped && state.editor_history_cursor > 0
+			case .Transport_Redo:
+				available =
+					state.editor_simulation_stopped &&
+					state.editor_history_cursor < state.editor_history_count
+			case .Transport_Save, .Transport_Revert:
+				available = state.editor_simulation_stopped && state.editor_scene_dirty
+			case .Transport_Stop:
+				available = !state.editor_simulation_stopped
+			case .Transport_Pause:
+				available = !state.editor_simulation_stopped
+			case .Transport_Play, .Transport_Step:
+			case:
+		}
+		if !available {
+			button.color = {0.27, 0.29, 0.34, 1}
+			button.hover_background = layout.background
+			button.active_background = layout.background
+			continue
+		}
 		if component.role == .Transport_Save && state.editor_scene_dirty {
 			layout.background = {0.100, 0.075, 0.020, 1}
 			layout.border_color = {0.82, 0.58, 0.16, 0.9}
 			button.color = {1.0, 0.82, 0.42, 1}
 			button.hover_background = {0.145, 0.105, 0.026, 1}
 			button.active_background = {0.075, 0.052, 0.014, 1}
+			continue
+		}
+		if component.role == .Transport_Revert && state.editor_scene_dirty {
+			layout.background = {0.095, 0.025, 0.032, 1}
+			layout.border_color = {0.72, 0.16, 0.22, 0.85}
+			button.color = {0.96, 0.55, 0.59, 1}
+			button.hover_background = {0.145, 0.035, 0.045, 1}
+			button.active_background = {0.070, 0.018, 0.024, 1}
 			continue
 		}
 		if selected && component.role == .Transport_Play {
@@ -2399,8 +2464,17 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 		mode := "PAUSED"
 		if state.editor_simulation_playing { mode = "RUNNING" }
 		if state.editor_simulation_stopped { mode = "STOPPED" }
-		if state.editor_scene_dirty { mode = "STOPPED  /  UNSAVED" }
+		if state.editor_scene_dirty {
+			if state.editor_simulation_playing {
+				mode = "RUNNING  /  UNSAVED"
+			} else if state.editor_simulation_stopped {
+				mode = "STOPPED  /  UNSAVED"
+			} else {
+				mode = "PAUSED  /  UNSAVED"
+			}
+		}
 		if state.editor_scene_save_failed { mode = "SAVE FAILED  /  UNSAVED" }
+		if state.editor_scene_revert_failed { mode = "REVERT FAILED  /  UNSAVED" }
 		editor_ui_set_text(world, status, mode)
 	}
 
@@ -2568,6 +2642,7 @@ editor_ui_consume_input_state :: proc(state: ^State, world: ^shared.World, entit
 	if interaction.cancelled {
 		_ = write_inspector_numeric(state, world, binding^, input.number)
 		binding.input_has_original_number = false
+		editor_recompute_scene_dirty(state)
 	}
 	if interaction.submitted {
 		_ = write_inspector_numeric(state, world, binding^, input.number)
@@ -2592,6 +2667,7 @@ editor_ui_handle_history_shortcut :: proc(
 	if state == nil ||
 	   world == nil ||
 	   !state.editor_visible ||
+	   !state.editor_simulation_stopped ||
 	   (state.has_focused_input && !state.focused_input_editor) ||
 	   (!keyboard.undo && !keyboard.redo) {
 		return false
@@ -2605,7 +2681,11 @@ editor_ui_handle_history_shortcut :: proc(
 		editor_ui_consume_input_state(state, world, entity_index)
 		clear_input_focus(state)
 	}
-	_ = editor_history_apply(state, world, keyboard.redo)
+	if keyboard.redo {
+		_ = editor_redo(state, world)
+	} else {
+		_ = editor_undo(state, world)
+	}
 	return true
 }
 

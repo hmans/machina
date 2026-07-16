@@ -189,8 +189,10 @@ State :: struct {
 	editor_playback_begin_requested: bool,
 	editor_playback_stop_requested: bool,
 	editor_scene_save_requested: bool,
+	editor_scene_revert_requested: bool,
 	editor_scene_dirty: bool,
 	editor_scene_save_failed: bool,
+	editor_scene_revert_failed: bool,
 	editor_dirty_entities: [dynamic]shared.Entity_UUID,
 	editor_dirty_entity_lookup: map[shared.Entity_UUID]bool,
 	editor_pixel_density: f32,
@@ -225,6 +227,8 @@ State :: struct {
 	editor_history: [EDITOR_HISTORY_CAPACITY]Editor_Edit_Transaction,
 	editor_history_count: int,
 	editor_history_cursor: int,
+	editor_history_clean_cursor: int,
+	editor_history_clean_valid: bool,
 	editor_pick_requested: bool,
 	editor_pick_position: shared.Vec2,
 	editor_scene_camera_captures_input: bool,
@@ -260,6 +264,7 @@ init :: proc(state: ^State) -> string {
 	state^ = {}
 	state.editor_pixel_density = 1
 	state.editor_simulation_playing = true
+	state.editor_history_clean_valid = true
 	state.active_split_handle = -1
 	state.font.glyphs = &FONT_GLYPHS
 	state.font.ascender = FONT_ASCENDER
@@ -310,6 +315,7 @@ editor_stop :: proc(state: ^State) {
 	state.editor_playback_stop_requested = true
 	state.editor_scene_save_requested = false
 	state.editor_scene_save_failed = false
+	state.editor_scene_revert_failed = false
 	state.editor_snapshot_valid = false
 }
 
@@ -319,6 +325,32 @@ editor_save :: proc(state: ^State) {
 	}
 	state.editor_scene_save_requested = true
 	state.editor_scene_save_failed = false
+	state.editor_scene_revert_failed = false
+}
+
+editor_revert :: proc(state: ^State) {
+	if state == nil || !state.editor_simulation_stopped || !state.editor_scene_dirty {
+		return
+	}
+	state.editor_scene_revert_requested = true
+	state.editor_scene_revert_failed = false
+	state.editor_scene_save_failed = false
+}
+
+editor_undo :: proc(state: ^State, world: ^shared.World) -> bool {
+	if state == nil || !state.editor_simulation_stopped || state.editor_history_cursor <= 0 {
+		return false
+	}
+	return editor_history_apply(state, world, false)
+}
+
+editor_redo :: proc(state: ^State, world: ^shared.World) -> bool {
+	if state == nil ||
+	   !state.editor_simulation_stopped ||
+	   state.editor_history_cursor >= state.editor_history_count {
+		return false
+	}
+	return editor_history_apply(state, world, true)
 }
 
 editor_mark_scene_dirty :: proc(state: ^State, entity: ^shared.World_Entity) {
@@ -337,6 +369,7 @@ editor_mark_scene_dirty :: proc(state: ^State, entity: ^shared.World_Entity) {
 	}
 	state.editor_scene_dirty = true
 	state.editor_scene_save_failed = false
+	state.editor_scene_revert_failed = false
 	state.editor_snapshot_valid = false
 }
 
@@ -353,6 +386,7 @@ editor_mark_scene_uuid_dirty :: proc(state: ^State, id: shared.Entity_UUID) {
 	}
 	state.editor_scene_dirty = true
 	state.editor_scene_save_failed = false
+	state.editor_scene_revert_failed = false
 	state.editor_snapshot_valid = false
 }
 
@@ -425,6 +459,30 @@ consume_scene_save_request :: proc(state: ^State) -> bool {
 	return true
 }
 
+consume_scene_revert_request :: proc(state: ^State) -> bool {
+	if state == nil || !state.editor_scene_revert_requested {
+		return false
+	}
+	state.editor_scene_revert_requested = false
+	return true
+}
+
+editor_recompute_scene_dirty :: proc(state: ^State) {
+	if state == nil || !state.editor_simulation_stopped {
+		return
+	}
+	state.editor_scene_dirty =
+		!state.editor_history_clean_valid ||
+		state.editor_history_cursor != state.editor_history_clean_cursor
+	if !state.editor_scene_dirty {
+		clear(&state.editor_dirty_entities)
+		clear(&state.editor_dirty_entity_lookup)
+		state.editor_scene_save_failed = false
+		state.editor_scene_revert_failed = false
+	}
+	state.editor_snapshot_valid = false
+}
+
 complete_scene_save :: proc(state: ^State, ok: bool) {
 	if state == nil {
 		return
@@ -434,6 +492,24 @@ complete_scene_save :: proc(state: ^State, ok: bool) {
 		state.editor_scene_dirty = false
 		clear(&state.editor_dirty_entities)
 		clear(&state.editor_dirty_entity_lookup)
+		state.editor_history_clean_cursor = state.editor_history_cursor
+		state.editor_history_clean_valid = true
+		state.editor_scene_revert_failed = false
+	}
+	state.editor_snapshot_valid = false
+}
+
+complete_scene_revert :: proc(state: ^State, ok: bool) {
+	if state == nil {
+		return
+	}
+	state.editor_scene_revert_failed = !ok
+	if ok {
+		editor_history_clear(state)
+		state.editor_scene_dirty = false
+		clear(&state.editor_dirty_entities)
+		clear(&state.editor_dirty_entity_lookup)
+		state.editor_scene_save_failed = false
 	}
 	state.editor_snapshot_valid = false
 }

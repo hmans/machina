@@ -425,6 +425,8 @@ run_project_internal_untracked :: proc(
 		run_config.runtime_playback_stop_data = &hot_reload
 		run_config.runtime_save = hot_reload_scene_save
 		run_config.runtime_save_data = &hot_reload
+		run_config.runtime_revert = hot_reload_scene_revert
+		run_config.runtime_revert_data = &hot_reload
 		run_config.resource_registry = &hot_reload.resources
 		result.frame, result.err = render.run_renderer(run_config, &world)
 		result.scheduler_workers = hot_reload.executor.worker_count
@@ -503,6 +505,8 @@ run_project_internal_untracked :: proc(
 	run_config.runtime_playback_stop_data = &frame_runtime
 	run_config.runtime_save = frame_runtime_save
 	run_config.runtime_save_data = &frame_runtime
+	run_config.runtime_revert = frame_runtime_revert
+	run_config.runtime_revert_data = &frame_runtime
 
 	result.frame, result.err = render.run_renderer(run_config, &world)
 	result.scheduler_workers = frame_runtime.executor.worker_count
@@ -614,6 +618,14 @@ frame_runtime_save :: proc(
 		return "cannot save an unavailable project runtime"
 	}
 	return save_scene_world(runtime.scene_path, world, dirty_entities)
+}
+
+frame_runtime_revert :: proc(data: rawptr, world: ^shared.World) -> string {
+	runtime := cast(^Frame_Runtime)data
+	if runtime == nil || world == nil {
+		return "cannot revert an unavailable project runtime"
+	}
+	return reset_scene_world(runtime.scene_path, &runtime.script_runtime, world)
 }
 
 reset_scene_world :: proc(
