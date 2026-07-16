@@ -41,6 +41,7 @@ Current decisions:
 | ADR-026 | Separate authoring persistence from runtime playback |
 | ADR-027 | Use authoring transactions for editor changes |
 | ADR-028 | Persist structural authoring by UUID-scoped entity blocks |
+| ADR-029 | Postprocess the HDR world before UI composition |
 
 ## FDRs
 

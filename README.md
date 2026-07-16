@@ -27,7 +27,9 @@ During development, use `mise build` to compile the CLI and `mise scrapbot -- [a
 
 This first slice intentionally uses a narrow schema-driven TOML reader instead of a complete TOML implementation. Every scene entity has a required project-wide UUID distinct from its editable name, and runtime spawns receive fresh UUIDs. Rendering is pluggable at the runtime boundary. The `null` backend supports headless smoke tests, while the `wgpu` backend renders full indexed geometry with shared base-color and PNG-textured materials, ECS ambient/directional/point lights, backend-owned GPU caches, automatic instanced batching, live window resizing, and a retained ECS UI overlay with a responsive box model, fixed or proportional horizontal and vertical stacks, draggable separators, per-axis fill and fit-to-content sizing, hidden subtrees, smooth clipped scroll areas, selectable lists, reusable progress indicators, collapsible titled panels with SDF disclosure icons, horizontally aligned MTSDF text, pointer-aware buttons, keyboard-focused single-line inputs, reusable SDF checkboxes, and SDF-rounded backgrounds and borders. Scene TOML, Luau systems, native Odin extensions, and transient editor chrome construct and mutate the same typed UI component values and per-entity styles; the renderer publishes shared read-only interaction state. UI, render-instance, camera, and light membership update from structural dirty queues and compact active sets instead of being discovered by rescanning the complete world every frame; retained UI parent/child/sibling links make steady-state layout and paint linear in the visible hierarchy. A transient ECS-built editor shell can frame the live project viewport with top, status, resizable scene and inspector chrome, independently smoothed scroll panes, an ECS-owned fly camera, and a system profiler that publishes engine, project-Odin, and Luau callback timings every five frames from a rolling 50-frame window. Headless WGPU can write a final-frame PNG with `--framegrab`. Luau scripting is embedded from a pinned source dependency and exposes the ECS, full geometry/material resource creation, scheduled systems, deferred lifecycle commands, generated types, native extension integration, and hot reload.
 
-Example projects live in [`examples/`](examples/). The minimal example demonstrates Luau-defined and Odin-defined components and systems, and can be verified with `mise scrapbot run examples/minimal`. The ECS showcase runs a native object fountain with visible spawned cube renderables, velocity, lifetime, spin, despawn, animated point lights, editor-movable static point lights, and Luau typed queries.
+World geometry now renders into a floating-point HDR target. Shared emissive materials feed a five-level bloom chain before one ACES-style tone-map pass, while project UI, gizmos, and editor chrome stay crisp in the later overlay pass.
+
+Example projects live in [`examples/`](examples/). The minimal example demonstrates Luau-defined and Odin-defined components and systems, and can be verified with `mise scrapbot run examples/minimal`. The ECS showcase runs a native object fountain with visible spawned cube renderables, velocity, lifetime, spin, despawn, animated point lights, editor-movable static point lights, emissive bloom, and Luau typed queries.
 
 Run the full local test suite with `mise test`; it includes a 2,000-frame lifecycle CPU/RAM growth gate. Use `mise test-soak` for the extended 10,000-frame check and `mise test-sanitize` for the Linux AddressSanitizer lane. Linux CI runs both the normal suite and AddressSanitizer.
 
@@ -121,8 +123,8 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
 - Pipeline
   - [x] Geometry/material render batching
   - [x] Directional shadow maps with explicit caster/receiver components
-  - [ ] HDR rendering
-  - [ ] Postprocessing
+  - [x] HDR rendering
+  - [x] Multi-scale bloom and tone-mapping postprocessing
   - [ ] Frustum culling
   - [ ] GPU-driven rendering
   - [x] Ambient, directional, and point-light rendering

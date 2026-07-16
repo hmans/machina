@@ -91,7 +91,7 @@ This is the legacy convenience path used by generated projects. It currently res
 | `scrapbot.geometry` | `resource` | Non-empty geometry name registered by Luau or native Odin. |
 | `scrapbot.material` | `resource` | Non-empty material name registered by Luau or native Odin. |
 
-An entity using this resource-backed path becomes renderable when it has a Transform plus valid geometry and material handles. The ECS stores generational resource handles; scene files store names. See [Luau API: Render resources](/reference/luau-api/#render-resources) and [Native Extensions](/guides/native-extensions/) for resource creation.
+An entity using this resource-backed path becomes renderable when it has a Transform plus valid geometry and material handles. Materials may contribute a lit base color, a PNG texture, and unbounded linear HDR emission that feeds world bloom. The ECS stores generational resource handles; scene files store names. See [Luau API: Render resources](/reference/luau-api/#render-resources) and [Native Extensions](/guides/native-extensions/) for resource creation.
 
 ## Lights and shadows
 

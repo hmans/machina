@@ -16,6 +16,8 @@
 - [x] Add ECS ambient, directional, and point lights to the WGPU backend.
 - [x] Track renderable, camera, and light membership incrementally without full-world render extraction scans.
 - [x] Add directional shadow maps with explicit shadow caster and receiver components.
+- [x] Render world geometry into an HDR target with emissive materials, multi-scale bloom, and final ACES-style tone mapping.
+- [ ] Expose camera exposure and bloom threshold, intensity, and scatter as project settings.
 - [ ] Add light selection or clustered lighting beyond the initial fixed limits.
 - [ ] Add visual comparison for offscreen render output.
 

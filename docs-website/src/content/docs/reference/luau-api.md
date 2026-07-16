@@ -71,6 +71,7 @@ UI query payloads expose the same complete layout, value, and style fields used 
 | `scrapbot.geometry.cylinder(name, radius?, height?, segments?)` | Generate an indexed capped cylinder. |
 | `scrapbot.material.lit(name, r?, g?, b?, a?)` | Register a shared Lambert-lit base-color material. |
 | `scrapbot.material.unlit(name, r?, g?, b?, a?)` | Compatibility alias for `material.lit`. |
+| `scrapbot.material.emissive(name, r?, g?, b?, intensity?)` | Register an unlit HDR material. RGB defaults to white and intensity defaults to `4`; values above display white feed bloom. |
 | `scrapbot.material.textured(name, asset_path, r?, g?, b?, a?)` | Decode a project PNG under `assets/` and register a textured, optionally tinted material. |
 
 Texture paths must be project-relative paths beginning with `assets/`; absolute paths and parent traversal are rejected. Missing, invalid, oversized, or undecodable images fail `scrapbot check` and `run` while the script registers resources.

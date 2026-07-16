@@ -57,13 +57,27 @@ Component_Vec3_Field :: raw.Component_Vec3_Field
 Component_Payload :: raw.Component_Payload
 Spawn_Options :: raw.Spawn_Options
 
-Transform_Component :: Component{name = TRANSFORM}
-Mesh_Component :: Component{name = MESH}
-Ambient_Light_Component :: Component{name = AMBIENT_LIGHT}
-Directional_Light_Component :: Component{name = DIRECTIONAL_LIGHT}
-Point_Light_Component :: Component{name = POINT_LIGHT}
-Shadow_Caster_Component :: Component{name = SHADOW_CASTER}
-Shadow_Receiver_Component :: Component{name = SHADOW_RECEIVER}
+Transform_Component :: Component {
+	name = TRANSFORM,
+}
+Mesh_Component :: Component {
+	name = MESH,
+}
+Ambient_Light_Component :: Component {
+	name = AMBIENT_LIGHT,
+}
+Directional_Light_Component :: Component {
+	name = DIRECTIONAL_LIGHT,
+}
+Point_Light_Component :: Component {
+	name = POINT_LIGHT,
+}
+Shadow_Caster_Component :: Component {
+	name = SHADOW_CASTER,
+}
+Shadow_Receiver_Component :: Component {
+	name = SHADOW_RECEIVER,
+}
 MAX_QUERY_TERMS :: 16
 MAX_SYSTEM_BINDINGS :: 64
 
@@ -83,27 +97,60 @@ Generated_Geometry :: struct {
 }
 
 cube_geometry :: proc "contextless" (size: f32 = 1) -> Generated_Geometry {
-	result: Generated_Geometry; h := size/2
-	positions := [8]Vec3{{-h,-h,-h},{h,-h,-h},{h,h,-h},{-h,h,-h},{-h,-h,h},{h,-h,h},{h,h,h},{-h,h,h}}
-	faces := [6][4]u32{{4,5,6,7},{1,0,3,2},{0,4,7,3},{5,1,2,6},{3,7,6,2},{0,1,5,4}}
-	normals := [6]Vec3{{0,0,1},{0,0,-1},{-1,0,0},{1,0,0},{0,1,0},{0,-1,0}}
-	uvs := [4]Vec2{{0,0},{1,0},{1,1},{0,1}}
-	for face in 0..<6 {for corner in 0..<4 {result.vertices[face*4+corner]={positions[faces[face][corner]],normals[face],uvs[corner]}}}
-	for face in 0..<6 {base:=u32(face*4); o:=face*6; values:=[6]u32{base,base+1,base+2,base,base+2,base+3}; for v,i in values {result.indices[o+i]=v}}
-	result.vertex_count=24; result.index_count=36; return result
+	result: Generated_Geometry; h := size / 2
+	positions := [8]Vec3 {
+		{-h, -h, -h},
+		{h, -h, -h},
+		{h, h, -h},
+		{-h, h, -h},
+		{-h, -h, h},
+		{h, -h, h},
+		{h, h, h},
+		{-h, h, h},
+	}
+	faces := [6][4]u32 {
+		{4, 5, 6, 7},
+		{1, 0, 3, 2},
+		{0, 4, 7, 3},
+		{5, 1, 2, 6},
+		{3, 7, 6, 2},
+		{0, 1, 5, 4},
+	}
+	normals := [6]Vec3{{0, 0, 1}, {0, 0, -1}, {-1, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, -1, 0}}
+	uvs := [4]Vec2{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	for face in 0 ..< 6 { for corner in 0 ..< 4 { result.vertices[face * 4 + corner] = {positions[faces[face][corner]], normals[face], uvs[corner]} } }
+	for face in 0 ..< 6 { base := u32(face * 4); o := face * 6; values := [6]u32{base, base + 1, base + 2, base, base + 2, base + 3}; for v, i in values { result.indices[o + i] = v } }
+	result.vertex_count = 24; result.index_count = 36; return result
 }
 
 plane_geometry :: proc "contextless" (width, depth: f32) -> Generated_Geometry {
-	result: Generated_Geometry; w,d:=width/2,depth/2
-	result.vertices[0]={{-w,0,-d},{0,1,0},{0,0}}; result.vertices[1]={{w,0,-d},{0,1,0},{1,0}}
-	result.vertices[2]={{w,0,d},{0,1,0},{1,1}}; result.vertices[3]={{-w,0,d},{0,1,0},{0,1}}
-	values:=[6]u32{0,1,2,0,2,3}; for v,i in values {result.indices[i]=v}
-	result.vertex_count=4; result.index_count=6; return result
+	result: Generated_Geometry; w, d := width / 2, depth / 2
+	result.vertices[0] = {
+		{-w, 0, -d},
+		{0, 1, 0},
+		{0, 0},
+	}; result.vertices[1] = {{w, 0, -d}, {0, 1, 0}, {1, 0}}
+	result.vertices[2] = {
+		{w, 0, d},
+		{0, 1, 0},
+		{1, 1},
+	}; result.vertices[3] = {{-w, 0, d}, {0, 1, 0}, {0, 1}}
+	values := [6]u32{0, 1, 2, 0, 2, 3}; for v, i in values { result.indices[i] = v }
+	result.vertex_count = 4; result.index_count = 6; return result
 }
 
-register_generated_geometry :: proc "contextless" (reg: ^Registry, name: cstring, generated: ^Generated_Geometry) -> Resource_Handle {
-	if generated == nil {record_err(reg,"generated geometry is not available"); return {}}
-	return geometry(reg,name,generated.vertices[:generated.vertex_count],generated.indices[:generated.index_count])
+register_generated_geometry :: proc "contextless" (
+	reg: ^Registry,
+	name: cstring,
+	generated: ^Generated_Geometry,
+) -> Resource_Handle {
+	if generated == nil { record_err(reg, "generated geometry is not available"); return {} }
+	return geometry(
+		reg,
+		name,
+		generated.vertices[:generated.vertex_count],
+		generated.indices[:generated.index_count],
+	)
 }
 
 register :: proc "contextless" (api: ^raw.API, callback: Register_Proc) -> cstring {
@@ -116,7 +163,9 @@ register :: proc "contextless" (api: ^raw.API, callback: Register_Proc) -> cstri
 	system_bindings = {}
 	system_binding_count = 0
 
-	ctx := Context{api = api}
+	ctx := Context {
+		api = api,
+	}
 	return callback(&ctx)
 }
 
@@ -158,7 +207,10 @@ vec3_value :: proc "contextless" (field: Vec3_Field, value: Vec3) -> Component_V
 	return Component_Vec3_Field{name = field.name, value = value}
 }
 
-payload_by_name :: proc "contextless" (component: cstring, fields: []Component_Vec3_Field) -> Component_Payload {
+payload_by_name :: proc "contextless" (
+	component: cstring,
+	fields: []Component_Vec3_Field,
+) -> Component_Payload {
 	return Component_Payload {
 		component = component,
 		vec3_fields = raw_data(fields),
@@ -166,7 +218,10 @@ payload_by_name :: proc "contextless" (component: cstring, fields: []Component_V
 	}
 }
 
-payload_by_descriptor :: proc "contextless" (component: Component, fields: []Component_Vec3_Field) -> Component_Payload {
+payload_by_descriptor :: proc "contextless" (
+	component: Component,
+	fields: []Component_Vec3_Field,
+) -> Component_Payload {
 	return payload_by_name(component.name, fields)
 }
 
@@ -179,7 +234,11 @@ mesh :: proc "contextless" (primitive: cstring) -> Mesh_Payload {
 	return Mesh_Payload{primitive = primitive}
 }
 
-component_by_name :: proc "contextless" (ctx: ^Context, name: cstring, fields: []Field) -> cstring {
+component_by_name :: proc "contextless" (
+	ctx: ^Context,
+	name: cstring,
+	fields: []Field,
+) -> cstring {
 	if ctx == nil || ctx.api == nil || ctx.api.register_library_component == nil {
 		return "Scrapbot component registration API is not available"
 	}
@@ -191,11 +250,19 @@ component_by_name :: proc "contextless" (ctx: ^Context, name: cstring, fields: [
 	return ctx.api.register_library_component(ctx.api, &definition)
 }
 
-component_by_descriptor :: proc "contextless" (ctx: ^Context, descriptor: Component, fields: []Field) -> cstring {
+component_by_descriptor :: proc "contextless" (
+	ctx: ^Context,
+	descriptor: Component,
+	fields: []Field,
+) -> cstring {
 	return component_by_name(ctx, descriptor.name, fields)
 }
 
-component_with_registry :: proc "contextless" (reg: ^Registry, descriptor: Component, fields: []Field) {
+component_with_registry :: proc "contextless" (
+	reg: ^Registry,
+	descriptor: Component,
+	fields: []Field,
+) {
 	if reg == nil || reg.err != nil {
 		return
 	}
@@ -251,7 +318,10 @@ system_by_name :: proc "contextless" (
 		return "too many Scrapbot system callback bindings"
 	}
 	binding := &system_bindings[system_binding_count]
-	binding^ = System_Binding{callback = callback, userdata = userdata}
+	binding^ = System_Binding {
+		callback = callback,
+		userdata = userdata,
+	}
 	definition := raw.System_Definition {
 		name = name,
 		accesses = raw_data(accesses),
@@ -260,14 +330,15 @@ system_by_name :: proc "contextless" (
 		userdata = binding,
 	}
 	err := ctx.api.register_system(ctx.api, &definition)
-	if err == nil {system_binding_count += 1}
+	if err == nil { system_binding_count += 1 }
 	return err
 }
 
 system_trampoline :: proc "c" (ctx: ^raw.System_Context) -> cstring {
-	if ctx == nil || ctx.userdata == nil {return "Scrapbot system callback binding is not available"}
+	if ctx == nil ||
+	   ctx.userdata == nil { return "Scrapbot system callback binding is not available" }
 	binding := cast(^System_Binding)ctx.userdata
-	if binding.callback == nil {return "Scrapbot system callback is not available"}
+	if binding.callback == nil { return "Scrapbot system callback is not available" }
 	ctx.userdata = binding.userdata
 	return binding.callback(ctx)
 }
@@ -290,19 +361,68 @@ system :: proc {
 	system_with_registry,
 }
 
-geometry :: proc "contextless" (reg: ^Registry, name: cstring, vertices: []Geometry_Vertex, indices: []u32) -> Resource_Handle {
+geometry :: proc "contextless" (
+	reg: ^Registry,
+	name: cstring,
+	vertices: []Geometry_Vertex,
+	indices: []u32,
+) -> Resource_Handle {
 	handle: Resource_Handle
-	if reg == nil || reg.err != nil {return handle}
-	if reg.ctx == nil || reg.ctx.api == nil || reg.ctx.api.register_geometry == nil {record_err(reg, "Scrapbot geometry registration API is not available"); return handle}
-	desc := Geometry_Desc{vertices=raw_data(vertices),vertex_count=c.int(len(vertices)),indices=raw_data(indices),index_count=c.int(len(indices))}
-	record_err(reg, reg.ctx.api.register_geometry(reg.ctx.api,name,&desc,&handle)); return handle
+	if reg == nil || reg.err != nil { return handle }
+	if reg.ctx == nil ||
+	   reg.ctx.api == nil ||
+	   reg.ctx.api.register_geometry ==
+		   nil { record_err(reg, "Scrapbot geometry registration API is not available"); return handle }
+	desc := Geometry_Desc {
+		vertices = raw_data(vertices),
+		vertex_count = c.int(len(vertices)),
+		indices = raw_data(indices),
+		index_count = c.int(len(indices)),
+	}
+	record_err(
+		reg,
+		reg.ctx.api.register_geometry(reg.ctx.api, name, &desc, &handle),
+	); return handle
 }
 
-material :: proc "contextless" (reg: ^Registry, name: cstring, base_color: Vec4) -> Resource_Handle {
+material :: proc "contextless" (
+	reg: ^Registry,
+	name: cstring,
+	base_color: Vec4,
+) -> Resource_Handle {
 	handle: Resource_Handle
-	if reg == nil || reg.err != nil {return handle}
-	if reg.ctx == nil || reg.ctx.api == nil || reg.ctx.api.register_material == nil {record_err(reg, "Scrapbot material registration API is not available"); return handle}
-	desc := Material_Desc{base_color=base_color}; record_err(reg, reg.ctx.api.register_material(reg.ctx.api,name,&desc,&handle)); return handle
+	if reg == nil || reg.err != nil { return handle }
+	if reg.ctx == nil ||
+	   reg.ctx.api == nil ||
+	   reg.ctx.api.register_material ==
+		   nil { record_err(reg, "Scrapbot material registration API is not available"); return handle }
+	desc := Material_Desc {
+		base_color = base_color,
+	}; record_err(
+		reg,
+		reg.ctx.api.register_material(reg.ctx.api, name, &desc, &handle),
+	); return handle
+}
+
+emissive_material :: proc "contextless" (
+	reg: ^Registry,
+	name: cstring,
+	emissive: Vec3,
+) -> Resource_Handle {
+	handle: Resource_Handle
+	if reg == nil || reg.err != nil {
+		return handle
+	}
+	if reg.ctx == nil || reg.ctx.api == nil || reg.ctx.api.register_material == nil {
+		record_err(reg, "Scrapbot material registration API is not available")
+		return handle
+	}
+	desc := Material_Desc {
+		base_color = {0, 0, 0, 1},
+		emissive = emissive,
+	}
+	record_err(reg, reg.ctx.api.register_material(reg.ctx.api, name, &desc, &handle))
+	return handle
 }
 
 term_by_name :: proc "contextless" (component: cstring) -> Query_Term {
@@ -322,7 +442,13 @@ query :: proc "contextless" (components: []Component) -> Query {
 	return Query{components = components}
 }
 
-terms_from_components :: proc "contextless" (components: []Component, buffer: []Query_Term) -> ([]Query_Term, bool) {
+terms_from_components :: proc "contextless" (
+	components: []Component,
+	buffer: []Query_Term,
+) -> (
+	[]Query_Term,
+	bool,
+) {
 	if len(components) > len(buffer) {
 		return {}, false
 	}
@@ -339,7 +465,10 @@ query_count :: proc "contextless" (ctx: ^System_Context, terms: []Query_Term) ->
 	return int(ctx.query_count(ctx, raw_data(terms), c.int(len(terms))))
 }
 
-query_count_components :: proc "contextless" (ctx: ^System_Context, components: []Component) -> int {
+query_count_components :: proc "contextless" (
+	ctx: ^System_Context,
+	components: []Component,
+) -> int {
 	terms: [MAX_QUERY_TERMS]Query_Term
 	term_slice, ok := terms_from_components(components, terms[:])
 	if !ok {
@@ -358,7 +487,14 @@ count :: proc {
 	query_count_descriptor,
 }
 
-query_entity_at :: proc "contextless" (ctx: ^System_Context, terms: []Query_Term, index: int) -> (Entity, bool) {
+query_entity_at :: proc "contextless" (
+	ctx: ^System_Context,
+	terms: []Query_Term,
+	index: int,
+) -> (
+	Entity,
+	bool,
+) {
 	if ctx == nil || ctx.query_entity_at == nil {
 		return {}, false
 	}
@@ -366,7 +502,14 @@ query_entity_at :: proc "contextless" (ctx: ^System_Context, terms: []Query_Term
 	return entity, entity.index >= 0
 }
 
-query_entity_at_components :: proc "contextless" (ctx: ^System_Context, components: []Component, index: int) -> (Entity, bool) {
+query_entity_at_components :: proc "contextless" (
+	ctx: ^System_Context,
+	components: []Component,
+	index: int,
+) -> (
+	Entity,
+	bool,
+) {
 	terms: [MAX_QUERY_TERMS]Query_Term
 	term_slice, ok := terms_from_components(components, terms[:])
 	if !ok {
@@ -375,7 +518,14 @@ query_entity_at_components :: proc "contextless" (ctx: ^System_Context, componen
 	return query_entity_at(ctx, term_slice, index)
 }
 
-query_entity_at_descriptor :: proc "contextless" (ctx: ^System_Context, descriptor: Query, index: int) -> (Entity, bool) {
+query_entity_at_descriptor :: proc "contextless" (
+	ctx: ^System_Context,
+	descriptor: Query,
+	index: int,
+) -> (
+	Entity,
+	bool,
+) {
 	return query_entity_at_components(ctx, descriptor.components, index)
 }
 
@@ -394,14 +544,25 @@ get_transform :: proc "contextless" (ctx: ^System_Context, entity: Entity) -> (T
 	return transform, ok
 }
 
-get_transform_component :: proc "contextless" (ctx: ^System_Context, entity: Entity, component: Component) -> (Transform, bool) {
+get_transform_component :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	component: Component,
+) -> (
+	Transform,
+	bool,
+) {
 	if component.name != TRANSFORM {
 		return {}, false
 	}
 	return get_transform(ctx, entity)
 }
 
-set_transform :: proc "contextless" (ctx: ^System_Context, entity: Entity, transform: Transform) -> bool {
+set_transform :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	transform: Transform,
+) -> bool {
 	if ctx == nil || ctx.set_transform == nil {
 		return false
 	}
@@ -409,7 +570,12 @@ set_transform :: proc "contextless" (ctx: ^System_Context, entity: Entity, trans
 	return ctx.set_transform(ctx, entity, &next) != 0
 }
 
-set_transform_component :: proc "contextless" (ctx: ^System_Context, entity: Entity, component: Component, transform: Transform) -> bool {
+set_transform_component :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	component: Component,
+	transform: Transform,
+) -> bool {
 	if component.name != TRANSFORM {
 		return false
 	}
@@ -421,7 +587,10 @@ get_vec3 :: proc "contextless" (
 	entity: Entity,
 	component: cstring,
 	field: cstring,
-) -> (Vec3, bool) {
+) -> (
+	Vec3,
+	bool,
+) {
 	if ctx == nil || ctx.get_vec3_field == nil {
 		return {}, false
 	}
@@ -430,7 +599,14 @@ get_vec3 :: proc "contextless" (
 	return value, ok
 }
 
-get_vec3_field :: proc "contextless" (ctx: ^System_Context, entity: Entity, field: Vec3_Field) -> (Vec3, bool) {
+get_vec3_field :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	field: Vec3_Field,
+) -> (
+	Vec3,
+	bool,
+) {
 	return get_vec3(ctx, entity, field.component.name, field.name)
 }
 
@@ -453,7 +629,12 @@ set_vec3 :: proc "contextless" (
 	return ctx.set_vec3_field(ctx, entity, component, field, &next) != 0
 }
 
-set_vec3_field :: proc "contextless" (ctx: ^System_Context, entity: Entity, field: Vec3_Field, value: Vec3) -> bool {
+set_vec3_field :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	field: Vec3_Field,
+	value: Vec3,
+) -> bool {
 	return set_vec3(ctx, entity, field.component.name, field.name, value)
 }
 
@@ -467,10 +648,7 @@ spawn_options_basic :: proc "contextless" (
 	name: cstring,
 	transform: ^Transform = nil,
 ) -> Spawn_Options {
-	return Spawn_Options {
-		name = name,
-		transform = transform,
-	}
+	return Spawn_Options{name = name, transform = transform}
 }
 
 spawn_options_with_components :: proc "contextless" (
@@ -501,8 +679,20 @@ spawn_options_with_mesh :: proc "contextless" (
 	}
 }
 
-spawn_options_renderable :: proc "contextless" (name: cstring, transform: ^Transform, geometry, material: ^Resource_Handle, components: []Component_Payload = nil) -> Spawn_Options {
-	return Spawn_Options{name=name,transform=transform,geometry=geometry,material=material,components=raw_data(components),component_count=c.int(len(components))}
+spawn_options_renderable :: proc "contextless" (
+	name: cstring,
+	transform: ^Transform,
+	geometry, material: ^Resource_Handle,
+	components: []Component_Payload = nil,
+) -> Spawn_Options {
+	return Spawn_Options {
+		name = name,
+		transform = transform,
+		geometry = geometry,
+		material = material,
+		components = raw_data(components),
+		component_count = c.int(len(components)),
+	}
 }
 
 spawn_options :: proc {
@@ -526,7 +716,11 @@ despawn :: proc "contextless" (ctx: ^System_Context, entity: Entity) -> cstring 
 	return ctx.despawn(ctx, entity)
 }
 
-add_transform :: proc "contextless" (ctx: ^System_Context, entity: Entity, transform: Transform) -> cstring {
+add_transform :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	transform: Transform,
+) -> cstring {
 	if ctx == nil || ctx.add_transform == nil {
 		return "Scrapbot add transform API is not available"
 	}
@@ -534,7 +728,11 @@ add_transform :: proc "contextless" (ctx: ^System_Context, entity: Entity, trans
 	return ctx.add_transform(ctx, entity, &next)
 }
 
-add_mesh :: proc "contextless" (ctx: ^System_Context, entity: Entity, mesh: Mesh_Payload) -> cstring {
+add_mesh :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	mesh: Mesh_Payload,
+) -> cstring {
 	if ctx == nil || ctx.add_mesh == nil {
 		return "Scrapbot add mesh API is not available"
 	}
@@ -542,7 +740,11 @@ add_mesh :: proc "contextless" (ctx: ^System_Context, entity: Entity, mesh: Mesh
 	return ctx.add_mesh(ctx, entity, &next)
 }
 
-add_payload :: proc "contextless" (ctx: ^System_Context, entity: Entity, component: ^Component_Payload) -> cstring {
+add_payload :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	component: ^Component_Payload,
+) -> cstring {
 	if ctx == nil || ctx.add_component == nil {
 		return "Scrapbot add component API is not available"
 	}
@@ -555,14 +757,22 @@ add :: proc {
 	add_payload,
 }
 
-remove_by_name :: proc "contextless" (ctx: ^System_Context, entity: Entity, component: cstring) -> cstring {
+remove_by_name :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	component: cstring,
+) -> cstring {
 	if ctx == nil || ctx.remove_component == nil {
 		return "Scrapbot remove component API is not available"
 	}
 	return ctx.remove_component(ctx, entity, component)
 }
 
-remove_by_descriptor :: proc "contextless" (ctx: ^System_Context, entity: Entity, component: Component) -> cstring {
+remove_by_descriptor :: proc "contextless" (
+	ctx: ^System_Context,
+	entity: Entity,
+	component: Component,
+) -> cstring {
 	return remove_by_name(ctx, entity, component.name)
 }
 

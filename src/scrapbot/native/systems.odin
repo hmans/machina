@@ -52,8 +52,13 @@ extension_register_material :: proc "c" (
 	   desc == nil ||
 	   out_handle == nil { return "native material registration is not available" }
 	set := cast(^Extension_Set)host_api.userdata; if set.resources == nil { return "native material registry is not available" }
-	c :=
-		desc.base_color; handle, err := resources.register_material(set.resources, string(name), {base_color = {c.x, c.y, c.z, c.w}})
+	c := desc.base_color
+	e := desc.emissive
+	handle, err := resources.register_material(
+		set.resources,
+		string(name),
+		{base_color = {c.x, c.y, c.z, c.w}, emissive = {e.x, e.y, e.z}},
+	)
 	if err != "" { return "native material registration failed" }
 	out_handle^ = {handle.index, handle.generation}; return nil
 }

@@ -1,11 +1,11 @@
 package script
 
-import "core:testing"
 import component "../component"
 import ecs "../ecs"
 import project "../project"
 import resources "../resources"
 import shared "../shared"
+import "core:testing"
 
 @(test)
 test_luau_system_receives_time_resource :: proc(t: ^testing.T) {
@@ -13,14 +13,19 @@ test_luau_system_receives_time_resource :: proc(t: ^testing.T) {
 	defer ecs.destroy_world(&world)
 	runtime: Runtime
 	defer destroy_runtime(&runtime)
-	result := run_source(&runtime, `
+	result := run_source(
+		&runtime,
+		`
 scrapbot.system(function(time: ScrapbotTime)
 	assert(time.delta_time == 0.125)
 	assert(time.smooth_delta_time == 0.125)
 	assert(time.elapsed_time == 0.125)
 	assert(time.frame_index == 1)
 end)
-`, "=time-test", &world)
+`,
+		"=time-test",
+		&world,
+	)
 	testing.expectf(t, result.err == "", "script failed: %s", result.err)
 	testing.expectf(t, step_runtime(&runtime, &world, 0.125) == "", "time system failed")
 }
@@ -31,7 +36,9 @@ test_luau_creates_full_geometry_material_and_renderable_entity :: proc(t: ^testi
 	registry: component.Registry; component.init_registry(&registry)
 	resource_registry: resources.Registry; resources.init_registry(&resource_registry); defer resources.destroy_registry(&resource_registry)
 	runtime: Runtime; defer destroy_runtime(&runtime)
-	result := run_source_with_registry(&runtime, `
+	result := run_source_with_registry(
+		&runtime,
+		`
 local triangle = scrapbot.geometry.create("triangle", {
   vertices = {
     { position = {x=-1,y=0,z=0}, normal = {x=0,y=0,z=1}, uv = {x=0,y=0} },
@@ -40,12 +47,18 @@ local triangle = scrapbot.geometry.create("triangle", {
   }, indices = {0,1,2},
 })
 local red = scrapbot.material.unlit("red", 1, 0, 0, 1)
+scrapbot.material.emissive("neon", 0.25, 0.5, 1, 8)
 scrapbot.spawn({components = {
   ["scrapbot.transform"] = {position={x=0,y=0,z=0}, scale={x=1,y=1,z=1}},
   ["scrapbot.geometry"] = triangle,
   ["scrapbot.material"] = red,
 }})
-`, "=geometry-test", &world, &registry, Source_Options{resource_registry=&resource_registry})
+`,
+		"=geometry-test",
+		&world,
+		&registry,
+		Source_Options{resource_registry = &resource_registry},
+	)
 	testing.expectf(t, result.err == "", "script failed: %s", result.err)
 	testing.expect(t, ecs.apply_commands(&world, &runtime.commands) == "")
 	ecs.reconcile_render_instances(&world, &resource_registry)
@@ -55,6 +68,13 @@ scrapbot.spawn({components = {
 	testing.expect(t, ok)
 	geometry_data, valid := resources.get_geometry(&resource_registry, geometry)
 	testing.expect(t, valid && len(geometry_data.indices) == 3)
+	neon, found_neon := resources.material_by_name(&resource_registry, "neon")
+	testing.expect(t, found_neon)
+	neon_data, valid_neon := resources.get_material(&resource_registry, neon)
+	testing.expect(t, valid_neon)
+	if valid_neon {
+		testing.expect_value(t, neon_data.desc.emissive, shared.Vec3{2, 4, 8})
+	}
 }
 @(test)
 test_luau_registers_generated_geometry_primitives :: proc(t: ^testing.T) {
@@ -62,17 +82,24 @@ test_luau_registers_generated_geometry_primitives :: proc(t: ^testing.T) {
 	registry: component.Registry; component.init_registry(&registry)
 	resource_registry: resources.Registry; resources.init_registry(&resource_registry); defer resources.destroy_registry(&resource_registry)
 	runtime: Runtime; defer destroy_runtime(&runtime)
-	result := run_source_with_registry(&runtime, `
+	result := run_source_with_registry(
+		&runtime,
+		`
 scrapbot.geometry.icosphere("ico", 1, 1)
 scrapbot.geometry.sphere("sphere", 1, 12, 8)
 scrapbot.geometry.pyramid("pyramid", 2, 3, 2)
 scrapbot.geometry.cylinder("cylinder", 1, 2, 12)
-`, "=primitive-test", &world, &registry, Source_Options{resource_registry=&resource_registry})
+`,
+		"=primitive-test",
+		&world,
+		&registry,
+		Source_Options{resource_registry = &resource_registry},
+	)
 	testing.expectf(t, result.err == "", "script failed: %s", result.err)
-	names := [?]string{"ico","sphere","pyramid","cylinder"}
+	names := [?]string{"ico", "sphere", "pyramid", "cylinder"}
 	for name in names {
-		_, ok := resources.geometry_by_name(&resource_registry,name)
-		testing.expectf(t,ok,"expected geometry %s",name)
+		_, ok := resources.geometry_by_name(&resource_registry, name)
+		testing.expectf(t, ok, "expected geometry %s", name)
 	}
 }
 
@@ -87,7 +114,9 @@ test_luau_script_can_read_ecs_counts :: proc(t: ^testing.T) {
 
 	runtime: Runtime
 	defer destroy_runtime(&runtime)
-	result := run_source(&runtime, `
+	result := run_source(
+		&runtime,
+		`
 type Vec3 = {
 	x: number,
 	y: number,
@@ -108,7 +137,10 @@ local AutorotateComponent = scrapbot.component("autorotate", {
 
 assert(scrapbot.entity_count() == 2)
 assert(scrapbot.renderable_count() == 1)
-`, "=test", &world)
+`,
+		"=test",
+		&world,
+	)
 
 	testing.expect(t, result.ran)
 	testing.expect(t, result.err == "")

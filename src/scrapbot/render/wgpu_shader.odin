@@ -7,6 +7,7 @@ struct Render_Uniform {
 	normal_model: array<mat4x4<f32>, 64>,
 	shadow_mvp: array<mat4x4<f32>, 64>,
 	color: array<vec4<f32>, 64>,
+	emissive: array<vec4<f32>, 64>,
 	shadow_flags: array<vec4<f32>, 64>,
 	ambient: vec4<f32>,
 	directional_direction_intensity: array<vec4<f32>, 4>,
@@ -37,6 +38,7 @@ struct Vertex_Output {
 	@location(3) shadow_position: vec4<f32>,
 	@location(4) shadow_receiver: f32,
 	@location(5) uv: vec2<f32>,
+	@location(6) emissive: vec3<f32>,
 };
 
 @vertex
@@ -46,6 +48,7 @@ fn vs_main(input: Vertex_Input, @builtin(instance_index) instance_index: u32) ->
 	output.world_position = (render.model[instance_index] * vec4<f32>(input.position, 1.0)).xyz;
 	output.world_normal = normalize((render.normal_model[instance_index] * vec4<f32>(input.normal, 0.0)).xyz);
 	output.color = render.color[instance_index].rgb;
+	output.emissive = render.emissive[instance_index].rgb;
 	output.shadow_position = render.shadow_mvp[instance_index] * vec4<f32>(input.position, 1.0);
 	output.shadow_receiver = render.shadow_flags[instance_index].y;
 	output.uv = input.uv;
@@ -90,14 +93,123 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 	}
 	let texture_color = textureSample(base_color_texture, base_color_sampler, input.uv).rgb;
 	let base_color = texture_color * pow(max(input.color, vec3<f32>(0.0)), vec3<f32>(2.2));
-	let hdr = base_color * lighting;
-	let mapped = clamp(
-		(hdr * (2.51 * hdr + vec3<f32>(0.03))) /
-		(hdr * (2.43 * hdr + vec3<f32>(0.59)) + vec3<f32>(0.14)),
+	return vec4<f32>(base_color * lighting + input.emissive, 1.0);
+}
+`
+
+WGPU_POST_PROCESS_SHADER :: `
+@group(0) @binding(0) var source_texture: texture_2d<f32>;
+@group(0) @binding(1) var linear_sampler: sampler;
+
+struct Fullscreen_Output {
+	@builtin(position) position: vec4<f32>,
+	@location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn fullscreen_vs(@builtin(vertex_index) index: u32) -> Fullscreen_Output {
+	var positions = array<vec2<f32>, 3>(
+		vec2<f32>(-1.0, -1.0),
+		vec2<f32>(3.0, -1.0),
+		vec2<f32>(-1.0, 3.0),
+	);
+	var output: Fullscreen_Output;
+	output.position = vec4<f32>(positions[index], 0.0, 1.0);
+	output.uv = output.position.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
+	return output;
+}
+
+fn tent_sample(uv: vec2<f32>) -> vec3<f32> {
+	let texel = 1.0 / vec2<f32>(textureDimensions(source_texture));
+	var color = textureSample(source_texture, linear_sampler, uv).rgb * 4.0;
+	color += textureSample(source_texture, linear_sampler, uv + texel * vec2<f32>(-1.0, -1.0)).rgb;
+	color += textureSample(source_texture, linear_sampler, uv + texel * vec2<f32>( 1.0, -1.0)).rgb;
+	color += textureSample(source_texture, linear_sampler, uv + texel * vec2<f32>(-1.0,  1.0)).rgb;
+	color += textureSample(source_texture, linear_sampler, uv + texel * vec2<f32>( 1.0,  1.0)).rgb;
+	return color * 0.125;
+}
+
+@fragment
+fn bright_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
+	let color = tent_sample(input.uv);
+	let brightness = max(color.r, max(color.g, color.b));
+	let knee = 0.5;
+	let soft = clamp(brightness - 1.0 + knee, 0.0, 2.0 * knee);
+	let contribution = max(brightness - 1.0, soft * soft / (4.0 * knee + 0.0001));
+	return vec4<f32>(color * contribution / max(brightness, 0.0001), 1.0);
+}
+
+@fragment
+fn downsample_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
+	return vec4<f32>(tent_sample(input.uv), 1.0);
+}
+
+fn gaussian(uv: vec2<f32>, direction: vec2<f32>) -> vec3<f32> {
+	let texel = direction / vec2<f32>(textureDimensions(source_texture));
+	var color = textureSample(source_texture, linear_sampler, uv).rgb * 0.227027;
+	color += textureSample(source_texture, linear_sampler, uv + texel * 1.384615).rgb * 0.316216;
+	color += textureSample(source_texture, linear_sampler, uv - texel * 1.384615).rgb * 0.316216;
+	color += textureSample(source_texture, linear_sampler, uv + texel * 3.230769).rgb * 0.070270;
+	color += textureSample(source_texture, linear_sampler, uv - texel * 3.230769).rgb * 0.070270;
+	return color;
+}
+
+@fragment
+fn blur_horizontal_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
+	return vec4<f32>(gaussian(input.uv, vec2<f32>(1.0, 0.0)), 1.0);
+}
+
+@fragment
+fn blur_vertical_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
+	return vec4<f32>(gaussian(input.uv, vec2<f32>(0.0, 1.0)), 1.0);
+}
+`
+
+WGPU_COMPOSITE_SHADER :: `
+@group(0) @binding(0) var hdr_texture: texture_2d<f32>;
+@group(0) @binding(1) var linear_sampler: sampler;
+@group(0) @binding(2) var bloom_0: texture_2d<f32>;
+@group(0) @binding(3) var bloom_1: texture_2d<f32>;
+@group(0) @binding(4) var bloom_2: texture_2d<f32>;
+@group(0) @binding(5) var bloom_3: texture_2d<f32>;
+@group(0) @binding(6) var bloom_4: texture_2d<f32>;
+
+struct Fullscreen_Output {
+	@builtin(position) position: vec4<f32>,
+	@location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn fullscreen_vs(@builtin(vertex_index) index: u32) -> Fullscreen_Output {
+	var positions = array<vec2<f32>, 3>(
+		vec2<f32>(-1.0, -1.0),
+		vec2<f32>(3.0, -1.0),
+		vec2<f32>(-1.0, 3.0),
+	);
+	var output: Fullscreen_Output;
+	output.position = vec4<f32>(positions[index], 0.0, 1.0);
+	output.uv = output.position.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
+	return output;
+}
+
+fn aces(color: vec3<f32>) -> vec3<f32> {
+	return clamp(
+		(color * (2.51 * color + vec3<f32>(0.03))) /
+		(color * (2.43 * color + vec3<f32>(0.59)) + vec3<f32>(0.14)),
 		vec3<f32>(0.0),
 		vec3<f32>(1.0),
 	);
-	return vec4<f32>(mapped, 1.0);
+}
+
+@fragment
+fn composite_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
+	var bloom = textureSample(bloom_0, linear_sampler, input.uv).rgb * 0.34;
+	bloom += textureSample(bloom_1, linear_sampler, input.uv).rgb * 0.26;
+	bloom += textureSample(bloom_2, linear_sampler, input.uv).rgb * 0.20;
+	bloom += textureSample(bloom_3, linear_sampler, input.uv).rgb * 0.13;
+	bloom += textureSample(bloom_4, linear_sampler, input.uv).rgb * 0.07;
+	let hdr = textureSample(hdr_texture, linear_sampler, input.uv).rgb + bloom * 0.8;
+	return vec4<f32>(aces(hdr), 1.0);
 }
 `
 

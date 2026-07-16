@@ -1,0 +1,507 @@
+package render
+
+import "vendor:wgpu"
+
+wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
+	post_chain := wgpu.ShaderSourceWGSL {
+		chain = {sType = .ShaderSourceWGSL},
+		code = WGPU_POST_PROCESS_SHADER,
+	}
+	renderer.post_shader = wgpu.DeviceCreateShaderModule(
+		renderer.device,
+		&wgpu.ShaderModuleDescriptor{nextInChain = &post_chain, label = "Scrapbot Bloom Shader"},
+	)
+	if renderer.post_shader == nil {
+		return "failed to create bloom shader"
+	}
+
+	post_layout_entries := [?]wgpu.BindGroupLayoutEntry {
+		{
+			binding = 0,
+			visibility = {.Fragment},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{binding = 1, visibility = {.Fragment}, sampler = {type = .Filtering}},
+	}
+	renderer.post_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
+		renderer.device,
+		&wgpu.BindGroupLayoutDescriptor {
+			label = "Scrapbot Bloom Bind Group Layout",
+			entryCount = uint(len(post_layout_entries)),
+			entries = raw_data(post_layout_entries[:]),
+		},
+	)
+	if renderer.post_bind_group_layout == nil {
+		return "failed to create bloom bind group layout"
+	}
+	renderer.post_pipeline_layout = wgpu.DeviceCreatePipelineLayout(
+		renderer.device,
+		&wgpu.PipelineLayoutDescriptor {
+			label = "Scrapbot Bloom Pipeline Layout",
+			bindGroupLayoutCount = 1,
+			bindGroupLayouts = &renderer.post_bind_group_layout,
+		},
+	)
+	if renderer.post_pipeline_layout == nil {
+		return "failed to create bloom pipeline layout"
+	}
+
+	renderer.bright_pipeline = wgpu_create_fullscreen_pipeline(
+		renderer,
+		renderer.post_shader,
+		renderer.post_pipeline_layout,
+		"bright_fs",
+		.RGBA16Float,
+		"Scrapbot Bloom Extract Pipeline",
+	)
+	renderer.downsample_pipeline = wgpu_create_fullscreen_pipeline(
+		renderer,
+		renderer.post_shader,
+		renderer.post_pipeline_layout,
+		"downsample_fs",
+		.RGBA16Float,
+		"Scrapbot Bloom Downsample Pipeline",
+	)
+	renderer.blur_horizontal_pipeline = wgpu_create_fullscreen_pipeline(
+		renderer,
+		renderer.post_shader,
+		renderer.post_pipeline_layout,
+		"blur_horizontal_fs",
+		.RGBA16Float,
+		"Scrapbot Bloom Horizontal Pipeline",
+	)
+	renderer.blur_vertical_pipeline = wgpu_create_fullscreen_pipeline(
+		renderer,
+		renderer.post_shader,
+		renderer.post_pipeline_layout,
+		"blur_vertical_fs",
+		.RGBA16Float,
+		"Scrapbot Bloom Vertical Pipeline",
+	)
+	if renderer.bright_pipeline == nil ||
+	   renderer.downsample_pipeline == nil ||
+	   renderer.blur_horizontal_pipeline == nil ||
+	   renderer.blur_vertical_pipeline == nil {
+		return "failed to create bloom pipelines"
+	}
+
+	composite_chain := wgpu.ShaderSourceWGSL {
+		chain = {sType = .ShaderSourceWGSL},
+		code = WGPU_COMPOSITE_SHADER,
+	}
+	renderer.composite_shader = wgpu.DeviceCreateShaderModule(
+		renderer.device,
+		&wgpu.ShaderModuleDescriptor {
+			nextInChain = &composite_chain,
+			label = "Scrapbot HDR Composite Shader",
+		},
+	)
+	if renderer.composite_shader == nil {
+		return "failed to create HDR composite shader"
+	}
+	composite_entries: [2 + WGPU_BLOOM_LEVELS]wgpu.BindGroupLayoutEntry
+	composite_entries[0] = {
+		binding = 0,
+		visibility = {.Fragment},
+		texture = {sampleType = .Float, viewDimension = ._2D},
+	}
+	composite_entries[1] = {
+		binding = 1,
+		visibility = {.Fragment},
+		sampler = {type = .Filtering},
+	}
+	for index in 0 ..< WGPU_BLOOM_LEVELS {
+		composite_entries[index + 2] = {
+			binding = u32(index + 2),
+			visibility = {.Fragment},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		}
+	}
+	renderer.composite_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
+		renderer.device,
+		&wgpu.BindGroupLayoutDescriptor {
+			label = "Scrapbot HDR Composite Bind Group Layout",
+			entryCount = uint(len(composite_entries)),
+			entries = raw_data(composite_entries[:]),
+		},
+	)
+	if renderer.composite_bind_group_layout == nil {
+		return "failed to create HDR composite bind group layout"
+	}
+	renderer.composite_pipeline_layout = wgpu.DeviceCreatePipelineLayout(
+		renderer.device,
+		&wgpu.PipelineLayoutDescriptor {
+			label = "Scrapbot HDR Composite Pipeline Layout",
+			bindGroupLayoutCount = 1,
+			bindGroupLayouts = &renderer.composite_bind_group_layout,
+		},
+	)
+	if renderer.composite_pipeline_layout == nil {
+		return "failed to create HDR composite pipeline layout"
+	}
+	renderer.composite_pipeline = wgpu_create_fullscreen_pipeline(
+		renderer,
+		renderer.composite_shader,
+		renderer.composite_pipeline_layout,
+		"composite_fs",
+		renderer.format,
+		"Scrapbot HDR Composite Pipeline",
+	)
+	if renderer.composite_pipeline == nil {
+		return "failed to create HDR composite pipeline"
+	}
+
+	renderer.post_sampler = wgpu.DeviceCreateSampler(
+		renderer.device,
+		&wgpu.SamplerDescriptor {
+			label = "Scrapbot Post Process Sampler",
+			addressModeU = .ClampToEdge,
+			addressModeV = .ClampToEdge,
+			addressModeW = .ClampToEdge,
+			magFilter = .Linear,
+			minFilter = .Linear,
+			mipmapFilter = .Linear,
+			maxAnisotropy = 1,
+		},
+	)
+	if renderer.post_sampler == nil {
+		return "failed to create post-process sampler"
+	}
+	return ""
+}
+
+wgpu_create_fullscreen_pipeline :: proc(
+	renderer: ^WGPU_Renderer,
+	shader: wgpu.ShaderModule,
+	layout: wgpu.PipelineLayout,
+	fragment_entry: string,
+	format: wgpu.TextureFormat,
+	label: string,
+) -> wgpu.RenderPipeline {
+	target := wgpu.ColorTargetState {
+		format = format,
+		writeMask = wgpu.ColorWriteMaskFlags_All,
+	}
+	fragment := wgpu.FragmentState {
+		module = shader,
+		entryPoint = fragment_entry,
+		targetCount = 1,
+		targets = &target,
+	}
+	return wgpu.DeviceCreateRenderPipeline(
+		renderer.device,
+		&wgpu.RenderPipelineDescriptor {
+			label = label,
+			layout = layout,
+			vertex = {module = shader, entryPoint = "fullscreen_vs"},
+			primitive = {topology = .TriangleList, frontFace = .CCW, cullMode = .None},
+			multisample = {count = 1, mask = 0xFFFF_FFFF},
+			fragment = &fragment,
+		},
+	)
+}
+
+wgpu_release_post_targets :: proc(renderer: ^WGPU_Renderer) {
+	if renderer.composite_bind_group != nil {
+		wgpu.BindGroupRelease(renderer.composite_bind_group)
+		renderer.composite_bind_group = nil
+	}
+	for index in 0 ..< WGPU_BLOOM_LEVELS {
+		if renderer.downsample_bind_groups[index] != nil {
+			wgpu.BindGroupRelease(renderer.downsample_bind_groups[index])
+			renderer.downsample_bind_groups[index] = nil
+		}
+		if renderer.blur_horizontal_bind_groups[index] != nil {
+			wgpu.BindGroupRelease(renderer.blur_horizontal_bind_groups[index])
+			renderer.blur_horizontal_bind_groups[index] = nil
+		}
+		if renderer.blur_vertical_bind_groups[index] != nil {
+			wgpu.BindGroupRelease(renderer.blur_vertical_bind_groups[index])
+			renderer.blur_vertical_bind_groups[index] = nil
+		}
+		if renderer.bloom_views[index] != nil {
+			wgpu.TextureViewRelease(renderer.bloom_views[index])
+			renderer.bloom_views[index] = nil
+		}
+		if renderer.bloom_textures[index] != nil {
+			wgpu.TextureRelease(renderer.bloom_textures[index])
+			renderer.bloom_textures[index] = nil
+		}
+		if renderer.bloom_scratch_views[index] != nil {
+			wgpu.TextureViewRelease(renderer.bloom_scratch_views[index])
+			renderer.bloom_scratch_views[index] = nil
+		}
+		if renderer.bloom_scratch_textures[index] != nil {
+			wgpu.TextureRelease(renderer.bloom_scratch_textures[index])
+			renderer.bloom_scratch_textures[index] = nil
+		}
+	}
+	if renderer.hdr_view != nil {
+		wgpu.TextureViewRelease(renderer.hdr_view)
+		renderer.hdr_view = nil
+	}
+	if renderer.hdr_texture != nil {
+		wgpu.TextureRelease(renderer.hdr_texture)
+		renderer.hdr_texture = nil
+	}
+	renderer.post_width = 0
+	renderer.post_height = 0
+}
+
+wgpu_release_post_process :: proc(renderer: ^WGPU_Renderer) {
+	wgpu_release_post_targets(renderer)
+	if renderer.post_sampler != nil {
+		wgpu.SamplerRelease(renderer.post_sampler)
+	}
+	if renderer.composite_pipeline != nil {
+		wgpu.RenderPipelineRelease(renderer.composite_pipeline)
+	}
+	if renderer.composite_pipeline_layout != nil {
+		wgpu.PipelineLayoutRelease(renderer.composite_pipeline_layout)
+	}
+	if renderer.composite_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.composite_bind_group_layout)
+	}
+	if renderer.composite_shader != nil {
+		wgpu.ShaderModuleRelease(renderer.composite_shader)
+	}
+	if renderer.bright_pipeline != nil {
+		wgpu.RenderPipelineRelease(renderer.bright_pipeline)
+	}
+	if renderer.downsample_pipeline != nil {
+		wgpu.RenderPipelineRelease(renderer.downsample_pipeline)
+	}
+	if renderer.blur_horizontal_pipeline != nil {
+		wgpu.RenderPipelineRelease(renderer.blur_horizontal_pipeline)
+	}
+	if renderer.blur_vertical_pipeline != nil {
+		wgpu.RenderPipelineRelease(renderer.blur_vertical_pipeline)
+	}
+	if renderer.post_pipeline_layout != nil {
+		wgpu.PipelineLayoutRelease(renderer.post_pipeline_layout)
+	}
+	if renderer.post_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.post_bind_group_layout)
+	}
+	if renderer.post_shader != nil {
+		wgpu.ShaderModuleRelease(renderer.post_shader)
+	}
+}
+
+wgpu_ensure_post_targets :: proc(renderer: ^WGPU_Renderer, width, height: u32) -> string {
+	if renderer.post_width == width && renderer.post_height == height && renderer.hdr_view != nil {
+		return ""
+	}
+	wgpu_release_post_targets(renderer)
+	renderer.hdr_texture = wgpu.DeviceCreateTexture(
+		renderer.device,
+		&wgpu.TextureDescriptor {
+			label = "Scrapbot HDR Scene Texture",
+			usage = {.RenderAttachment, .TextureBinding},
+			dimension = ._2D,
+			size = {width = width, height = height, depthOrArrayLayers = 1},
+			format = .RGBA16Float,
+			mipLevelCount = 1,
+			sampleCount = 1,
+		},
+	)
+	if renderer.hdr_texture == nil {
+		return "failed to create HDR scene texture"
+	}
+	renderer.hdr_view = wgpu.TextureCreateView(renderer.hdr_texture)
+	if renderer.hdr_view == nil {
+		return "failed to create HDR scene texture view"
+	}
+
+	for index in 0 ..< WGPU_BLOOM_LEVELS {
+		level_width := max(u32(1), width >> u32(index + 1))
+		level_height := max(u32(1), height >> u32(index + 1))
+		for scratch in 0 ..< 2 {
+			texture := wgpu.DeviceCreateTexture(
+				renderer.device,
+				&wgpu.TextureDescriptor {
+					label = "Scrapbot Bloom Texture",
+					usage = {.RenderAttachment, .TextureBinding},
+					dimension = ._2D,
+					size = {width = level_width, height = level_height, depthOrArrayLayers = 1},
+					format = .RGBA16Float,
+					mipLevelCount = 1,
+					sampleCount = 1,
+				},
+			)
+			if texture == nil {
+				return "failed to create bloom texture"
+			}
+			view := wgpu.TextureCreateView(texture)
+			if view == nil {
+				wgpu.TextureRelease(texture)
+				return "failed to create bloom texture view"
+			}
+			if scratch == 0 {
+				renderer.bloom_textures[index] = texture
+				renderer.bloom_views[index] = view
+			} else {
+				renderer.bloom_scratch_textures[index] = texture
+				renderer.bloom_scratch_views[index] = view
+			}
+		}
+	}
+
+	for index in 0 ..< WGPU_BLOOM_LEVELS {
+		source := renderer.hdr_view if index == 0 else renderer.bloom_scratch_views[index - 1]
+		renderer.downsample_bind_groups[index] = wgpu_create_post_bind_group(
+			renderer,
+			source,
+			"Scrapbot Bloom Downsample Bind Group",
+		)
+		renderer.blur_horizontal_bind_groups[index] = wgpu_create_post_bind_group(
+			renderer,
+			renderer.bloom_scratch_views[index],
+			"Scrapbot Bloom Horizontal Bind Group",
+		)
+		renderer.blur_vertical_bind_groups[index] = wgpu_create_post_bind_group(
+			renderer,
+			renderer.bloom_views[index],
+			"Scrapbot Bloom Vertical Bind Group",
+		)
+		if renderer.downsample_bind_groups[index] == nil ||
+		   renderer.blur_horizontal_bind_groups[index] == nil ||
+		   renderer.blur_vertical_bind_groups[index] == nil {
+			return "failed to create bloom bind groups"
+		}
+	}
+	composite_entries: [2 + WGPU_BLOOM_LEVELS]wgpu.BindGroupEntry
+	composite_entries[0] = {
+		binding = 0,
+		textureView = renderer.hdr_view,
+	}
+	composite_entries[1] = {
+		binding = 1,
+		sampler = renderer.post_sampler,
+	}
+	for index in 0 ..< WGPU_BLOOM_LEVELS {
+		composite_entries[index + 2] = {
+			binding = u32(index + 2),
+			textureView = renderer.bloom_scratch_views[index],
+		}
+	}
+	renderer.composite_bind_group = wgpu.DeviceCreateBindGroup(
+		renderer.device,
+		&wgpu.BindGroupDescriptor {
+			label = "Scrapbot HDR Composite Bind Group",
+			layout = renderer.composite_bind_group_layout,
+			entryCount = uint(len(composite_entries)),
+			entries = raw_data(composite_entries[:]),
+		},
+	)
+	if renderer.composite_bind_group == nil {
+		return "failed to create HDR composite bind group"
+	}
+	renderer.post_width = width
+	renderer.post_height = height
+	return ""
+}
+
+wgpu_create_post_bind_group :: proc(
+	renderer: ^WGPU_Renderer,
+	view: wgpu.TextureView,
+	label: string,
+) -> wgpu.BindGroup {
+	entries := [?]wgpu.BindGroupEntry {
+		{binding = 0, textureView = view},
+		{binding = 1, sampler = renderer.post_sampler},
+	}
+	return wgpu.DeviceCreateBindGroup(
+		renderer.device,
+		&wgpu.BindGroupDescriptor {
+			label = label,
+			layout = renderer.post_bind_group_layout,
+			entryCount = uint(len(entries)),
+			entries = raw_data(entries[:]),
+		},
+	)
+}
+
+wgpu_encode_fullscreen_pass :: proc(
+	encoder: wgpu.CommandEncoder,
+	view: wgpu.TextureView,
+	pipeline: wgpu.RenderPipeline,
+	bind_group: wgpu.BindGroup,
+	label: string,
+) -> string {
+	attachment := wgpu.RenderPassColorAttachment {
+		view = view,
+		depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
+		loadOp = .Clear,
+		storeOp = .Store,
+		clearValue = {},
+	}
+	pass := wgpu.CommandEncoderBeginRenderPass(
+		encoder,
+		&wgpu.RenderPassDescriptor {
+			label = label,
+			colorAttachmentCount = 1,
+			colorAttachments = &attachment,
+		},
+	)
+	if pass == nil {
+		return "failed to begin post-process pass"
+	}
+	wgpu.RenderPassEncoderSetPipeline(pass, pipeline)
+	wgpu.RenderPassEncoderSetBindGroup(pass, 0, bind_group)
+	wgpu.RenderPassEncoderDraw(pass, 3, 1, 0, 0)
+	wgpu.RenderPassEncoderEnd(pass)
+	wgpu.RenderPassEncoderRelease(pass)
+	return ""
+}
+
+wgpu_encode_bloom_and_composite :: proc(
+	renderer: ^WGPU_Renderer,
+	encoder: wgpu.CommandEncoder,
+	output_view: wgpu.TextureView,
+	width, height: u32,
+) -> string {
+	if err := wgpu_ensure_post_targets(renderer, width, height); err != "" {
+		return err
+	}
+	for index in 0 ..< WGPU_BLOOM_LEVELS {
+		downsample_pipeline := renderer.downsample_pipeline
+		if index == 0 {
+			downsample_pipeline = renderer.bright_pipeline
+		}
+		if err := wgpu_encode_fullscreen_pass(
+			encoder,
+			renderer.bloom_scratch_views[index],
+			downsample_pipeline,
+			renderer.downsample_bind_groups[index],
+			"Scrapbot Bloom Downsample Pass",
+		); err != "" {
+			return err
+		}
+		if err := wgpu_encode_fullscreen_pass(
+			encoder,
+			renderer.bloom_views[index],
+			renderer.blur_horizontal_pipeline,
+			renderer.blur_horizontal_bind_groups[index],
+			"Scrapbot Bloom Horizontal Pass",
+		); err != "" {
+			return err
+		}
+		if err := wgpu_encode_fullscreen_pass(
+			encoder,
+			renderer.bloom_scratch_views[index],
+			renderer.blur_vertical_pipeline,
+			renderer.blur_vertical_bind_groups[index],
+			"Scrapbot Bloom Vertical Pass",
+		); err != "" {
+			return err
+		}
+	}
+	return wgpu_encode_fullscreen_pass(
+		encoder,
+		output_view,
+		renderer.composite_pipeline,
+		renderer.composite_bind_group,
+		"Scrapbot HDR Composite Pass",
+	)
+}

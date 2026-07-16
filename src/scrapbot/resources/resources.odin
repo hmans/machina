@@ -41,6 +41,7 @@ Geometry_Desc :: struct {
 
 Material_Desc :: struct {
 	base_color: Vec4,
+	emissive: Vec3,
 	texture_pixels: []u8,
 	texture_width: u32,
 	texture_height: u32,
@@ -326,6 +327,12 @@ register_material :: proc(
 	ensure_allocator(registry)
 	if name == "" { return {}, "material name must not be empty" }
 	if !finite4(desc.base_color) { return {}, "material base color must be finite" }
+	if !finite3(desc.emissive) ||
+	   desc.emissive.x < 0 ||
+	   desc.emissive.y < 0 ||
+	   desc.emissive.z < 0 {
+		return {}, "material emissive color must be finite and non-negative"
+	}
 	if len(desc.texture_pixels) > 0 {
 		if desc.texture_width == 0 ||
 		   desc.texture_height == 0 { return {}, "material texture dimensions must be positive" }

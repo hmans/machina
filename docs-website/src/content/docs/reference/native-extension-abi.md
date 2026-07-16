@@ -104,6 +104,7 @@ The context includes:
 - `get_vec3_field` and `set_vec3_field` for schema-backed custom components;
 - `get_ui_component` and `set_ui_component` for complete public ECS UI value and style payloads;
 - full indexed geometry and shared material registration;
+- linear HDR emission through the material descriptor's `emissive` vector;
 - deferred lifecycle helpers for resource-backed renderable spawns, public UI spawns, despawn, transform, schema-backed payloads, UI payloads, and removal.
 
 Return `nil` on success or a static error string on failure. The host enforces declared access through the callback context.

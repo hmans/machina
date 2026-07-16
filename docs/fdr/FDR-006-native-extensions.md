@@ -1,7 +1,7 @@
 # FDR-006: Native extensions
 
 **Status:** Active
-**Last reviewed:** 2026-07-15
+**Last reviewed:** 2026-07-16
 
 ## Overview
 
@@ -18,7 +18,7 @@ Native extensions let project code add compiled engine/library behavior incremen
 - `build/extensions/.scrapbot-extensions` records the active output files for the latest build.
 - Each extension must export `scrapbot_extension_register`.
 - The register function receives a lockstep C-compatible `extension_api.API`.
-- Odin extensions can import `scrapbot:extension`, which wraps the raw ABI with helpers for components, systems, full geometry, generated cube/plane geometry, shared materials, public ECS UI, queries, and deferred lifecycle commands.
+- Odin extensions can import `scrapbot:extension`, which wraps the raw ABI with helpers for components, systems, full geometry, generated cube/plane geometry, shared lit and emissive HDR materials, public ECS UI, queries, and deferred lifecycle commands.
 - Project-local system callbacks use ordinary contextless Odin procedures; the helper owns stable callback bindings and hides the C-compatible trampoline.
 - Odin extension authors can define `Component` and field descriptors once, then use those descriptors for schema registration, scheduler access, queries, and field reads/writes.
 - `scrapbot.registry(ctx)` returns a small registration accumulator that records the first registration error so extension setup code can remain linear and return `scrapbot.err(&reg)` at the end.
@@ -82,8 +82,8 @@ Native extensions let project code add compiled engine/library behavior incremen
 
 ## Related
 
-- **ADRs:** ADR-008, ADR-012, ADR-025
-- **FDRs:** FDR-004, FDR-005, FDR-007
+- **ADRs:** ADR-008, ADR-010, ADR-012, ADR-025, ADR-029
+- **FDRs:** FDR-003, FDR-004, FDR-005, FDR-007
 
 ## Open Questions
 

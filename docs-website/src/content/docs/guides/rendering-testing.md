@@ -6,9 +6,17 @@ description: Run the null and WebGPU backends, smoke-test projects, and verify g
 Scrapbot has two rendering paths today:
 
 - `null`: headless renderer for fast smoke tests.
-- `wgpu`: SDL3 plus `wgpu-native` for indexed geometry, shared base-color and PNG-textured materials, ECS lighting, directional shadows, and instanced draw batching.
+- `wgpu`: SDL3 plus `wgpu-native` for indexed geometry, shared base-color, emissive HDR, and PNG-textured materials, ECS lighting, directional shadows, bloom, tone mapping, and instanced draw batching.
 
-The WGPU path decodes material base colors to linear space, accumulates light there, tone maps the HDR result, and presents through an sRGB target. A scene with no ambient, directional, or point lights therefore renders its geometry black.
+The WGPU path decodes material base colors to linear space and accumulates lighting plus material emission into an `RGBA16Float` scene target. Five successively smaller bright-pass levels produce broad bloom before one ACES-style tone-map pass presents through an sRGB target. Project UI, gizmos, and editor chrome render afterward, so world bloom never softens text or controls. A lit scene with no ambient, directional, point, or emissive contribution therefore renders its geometry black.
+
+Use an emissive material when a visible surface should glow independently of lighting:
+
+```luau
+local neon = scrapbot.material.emissive("neon", 0.1, 0.5, 1.0, 8.0)
+```
+
+The non-negative RGB values define hue and `intensity` scales the emitted linear radiance. HDR values are intentionally not clamped to display white.
 
 Screen-space ECS UI is reconciled after engine/project systems and painted as a blended overlay after world geometry. Visible windows feed platform pointer and keyboard state into the retained interaction system. Headless runs normally provide no interaction, but a semantic UI diagnostic script can drive the same reconciled controls deterministically without OS automation. `examples/ui-showcase` exercises the box model, hidden subtrees, nested horizontal and vertical stacks, titled panels, equal-width multi-column tables, selectable lists, progress indicators, smooth clipped scrolling, SDF-rounded styling, buttons, numeric and text inputs, checkboxes, and the embedded Inter typeface rendered from a precomputed MTSDF atlas. See [ECS UI](/guides/ecs-ui/) for the shared project/editor component contract.
 

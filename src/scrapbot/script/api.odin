@@ -108,7 +108,7 @@ register_scrapbot_api :: proc(L: Lua_State) {
 	push_registered_component_handle_by_name(L, "scrapbot.material")
 	lua_setfield(L, -2, "material_component")
 
-	lua_createtable(L, 0, 3)
+	lua_createtable(L, 0, 4)
 	lua_pushcclosurek(
 		L,
 		scrapbot_geometry_create,
@@ -174,6 +174,13 @@ register_scrapbot_api :: proc(L: Lua_State) {
 		0,
 		nil,
 	); lua_setfield(L, -2, "unlit")
+	lua_pushcclosurek(
+		L,
+		scrapbot_material_emissive,
+		"scrapbot.material.emissive",
+		0,
+		nil,
+	); lua_setfield(L, -2, "emissive")
 	lua_pushcclosurek(
 		L,
 		scrapbot_material_textured,
@@ -443,6 +450,40 @@ scrapbot_material_unlit :: proc "c" (L: Lua_State) -> c.int {
 	ecs.mark_all_render_entities_dirty(runtime.world)
 	ecs.reconcile_render_instances(runtime.world, runtime.resource_registry)
 	push_resource_handle(L, "material", handle.index, handle.generation); return 1
+}
+
+scrapbot_material_emissive :: proc "c" (L: Lua_State) -> c.int {
+	context = base_runtime.default_context()
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	name, ok := luau_required_string(L, 1)
+	if runtime == nil || runtime.resource_registry == nil || !ok {
+		return luau_push_error(L, "material.emissive expects a resource name")
+	}
+	values := [4]f32{1, 1, 1, 4}
+	for i in 0 ..< 4 {
+		if lua_gettop(L) >= c.int(i + 2) {
+			is_number: c.int
+			values[i] = f32(lua_tonumberx(L, c.int(i + 2), &is_number))
+			if is_number == 0 {
+				return luau_push_error(L, "material emissive values must be numbers")
+			}
+		}
+	}
+	handle, err := resources.register_material(
+		runtime.resource_registry,
+		name,
+		{
+			base_color = {0, 0, 0, 1},
+			emissive = {values[0] * values[3], values[1] * values[3], values[2] * values[3]},
+		},
+	)
+	if err != "" {
+		return luau_push_error(L, err)
+	}
+	ecs.mark_all_render_entities_dirty(runtime.world)
+	ecs.reconcile_render_instances(runtime.world, runtime.resource_registry)
+	push_resource_handle(L, "material", handle.index, handle.generation)
+	return 1
 }
 
 scrapbot_material_textured :: proc "c" (L: Lua_State) -> c.int {

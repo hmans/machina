@@ -196,6 +196,9 @@ wgpu_init_renderer :: proc(
 	if err = wgpu_create_render_pipeline(&renderer); err != "" {
 		return renderer, err
 	}
+	if err = wgpu_create_post_process_pipelines(&renderer); err != "" {
+		return renderer, err
+	}
 	if ui_state !=
 	   nil { if err = wgpu_create_ui_pipeline(&renderer, ui_state); err != "" { return renderer, err } }
 
@@ -209,6 +212,7 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	if renderer.pipeline != nil {
 		wgpu.RenderPipelineRelease(renderer.pipeline)
 	}
+	wgpu_release_post_process(renderer)
 	if renderer.ui_pipeline != nil { wgpu.RenderPipelineRelease(renderer.ui_pipeline) }
 	if renderer.ui_shader != nil { wgpu.ShaderModuleRelease(renderer.ui_shader) }
 	if renderer.ui_bind_group != nil { wgpu.BindGroupRelease(renderer.ui_bind_group) }
@@ -492,7 +496,7 @@ wgpu_create_render_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 		attributes = raw_data(vertex_attributes[:]),
 	}
 	color_target := wgpu.ColorTargetState {
-		format = renderer.format,
+		format = .RGBA16Float,
 		writeMask = wgpu.ColorWriteMaskFlags_All,
 	}
 	fragment_state := wgpu.FragmentState {

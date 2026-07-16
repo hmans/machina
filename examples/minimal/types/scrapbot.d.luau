@@ -44,6 +44,7 @@ export type Scrapbot = {
 	material: {
 		lit: (name: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
 		unlit: (name: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
+		emissive: (name: string, red: number?, green: number?, blue: number?, intensity: number?) -> ScrapbotMaterialResource,
 		textured: (name: string, asset_path: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
 	},
 	system: (...any) -> (),

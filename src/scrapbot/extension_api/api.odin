@@ -66,6 +66,7 @@ Geometry_Desc :: struct {
 }
 Material_Desc :: struct {
 	base_color: Vec4,
+	emissive: Vec3,
 }
 
 Transform :: struct {

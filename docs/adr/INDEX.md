@@ -30,3 +30,4 @@
 | [ADR-026](ADR-026-separate-authoring-persistence-from-runtime-playback.md) | Separate authoring persistence from runtime playback | 2026-07-15 |
 | [ADR-027](ADR-027-use-authoring-transactions-for-editor-changes.md) | Use authoring transactions for editor changes | 2026-07-15 |
 | [ADR-028](ADR-028-persist-structural-authoring-by-uuid-scoped-entity-blocks.md) | Persist structural authoring by UUID-scoped entity blocks | 2026-07-15 |
+| [ADR-029](ADR-029-postprocess-hdr-world-before-ui.md) | Postprocess the HDR world before UI composition | 2026-07-16 |

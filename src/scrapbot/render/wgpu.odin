@@ -19,6 +19,7 @@ Render_List :: shared.Render_List
 Mat4 :: [16]f32
 
 WGPU_MAX_INSTANCES :: 64
+WGPU_BLOOM_LEVELS :: 5
 
 WGPU_Render_Uniform :: struct {
 	mvp: [WGPU_MAX_INSTANCES]Mat4,
@@ -26,6 +27,7 @@ WGPU_Render_Uniform :: struct {
 	normal_model: [WGPU_MAX_INSTANCES]Mat4,
 	shadow_mvp: [WGPU_MAX_INSTANCES]Mat4,
 	color: [WGPU_MAX_INSTANCES][4]f32,
+	emissive: [WGPU_MAX_INSTANCES][4]f32,
 	shadow_flags: [WGPU_MAX_INSTANCES][4]f32,
 	ambient: [4]f32,
 	directional_direction_intensity: [shared.MAX_DIRECTIONAL_LIGHTS][4]f32,
@@ -118,6 +120,30 @@ WGPU_Renderer :: struct {
 	shader: wgpu.ShaderModule,
 	pipeline: wgpu.RenderPipeline,
 	shadow_pipeline: wgpu.RenderPipeline,
+	post_shader: wgpu.ShaderModule,
+	composite_shader: wgpu.ShaderModule,
+	post_bind_group_layout: wgpu.BindGroupLayout,
+	post_pipeline_layout: wgpu.PipelineLayout,
+	bright_pipeline: wgpu.RenderPipeline,
+	downsample_pipeline: wgpu.RenderPipeline,
+	blur_horizontal_pipeline: wgpu.RenderPipeline,
+	blur_vertical_pipeline: wgpu.RenderPipeline,
+	composite_bind_group_layout: wgpu.BindGroupLayout,
+	composite_pipeline_layout: wgpu.PipelineLayout,
+	composite_pipeline: wgpu.RenderPipeline,
+	post_sampler: wgpu.Sampler,
+	hdr_texture: wgpu.Texture,
+	hdr_view: wgpu.TextureView,
+	bloom_textures: [WGPU_BLOOM_LEVELS]wgpu.Texture,
+	bloom_views: [WGPU_BLOOM_LEVELS]wgpu.TextureView,
+	bloom_scratch_textures: [WGPU_BLOOM_LEVELS]wgpu.Texture,
+	bloom_scratch_views: [WGPU_BLOOM_LEVELS]wgpu.TextureView,
+	downsample_bind_groups: [WGPU_BLOOM_LEVELS]wgpu.BindGroup,
+	blur_horizontal_bind_groups: [WGPU_BLOOM_LEVELS]wgpu.BindGroup,
+	blur_vertical_bind_groups: [WGPU_BLOOM_LEVELS]wgpu.BindGroup,
+	composite_bind_group: wgpu.BindGroup,
+	post_width: u32,
+	post_height: u32,
 	geometry_cache: [64]WGPU_Geometry_Cache,
 	geometry_cache_count: int,
 	material_cache: [64]WGPU_Material_Cache,
@@ -342,6 +368,8 @@ wgpu_prepare_draw_batches :: proc(
 			}
 			color := material.desc.base_color
 			uniform.color[instance_count] = {color.x, color.y, color.z, color.w}
+			emissive := material.desc.emissive
+			uniform.emissive[instance_count] = {emissive.x, emissive.y, emissive.z, 0}
 			instance_count += 1; batch.instance_count += 1
 		}
 		if batch.instance_count > 0 { batch_count += 1 }
@@ -414,8 +442,11 @@ wgpu_encode_render_pass :: proc(
 	target_width, target_height: u32,
 ) -> string {
 	if err := wgpu_sync_ui_fonts(renderer, registry); err != "" { return err }
+	if err := wgpu_ensure_post_targets(renderer, target_width, target_height); err != "" {
+		return err
+	}
 	color_attachment := wgpu.RenderPassColorAttachment {
-		view = color_view,
+		view = renderer.hdr_view,
 		depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
 		loadOp = .Clear,
 		storeOp = .Store,
@@ -499,6 +530,15 @@ wgpu_encode_render_pass :: proc(
 		}
 	}
 	wgpu.RenderPassEncoderEnd(render_pass)
+	if err := wgpu_encode_bloom_and_composite(
+		renderer,
+		encoder,
+		color_view,
+		target_width,
+		target_height,
+	); err != "" {
+		return err
+	}
 	if ui_state != nil && ui_state.paint_count > 0 {
 		ui_color_attachment := wgpu.RenderPassColorAttachment {
 			view = color_view,

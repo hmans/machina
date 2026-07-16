@@ -69,24 +69,71 @@ test_generated_primitives_reject_invalid_tessellation :: proc(t: ^testing.T) {
 @(test)
 test_textured_material_loads_project_png :: proc(t: ^testing.T) {
 	registry: Registry; defer destroy_registry(&registry)
-	handle, err := register_textured_material(&registry,"examples/minimal","checker","assets/checker.png",{1,1,1,1})
-	testing.expectf(t,err=="","failed to load texture fixture: %s",err)
-	material, ok := get_material(&registry,handle)
-	testing.expect(t,ok)
+	handle, err := register_textured_material(
+		&registry,
+		"examples/minimal",
+		"checker",
+		"assets/checker.png",
+		{1, 1, 1, 1},
+	)
+	testing.expectf(t, err == "", "failed to load texture fixture: %s", err)
+	material, ok := get_material(&registry, handle)
+	testing.expect(t, ok)
 	if ok {
-		testing.expect(t,material.desc.texture_width==8)
-		testing.expect(t,material.desc.texture_height==8)
-		testing.expect(t,len(material.desc.texture_pixels)==8*8*4)
+		testing.expect(t, material.desc.texture_width == 8)
+		testing.expect(t, material.desc.texture_height == 8)
+		testing.expect(t, len(material.desc.texture_pixels) == 8 * 8 * 4)
 	}
 }
 
 @(test)
 test_texture_assets_are_confined_to_assets_directory :: proc(t: ^testing.T) {
-	testing.expect(t,valid_asset_path("assets/checker.png"))
-	testing.expect(t,!valid_asset_path("checker.png"))
-	testing.expect(t,!valid_asset_path("assets/checker.jpg"))
-	testing.expect(t,!valid_asset_path("assets/../project.toml"))
+	testing.expect(t, valid_asset_path("assets/checker.png"))
+	testing.expect(t, !valid_asset_path("checker.png"))
+	testing.expect(t, !valid_asset_path("assets/checker.jpg"))
+	testing.expect(t, !valid_asset_path("assets/../project.toml"))
 	registry: Registry; defer destroy_registry(&registry)
-	_, err := register_textured_material(&registry,"examples/minimal","bad","assets/missing.png",{1,1,1,1})
-	testing.expect(t,err!="")
+	_, err := register_textured_material(
+		&registry,
+		"examples/minimal",
+		"bad",
+		"assets/missing.png",
+		{1, 1, 1, 1},
+	)
+	testing.expect(t, err != "")
+}
+
+@(test)
+test_materials_preserve_unbounded_hdr_emission :: proc(t: ^testing.T) {
+	registry: Registry
+	defer destroy_registry(&registry)
+	handle, err := register_material(
+		&registry,
+		"neon",
+		{base_color = {0.1, 0.2, 0.3, 1}, emissive = {12, 3, 0.5}},
+	)
+	testing.expect(t, err == "")
+	material, ok := get_material(&registry, handle)
+	testing.expect(t, ok)
+	if ok {
+		testing.expect_value(t, material.desc.emissive, Vec3{12, 3, 0.5})
+	}
+}
+
+@(test)
+test_materials_reject_non_finite_emission :: proc(t: ^testing.T) {
+	registry: Registry
+	defer destroy_registry(&registry)
+	_, err := register_material(
+		&registry,
+		"invalid-neon",
+		{base_color = {1, 1, 1, 1}, emissive = {transmute(f32)u32(0x7f80_0000), 0, 0}},
+	)
+	testing.expect(t, err != "")
+	_, negative_err := register_material(
+		&registry,
+		"negative-neon",
+		{base_color = {1, 1, 1, 1}, emissive = {-1, 0, 0}},
+	)
+	testing.expect(t, negative_err != "")
 }

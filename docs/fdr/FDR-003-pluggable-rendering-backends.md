@@ -1,7 +1,7 @@
 # FDR-003: Pluggable rendering backends
 
 **Status:** Active
-**Last reviewed:** 2026-07-13
+**Last reviewed:** 2026-07-16
 
 ## Overview
 
@@ -12,10 +12,11 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 - The runtime can submit frame data through a renderer boundary.
 - The current implementation supports the null backend.
 - Users can select a renderer backend from the CLI.
-- The `wgpu` backend renders full indexed geometry with shared base-color and PNG-textured materials, a perspective camera, and ambient, directional, and point lighting.
+- The `wgpu` backend renders full indexed geometry with shared base-color, emissive HDR, and PNG-textured materials, a perspective camera, and ambient, directional, and point lighting.
 - The first directional light produces a fixed-resolution shadow map. Only entities with `ShadowCaster` contribute depth, and only entities with `ShadowReceiver` sample it.
 - Lights are ECS components extracted into a bounded backend-neutral frame packet: accumulated ambient light, four directional lights, and sixteen point lights.
-- Base colors are decoded to linear space before lighting, high-dynamic-range light accumulation is tone mapped, and WGPU renders to an sRGB target.
+- Base colors are decoded to linear space before lighting. Emission and lighting accumulate in a floating-point HDR target, bright energy feeds a five-level bloom chain, and the combined world is tone mapped once into an sRGB target.
+- Project UI, editor gizmos, and editor chrome render after world postprocessing and do not bloom.
 - Eligible entities receive internal render-instance components automatically.
 - Shared geometry/material pairs use one instanced draw batch, and geometry and material texture uploads are cached by handle and version.
 - The `wgpu` backend can also render a losslessly compressed headless final-frame PNG with `--framegrab`.
@@ -91,16 +92,22 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 **Why:** Projects should control shadow cost and semantics independently for occluders and shaded surfaces without coupling them to geometry or material ownership.
 **Tradeoff:** The initial fixed orthographic shadow volume and single map do not cover point lights, multiple shadowed directional lights, cascades, or large scenes.
 
-## Related
-
-- **ADRs:** ADR-003, ADR-005, ADR-010, ADR-011
-- **FDRs:** FDR-001, FDR-002, FDR-008
-
 ### 11. Keep decoded images in resource ownership and GPU objects in the backend
 
 **Decision:** Material resources own decoded RGBA pixels and dimensions, while WGPU lazily creates versioned textures and bind groups.
 **Why:** Project validation can decode assets without a GPU, hot reload can replace a named material while preserving handles, and renderer-specific objects stay out of ECS and shared resources.
 **Tradeoff:** The first slice retains decoded pixels after upload and has no streaming, compression, mipmap generation, or memory budget.
+
+### 12. Postprocess the HDR world before UI
+
+**Decision:** Render the world into a floating-point target, extract and blur five successively smaller bloom levels, composite them with the HDR scene, tone map once, and draw UI afterward.
+**Why:** Bloom requires values above display white, broad halos need multiple spatial scales, and text must remain crisp. See ADR-029.
+**Tradeoff:** The current threshold, bloom weights, and exposure are fixed engine defaults, and the backend performs sixteen fullscreen passes per frame.
+
+## Related
+
+- **ADRs:** ADR-003, ADR-005, ADR-010, ADR-011, ADR-029
+- **FDRs:** FDR-001, FDR-002, FDR-008
 
 ## Open Questions
 

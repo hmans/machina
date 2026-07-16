@@ -192,6 +192,7 @@ payloads := [?]scrapbot.Component_Payload {payload}
 cube := scrapbot.cube_geometry(2)
 geometry := scrapbot.register_generated_geometry(&reg, "cube", &cube)
 material := scrapbot.material(&reg, "orange", {0.95, 0.38, 0.18, 1})
+neon := scrapbot.emissive_material(&reg, "neon", {2, 0.2, 6})
 spawn := scrapbot.spawn_options("Native Spawned", &spawn_transform, &geometry, &material, payloads[:])
 if err := scrapbot.spawn(ctx, &spawn); err != nil {
 	return err
