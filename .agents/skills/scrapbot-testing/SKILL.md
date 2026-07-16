@@ -101,6 +101,8 @@ Use `tests/fixtures/ui/playback-authoring.json` when changing Play, Step, Stop, 
 
 Use `tests/fixtures/ui/authoring-history.json` when changing Undo, Redo, Save, Revert, savepoint-based dirty state, or disk-scene restoration. It edits a scene Transform, traverses away from and back to the clean history cursor, reverts from disk, asserts the original value, and captures the complete transport group.
 
+Use `tests/fixtures/ui/editor-shortcuts.json` when changing editor visibility or Play/Stop and Pause/Step command shortcuts. It drives the same editor keyboard input used by the platform, verifies every transport transition, closes and reopens the shell, and captures the transport group.
+
 Use `tests/fixtures/ui/system-profiler.json` when changing system registration, provenance, timing publication, or the editor profiler. It asserts the complete engine profiler topology in the ECS UI and captures the Systems panel.
 
 Use `tests/fixtures/ui/ui-performance.json` for repeatable editor-UI performance comparisons. It selects the component-heavy Icosphere inspector, waits 80 frames for the rolling profiler to settle, and captures the Systems panel. Pair it with `--ui-dump`, then read `__scrapbot_editor_system_time_2` from the dump for the `scrapbot.ui` average. Treat timings as same-machine before/after evidence; the deterministic hierarchy tests enforce the underlying retained traversal contract in CI.

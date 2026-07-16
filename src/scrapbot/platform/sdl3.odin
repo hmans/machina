@@ -10,7 +10,6 @@ import sdl "vendor:sdl3"
 runtime_window: ^sdl.Window
 runtime_window_ready: bool
 runtime_window_hidden: bool
-runtime_editor_toggle_requested: bool
 runtime_editor_gizmo_mode_requested: bool
 runtime_editor_gizmo_mode: shared.Editor_Gizmo_Mode
 runtime_wheel_y: f32
@@ -41,6 +40,7 @@ Runtime_Text_Input :: struct {
 	left, right, up, down, home, end: bool,
 	backspace, delete_forward: bool,
 	tab, shift, fine, enter, escape, select_all, save, undo, redo: bool,
+	editor_toggle, run_stop, pause_step: bool,
 }
 
 Runtime_Pointer_Cursor :: enum {
@@ -195,7 +195,6 @@ close_runtime_window :: proc() {
 		runtime_window_ready = false
 	}
 	runtime_window_hidden = false
-	runtime_editor_toggle_requested = false
 	runtime_editor_gizmo_mode_requested = false
 	runtime_scene_camera_look_active = false
 	runtime_pointer_cursor = .Default
@@ -279,12 +278,6 @@ runtime_text_input :: proc() -> Runtime_Text_Input {
 	return result
 }
 
-consume_editor_toggle :: proc() -> bool {
-	requested := runtime_editor_toggle_requested
-	runtime_editor_toggle_requested = false
-	return requested
-}
-
 consume_editor_gizmo_mode :: proc() -> (shared.Editor_Gizmo_Mode, bool) {
 	mode, requested := runtime_editor_gizmo_mode, runtime_editor_gizmo_mode_requested
 	runtime_editor_gizmo_mode_requested = false
@@ -296,17 +289,22 @@ editor_toggle_shortcut :: proc(
 	modifiers: sdl.Keymod,
 	repeat: bool,
 ) -> bool {
-	return !repeat && scancode == .ESCAPE && (.LCTRL in modifiers || .RCTRL in modifiers)
+	shortcut :=
+		.LCTRL in modifiers || .RCTRL in modifiers || .LGUI in modifiers || .RGUI in modifiers
+	return !repeat && shortcut && scancode == .E
 }
 
 editor_gizmo_mode_shortcut :: proc(
 	scancode: sdl.Scancode,
+	modifiers: sdl.Keymod,
 	repeat: bool,
 ) -> (
 	shared.Editor_Gizmo_Mode,
 	bool,
 ) {
-	if repeat { return .Translate, false }
+	shortcut :=
+		.LCTRL in modifiers || .RCTRL in modifiers || .LGUI in modifiers || .RGUI in modifiers
+	if repeat || shortcut { return .Translate, false }
 	#partial switch scancode {
 		case .W:
 			return .Translate, true
@@ -422,6 +420,7 @@ runtime_text_key :: proc(
 	input: ^Runtime_Text_Input,
 	scancode: sdl.Scancode,
 	modifiers: sdl.Keymod,
+	repeat: bool = false,
 ) {
 	if input == nil { return }
 	shortcut :=
@@ -452,6 +451,14 @@ runtime_text_key :: proc(
 			input.enter = true
 		case .ESCAPE:
 			if !shortcut { input.escape = true }
+		case .E:
+			if editor_toggle_shortcut(scancode, modifiers, repeat) {
+				input.editor_toggle = true
+			}
+		case .R:
+			if shortcut && !repeat { input.run_stop = true }
+		case .T:
+			if shortcut && !repeat { input.pause_step = true }
 		case .A:
 			if shortcut { input.select_all = true }
 		case .S:
@@ -479,16 +486,21 @@ pump_runtime_window_events :: proc() -> bool {
 		if event.type == .QUIT || event.type == .WINDOW_CLOSE_REQUESTED {
 			should_quit = true
 		}
-		if event.type == .KEY_DOWN &&
-		   editor_toggle_shortcut(event.key.scancode, event.key.mod, event.key.repeat) {
-			runtime_editor_toggle_requested = true
+		if event.type == .KEY_DOWN {
+			if mode, requested := editor_gizmo_mode_shortcut(
+				event.key.scancode,
+				event.key.mod,
+				event.key.repeat,
+			);
+			requested { runtime_editor_gizmo_mode = mode; runtime_editor_gizmo_mode_requested = true }
 		}
 		if event.type == .KEY_DOWN {
-			if mode, requested := editor_gizmo_mode_shortcut(event.key.scancode, event.key.repeat);
-			   requested { runtime_editor_gizmo_mode = mode; runtime_editor_gizmo_mode_requested = true }
-		}
-		if event.type == .KEY_DOWN {
-			runtime_text_key(&runtime_text_navigation, event.key.scancode, event.key.mod)
+			runtime_text_key(
+				&runtime_text_navigation,
+				event.key.scancode,
+				event.key.mod,
+				event.key.repeat,
+			)
 		}
 		if event.type == .TEXT_INPUT && event.text.text != nil {
 			text, err := strings.clone_from_cstring(event.text.text)

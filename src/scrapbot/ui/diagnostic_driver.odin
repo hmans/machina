@@ -217,7 +217,10 @@ diagnostic_key_is_valid :: proc(key: string) -> bool {
 		     "select_all",
 		     "save",
 		     "undo",
-		     "redo":
+		     "redo",
+		     "editor_toggle",
+		     "run_stop",
+		     "pause_step":
 			return true
 	}
 	return false
@@ -599,6 +602,12 @@ diagnostic_keyboard_set :: proc(keyboard: ^Keyboard_Input, key: string) {
 			keyboard.undo = true
 		case "redo":
 			keyboard.redo = true
+		case "editor_toggle":
+			keyboard.editor_toggle = true
+		case "run_stop":
+			keyboard.run_stop = true
+		case "pause_step":
+			keyboard.pause_step = true
 	}
 }
 

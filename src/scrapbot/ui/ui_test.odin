@@ -1952,6 +1952,74 @@ test_editor_transport_buttons_preserve_unsaved_authoring_across_playback :: proc
 }
 
 @(test)
+test_editor_command_shortcuts_toggle_shell_and_drive_transport :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.editor_visible = true
+
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {run_stop = true}) == "",
+	)
+	testing.expect(t, state.editor_simulation_stopped)
+	testing.expect(t, consume_playback_stop_request(state))
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {run_stop = true}) == "",
+	)
+	testing.expect(t, state.editor_simulation_playing)
+	testing.expect(t, consume_playback_begin_request(state))
+
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {pause_step = true}) == "",
+	)
+	testing.expect(t, !state.editor_simulation_playing && !state.editor_simulation_stopped)
+	_, run := consume_simulation_delta(state, 0.25)
+	testing.expect(t, !run)
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {pause_step = true}) == "",
+	)
+	delta: f32
+	delta, run = consume_simulation_delta(state, 0.25)
+	testing.expect(t, run && delta == f32(1.0 / 60.0))
+
+	state.has_focused_input = true
+	state.focused_input_editor = false
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {run_stop = true}) == "",
+	)
+	testing.expect(t, !state.editor_simulation_playing && !state.editor_simulation_stopped)
+	state.has_focused_input = false
+	state.editor_scene_camera_captures_input = true
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {run_stop = true}) == "",
+	)
+	testing.expect(t, !state.editor_simulation_playing && !state.editor_simulation_stopped)
+	state.editor_scene_camera_captures_input = false
+
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {editor_toggle = true}) == "",
+	)
+	testing.expect(t, !state.editor_visible)
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {editor_toggle = true}) == "",
+	)
+	testing.expect(t, state.editor_visible)
+}
+
+@(test)
 test_editor_scene_dirty_only_tracks_stopped_scene_entities :: proc(t: ^testing.T) {
 	state := new(State)
 	defer free(state)
@@ -2455,7 +2523,7 @@ test_editor_component_picker_uses_registry_hierarchy_and_structural_history :: p
 		button_layout := world.ui_layouts[button_entity.ui_layout_index]
 		button_value := world.ui_buttons[button_entity.ui_button_index]
 		testing.expect(t, button_layout.border_color == shared.Vec4{0.075, 0.090, 0.115, 1})
-		testing.expect(t, button_value.text == "+  Add Component")
+		testing.expect(t, button_value.text == "Manage Components")
 		testing.expect(t, button_value.alignment == .Center)
 		testing.expect(t, button_value.hover_color.w == 1)
 	}
@@ -2507,7 +2575,8 @@ test_editor_component_picker_uses_registry_hierarchy_and_structural_history :: p
 		transform_index,
 	); found {
 		button := world.ui_buttons[world.entities[transform_item].ui_button_index]
-		testing.expect(t, button.text == "[x]  transform")
+		testing.expect(t, button.text == "-  transform")
+		testing.expect(t, button.hover_background == shared.Vec4{0.115, 0.030, 0.040, 1})
 	} else {
 		testing.expect(t, false)
 	}
@@ -2534,7 +2603,7 @@ test_editor_component_picker_uses_registry_hierarchy_and_structural_history :: p
 				last_hover_glyph_index := -1
 				for command, command_index in state.paint[:state.paint_count] {
 					if command.kind == .Panel &&
-					   command.color == (shared.Vec4{0.020, 0.027, 0.036, 1}) &&
+					   command.color == (shared.Vec4{0.030, 0.105, 0.092, 1}) &&
 					   command.rect == camera_rect {
 						hover_paint_index = command_index
 					}
@@ -2569,6 +2638,21 @@ test_editor_component_picker_uses_registry_hierarchy_and_structural_history :: p
 		ecs.entity_has_component(&world, 0, registry.definitions[definition_index].id, "floating"),
 	)
 	testing.expect(t, !state.editor_component_menu_open)
+	editor_ui_handle_activation(state, &world, world.entities[item].id, {})
+	testing.expect(
+		t,
+		!ecs.entity_has_component(
+			&world,
+			0,
+			registry.definitions[definition_index].id,
+			"floating",
+		),
+	)
+	testing.expect(t, editor_history_apply(state, &world, false))
+	testing.expect(
+		t,
+		ecs.entity_has_component(&world, 0, registry.definitions[definition_index].id, "floating"),
+	)
 	testing.expect(t, editor_history_apply(state, &world, false))
 	testing.expect(
 		t,
@@ -2579,6 +2663,34 @@ test_editor_component_picker_uses_registry_hierarchy_and_structural_history :: p
 			"floating",
 		),
 	)
+	if transform_found {
+		transform_definition := &registry.definitions[transform_index]
+		testing.expect(t, editor_authoring_definition_is_supported(transform_definition))
+		testing.expect(
+			t,
+			editor_authoring_set_registered_component(
+				state,
+				&world,
+				0,
+				transform_definition,
+				false,
+			),
+		)
+		testing.expect(t, world.entities[0].transform_index < 0)
+		testing.expect(t, editor_history_apply(state, &world, false))
+		testing.expect(t, world.entities[0].transform_index >= 0)
+	}
+	internal_index, internal_found := component.find_definition_index(
+		&registry,
+		"scrapbot.internal.render_instance",
+	)
+	testing.expect(t, internal_found)
+	if internal_found {
+		testing.expect(
+			t,
+			!editor_authoring_definition_is_supported(&registry.definitions[internal_index]),
+		)
+	}
 }
 
 @(test)

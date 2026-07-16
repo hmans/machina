@@ -7,7 +7,7 @@ Scrapbot's editor is part of the running project rather than a separate executab
 
 ## Open the editor
 
-Start a visible WGPU run and press `Ctrl+Esc` to toggle the editor:
+Start a visible WGPU run and press `Cmd+E` on macOS or `Ctrl+E` elsewhere to toggle the editor:
 
 ```sh
 bin/scrapbot run examples/ecs-showcase --backend wgpu --window
@@ -32,6 +32,16 @@ The top bar contains the Scrapbot title and the project simulation controls. The
 | Undo / Redo | While stopped, traverse complete authoring transactions. The controls dim when no matching history step is available. |
 | Save | While stopped, write dirty value and structural scene-authoring changes back to the scene TOML. |
 | Revert | While stopped and dirty, discard unsaved authoring and reload scene entities from disk without reloading Luau, Odin, systems, or render resources. Revert clears authoring history. |
+
+The transport also has command shortcuts while the editor is open:
+
+| Shortcut | Behavior |
+| --- | --- |
+| `Cmd/Ctrl+E` | Open or close the editor without changing playback. |
+| `Cmd/Ctrl+R` | Play when stopped; Stop when running or paused. |
+| `Cmd/Ctrl+T` | Pause when running; advance one fixed step when paused or stopped. |
+
+Transport shortcuts are ignored while the scene camera captures the pointer or a project-owned input has focus. Command-modified E and R do not change the transform-gizmo mode.
 
 Pause preserves the current runtime world so Play can resume it. Play and Step capture the current stopped authoring state in memory before simulation advances. Stop returns to that captured state without reloading code or the scene file: unsaved authored entities, dirty state, selection, and undo history survive, while playback mutations and runtime-spawned entities disappear. Stopped is authoring mode. The bottom bar retains `/ UNSAVED` beside the current playback state until Save—or `Ctrl/Cmd+S`—writes those changes explicitly, Undo/Redo returns to the clean history position, or Revert discards them.
 
@@ -67,7 +77,7 @@ Click an entry to select it, or click rendered geometry in the viewport. Viewpor
 
 The inspector reports the selected entity's editable name, identity, provenance, attached components, field names, and current values. Each component receives a titled panel, with its fields arranged as label/value rows in an edge-to-edge two-column property table. The initial split gives labels one third and values two thirds of the width; drag the column boundary to resize it. Spacing belongs to the individual cells, so controls stay comfortably inset without shrinking the table itself. Click a panel title or its SDF disclosure arrow to collapse or expand that component. Transform, camera, ambient/directional/point-light, and custom Vec3 values are editable; other values use the same selectable control in read-only mode. Vec3 rows provide separate X, Y, and Z inputs, while scalar rows use one full-width value input.
 
-While stopped, click **Add Component** to open a floating, independently scrollable component picker. It is populated from the live component registry rather than a hardcoded editor list: single-token project components appear under **Project**, while dotted engine and library names are nested by namespace token. Atlas-safe `[ ]` and `[x]` labels distinguish available and attached components; choosing one toggles its membership as an undoable authoring transaction. Click outside the menu, press Escape, or choose a component to close it.
+While stopped, click **Manage Components** to open a floating, independently scrollable component picker. It is populated from the live component registry rather than a hardcoded editor list: single-token project components appear under **Project**, while dotted engine and library names are nested by namespace token. `+` rows add missing components and `-` rows remove attached components as undoable authoring transactions. Engine-defined components such as Transform, Camera, lights, render data, and UI remain authorable because the scene owns their membership. Engine-managed derived state such as Render Instance and editor gizmo ownership remains visible in the inspector but is intentionally absent from the menu. Click outside the menu, press Escape, or choose a component to close it.
 
 Click a value to focus it and select its complete contents. Typed text replaces the selection. Left/Right/Home/End move the cursor, Shift extends the selection, and Backspace/Delete edit it. Use Tab or Shift+Tab to traverse fields in visual order; Vec3 traversal proceeds through the red X, green Y, and blue Z controls independently. Enter commits and leaves the field, while Escape restores that axis or scalar value from when focus began.
 

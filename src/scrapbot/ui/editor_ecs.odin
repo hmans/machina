@@ -222,6 +222,39 @@ editor_ui_component_menu_contains :: proc(world: ^shared.World, entity: shared.E
 	return false
 }
 
+editor_ui_handle_shortcuts :: proc(state: ^State, keyboard: Keyboard_Input) {
+	if state == nil {
+		return
+	}
+	if keyboard.editor_toggle {
+		state.editor_visible = !state.editor_visible
+		state.editor_snapshot_valid = false
+		if !state.editor_visible {
+			state.editor_component_menu_open = false
+		}
+	}
+	if !state.editor_visible ||
+	   state.editor_scene_camera_captures_input ||
+	   (state.has_focused_input && !state.focused_input_editor) {
+		return
+	}
+	if keyboard.run_stop {
+		if state.editor_simulation_stopped {
+			editor_play(state)
+		} else {
+			editor_stop(state)
+		}
+		return
+	}
+	if keyboard.pause_step {
+		if state.editor_simulation_playing {
+			editor_pause(state)
+		} else {
+			editor_step(state)
+		}
+	}
+}
+
 editor_ui_close_component_menu :: proc(state: ^State, world: ^shared.World) {
 	if state == nil || !state.editor_component_menu_open {
 		return
@@ -1379,7 +1412,7 @@ editor_ui_ensure_component_menu_button :: proc(world: ^shared.World, parent: str
 	)
 	editor_ui_add_button(world, button)
 	value := world.ui_buttons[world.entities[button].ui_button_index]
-	value.text = "+  Add Component"
+	value.text = "Manage Components"
 	value.size = EDITOR_TEXT_SIZE
 	value.color = {0.70, 0.73, 0.78, 1}
 	value.alignment = .Center
@@ -1482,8 +1515,16 @@ editor_ui_ensure_component_menu_item :: proc(
 	value.size = EDITOR_TEXT_SIZE
 	value.alignment = .Left
 	value.color = {0.82, 0.85, 0.90, 1}
+	value.hover_background = {0.030, 0.105, 0.092, 1}
+	value.active_background = {0.018, 0.065, 0.057, 1}
+	value.hover_color = {0.70, 0.95, 0.89, 1}
+	value.active_color = {0.82, 1.00, 0.96, 1}
 	if present {
-		value.color = {0.42, 0.92, 0.82, 1}
+		value.color = {0.78, 0.61, 0.64, 1}
+		value.hover_background = {0.115, 0.030, 0.040, 1}
+		value.active_background = {0.070, 0.018, 0.025, 1}
+		value.hover_color = {0.98, 0.72, 0.76, 1}
+		value.active_color = {1.00, 0.84, 0.87, 1}
 	}
 	_ = ecs.set_ui_button(world, item, value)
 	return item
@@ -1864,9 +1905,9 @@ editor_ui_build_component_menu :: proc(state: ^State, world: ^shared.World, enti
 			}
 		}
 		present := editor_entity_has_registered_component(world, entity_index, definition)
-		label := fmt.tprintf("[ ]  %s", tokens[len(tokens) - 1])
+		label := fmt.tprintf("+  %s", tokens[len(tokens) - 1])
 		if present {
-			label = fmt.tprintf("[x]  %s", tokens[len(tokens) - 1])
+			label = fmt.tprintf("-  %s", tokens[len(tokens) - 1])
 		}
 		item := editor_ui_ensure_component_menu_item(
 			world,

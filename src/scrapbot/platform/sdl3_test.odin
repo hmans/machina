@@ -12,22 +12,30 @@ test_runtime_pointer_cursor_maps_resize_directions_to_sdl :: proc(t: ^testing.T)
 }
 
 @(test)
-test_editor_toggle_shortcut_requires_ctrl_escape_press :: proc(t: ^testing.T) {
-	testing.expect(t, editor_toggle_shortcut(.ESCAPE, sdl.Keymod{.LCTRL}, false))
-	testing.expect(t, editor_toggle_shortcut(.ESCAPE, sdl.Keymod{.RCTRL}, false))
-	testing.expect(t, !editor_toggle_shortcut(.ESCAPE, sdl.Keymod{}, false))
-	testing.expect(t, !editor_toggle_shortcut(.ESCAPE, sdl.Keymod{.LCTRL}, true))
+test_editor_toggle_shortcut_requires_command_e_press :: proc(t: ^testing.T) {
+	testing.expect(t, editor_toggle_shortcut(.E, sdl.Keymod{.LCTRL}, false))
+	testing.expect(t, editor_toggle_shortcut(.E, sdl.Keymod{.RCTRL}, false))
+	testing.expect(t, editor_toggle_shortcut(.E, sdl.Keymod{.LGUI}, false))
+	testing.expect(t, editor_toggle_shortcut(.E, sdl.Keymod{.RGUI}, false))
+	testing.expect(t, !editor_toggle_shortcut(.E, sdl.Keymod{}, false))
+	testing.expect(t, !editor_toggle_shortcut(.E, sdl.Keymod{.LCTRL}, true))
 	other := sdl.Scancode(4)
 	testing.expect(t, !editor_toggle_shortcut(other, sdl.Keymod{.LCTRL}, false))
 }
 
 @(test)
 test_editor_gizmo_mode_shortcuts_use_standard_transform_keys :: proc(t: ^testing.T) {
-	mode, ok := editor_gizmo_mode_shortcut(.W, false); testing.expect(t, ok && mode == .Translate)
-	mode, ok = editor_gizmo_mode_shortcut(.E, false); testing.expect(t, ok && mode == .Rotate)
-	mode, ok = editor_gizmo_mode_shortcut(.R, false); testing.expect(t, ok && mode == .Scale)
-	_, ok = editor_gizmo_mode_shortcut(.R, true); testing.expect(t, !ok)
-	_, ok = editor_gizmo_mode_shortcut(.A, false); testing.expect(t, !ok)
+	mode, ok := editor_gizmo_mode_shortcut(
+		.W,
+		{},
+		false,
+	); testing.expect(t, ok && mode == .Translate)
+	mode, ok = editor_gizmo_mode_shortcut(.E, {}, false); testing.expect(t, ok && mode == .Rotate)
+	mode, ok = editor_gizmo_mode_shortcut(.R, {}, false); testing.expect(t, ok && mode == .Scale)
+	_, ok = editor_gizmo_mode_shortcut(.R, {}, true); testing.expect(t, !ok)
+	_, ok = editor_gizmo_mode_shortcut(.R, sdl.Keymod{.LGUI}, false); testing.expect(t, !ok)
+	_, ok = editor_gizmo_mode_shortcut(.E, sdl.Keymod{.LCTRL}, false); testing.expect(t, !ok)
+	_, ok = editor_gizmo_mode_shortcut(.A, {}, false); testing.expect(t, !ok)
 }
 
 @(test)
@@ -91,6 +99,17 @@ test_runtime_text_keys_preserve_navigation_modifiers_and_shortcuts :: proc(t: ^t
 	testing.expect(t, input.undo)
 	runtime_text_key(&input, .Z, sdl.Keymod{.LGUI, .LSHIFT})
 	testing.expect(t, input.redo)
+	runtime_text_key(&input, .E, sdl.Keymod{.LGUI})
+	testing.expect(t, input.editor_toggle)
+	runtime_text_key(&input, .R, sdl.Keymod{.LCTRL})
+	testing.expect(t, input.run_stop)
+	runtime_text_key(&input, .T, sdl.Keymod{.RGUI})
+	testing.expect(t, input.pause_step)
+	repeated: Runtime_Text_Input
+	runtime_text_key(&repeated, .E, sdl.Keymod{.LGUI}, true)
+	runtime_text_key(&repeated, .R, sdl.Keymod{.LGUI}, true)
+	runtime_text_key(&repeated, .T, sdl.Keymod{.LGUI}, true)
+	testing.expect(t, !repeated.editor_toggle && !repeated.run_stop && !repeated.pause_step)
 	runtime_text_key(&input, .ESCAPE, sdl.Keymod{.LCTRL})
 	testing.expect(t, !input.escape)
 	runtime_text_key(&input, .ESCAPE, {})

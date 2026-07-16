@@ -61,14 +61,14 @@ Scripts use schema version 1 and execute actions sequentially:
   "timeout_frames": 120,
   "actions": [
     {"action": "click", "target": {"text": "STOP", "origin": "editor"}},
-    {"action": "hover", "target": {"text": "[ ]  camera", "origin": "editor"}},
-    {"action": "expect", "target": {"text": "[ ]  camera"}, "expect": "hovered"},
-    {"action": "capture", "target": {"text": "[ ]  camera"}, "padding": 12}
+    {"action": "hover", "target": {"text": "+  camera", "origin": "editor"}},
+    {"action": "expect", "target": {"text": "+  camera"}, "expect": "hovered"},
+    {"action": "capture", "target": {"text": "+  camera"}, "padding": 12}
   ]
 }
 ```
 
-Available actions are `click`, `hover`, `scroll` (`wheel_y`), `type` (`text`), `key`, `wait` (`frames`), `expect`, and `capture`. Keys include navigation, editing, Tab, Enter, Escape, Select All, Save, Undo, and Redo. Expectations cover `visible`, `hovered`, `active`, `focused`, `text`, and `inside_parent`; a text expectation compares the action's `text` value. Targets may combine `uuid`, `name`, `text`, and `origin`, plus a zero-based `occurrence` for duplicate matches. A capture target supplies the framegrab region unless `--framegrab-region` is explicitly present. When `--frames` is omitted, a scripted run receives a 240-frame safety bound and exits as soon as all actions complete.
+Available actions are `click`, `hover`, `scroll` (`wheel_y`), `type` (`text`), `key`, `wait` (`frames`), `expect`, and `capture`. Keys include navigation, editing, Tab, Enter, Escape, Select All, Save, Undo, Redo, Editor Toggle, Run/Stop, and Pause/Step. Expectations cover `visible`, `hovered`, `active`, `focused`, `text`, and `inside_parent`; a text expectation compares the action's `text` value. Targets may combine `uuid`, `name`, `text`, and `origin`, plus a zero-based `occurrence` for duplicate matches. A capture target supplies the framegrab region unless `--framegrab-region` is explicitly present. When `--frames` is omitted, a scripted run receives a 240-frame safety bound and exits as soon as all actions complete.
 
 ## Directional shadows
 

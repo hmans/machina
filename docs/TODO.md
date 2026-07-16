@@ -91,7 +91,7 @@
 
 ## Editor
 
-- [x] Add a transient ECS-built editor shell toggled with Ctrl+Esc.
+- [x] Add a transient ECS-built editor shell toggled with Cmd/Ctrl+E.
 - [x] Add a selectable, smoothly scrolling system list with five-frame updates over rolling 50-frame callback-time averages.
 - [x] Keep the running project live across the complete available viewport with a dynamic camera aspect ratio.
 - [x] Add a flush selectable entity list with smooth scrolling, scene/runtime provenance, and stable selection.
@@ -106,6 +106,7 @@
 - [x] Add numeric validation, keyboard stepping, axis-label scrubbing, and bounded inspector undo/redo.
 - [x] Unify numeric, boolean, and transform-gizmo edits as UUID-addressed authoring transactions.
 - [x] Add Play, Pause, fixed-frame Step, non-destructive Stop restoration, stopped-mode Undo/Redo, explicit Save, and destructive Revert controls.
+- [x] Add Cmd/Ctrl editor, Play/Stop, and Pause/Step command shortcuts with project-input and fly-camera ownership guards.
 - [x] Persist only semantic differences for dirty stopped-mode scene entities while preserving unchanged TOML text and excluding runtime entities.
 - [x] Add UUID-addressed create, duplicate, rename, delete, runtime promotion, and component add/remove transactions with structural scene persistence.
 - [ ] Generalize component value editing across every reflected field type.

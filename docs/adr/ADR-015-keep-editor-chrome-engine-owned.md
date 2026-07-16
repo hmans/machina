@@ -10,7 +10,7 @@ Scrapbot projects need to remain playable while exposing editing tools in the sa
 
 ## Decision
 
-Keep editor visibility and chrome in engine-owned retained UI state outside the project ECS. `Ctrl+Esc` toggles that state during a visible run, while the `--editor` run option starts it visible for automation and framegrabs.
+Keep editor visibility and chrome in engine-owned retained UI state outside the project ECS. `Cmd/Ctrl+E` toggles that state during a visible run, while the `--editor` run option starts it visible for automation and framegrabs.
 
 When visible, the renderer gives world rendering and project UI the complete central project viewport. Project UI and editor chrome use separate draw ranges in a dedicated overlay render pass: project UI is transformed and clipped to the project viewport, while editor chrome uses full-window coordinates and renders afterward.
 

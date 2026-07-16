@@ -33,10 +33,10 @@ Example script:
   "actions": [
     {"action": "click", "target": {"text": "STOP", "origin": "editor"}},
     {"action": "click", "target": {"name": "Icosphere", "origin": "editor"}},
-    {"action": "click", "target": {"text": "+  ADD COMPONENT", "origin": "editor"}},
-    {"action": "hover", "target": {"text": "[ ]  camera", "origin": "editor"}},
-    {"action": "expect", "target": {"text": "[ ]  camera"}, "expect": "hovered"},
-    {"action": "capture", "target": {"text": "[ ]  camera"}, "padding": 12}
+    {"action": "click", "target": {"text": "Manage Components", "origin": "editor"}},
+    {"action": "hover", "target": {"text": "+  camera", "origin": "editor"}},
+    {"action": "expect", "target": {"text": "+  camera"}, "expect": "hovered"},
+    {"action": "capture", "target": {"text": "+  camera"}, "padding": 12}
   ]
 }
 ```
@@ -46,7 +46,7 @@ Example script:
 - `click`, `hover`: target a retained UI node.
 - `scroll`: target a node and supply `wheel_y`.
 - `type`: target an input and supply `text`.
-- `key`: supply `key`: `left`, `right`, `up`, `down`, `home`, `end`, `backspace`, `delete`, `tab`, `enter`, `escape`, `select_all`, `save`, `undo`, or `redo`.
+- `key`: supply `key`: `left`, `right`, `up`, `down`, `home`, `end`, `backspace`, `delete`, `tab`, `enter`, `escape`, `select_all`, `save`, `undo`, `redo`, `editor_toggle`, `run_stop`, or `pause_step`.
 - `wait`: supply a positive `frames` count.
 - `expect`: target a node and supply an expectation. A `text` expectation compares the action's `text` field.
 - `capture`: target a node and optionally supply pixel `padding`. This defines the framegrab crop unless `--framegrab-region` is explicit.

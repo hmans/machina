@@ -51,6 +51,7 @@ Keyboard_Input :: struct {
 	left, right, up, down, home, end: bool,
 	backspace, delete_forward: bool,
 	tab, shift, fine, enter, escape, select_all, save, undo, redo: bool,
+	editor_toggle, run_stop, pause_step: bool,
 }
 Paint_Kind :: enum {
 	Panel,
@@ -676,6 +677,7 @@ reconcile :: proc(
 	resource_registry: ^resources.Registry = nil,
 ) -> string {
 	if state == nil || world == nil { return "UI state or world is unavailable" }
+	editor_ui_handle_shortcuts(state, keyboard)
 	when ODIN_TEST {
 		state.layout_node_visit_count = 0
 		state.layout_child_edge_visit_count = 0

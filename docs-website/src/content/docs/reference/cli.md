@@ -95,7 +95,7 @@ Options:
 | `--backend wgpu` | Use the WebGPU renderer. |
 | `--window` | Open a platform window. |
 | `--headless` | Force headless mode. |
-| `--editor` | Start with the editor shell visible. `Ctrl+Esc` toggles it in a visible window. |
+| `--editor` | Start with the editor shell visible. `Cmd/Ctrl+E` toggles it in a visible window. |
 | `--hot-reload` | Poll project files, scripts, and native extension source/output changes while running. |
 | `--scheduler-trace` | Print native worker count, parallel stage count, and maximum stage width. |
 | `--runtime-stats` | Collect early/late engine-frame timing through render preparation, engine-allocator bytes, and ECS storage checkpoints. Windowed runs also require nonzero `--frames`. |

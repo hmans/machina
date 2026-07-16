@@ -6,10 +6,21 @@
     {"action": "wait", "frames": 2},
     {"action": "click", "target": {"text": "Ambient Light", "origin": "editor"}},
     {"action": "wait", "frames": 1},
-    {"action": "click", "target": {"text": "+  Add Component", "origin": "editor"}},
+    {"action": "click", "target": {"text": "Manage Components", "origin": "editor"}},
     {"action": "wait", "frames": 1},
-    {"action": "hover", "target": {"text": "[ ]  camera", "origin": "editor"}},
-    {"action": "expect", "target": {"text": "[ ]  camera", "origin": "editor"}, "expect": "hovered"},
-    {"action": "capture", "target": {"text": "[ ]  camera", "origin": "editor"}, "padding": 12}
+    {"action": "hover", "target": {"text": "+  camera", "origin": "editor"}},
+    {"action": "expect", "target": {"text": "+  camera", "origin": "editor"}, "expect": "hovered"},
+    {"action": "click", "target": {"text": "+  camera", "origin": "editor"}},
+    {"action": "wait", "frames": 1},
+    {"action": "click", "target": {"text": "Manage Components", "origin": "editor"}},
+    {"action": "wait", "frames": 1},
+    {"action": "hover", "target": {"text": "-  camera", "origin": "editor"}},
+    {"action": "expect", "target": {"text": "-  camera", "origin": "editor"}, "expect": "hovered"},
+    {"action": "click", "target": {"text": "-  camera", "origin": "editor"}},
+    {"action": "wait", "frames": 1},
+    {"action": "click", "target": {"text": "Manage Components", "origin": "editor"}},
+    {"action": "wait", "frames": 1},
+    {"action": "expect", "target": {"text": "+  camera", "origin": "editor"}, "expect": "visible"},
+    {"action": "capture", "target": {"text": "+  camera", "origin": "editor"}, "padding": 12}
   ]
 }

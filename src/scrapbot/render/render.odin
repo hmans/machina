@@ -429,9 +429,6 @@ run_frame_system_unmeasured :: proc(
 		config.last_drawable_width = drawable_width
 		config.last_drawable_height = drawable_height
 		config.ui_state.editor_pixel_density = platform.runtime_window_pixel_density()
-		if platform.consume_editor_toggle() {
-			config.ui_state.editor_visible = !config.ui_state.editor_visible
-		}
 		viewport := ui.editor_viewport(config.ui_state, drawable_width, drawable_height)
 		camera_input := platform.runtime_scene_camera_input(
 			config.ui_state.editor_visible,
@@ -485,6 +482,9 @@ run_frame_system_unmeasured :: proc(
 			save = platform_keyboard.save,
 			undo = platform_keyboard.undo,
 			redo = platform_keyboard.redo,
+			editor_toggle = platform_keyboard.editor_toggle,
+			run_stop = platform_keyboard.run_stop,
+			pause_step = platform_keyboard.pause_step,
 		}
 		if config.ui_driver != nil {
 			driver_pointer, driver_keyboard, driver_err := ui.diagnostic_driver_input(

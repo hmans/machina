@@ -1,7 +1,7 @@
 # FDR-001: Runtime CLI
 
 **Status:** Active
-**Last reviewed:** 2026-07-13
+**Last reviewed:** 2026-07-16
 
 ## Overview
 
@@ -19,7 +19,7 @@ The runtime CLI is the entry point for creating, validating, running, and openin
 - Users can run a project through the selected renderer backend.
 - Users can request a platform window for renderer runs and limit windowed runs with `--frames`.
 - Users can request a headless WGPU PNG framegrab with `--framegrab`.
-- Users can pass `--editor` to start with editor chrome visible, while `Ctrl+Esc` toggles it during a windowed run.
+- Users can pass `--editor` to start with editor chrome visible, while `Cmd/Ctrl+E` toggles it during a windowed run.
 - Users can pass `--hot-reload` to periodically check `project.toml`, the default scene TOML, `scripts/main.luau`, native extension libraries, and declared native extension source directories while the renderer is running.
 - Users can pass `--scheduler-trace` to report native worker count, parallel stage count, and maximum parallel width after a run.
 - Users can pass `--runtime-stats` to collect early/late engine-frame cost through render preparation, engine-allocator bytes, and detailed ECS storage checkpoints for bounded runs.
