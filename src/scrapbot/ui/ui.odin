@@ -1961,6 +1961,20 @@ finish_input_edit :: proc(state: ^State, world: ^shared.World) -> bool {
 		state.input_original_number = number
 		state.input_has_original_number = true
 	}
+	if entity.origin == .Editor &&
+	   entity.editor_ui_index >= 0 &&
+	   entity.editor_ui_index < len(world.editor_uis) {
+		binding := world.editor_uis[entity.editor_ui_index]
+		if binding.role == .Inspector_Input &&
+		   binding.reflected_component_id != shared.INVALID_COMPONENT_ID &&
+		   !editor_reflected_input_valid(state, world, binding, input.text) {
+			state.input_valid = false
+			if interaction := ecs.ensure_ui_state(world, entity_index); interaction != nil {
+				interaction.valid = false
+			}
+			return false
+		}
+	}
 	_ = ecs.mark_ui_submitted(world, entity_index)
 	delete(state.input_original_text)
 	state.input_original_text, _ = strings.clone(input.text)

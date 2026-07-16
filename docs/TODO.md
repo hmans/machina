@@ -109,7 +109,8 @@
 - [x] Add Cmd/Ctrl editor, Play/Stop, and Pause/Step command shortcuts with project-input and fly-camera ownership guards.
 - [x] Persist only semantic differences for dirty stopped-mode scene entities while preserving unchanged TOML text and excluding runtime entities.
 - [x] Add UUID-addressed create, duplicate, rename, delete, runtime promotion, and component add/remove transactions with structural scene persistence.
-- [ ] Generalize component value editing across every reflected field type.
+- [x] Generalize component value editing across every currently registered Bool, String, Number, Vec2, Vec3, and Vec4 field shape.
+- [ ] Add specialized enum, color, entity-reference, and resource-reference inspector pickers, followed by array and nested-value editing.
 
 ## Documentation And Examples
 

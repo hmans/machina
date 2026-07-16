@@ -285,6 +285,16 @@ editor_ui_handle_checkbox_change :: proc(
 	binding := world.editor_uis[entity.editor_ui_index]
 	if binding.role != .Inspector_Checkbox { return }
 	checkbox := world.ui_checkboxes[entity.ui_checkbox_index]
+	if binding.reflected_component_id != shared.INVALID_COMPONENT_ID {
+		if editor_reflected_apply_bool(state, world, binding, checkbox.checked) {
+			return
+		}
+		if reflected, ok := editor_reflected_read_bool(state, world, binding); ok {
+			checkbox.checked = reflected
+			_ = ecs.set_ui_checkbox(world, entity_index, checkbox)
+		}
+		return
+	}
 	transaction, transaction_ok := editor_history_begin_bool_transaction(world, binding)
 	if write_inspector_bool(state, world, binding, checkbox.checked) {
 		if transaction_ok {
@@ -343,6 +353,7 @@ editor_ui_create_box :: proc(
 			slot = slot,
 			custom_storage_index = -1,
 			custom_field_index = -1,
+			reflected_field_index = -1,
 		},
 	)
 	world.entities[entity_index].editor_ui_index = role_index
@@ -1566,6 +1577,25 @@ editor_ui_set_numeric_metadata :: proc(
 	}
 }
 
+editor_ui_set_reflected_numeric_metadata :: proc(
+	input: ^shared.UI_Input_Component,
+	field_type: component.Field_Type,
+) {
+	if input == nil {
+		return
+	}
+	input.numeric =
+		field_type == .Number || field_type == .Vec2 || field_type == .Vec3 || field_type == .Vec4
+	input.step = 0.1
+	input.minimum = 0
+	input.maximum = 0
+	input.has_minimum = false
+	input.has_maximum = false
+	if field_type == .Vec2 || field_type == .Vec3 || field_type == .Vec4 {
+		input.step = 0.01
+	}
+}
+
 editor_ui_finish_inspector_component :: proc(builder: ^Inspector_ECS_Builder) {
 	if builder.panel_entity < 0 { return }
 	if builder.row_count == 0 {
@@ -1599,6 +1629,9 @@ editor_ui_inspector_field_values :: proc(
 	field: shared.Editor_Inspector_Field = .None,
 	custom_storage_index: int = -1,
 	custom_field_index: int = -1,
+	reflected_component_id: shared.Component_ID = shared.INVALID_COMPONENT_ID,
+	reflected_field_index: int = -1,
+	reflected_field_type: component.Field_Type = .String,
 ) {
 	if builder.table_entity < 0 { return }
 	parent := builder.world.entities[builder.table_entity].name
@@ -1627,7 +1660,8 @@ editor_ui_inspector_field_values :: proc(
 		editor_ui_set_hidden(builder.world, input_entity, false)
 		layout.size = {1, INSPECTOR_CONTROL_HEIGHT}
 		value_input := &builder.world.ui_inputs[builder.world.entities[input_entity].ui_input_index]
-		value_input.read_only = field == .None
+		value_input.read_only =
+			field == .None && reflected_component_id == shared.INVALID_COMPONENT_ID
 		if builder.state == nil ||
 		   !builder.state.has_focused_input ||
 		   builder.state.focused_input != builder.world.entities[input_entity].id {
@@ -1637,13 +1671,20 @@ editor_ui_inspector_field_values :: proc(
 		role.target = builder.target
 		role.inspector_field = field
 		role.inspector_axis = .None
-		if len(values) == 3 { role.inspector_axis = shared.Editor_Inspector_Axis(value_index + 1) }
 		role.custom_storage_index = custom_storage_index
 		role.custom_field_index = custom_field_index
+		role.reflected_component_id = reflected_component_id
+		role.reflected_field_index = reflected_field_index
 		editor_ui_set_numeric_metadata(value_input, field)
+		if reflected_component_id != shared.INVALID_COMPONENT_ID {
+			editor_ui_set_reflected_numeric_metadata(value_input, reflected_field_type)
+		}
 		_ = ecs.set_ui_input_prefix(builder.world, input_entity, "")
 		value_input.prefix_width = 0
 		value_input.scrubbable = false
+		if len(values) > 1 {
+			role.inspector_axis = shared.Editor_Inspector_Axis(value_index + 1)
+		}
 		if role.inspector_axis != .None {
 			value_input.prefix_width = UI_INPUT_PREFIX_WIDTH
 			value_input.scrubbable = true
@@ -1655,6 +1696,9 @@ editor_ui_inspector_field_values :: proc(
 			} else if role.inspector_axis == .Z {
 				prefix = "Z"
 				value_input.prefix_color = {0.34, 0.55, 0.96, 1}
+			} else if role.inspector_axis == .W {
+				prefix = "W"
+				value_input.prefix_color = {0.84, 0.65, 0.30, 1}
 			}
 			_ = ecs.set_ui_input_prefix(builder.world, input_entity, prefix)
 			value_input.prefix_background = {
@@ -1690,6 +1734,8 @@ editor_ui_inspector_bool :: proc(
 	label: string,
 	value: bool,
 	field: shared.Editor_Inspector_Field = .None,
+	reflected_component_id: shared.Component_ID = shared.INVALID_COMPONENT_ID,
+	reflected_field_index: int = -1,
 ) {
 	if builder.table_entity < 0 { return }
 	parent := builder.world.entities[builder.table_entity].name
@@ -1715,12 +1761,56 @@ editor_ui_inspector_bool :: proc(
 	editor_ui_set_hidden(builder.world, checkbox_entity, false)
 	checkbox := &builder.world.ui_checkboxes[builder.world.entities[checkbox_entity].ui_checkbox_index]
 	checkbox.checked = value
-	checkbox.read_only = field == .None
+	checkbox.read_only = field == .None && reflected_component_id == shared.INVALID_COMPONENT_ID
 	role := &builder.world.editor_uis[builder.world.entities[checkbox_entity].editor_ui_index]
 	role.target = builder.target
 	role.inspector_field = field
 	role.inspector_axis = .None
+	role.reflected_component_id = reflected_component_id
+	role.reflected_field_index = reflected_field_index
 	builder.row_count += 1
+}
+
+editor_ui_inspector_reflected_field :: proc(
+	builder: ^Inspector_ECS_Builder,
+	entity: ^shared.Scene_Entity,
+	definition: ^component.Definition,
+	field_index: int,
+) {
+	if builder == nil || entity == nil || definition == nil {
+		return
+	}
+	field := definition.fields[field_index]
+	if field.field_type == .Bool {
+		value, found := editor_reflected_field_bool(entity, definition, field_index)
+		if found {
+			editor_ui_inspector_bool(builder, field.name, value, .None, definition.id, field_index)
+		}
+		return
+	}
+	values: [4]string
+	uuid_buffer: [36]u8
+	count, found := editor_reflected_field_texts(
+		entity,
+		definition,
+		field_index,
+		uuid_buffer[:],
+		&values,
+	)
+	if !found {
+		return
+	}
+	editor_ui_inspector_field_values(
+		builder,
+		field.name,
+		values[:count],
+		.None,
+		-1,
+		-1,
+		definition.id,
+		field_index,
+		field.field_type,
+	)
 }
 
 editor_ui_inspector_vec3 :: proc(
@@ -1995,6 +2085,248 @@ editor_entity_has_registered_component :: proc(
 	return ecs.entity_has_component(world, entity_index, definition.id, definition.name)
 }
 
+editor_component_title :: proc(name: string, buffer: []u8) -> string {
+	value := name
+	if strings.has_prefix(value, "scrapbot.") {
+		value = value[len("scrapbot."):]
+	}
+	count := 0
+	for byte in transmute([]u8)value {
+		if count >= len(buffer) {
+			break
+		}
+		if byte == '_' {
+			buffer[count] = ' '
+			count += 1
+			continue
+		}
+		if byte == '.' {
+			if count + 3 > len(buffer) {
+				break
+			}
+			buffer[count] = ' '
+			buffer[count + 1] = '/'
+			buffer[count + 2] = ' '
+			count += 3
+			continue
+		}
+		next := byte
+		if next >= 'a' && next <= 'z' {
+			next -= 'a' - 'A'
+		}
+		buffer[count] = next
+		count += 1
+	}
+	return string(buffer[:count])
+}
+
+editor_ui_build_reflected_inspector_panels :: proc(
+	builder: ^Inspector_ECS_Builder,
+	entity_index: int,
+) -> bool {
+	if builder == nil ||
+	   builder.state == nil ||
+	   builder.state.component_registry == nil ||
+	   !ecs.entity_is_alive(builder.world, entity_index) {
+		return false
+	}
+	snapshot, captured := ecs.capture_entity_snapshot(builder.world, entity_index)
+	if !captured {
+		return false
+	}
+	defer ecs.destroy_entity_snapshot(&snapshot)
+	registry := builder.state.component_registry
+	entity := builder.world.entities[entity_index]
+	for definition_index in 0 ..< registry.definition_count {
+		definition := &registry.definitions[definition_index]
+		if !editor_authoring_definition_is_supported(definition) ||
+		   !editor_entity_has_registered_component(builder.world, entity_index, definition) {
+			continue
+		}
+		title_buffer: [128]u8
+		title := editor_component_title(definition.name, title_buffer[:])
+		editor_ui_begin_inspector_component(builder, title)
+		if definition.name == "scrapbot.transform" &&
+		   entity.transform_index >= 0 &&
+		   entity.transform_index < len(builder.world.transforms) {
+			value := builder.world.transforms[entity.transform_index]
+			editor_ui_inspector_vec3(builder, "position", value.position, .Transform_Position)
+			editor_ui_inspector_vec3(builder, "rotation", value.rotation, .Transform_Rotation)
+			editor_ui_inspector_vec3(builder, "scale", value.scale, .Transform_Scale)
+			continue
+		}
+		if definition.name == "scrapbot.ambient_light" &&
+		   entity.ambient_light_index >= 0 &&
+		   entity.ambient_light_index < len(builder.world.ambient_lights) {
+			value := builder.world.ambient_lights[entity.ambient_light_index]
+			editor_ui_inspector_vec3(builder, "color", value.color, .Ambient_Color)
+			editor_ui_inspector_field(
+				builder,
+				"intensity",
+				fmt.tprintf("%.2f", value.intensity),
+				.Ambient_Intensity,
+			)
+			continue
+		}
+		if definition.name == "scrapbot.directional_light" &&
+		   entity.directional_light_index >= 0 &&
+		   entity.directional_light_index < len(builder.world.directional_lights) {
+			value := builder.world.directional_lights[entity.directional_light_index]
+			editor_ui_inspector_vec3(builder, "direction", value.direction, .Directional_Direction)
+			editor_ui_inspector_vec3(builder, "color", value.color, .Directional_Color)
+			editor_ui_inspector_field(
+				builder,
+				"intensity",
+				fmt.tprintf("%.2f", value.intensity),
+				.Directional_Intensity,
+			)
+			continue
+		}
+		if definition.name == "scrapbot.point_light" &&
+		   entity.point_light_index >= 0 &&
+		   entity.point_light_index < len(builder.world.point_lights) {
+			value := builder.world.point_lights[entity.point_light_index]
+			editor_ui_inspector_vec3(builder, "color", value.color, .Point_Color)
+			editor_ui_inspector_field(
+				builder,
+				"intensity",
+				fmt.tprintf("%.2f", value.intensity),
+				.Point_Intensity,
+			)
+			editor_ui_inspector_field(
+				builder,
+				"range",
+				fmt.tprintf("%.2f", value.range),
+				.Point_Range,
+			)
+			continue
+		}
+		if definition.owner != .Engine {
+			for storage, storage_index in builder.world.custom_components {
+				if storage.name != definition.name {
+					continue
+				}
+				for custom in storage.components {
+					if custom.entity_index != entity_index {
+						continue
+					}
+					for field, field_index in custom.vec3_fields {
+						editor_ui_inspector_vec3(
+							builder,
+							field.name,
+							field.value,
+							.Custom_Vec3,
+							storage_index,
+							field_index,
+						)
+					}
+					break
+				}
+				break
+			}
+			continue
+		}
+		if definition.field_count == 0 {
+			switch definition.name {
+				case "scrapbot.camera":
+					if entity.camera_index >= 0 &&
+					   entity.camera_index < len(builder.world.cameras) {
+						value := builder.world.cameras[entity.camera_index]
+						editor_ui_inspector_field(
+							builder,
+							"fov",
+							fmt.tprintf("%.2f", value.fov),
+							.Camera_Fov,
+						)
+						editor_ui_inspector_field(
+							builder,
+							"near",
+							fmt.tprintf("%.3f", value.near),
+							.Camera_Near,
+						)
+						editor_ui_inspector_field(
+							builder,
+							"far",
+							fmt.tprintf("%.2f", value.far),
+							.Camera_Far,
+						)
+					}
+				case "scrapbot.mesh":
+					if entity.mesh_index >= 0 && entity.mesh_index < len(builder.world.meshes) {
+						editor_ui_inspector_field(
+							builder,
+							"primitive",
+							builder.world.meshes[entity.mesh_index].primitive,
+						)
+					}
+				case "scrapbot.geometry":
+					if entity.geometry_index >= 0 &&
+					   entity.geometry_index < len(builder.world.geometries) {
+						value := builder.world.geometries[entity.geometry_index]
+						editor_ui_inspector_field(
+							builder,
+							"handle",
+							format_handle(value.handle.index, value.handle.generation),
+						)
+					}
+				case "scrapbot.material":
+					if entity.material_index >= 0 &&
+					   entity.material_index < len(builder.world.materials) {
+						value := builder.world.materials[entity.material_index]
+						editor_ui_inspector_field(
+							builder,
+							"handle",
+							format_handle(value.handle.index, value.handle.generation),
+						)
+					}
+				case "scrapbot.shadow_caster", "scrapbot.shadow_receiver":
+					editor_ui_inspector_bool(builder, "enabled", true)
+				case:
+			}
+		}
+		for field_index in 0 ..< definition.field_count {
+			editor_ui_inspector_reflected_field(builder, &snapshot.entity, definition, field_index)
+		}
+	}
+	if entity.render_instance_index >= 0 &&
+	   entity.render_instance_index < len(builder.world.render_instances) {
+		value := builder.world.render_instances[entity.render_instance_index]
+		editor_ui_begin_inspector_component(builder, "RENDER INSTANCE")
+		editor_ui_inspector_field(
+			builder,
+			"geometry",
+			format_handle(value.geometry.index, value.geometry.generation),
+		)
+		editor_ui_inspector_field(
+			builder,
+			"material",
+			format_handle(value.material.index, value.material.generation),
+		)
+	}
+	if entity.editor_transform_gizmo_index >= 0 &&
+	   entity.editor_transform_gizmo_index < len(builder.world.editor_transform_gizmos) {
+		value := builder.world.editor_transform_gizmos[entity.editor_transform_gizmo_index]
+		mode := "translate"
+		if value.mode == .Rotate {
+			mode = "rotate"
+		} else if value.mode == .Scale {
+			mode = "scale"
+		}
+		space := "world"
+		if value.space == .Local {
+			space = "local"
+		}
+		editor_ui_begin_inspector_component(builder, "EDITOR TRANSFORM GIZMO")
+		editor_ui_inspector_field(builder, "mode", mode)
+		editor_ui_inspector_field(builder, "space", space)
+	}
+	if builder.state.editor_simulation_stopped && entity.origin == .Scene {
+		editor_ui_build_component_controls(builder, entity_index)
+	}
+	editor_ui_finish_inspector(builder)
+	return true
+}
+
 editor_selected_world_index :: proc(state: ^State, world: ^shared.World) -> (int, bool) {
 	if state == nil || world == nil || !state.editor_has_selection {
 		return -1, false
@@ -2025,6 +2357,9 @@ editor_ui_build_inspector_panels :: proc(
 	}
 	entity := world.entities[entity_index]
 	builder.target = entity.id
+	if editor_ui_build_reflected_inspector_panels(&builder, entity_index) {
+		return
+	}
 	if entity.transform_index >= 0 && entity.transform_index < len(world.transforms) {
 		value := world.transforms[entity.transform_index]
 		editor_ui_begin_inspector_component(&builder, "TRANSFORM")
@@ -2647,6 +2982,11 @@ editor_ui_prepare_input_focus :: proc(state: ^State, world: ^shared.World, entit
 	if !found || !input.numeric {
 		return
 	}
+	if binding.reflected_component_id != shared.INVALID_COMPONENT_ID {
+		binding.input_original_number = input.number
+		binding.input_has_original_number = true
+		return
+	}
 	if number, ok := read_inspector_numeric(world, binding^); ok {
 		set_numeric_input_text(state, world, entity_index, input, number)
 		binding.input_original_number = number
@@ -2669,6 +3009,12 @@ editor_ui_consume_input_state :: proc(state: ^State, world: ^shared.World, entit
 			if selected, ok := editor_selected_world_index(state, world); ok {
 				_ = editor_authoring_rename_entity(state, world, selected, input.text)
 			}
+		}
+		return
+	}
+	if binding.reflected_component_id != shared.INVALID_COMPONENT_ID {
+		if interaction.submitted {
+			_ = editor_reflected_apply_text(state, world, binding^, input.text)
 		}
 		return
 	}

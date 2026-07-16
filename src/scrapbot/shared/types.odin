@@ -578,6 +578,7 @@ Editor_Inspector_Axis :: enum {
 	X,
 	Y,
 	Z,
+	W,
 }
 
 Editor_Gizmo_Mode :: enum {
@@ -671,6 +672,8 @@ Editor_UI_Component :: struct {
 	inspector_axis: Editor_Inspector_Axis,
 	custom_storage_index: int,
 	custom_field_index: int,
+	reflected_component_id: Component_ID,
+	reflected_field_index: int,
 	input_original_number: f32,
 	input_has_original_number: bool,
 }

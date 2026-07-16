@@ -35,6 +35,7 @@ For every public `scrapbot.ui_*` field or component, audit the applicable owners
 - Queue project/native structural changes until the system step completes. Do not mutate query membership during iteration.
 - Reuse removed component slots and release owned strings on removal/despawn. Do not add per-frame scans over storage capacity or whole-world reconciliation.
 - Preserve the current editor look unless the user requests a visual change. Theme values belong in editor composition; control geometry and style fields remain public.
+- Drive generic inspector fields from `component.Registry` definitions and typed entity snapshots. Do not add editor-only convenience fields to public registry definitions unless parser, Luau, native-extension, serialization, and runtime-storage contracts all support the same representation. Keep engine-derived and opaque values read-only until that contract exists.
 
 ## Verification
 

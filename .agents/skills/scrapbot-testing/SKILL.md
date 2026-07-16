@@ -136,6 +136,8 @@ Use `view_image` only when the conclusion depends on visual inspection. Start wi
 
 For interactive UI bugs, prefer a semantic script plus `--ui-dump`. A script is a versioned JSON object with an `actions` array. Actions may `click`, `hover`, `scroll`, `type`, send a `key`, `wait`, `expect`, or select a `capture` target. Targets match UUID, entity name, or visible text and may choose a zero-based `occurrence`; the driver automatically reveals targets through clipped ancestor scroll areas. A target `capture` overrides full-frame output unless an explicit `--framegrab-region` was supplied. Inspect `driver_action_index`, `driver_action`, and `driver_target` in a failure dump before changing code.
 
+Use `tests/fixtures/ui/reflected-inspector.json` to verify that a registry-driven field edit reaches project ECS state, marks stopped authoring dirty, and restores exactly through Undo. Extend its unit companion in `src/scrapbot/ui/ui_test.odin` when adding a new reflected field shape or specialized picker.
+
 When reproducing or verifying an editor/UI interaction bug, read
 [`references/ui-diagnostics.md`](references/ui-diagnostics.md) and follow its replay-dump-capture loop. Do not claim a visual fix from layout arithmetic or a successful process exit alone: assert the semantic state and inspect the smallest relevant 1:1 PNG.
 

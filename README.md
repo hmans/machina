@@ -180,8 +180,8 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] System profiler
   - [x] Entity browser
   - [x] Entity selection
-  - [x] Component field/value inspector with editable common fields
-  - [ ] General component value editing
+  - [x] Registry-driven component inspector with generic Bool, String, Number, Vec2, Vec3, and Vec4 editing
+  - [ ] Specialized enum, color, entity-reference, resource-reference, array, and nested-value editors
   - [ ] Searchable browser
   - [ ] Hierarchical browser
 - Editing

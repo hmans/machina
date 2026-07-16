@@ -19,7 +19,7 @@ set_inspector_vec3_axis :: proc(
 			value.y = number
 		case .Z:
 			value.z = number
-		case .None:
+		case .None, .W:
 			return false
 	}
 	return true
@@ -58,7 +58,7 @@ read_inspector_numeric :: proc(
 				return value.y, true
 			case .Z:
 				return value.z, true
-			case .None:
+			case .None, .W:
 				return 0, false
 		}
 		return 0, false
@@ -758,7 +758,9 @@ validate_focused_editor_input :: proc(state: ^State, world: ^shared.World) {
 	available := found && !ui_entity_or_ancestor_hidden(world, input_entity)
 	if available && binding.role == .Inspector_Input {
 		_, _, available = inspector_target(world, binding)
-		if available {
+		if available && binding.reflected_component_id != shared.INVALID_COMPONENT_ID {
+			_, available = editor_reflected_definition(state, binding)
+		} else if available {
 			entity := world.entities[input_entity]
 			if entity.ui_input_index >= 0 &&
 			   entity.ui_input_index < len(world.ui_inputs) &&

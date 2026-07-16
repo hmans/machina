@@ -3770,6 +3770,191 @@ test_editor_boolean_transaction_restores_dependent_stack_fields :: proc(t: ^test
 }
 
 @(test)
+test_reflected_inspector_edits_every_registry_field_shape_with_structural_undo :: proc(
+	t: ^testing.T,
+) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	text := shared.ui_text_default()
+	text.text = "Hello"
+	table := shared.ui_table_default()
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = ui_test_id("Reflected Inspector"),
+			name = "Reflected Inspector",
+			has_ui_layout = true,
+			ui_layout = {size = {320, 180}, background = {0.1, 0.2, 0.3, 1}},
+			has_ui_table = true,
+			ui_table = table,
+			has_ui_text = true,
+			ui_text = text,
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	registry: component.Registry
+	component.init_registry(&registry)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.component_registry = &registry
+	state.editor_visible = true
+	state.editor_simulation_playing = false
+	state.editor_simulation_stopped = true
+	state.editor_selected_entity = world.entities[0].id
+	state.editor_has_selection = true
+
+	definition_pointer := proc(
+		registry: ^component.Registry,
+		name: string,
+	) -> ^component.Definition {
+		for index in 0 ..< registry.definition_count {
+			if registry.definitions[index].name == name {
+				return &registry.definitions[index]
+			}
+		}
+		return nil
+	}
+	field_index := proc(definition: ^component.Definition, name: string) -> int {
+		if definition == nil {
+			return -1
+		}
+		for index in 0 ..< definition.field_count {
+			if definition.fields[index].name == name {
+				return index
+			}
+		}
+		return -1
+	}
+	binding := proc(
+		world: ^shared.World,
+		definition: ^component.Definition,
+		field: int,
+		axis: shared.Editor_Inspector_Axis = .None,
+	) -> shared.Editor_UI_Component {
+		return {
+			target = world.entities[0].id,
+			inspector_axis = axis,
+			reflected_component_id = definition.id,
+			reflected_field_index = field,
+		}
+	}
+
+	layout := definition_pointer(&registry, "scrapbot.ui_layout")
+	table_definition := definition_pointer(&registry, "scrapbot.ui_table")
+	text_definition := definition_pointer(&registry, "scrapbot.ui_text")
+	testing.expect(t, layout != nil && table_definition != nil && text_definition != nil)
+	if layout == nil || table_definition == nil || text_definition == nil {
+		return
+	}
+	testing.expect(
+		t,
+		editor_reflected_apply_text(
+			state,
+			&world,
+			binding(&world, text_definition, field_index(text_definition, "text")),
+			"Goodbye",
+		),
+	)
+	testing.expect(t, world.ui_texts[world.entities[0].ui_text_index].text == "Goodbye")
+	testing.expect(
+		t,
+		editor_reflected_apply_text(
+			state,
+			&world,
+			binding(&world, text_definition, field_index(text_definition, "alignment")),
+			"right",
+		),
+	)
+	testing.expect(t, world.ui_texts[world.entities[0].ui_text_index].alignment == .Right)
+	testing.expect(
+		t,
+		editor_reflected_apply_text(
+			state,
+			&world,
+			binding(&world, layout, field_index(layout, "position"), .X),
+			"42.5",
+		),
+	)
+	testing.expect(t, world.ui_layouts[world.entities[0].ui_layout_index].position.x == 42.5)
+	testing.expect(
+		t,
+		editor_reflected_apply_text(
+			state,
+			&world,
+			binding(&world, layout, field_index(layout, "background"), .W),
+			"0.5",
+		),
+	)
+	testing.expect(t, world.ui_layouts[world.entities[0].ui_layout_index].background.w == 0.5)
+	testing.expect(
+		t,
+		editor_reflected_apply_text(
+			state,
+			&world,
+			binding(&world, table_definition, field_index(table_definition, "columns")),
+			"3",
+		),
+	)
+	testing.expect(t, world.ui_tables[world.entities[0].ui_table_index].columns == 3)
+	testing.expect(
+		t,
+		editor_reflected_apply_bool(
+			state,
+			&world,
+			binding(&world, layout, field_index(layout, "hidden")),
+			true,
+		),
+	)
+	testing.expect(t, world.ui_layouts[world.entities[0].ui_layout_index].hidden)
+	testing.expect(t, state.editor_history_count == 6)
+	testing.expect(t, state.editor_scene_dirty)
+
+	invalid_binding := binding(&world, table_definition, field_index(table_definition, "columns"))
+	testing.expect(t, !editor_reflected_input_valid(state, &world, invalid_binding, "0"))
+	testing.expect(t, !editor_reflected_apply_text(state, &world, invalid_binding, "0"))
+	testing.expect(t, world.ui_tables[world.entities[0].ui_table_index].columns == 3)
+	testing.expect(t, state.editor_history_count == 6)
+
+	for _ in 0 ..< 6 {
+		testing.expect(t, editor_undo(state, &world))
+	}
+	testing.expect(t, world.ui_texts[world.entities[0].ui_text_index].text == "Hello")
+	testing.expect(t, world.ui_texts[world.entities[0].ui_text_index].alignment == .Left)
+	testing.expect(t, world.ui_layouts[world.entities[0].ui_layout_index].position.x == 0)
+	testing.expect(t, world.ui_layouts[world.entities[0].ui_layout_index].background.w == 1)
+	testing.expect(t, world.ui_tables[world.entities[0].ui_table_index].columns == 1)
+	testing.expect(t, !world.ui_layouts[world.entities[0].ui_layout_index].hidden)
+	testing.expect(t, !state.editor_scene_dirty)
+
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	found_text_input := false
+	found_vec4_w := false
+	for editor_binding in world.editor_uis {
+		if editor_binding.role != .Inspector_Input ||
+		   editor_binding.reflected_component_id == shared.INVALID_COMPONENT_ID {
+			continue
+		}
+		if editor_binding.reflected_component_id == text_definition.id &&
+		   editor_binding.reflected_field_index == field_index(text_definition, "text") {
+			input_entity := world.entities[editor_binding.entity_index]
+			found_text_input =
+				input_entity.ui_input_index >= 0 &&
+				!world.ui_inputs[input_entity.ui_input_index].read_only
+		}
+		if editor_binding.reflected_component_id == layout.id &&
+		   editor_binding.reflected_field_index == field_index(layout, "background") &&
+		   editor_binding.inspector_axis == .W {
+			found_vec4_w = true
+		}
+	}
+	testing.expect(t, found_text_input)
+	testing.expect(t, found_vec4_w)
+}
+
+@(test)
 test_editor_entity_and_component_snapshots_refresh_at_five_hz :: proc(t: ^testing.T) {
 	scene := shared.Scene{}; defer delete(scene.entities)
 	append(
