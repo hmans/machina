@@ -752,6 +752,9 @@ reconcile :: proc(
 	project_pressed, project_pressed_ok := update_interaction(state, project_pointer, false)
 	component_menu_was_open := state.editor_component_menu_open
 	pressed, pressed_ok := update_interaction(state, editor_pointer, true)
+	if state.pointer_cursor == .Default {
+		state.pointer_cursor = numeric_input_pointer_cursor(state, world)
+	}
 	sync_ui_interaction_states(state, world)
 	panel_changed := false
 	if pressed_ok {
@@ -837,7 +840,11 @@ reconcile :: proc(
 		editor_ui_handle_history_shortcut(state, world, keyboard)
 	if !editor_save_handled && !editor_history_handled {
 		update_focused_input(state, world, keyboard, delta_seconds)
-		update_input_scrub(state, world, editor_pointer, keyboard)
+		scrub_pointer := project_pointer
+		if state.focused_input_editor {
+			scrub_pointer = editor_pointer
+		}
+		update_input_scrub(state, world, scrub_pointer, keyboard)
 	} else {
 		input_event_entity_index = -1
 	}
@@ -1658,6 +1665,36 @@ split_pointer_cursor :: proc(state: ^State) -> Pointer_Cursor {
 	return .Default
 }
 
+numeric_input_pointer_cursor :: proc(state: ^State, world: ^shared.World) -> Pointer_Cursor {
+	if state == nil || world == nil {
+		return .Default
+	}
+	if state.input_scrub_armed || state.input_scrubbing {
+		return .Horizontal_Resize
+	}
+	for node in state.nodes[:state.node_count] {
+		if !node.hovered {
+			continue
+		}
+		entity_index := int(node.entity.index)
+		if entity_index < 0 || entity_index >= len(world.entities) {
+			continue
+		}
+		entity := world.entities[entity_index]
+		if !entity.alive ||
+		   entity.id != node.entity ||
+		   entity.ui_input_index < 0 ||
+		   entity.ui_input_index >= len(world.ui_inputs) {
+			continue
+		}
+		input := world.ui_inputs[entity.ui_input_index]
+		if input.numeric && !input.read_only {
+			return .Horizontal_Resize
+		}
+	}
+	return .Default
+}
+
 current_pointer_cursor :: proc(state: ^State) -> Pointer_Cursor {
 	if state == nil { return .Default }
 	return state.pointer_cursor
@@ -1842,20 +1879,7 @@ handle_input_press :: proc(
 	focus_input(state, world, index)
 	input := world.ui_inputs[entity.ui_input_index]
 	node_index := find_node(state, entity.id)
-	prefix_hit_end := f32(0)
-	if node_index >= 0 &&
-	   entity.ui_layout_index >= 0 &&
-	   entity.ui_layout_index < len(world.ui_layouts) {
-		prefix_hit_end =
-			state.nodes[node_index].rect.x +
-			world.ui_layouts[entity.ui_layout_index].padding.w +
-			input.prefix_width
-	}
-	if input.numeric &&
-	   input.scrubbable &&
-	   input.prefix_width > 0 &&
-	   node_index >= 0 &&
-	   position.x <= prefix_hit_end {
+	if input.numeric && !input.read_only && node_index >= 0 {
 		state.input_scrub_armed = state.input_has_original_number
 		state.input_scrub_start_x = position.x
 		state.input_scrub_start_number = state.input_original_number
@@ -2192,7 +2216,7 @@ update_input_scrub :: proc(
 		return
 	}
 	input := &world.ui_inputs[entity.ui_input_index]
-	if !input.numeric || !input.scrubbable {
+	if !input.numeric || input.read_only {
 		state.input_scrub_armed = false
 		state.input_scrubbing = false
 		return

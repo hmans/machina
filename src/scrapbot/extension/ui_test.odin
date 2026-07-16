@@ -76,7 +76,6 @@ test_ui_helpers_preserve_styles_and_use_the_shared_native_contract :: proc(t: ^t
 	input_style.numeric = 1
 	input_style.has_minimum = 1
 	input_style.has_maximum = 1
-	input_style.scrubbable = 1
 	input_style.prefix_gap = 4
 	input_style.prefix_corner_radius = 0
 	input_style.invalid_border_width = 3

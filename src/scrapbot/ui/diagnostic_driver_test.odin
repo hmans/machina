@@ -14,6 +14,8 @@ DIAGNOSTIC_DRIVER_TEST_SCRIPT :: `{
     {"action": "click", "target": {"text": "OPEN"}},
     {"action": "hover", "target": {"text": "CHOICE"}},
     {"action": "expect", "target": {"text": "CHOICE"}, "expect": "hovered"},
+    {"action": "drag", "target": {"name": "Driver Number"}, "delta_x": 1.5},
+    {"action": "expect", "target": {"name": "Driver Number"}, "expect": "text", "text": "2"},
     {"action": "capture", "target": {"text": "CHOICE"}, "padding": 4}
   ]
 }`
@@ -78,6 +80,14 @@ test_diagnostic_driver_replays_semantic_actions_and_dumps_the_ui_tree :: proc(t:
 				hover_background = {0.2, 0.3, 0.4, 1},
 			},
 		},
+		shared.Scene_Entity {
+			id = ui_test_id("Driver Number"),
+			name = "Driver Number",
+			has_ui_layout = true,
+			ui_layout = {position = {260, 10}, size = {120, 32}},
+			has_ui_input = true,
+			ui_input = {text = "1", number = 1, step = 0.5, numeric = true},
+		},
 	)
 	world := ecs.build_world(&scene)
 	defer ecs.destroy_world(&world)
@@ -91,7 +101,7 @@ test_diagnostic_driver_replays_semantic_actions_and_dumps_the_ui_tree :: proc(t:
 	testing.expect(t, diagnostic_driver_load(&driver, script_path) == "")
 	defer diagnostic_driver_destroy(&driver)
 	open_activated := false
-	for _ in 0 ..< 12 {
+	for _ in 0 ..< 20 {
 		pointer, keyboard, driver_err := diagnostic_driver_input(&driver, state, &world, 240, 100)
 		testing.expectf(t, driver_err == "", "driver failed: %s", driver_err)
 		if driver_err != "" {
@@ -110,6 +120,7 @@ test_diagnostic_driver_replays_semantic_actions_and_dumps_the_ui_tree :: proc(t:
 	}
 	testing.expect(t, diagnostic_driver_is_complete(&driver))
 	testing.expect(t, open_activated)
+	testing.expect(t, world.ui_inputs[world.entities[3].ui_input_index].number == 2)
 	choice_node := find_node(state, world.entities[2].id)
 	testing.expect(t, choice_node >= 0 && state.nodes[choice_node].hovered)
 	capture_rect, capture_found := diagnostic_driver_capture_rect(&driver, state, &world, 240, 100)

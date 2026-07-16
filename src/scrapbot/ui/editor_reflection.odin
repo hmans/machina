@@ -689,6 +689,102 @@ editor_reflected_apply_snapshot :: proc(
 	return true
 }
 
+editor_reflected_preview_number :: proc(
+	state: ^State,
+	world: ^shared.World,
+	binding: shared.Editor_UI_Component,
+	number: f32,
+) -> bool {
+	definition, found := editor_reflected_definition(state, binding)
+	if !found {
+		return false
+	}
+	_, target_index, target_ok := inspector_target(world, binding)
+	if !target_ok {
+		return false
+	}
+	snapshot := capture_snapshot_pointer(world, target_index)
+	if snapshot == nil {
+		return false
+	}
+	changed, valid := editor_reflected_set_field_text(
+		&snapshot.entity,
+		definition,
+		binding.reflected_field_index,
+		binding.inspector_axis,
+		fmt.tprintf("%.9g", number),
+	)
+	if !valid || !changed {
+		destroy_snapshot_pointer(snapshot)
+		return valid
+	}
+	if _, applied := ecs.apply_entity_snapshot(world, snapshot); !applied {
+		destroy_snapshot_pointer(snapshot)
+		return false
+	}
+	destroy_snapshot_pointer(snapshot)
+	state.editor_snapshot_valid = false
+	if ecs.entity_is_alive(world, target_index) {
+		editor_mark_scene_dirty(state, &world.entities[target_index])
+		editor_authoring_select(state, world, target_index)
+	}
+	return true
+}
+
+editor_reflected_finish_number_scrub :: proc(
+	state: ^State,
+	world: ^shared.World,
+	binding: shared.Editor_UI_Component,
+	before_number, after_number: f32,
+	cancelled: bool,
+) -> bool {
+	if cancelled {
+		result := editor_reflected_preview_number(state, world, binding, before_number)
+		editor_recompute_scene_dirty(state)
+		return result
+	}
+	if before_number == after_number {
+		editor_recompute_scene_dirty(state)
+		return true
+	}
+	definition, found := editor_reflected_definition(state, binding)
+	if !found {
+		return false
+	}
+	_, target_index, target_ok := inspector_target(world, binding)
+	if !target_ok {
+		return false
+	}
+	before := capture_snapshot_pointer(world, target_index)
+	after := capture_snapshot_pointer(world, target_index)
+	if before == nil || after == nil {
+		destroy_snapshot_pointer(before)
+		destroy_snapshot_pointer(after)
+		return false
+	}
+	changed, valid := editor_reflected_set_field_text(
+		&before.entity,
+		definition,
+		binding.reflected_field_index,
+		binding.inspector_axis,
+		fmt.tprintf("%.9g", before_number),
+	)
+	if !valid || !changed {
+		destroy_snapshot_pointer(before)
+		destroy_snapshot_pointer(after)
+		editor_recompute_scene_dirty(state)
+		return valid
+	}
+	if state.editor_simulation_stopped && before.origin == .Scene {
+		push_structural_change(state, before.entity.id, before, after)
+	} else {
+		destroy_snapshot_pointer(before)
+		destroy_snapshot_pointer(after)
+		state.editor_snapshot_valid = false
+	}
+	return true
+}
+
 editor_reflected_apply_text :: proc(
 	state: ^State,
 	world: ^shared.World,

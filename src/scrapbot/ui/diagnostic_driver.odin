@@ -25,6 +25,8 @@ Diagnostic_Action :: struct {
 	key: string,
 	frames: int,
 	wheel_y: f32,
+	delta_x: f32,
+	delta_y: f32,
 	padding: f32,
 }
 
@@ -159,7 +161,7 @@ diagnostic_driver_destroy :: proc(driver: ^Diagnostic_Driver) {
 
 diagnostic_action_is_valid :: proc(action: Diagnostic_Action) -> bool {
 	switch action.action {
-		case "click", "hover", "scroll", "type", "capture":
+		case "click", "hover", "scroll", "type", "drag", "capture":
 			return diagnostic_target_is_valid(action.target)
 		case "expect":
 			return(
@@ -285,6 +287,22 @@ diagnostic_driver_input :: proc(
 		diagnostic_driver_advance(driver)
 		return pointer, keyboard, ""
 	}
+	if action.action == "drag" {
+		if driver.phase == 1 {
+			pointer.position.x += action.delta_x
+			pointer.position.y += action.delta_y
+			pointer.primary_down = true
+			driver.last_pointer = pointer
+			driver.phase = 2
+			return pointer, keyboard, ""
+		}
+		if driver.phase == 2 {
+			pointer.primary_down = false
+			driver.last_pointer = pointer
+			diagnostic_driver_advance(driver)
+			return pointer, keyboard, ""
+		}
+	}
 	if action.action == "type" {
 		if driver.phase == 1 {
 			pointer.primary_down = false
@@ -334,6 +352,9 @@ diagnostic_driver_input :: proc(
 			pointer.wheel_y = action.wheel_y
 			diagnostic_driver_advance(driver)
 		case "type":
+			pointer.primary_down = true
+			driver.phase = 1
+		case "drag":
 			pointer.primary_down = true
 			driver.phase = 1
 		case "capture":

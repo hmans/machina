@@ -202,7 +202,6 @@ system_get_ui_component :: proc "c" (
 				numeric = bool_to_c_int(value.numeric),
 				has_minimum = bool_to_c_int(value.has_minimum),
 				has_maximum = bool_to_c_int(value.has_maximum),
-				scrubbable = bool_to_c_int(value.scrubbable),
 			}
 			if !api_ui_payload_set_strings(
 				payload,
@@ -474,7 +473,6 @@ ui_command_from_api_payload :: proc "c" (
 				numeric = payload.input.numeric != 0,
 				has_minimum = payload.input.has_minimum != 0,
 				has_maximum = payload.input.has_maximum != 0,
-				scrubbable = payload.input.scrubbable != 0,
 			}
 			if !shared.ui_input_is_valid(value) { return "native ui_input payload is invalid" }
 			command.input = value

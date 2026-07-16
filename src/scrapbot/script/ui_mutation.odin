@@ -459,8 +459,6 @@ read_ui_component_command_from_luau :: proc "c" (
 			   err != "" { return err }
 			if err := read_ui_bool_field(L, payload_index, "has_maximum", &value.has_maximum);
 			   err != "" { return err }
-			if err := read_ui_bool_field(L, payload_index, "scrubbable", &value.scrubbable);
-			   err != "" { return err }
 			if !shared.ui_input_is_valid(value) { return "ui_input payload is invalid" }
 			command.input = value
 			command.input.text = ""

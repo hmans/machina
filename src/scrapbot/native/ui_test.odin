@@ -56,7 +56,6 @@ test_native_ui_api_reads_defers_updates_removes_and_spawns_shared_components :: 
 	input.numeric = true
 	input.has_minimum = true
 	input.has_maximum = true
-	input.scrubbable = true
 	input.prefix_gap = 4
 	input.prefix_corner_radius = 0
 	input.invalid_border_width = 3
@@ -120,7 +119,7 @@ test_native_ui_api_reads_defers_updates_removes_and_spawns_shared_components :: 
 	testing.expect(t, prefix_ok && prefix == "X")
 	testing.expect(t, input_payload.input.prefix_width == 13)
 	testing.expect(t, input_payload.input.number == 42 && input_payload.input.step == 0.5)
-	testing.expect(t, input_payload.input.numeric != 0 && input_payload.input.scrubbable != 0)
+	testing.expect(t, input_payload.input.numeric != 0)
 	testing.expect(t, input_payload.input.prefix_gap == 4)
 	testing.expect(t, input_payload.input.prefix_corner_radius == 0)
 	testing.expect(t, input_payload.input.invalid_border_width == 3)

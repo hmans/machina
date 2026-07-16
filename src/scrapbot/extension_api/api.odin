@@ -222,7 +222,6 @@ UI_Input_Payload :: struct {
 	numeric: c.int,
 	has_minimum: c.int,
 	has_maximum: c.int,
-	scrubbable: c.int,
 }
 
 UI_Checkbox_Payload :: struct {

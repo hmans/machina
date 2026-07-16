@@ -44,6 +44,7 @@ Example script:
 ## Actions
 
 - `click`, `hover`: target a retained UI node.
+- `drag`: press the target center, move by `delta_x` and `delta_y`, then release on the following frame.
 - `scroll`: target a node and supply `wheel_y`.
 - `type`: target an input and supply `text`.
 - `key`: supply `key`: `left`, `right`, `up`, `down`, `home`, `end`, `backspace`, `delete`, `tab`, `enter`, `escape`, `select_all`, `save`, `undo`, `redo`, `editor_toggle`, `run_stop`, or `pause_step`.

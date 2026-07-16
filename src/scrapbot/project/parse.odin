@@ -762,8 +762,6 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						current.ui_input.has_minimum, found = parse_bool(value)
 					case "has_maximum":
 						current.ui_input.has_maximum, found = parse_bool(value)
-					case "scrubbable":
-						current.ui_input.scrubbable, found = parse_bool(value)
 					case:
 						return scene, fail(
 							.Invalid_Field,

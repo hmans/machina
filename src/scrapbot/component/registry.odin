@@ -261,7 +261,6 @@ init_registry :: proc(registry: ^Registry) {
 			Field_Definition{name = "numeric", field_type = .Bool},
 			Field_Definition{name = "has_minimum", field_type = .Bool},
 			Field_Definition{name = "has_maximum", field_type = .Bool},
-			Field_Definition{name = "scrubbable", field_type = .Bool},
 		},
 	)
 	register_engine_component(

@@ -15,6 +15,14 @@
     {"action": "wait", "frames": 2},
     {"action": "expect", "target": {"text": "SCRAPBOT UI", "origin": "editor"}, "expect": "text", "text": "SCRAPBOT UI"},
     {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "STOPPED"},
+    {"action": "drag", "target": {"name": "__scrapbot_editor_inspector_input_27", "origin": "editor"}, "delta_x": 20},
+    {"action": "wait", "frames": 2},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_inspector_input_27", "origin": "editor"}, "expect": "text", "text": "0.2"},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "STOPPED  /  UNSAVED"},
+    {"action": "click", "target": {"text": "UNDO", "origin": "editor"}},
+    {"action": "wait", "frames": 2},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_inspector_input_27", "origin": "editor"}, "expect": "text", "text": "0.15"},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "STOPPED"},
     {"action": "capture", "target": {"name": "__scrapbot_editor_inspector_panel_1", "origin": "editor"}, "padding": 8}
   ]
 }

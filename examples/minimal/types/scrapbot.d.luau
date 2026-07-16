@@ -600,7 +600,6 @@ export type ScrapbotUiInput = {
 	numeric: boolean?,
 	has_minimum: boolean?,
 	has_maximum: boolean?,
-	scrubbable: boolean?,
 }
 
 export type ReadonlyScrapbotUiInput = {
@@ -632,7 +631,6 @@ export type ReadonlyScrapbotUiInput = {
 	read numeric: boolean,
 	read has_minimum: boolean,
 	read has_maximum: boolean,
-	read scrubbable: boolean,
 }
 
 export type ScrapbotUiInputComponent = ScrapbotComponent<ScrapbotUiInput, ReadonlyScrapbotUiInput>

@@ -983,7 +983,6 @@ test_numeric_input_exposes_reusable_validation_submit_cancel_and_scrub_state :: 
 				numeric = true,
 				has_minimum = true,
 				has_maximum = true,
-				scrubbable = true,
 			},
 		},
 	)
@@ -1035,6 +1034,22 @@ test_numeric_input_exposes_reusable_validation_submit_cancel_and_scrub_state :: 
 	testing.expect(t, input.text == "1.5" && input.number == 1.5)
 	testing.expect(t, interaction.cancelled && interaction.cancel_revision == 1)
 	testing.expect(t, interaction.valid)
+
+	// Every writable numeric input scrubs from its complete surface, without a prefix opt-in.
+	drag_start := Pointer_Input {
+		position = {120, 20},
+		primary_down = true,
+		available = true,
+	}
+	testing.expect(t, reconcile(state, &world, 200, 80, drag_start) == "")
+	testing.expect(t, current_pointer_cursor(state) == .Horizontal_Resize)
+	drag := drag_start
+	drag.position.x += 8
+	testing.expect(t, reconcile(state, &world, 200, 80, drag) == "")
+	testing.expect(t, input.number == 2 && input.text == "2")
+	drag.primary_down = false
+	testing.expect(t, reconcile(state, &world, 200, 80, drag) == "")
+	testing.expect(t, interaction.submitted && interaction.submit_revision == 2)
 }
 
 @(test)
@@ -3927,6 +3942,16 @@ test_reflected_inspector_edits_every_registry_field_shape_with_structural_undo :
 	testing.expect(t, world.ui_layouts[world.entities[0].ui_layout_index].background.w == 1)
 	testing.expect(t, world.ui_tables[world.entities[0].ui_table_index].columns == 1)
 	testing.expect(t, !world.ui_layouts[world.entities[0].ui_layout_index].hidden)
+	testing.expect(t, !state.editor_scene_dirty)
+
+	color_w := binding(&world, layout, field_index(layout, "background"), .W)
+	testing.expect(t, editor_reflected_preview_number(state, &world, color_w, 0.75))
+	testing.expect(t, world.ui_layouts[world.entities[0].ui_layout_index].background.w == 0.75)
+	testing.expect(t, state.editor_scene_dirty)
+	testing.expect(t, editor_reflected_finish_number_scrub(state, &world, color_w, 1, 0.75, false))
+	testing.expect(t, state.editor_history_count == 1 && state.editor_history_cursor == 1)
+	testing.expect(t, editor_undo(state, &world))
+	testing.expect(t, world.ui_layouts[world.entities[0].ui_layout_index].background.w == 1)
 	testing.expect(t, !state.editor_scene_dirty)
 
 	testing.expect(t, reconcile(state, &world, 1280, 720) == "")

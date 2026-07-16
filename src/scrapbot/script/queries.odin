@@ -664,7 +664,6 @@ push_ui_input_table :: proc "c" (L: Lua_State, value: shared.UI_Input_Component)
 	push_bool_field(L, "numeric", value.numeric)
 	push_bool_field(L, "has_minimum", value.has_minimum)
 	push_bool_field(L, "has_maximum", value.has_maximum)
-	push_bool_field(L, "scrubbable", value.scrubbable)
 }
 
 push_ui_checkbox_table :: proc "c" (L: Lua_State, value: shared.UI_Checkbox_Component) {

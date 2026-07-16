@@ -103,7 +103,7 @@
 - [x] Add an ECS-owned World/Local gizmo orientation with viewport controls and stable drag bases.
 - [x] Add an editor-origin ECS scene camera with RMB-captured WASD, Space, and Ctrl fly navigation.
 - [x] Add live inspector editing for transform, camera, light, and custom Vec3 fields.
-- [x] Add numeric validation, keyboard stepping, axis-label scrubbing, and bounded inspector undo/redo.
+- [x] Add numeric validation, keyboard stepping, full-control scrubbing, and bounded inspector undo/redo.
 - [x] Unify numeric, boolean, and transform-gizmo edits as UUID-addressed authoring transactions.
 - [x] Add Play, Pause, fixed-frame Step, non-destructive Stop restoration, stopped-mode Undo/Redo, explicit Save, and destructive Revert controls.
 - [x] Add Cmd/Ctrl editor, Play/Stop, and Pause/Step command shortcuts with project-input and fly-camera ownership guards.

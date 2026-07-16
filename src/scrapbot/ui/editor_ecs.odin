@@ -1681,13 +1681,11 @@ editor_ui_inspector_field_values :: proc(
 		}
 		_ = ecs.set_ui_input_prefix(builder.world, input_entity, "")
 		value_input.prefix_width = 0
-		value_input.scrubbable = false
 		if len(values) > 1 {
 			role.inspector_axis = shared.Editor_Inspector_Axis(value_index + 1)
 		}
 		if role.inspector_axis != .None {
 			value_input.prefix_width = UI_INPUT_PREFIX_WIDTH
-			value_input.scrubbable = true
 			prefix := "X"
 			value_input.prefix_color = {0.92, 0.30, 0.32, 1}
 			if role.inspector_axis == .Y {
@@ -2745,7 +2743,6 @@ editor_ui_build_inspector_panels :: proc(
 		editor_ui_inspector_field(&builder, "caret color", format_vec4(value.caret_color))
 		editor_ui_inspector_field(&builder, "caret width", fmt.tprintf("%.2f", value.caret_width))
 		editor_ui_inspector_bool(&builder, "numeric", value.numeric)
-		editor_ui_inspector_bool(&builder, "scrubbable", value.scrubbable)
 		editor_ui_inspector_bool(&builder, "read only", value.read_only, .UI_Input_Read_Only)
 	}
 	if entity.ui_checkbox_index >= 0 && entity.ui_checkbox_index < len(world.ui_checkboxes) {
@@ -2985,12 +2982,14 @@ editor_ui_prepare_input_focus :: proc(state: ^State, world: ^shared.World, entit
 	if binding.reflected_component_id != shared.INVALID_COMPONENT_ID {
 		binding.input_original_number = input.number
 		binding.input_has_original_number = true
+		binding.input_was_scrubbed = false
 		return
 	}
 	if number, ok := read_inspector_numeric(world, binding^); ok {
 		set_numeric_input_text(state, world, entity_index, input, number)
 		binding.input_original_number = number
 		binding.input_has_original_number = true
+		binding.input_was_scrubbed = false
 	}
 }
 
@@ -3013,8 +3012,38 @@ editor_ui_consume_input_state :: proc(state: ^State, world: ^shared.World, entit
 		return
 	}
 	if binding.reflected_component_id != shared.INVALID_COMPONENT_ID {
+		if input.numeric && interaction.changed && interaction.valid && state.input_scrubbing {
+			if editor_reflected_preview_number(state, world, binding^, input.number) {
+				binding.input_was_scrubbed = true
+			}
+		}
+		if interaction.cancelled && binding.input_was_scrubbed {
+			_ = editor_reflected_finish_number_scrub(
+				state,
+				world,
+				binding^,
+				binding.input_original_number,
+				input.number,
+				true,
+			)
+			binding.input_has_original_number = false
+			binding.input_was_scrubbed = false
+		}
 		if interaction.submitted {
-			_ = editor_reflected_apply_text(state, world, binding^, input.text)
+			if input.numeric && binding.input_was_scrubbed {
+				_ = editor_reflected_finish_number_scrub(
+					state,
+					world,
+					binding^,
+					binding.input_original_number,
+					input.number,
+					false,
+				)
+			} else {
+				_ = editor_reflected_apply_text(state, world, binding^, input.text)
+			}
+			binding.input_has_original_number = false
+			binding.input_was_scrubbed = false
 		}
 		return
 	}

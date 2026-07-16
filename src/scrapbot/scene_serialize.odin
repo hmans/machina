@@ -255,7 +255,6 @@ write_scene_input :: proc(builder: ^strings.Builder, value: shared.UI_Input_Comp
 	write_scene_value(builder, "numeric", scene_bool(value.numeric))
 	write_scene_value(builder, "has_minimum", scene_bool(value.has_minimum))
 	write_scene_value(builder, "has_maximum", scene_bool(value.has_maximum))
-	write_scene_value(builder, "scrubbable", scene_bool(value.scrubbable))
 }
 
 write_scene_checkbox :: proc(builder: ^strings.Builder, value: shared.UI_Checkbox_Component) {

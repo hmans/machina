@@ -1,7 +1,7 @@
 # FDR-007: ECS UI
 
 **Status:** Active
-**Last reviewed:** 2026-07-15
+**Last reviewed:** 2026-07-16
 
 ## Overview
 
@@ -23,14 +23,14 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 - Text controls provide labels with RGBA color, pixel size, and left, center, or right alignment within the padded content box. Buttons consume generic element state with optional hover and active background and text colors, and independently align their vertically centered label left, center, or right.
 - Single-line input controls store authored text in their ECS component while the retained UI state owns focus, cursor, selection, horizontal reveal, and blink state. Clicking selects all text.
 - Checkbox controls store their boolean state and complete box, border, radius, checkmark, hover, and active styling in an ECS component, consume generic hover/active state, toggle on primary press, and render their box and checkmark analytically with SDFs. Read-only checkboxes retain their visual state without accepting pointer changes.
-- Focused inputs accept typed text, Left/Right/Home/End cursor movement, Shift-extended selection, Backspace/Delete, and Select All. Tab and Shift+Tab traverse inputs in paint order; Enter submits and leaves the field, while Escape restores the value present when focus began. Numeric inputs provide bounds, stepping, validation, pointer scrubbing, and optional styled prefix badges through the same public component. Prefix spacing/radius, selection radius, focus/invalid borders, and caret geometry/colors are public styles.
+- Focused inputs accept typed text, Left/Right/Home/End cursor movement, Shift-extended selection, Backspace/Delete, and Select All. Tab and Shift+Tab traverse inputs in paint order; Enter submits and leaves the field, while Escape restores the value present when focus began. Every writable numeric input provides bounds, stepping, validation, and horizontal pointer scrubbing across its complete control surface. Optional styled prefix badges remain presentation and do not gate interaction. Prefix spacing/radius, selection radius, focus/invalid borders, and caret geometry/colors are public styles.
 - Backgrounds and inset borders use GPU-evaluated signed-distance rounded rectangles, including square corners at a zero radius.
 - Structural dirty notifications add, update, or remove only affected retained nodes when UI components or entities appear and disappear. Updating values on already-attached UI components does not dirty retained membership; reparenting, hiding, attachment, and removal do. Structural synchronization also validates runtime-authored parent chains and rebuilds compact parent/first-child/next-sibling links, so responsive layout and painting traverse the retained hierarchy linearly instead of rediscovering every node's children through whole-tree scans. Typed ECS setters are shared by project Luau and programmatic engine/editor composition, while scene parsing produces the same public component structs; unchanged frames do not rescan world membership or hierarchy.
 - Generated Luau queries expose the complete value and styling payload of every public UI component. `add_component` updates or attaches those same components to live entities, while `remove_component` removes them through the structural dirty path.
 - Luau UI additions, removals, and runtime spawns are deferred with other structural ECS commands. Partial UI payloads merge with current values, runtime spawn returns the entity's stable UUID for parent references, and removed/despawned UI component slots are reclaimed.
 - Native extensions expose the same complete public UI values, styles, state revisions, deferred mutation, removal, and runtime spawning through fixed-layout typed payloads. Bounded inline text and font buffers keep allocator-owned Odin strings from crossing the extension ABI; UI state remains renderer-owned and read-only.
 - WGPU paints UI after world geometry, including in headless framegrabs.
-- Bounded runs can replay versioned semantic UI diagnostic scripts against the same reconciled tree used for live interaction. Actions target laid-out entities by stable UUID, name, or visible text; clicks include press/release phases, clipped targets are revealed through ancestor scroll areas, expectations fail the run, and capture actions select a tight 1:1 framegrab region without hard-coded coordinates. Optional JSON tree dumps expose raw and visible screen rectangles, clipping, hierarchy, control kinds, text, paint order, and interaction state even when a run fails.
+- Bounded runs can replay versioned semantic UI diagnostic scripts against the same reconciled tree used for live interaction. Actions target laid-out entities by stable UUID, name, or visible text; clicks and offset drags include real press/move/release phases, clipped targets are revealed through ancestor scroll areas, expectations fail the run, and capture actions select a tight 1:1 framegrab region without hard-coded coordinates. Optional JSON tree dumps expose raw and visible screen rectangles, clipping, hierarchy, control kinds, text, paint order, and interaction state even when a run fails.
 - UI rendering does not require a world camera or renderable geometry.
 - The built-in Inter font is embedded and redistributed under the SIL Open Font License 1.1.
 - Text uses a precomputed MTSDF atlas and derivative-based GPU antialiasing, so one atlas remains sharp across UI text sizes.
@@ -91,6 +91,8 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 **Decision:** Store an input's current text and styling in its public ECS component, but retain transient focus, cursor, selection, original value, horizontal offset, and caret blink state in the UI reconciler.
 **Why:** Systems and tools can observe the value through the ordinary world while frame-local interaction survives reconciliation without polluting scene data.
 **Tradeoff:** This first control is single-line and ASCII-only. It does not yet provide clipboard operations, IME composition, Unicode shaping, or multiline editing.
+
+Numeric mode is a complete interaction contract rather than a collection of opt-ins: `numeric = true` enables parsing, validation, stepping, and whole-surface horizontal scrubbing. A click without crossing the drag threshold still focuses and selects the input for text editing.
 
 ### 10. Make list selection ECS-owned
 

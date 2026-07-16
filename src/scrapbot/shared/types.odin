@@ -307,7 +307,6 @@ UI_Input_Component :: struct {
 	numeric: bool,
 	has_minimum: bool,
 	has_maximum: bool,
-	scrubbable: bool,
 }
 
 Font_Glyph :: struct {
@@ -676,6 +675,7 @@ Editor_UI_Component :: struct {
 	reflected_field_index: int,
 	input_original_number: f32,
 	input_has_original_number: bool,
+	input_was_scrubbed: bool,
 }
 
 Mesh_Component :: struct {

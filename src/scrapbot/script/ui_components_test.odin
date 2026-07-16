@@ -45,7 +45,6 @@ maximum = 100
 numeric = true
 has_minimum = true
 has_maximum = true
-scrubbable = true
 read_only = true
 [entities.ui_progress]
 value = 2
@@ -135,7 +134,6 @@ scrapbot.system(function()
 		assert(input.numeric == true and input.number == 42 and input.step == 0.5)
 		assert(input.has_minimum == true and input.minimum == 0)
 		assert(input.has_maximum == true and input.maximum == 100)
-		assert(input.scrubbable == true)
 		assert(input.read_only == true)
 		input_count += 1
 	end)

@@ -595,7 +595,6 @@ caret_inset = 3
 numeric = true
 has_minimum = true
 has_maximum = true
-scrubbable = true
 read_only = false
 `,
 	)
@@ -614,7 +613,7 @@ read_only = false
 	testing.expect(t, input.selection_corner_radius == 0)
 	testing.expect(t, input.focus_border_width == 2 && input.invalid_border_width == 3)
 	testing.expect(t, input.caret_width == 2 && input.caret_inset == 3)
-	testing.expect(t, input.numeric && input.has_minimum && input.has_maximum && input.scrubbable)
+	testing.expect(t, input.numeric && input.has_minimum && input.has_maximum)
 	testing.expect(t, input.selection_background == Vec4{0.1, 0.5, 0.4, 0.5})
 	testing.expect(t, input.focus_border_color == Vec4{0.1, 0.8, 0.7, 1})
 }
