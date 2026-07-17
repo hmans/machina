@@ -204,6 +204,7 @@ State :: struct {
 	editor_simulation_step_requested: bool,
 	editor_playback_begin_requested: bool,
 	editor_playback_stop_requested: bool,
+	editor_resume_playback_on_close: bool,
 	editor_scene_save_requested: bool,
 	editor_scene_revert_requested: bool,
 	editor_scene_dirty: bool,
@@ -337,6 +338,29 @@ editor_stop :: proc(state: ^State) {
 	state.editor_scene_save_requested = false
 	state.editor_scene_save_failed = false
 	state.editor_scene_revert_failed = false
+	state.editor_snapshot_valid = false
+}
+
+editor_toggle :: proc(state: ^State) {
+	if state == nil {
+		return
+	}
+	if !state.editor_visible {
+		was_playing := state.editor_simulation_playing
+		state.editor_visible = true
+		if was_playing {
+			editor_pause(state)
+		}
+		state.editor_resume_playback_on_close = was_playing
+	} else {
+		resume_playback :=
+			state.editor_resume_playback_on_close && !state.editor_simulation_playing
+		state.editor_visible = false
+		state.editor_resume_playback_on_close = false
+		if resume_playback {
+			editor_play(state)
+		}
+	}
 	state.editor_snapshot_valid = false
 }
 
@@ -1077,8 +1101,10 @@ editor_select_entity :: proc(
 	if !state.editor_has_selection ||
 	   state.editor_selected_entity !=
 		   entity { state.editor_gizmo_active_handle = .None; state.editor_gizmo_captures_pointer = false }
-	state.editor_selected_entity =
-		entity; state.editor_has_selection = true; state.editor_snapshot_valid = false
+	state.editor_selected_entity = entity
+	state.editor_has_selection = true
+	state.editor_has_resource_selection = false
+	state.editor_snapshot_valid = false
 	row_slot := -1
 	for component in world.editor_uis { if (component.role == .Browser_Row || component.role == .Browser_Row_Label) && component.target == entity { row_slot = component.slot; break } }
 	if row_slot >=

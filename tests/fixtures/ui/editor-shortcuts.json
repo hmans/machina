@@ -19,6 +19,20 @@
     {"action": "key", "key": "editor_toggle"},
     {"action": "wait", "frames": 1},
     {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "PAUSED"},
+    {"action": "key", "key": "run_stop"},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "RUNNING"},
+    {"action": "key", "key": "editor_toggle"},
+    {"action": "wait", "frames": 1},
+    {"action": "key", "key": "editor_toggle"},
+    {"action": "wait", "frames": 1},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "PAUSED"},
+    {"action": "click", "target": {"text": "STOP", "origin": "editor"}},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "STOPPED"},
+    {"action": "key", "key": "editor_toggle"},
+    {"action": "wait", "frames": 1},
+    {"action": "key", "key": "editor_toggle"},
+    {"action": "wait", "frames": 1},
+    {"action": "expect", "target": {"name": "__scrapbot_editor_status_text", "origin": "editor"}, "expect": "text", "text": "PAUSED"},
     {"action": "capture", "target": {"name": "__scrapbot_editor_transport", "origin": "editor"}, "padding": 10}
   ]
 }

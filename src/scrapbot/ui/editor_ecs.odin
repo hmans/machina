@@ -75,10 +75,7 @@ editor_ui_handle_activation :: proc(
 			component := world.editor_uis[entity.editor_ui_index]
 			switch component.role {
 				case .Browser_Row, .Browser_Row_Label:
-					if editor_select_entity(state, world, component.target, 0) {
-						state.editor_has_resource_selection = false
-						state.editor_snapshot_valid = false
-					}
+					_ = editor_select_entity(state, world, component.target, 0)
 					return
 				case .Project_Resource_Row, .Project_Resource_Row_Label:
 					if component.resource_id != (shared.Resource_UUID{}) {
@@ -315,8 +312,7 @@ editor_ui_handle_shortcuts :: proc(state: ^State, keyboard: Keyboard_Input) {
 		return
 	}
 	if keyboard.editor_toggle {
-		state.editor_visible = !state.editor_visible
-		state.editor_snapshot_valid = false
+		editor_toggle(state)
 		if !state.editor_visible {
 			state.editor_component_menu_open = false
 			state.editor_resource_menu_open = false

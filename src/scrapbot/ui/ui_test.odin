@@ -142,6 +142,30 @@ test_resource_manager_lifecycle_is_reference_aware_undoable_and_reusable_ui :: p
 	testing.expect(t, browser_found)
 	_, resource_name_found := editor_ui_entity(&world, .Inspector_Resource_Name)
 	testing.expect(t, resource_name_found)
+
+	// Entity selection is a single shared transition whether it comes from the
+	// scene list or renderer picking. It must replace resource inspection.
+	testing.expect(t, editor_select_entity(state, &world, world.entities[0].id, 720))
+	testing.expect(t, !state.editor_has_resource_selection)
+	testing.expect(t, reconcile(state, &world, 1280, 720, resource_registry = &registry) == "")
+	resource_name, resource_name_still_found := editor_ui_entity(&world, .Inspector_Resource_Name)
+	testing.expect(t, resource_name_still_found)
+	if resource_name_still_found {
+		resource_name_layout := world.entities[resource_name].ui_layout_index
+		testing.expect(t, resource_name_layout >= 0)
+		if resource_name_layout >= 0 {
+			testing.expect(t, world.ui_layouts[resource_name_layout].hidden)
+		}
+	}
+	entity_name, entity_name_found := editor_ui_entity(&world, .Inspector_Entity_Name)
+	testing.expect(t, entity_name_found)
+	if entity_name_found {
+		entity_name_layout := world.entities[entity_name].ui_layout_index
+		testing.expect(t, entity_name_layout >= 0)
+		if entity_name_layout >= 0 {
+			testing.expect(t, !world.ui_layouts[entity_name_layout].hidden)
+		}
+	}
 }
 
 @(test)
@@ -2271,6 +2295,63 @@ test_editor_command_shortcuts_toggle_shell_and_drive_transport :: proc(t: ^testi
 		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {editor_toggle = true}) == "",
 	)
 	testing.expect(t, state.editor_visible)
+}
+
+@(test)
+test_editor_toggle_borrows_running_playback_until_shell_closes :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+
+	// Opening over a running game pauses it, and closing resumes it.
+	testing.expect(t, state.editor_simulation_playing)
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {editor_toggle = true}) == "",
+	)
+	testing.expect(t, state.editor_visible)
+	testing.expect(t, !state.editor_simulation_playing)
+	testing.expect(t, !state.editor_simulation_stopped)
+	testing.expect(t, state.editor_resume_playback_on_close)
+	testing.expect(
+		t,
+		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {editor_toggle = true}) == "",
+	)
+	testing.expect(t, !state.editor_visible)
+	testing.expect(t, state.editor_simulation_playing)
+	testing.expect(t, !state.editor_resume_playback_on_close)
+
+	// A pre-existing pause is not owned by the shell and survives a round trip.
+	editor_pause(state)
+	editor_toggle(state)
+	testing.expect(t, state.editor_visible)
+	testing.expect(t, !state.editor_resume_playback_on_close)
+	editor_toggle(state)
+	testing.expect(t, !state.editor_visible)
+	testing.expect(t, !state.editor_simulation_playing)
+	testing.expect(t, !state.editor_simulation_stopped)
+
+	// Scene reset preserves the borrowed running state. Closing starts the reset
+	// scene instead of leaving the project stopped.
+	editor_play(state)
+	editor_toggle(state)
+	testing.expect(t, state.editor_resume_playback_on_close)
+	editor_stop(state)
+	testing.expect(t, state.editor_simulation_stopped)
+	testing.expect(t, state.editor_resume_playback_on_close)
+	testing.expect(t, consume_playback_stop_request(state))
+	editor_world_restored(state, &world, {}, false)
+	editor_toggle(state)
+	testing.expect(t, !state.editor_visible)
+	testing.expect(t, state.editor_simulation_playing)
+	testing.expect(t, !state.editor_simulation_stopped)
+	testing.expect(t, !state.editor_resume_playback_on_close)
+	testing.expect(t, consume_playback_begin_request(state))
 }
 
 @(test)

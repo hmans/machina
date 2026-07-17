@@ -461,6 +461,7 @@ push_structural_change :: proc(
 editor_authoring_select :: proc(state: ^State, world: ^shared.World, entity_index: int) {
 	state.editor_selected_entity = world.entities[entity_index].id
 	state.editor_has_selection = true
+	state.editor_has_resource_selection = false
 	state.editor_snapshot_valid = false
 }
 
