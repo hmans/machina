@@ -112,6 +112,12 @@ restore_playback_baseline :: proc(
 		ecs.destroy_world(&next_world)
 		return err
 	}
+	when ODIN_TEST || ecs.WORLD_INTEGRITY_CHECKS {
+		if failure, ok := ecs.validate_world_integrity(&next_world, registry); !ok {
+			ecs.destroy_world(&next_world)
+			return ecs.format_world_integrity_failure(failure)
+		}
+	}
 	ecs.destroy_world(world)
 	world^ = next_world
 	script.bind_runtime_world(runtime, world)

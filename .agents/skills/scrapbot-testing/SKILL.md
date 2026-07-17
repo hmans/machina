@@ -200,6 +200,14 @@ The soak parses Scrapbot's JSON result, compares allocated storage across early/
 
 `mise test-sanitize` runs the full Odin package tree under AddressSanitizer on Linux. It is explicitly skipped on macOS because the current Odin and Apple sanitizer runtimes are incompatible.
 
+## World Integrity And Lifecycle Reproduction
+
+Call `ecs.validate_world_integrity` after the mutation under investigation when diagnosing entity, component-index, UUID-map, free-slot, active-set, dirty-queue, editor-back-reference, UI-hierarchy, or resource-handle corruption. Include `ecs.format_world_integrity_failure` in the assertion so the failing entity and related slot remain visible.
+
+Tests validate every deferred command flush and playback restoration automatically. To enable the same checks in another diagnostic build, pass `-define:SCRAPBOT_WORLD_INTEGRITY_CHECKS=true`; do not enable it for ordinary release frames because it intentionally scans structural ownership.
+
+`scrapbot.test_seeded_editor_lifecycle_preserves_world_integrity` runs 600 deterministic authoring and playback operations from seed `0x5c4a9b71d203e8f6`. Preserve the seed and failing step in new assertions. When fixing a lifecycle failure, strengthen the validator or sequence at the ownership boundary rather than adding a late array guard.
+
 ## Notes For Future Agents
 
 - Prefer `mise test` over reconstructing the suite manually.

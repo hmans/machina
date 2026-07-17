@@ -220,6 +220,8 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [ ] Gameplay test fixtures
   - [ ] Offscreen render verification
   - [ ] Editor screenshot tests
+  - [x] Compile-time-gated world-integrity validation
+  - [x] Seeded editor lifecycle state-machine tests
   - [x] Native extension tests
   - [x] Lifecycle CPU/RAM growth gate
   - [x] Linux AddressSanitizer lane

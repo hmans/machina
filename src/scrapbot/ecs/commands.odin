@@ -670,6 +670,11 @@ apply_commands :: proc(world: ^World, buffer: ^Command_Buffer) -> string {
 		}
 	}
 	buffer.command_count = 0
+	when ODIN_TEST || WORLD_INTEGRITY_CHECKS {
+		if failure, ok := validate_world_integrity(world); !ok {
+			return format_world_integrity_failure(failure)
+		}
+	}
 	return ""
 }
 
@@ -788,6 +793,10 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 	release_material_slot(world, entity.material_index)
 	release_entity_render_instance(world, entity)
 	entity.transform_index = INVALID_COMPONENT_INDEX
+	entity.camera_index = INVALID_COMPONENT_INDEX
+	entity.ambient_light_index = INVALID_COMPONENT_INDEX
+	entity.directional_light_index = INVALID_COMPONENT_INDEX
+	entity.point_light_index = INVALID_COMPONENT_INDEX
 	entity.mesh_index = INVALID_COMPONENT_INDEX
 	entity.geometry_index = INVALID_COMPONENT_INDEX
 	entity.material_index = INVALID_COMPONENT_INDEX
@@ -814,6 +823,10 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 		   ) { world.editor_transform_gizmos[entity.editor_transform_gizmo_index].entity_index = INVALID_COMPONENT_INDEX }
 	entity.editor_transform_gizmo_index = INVALID_COMPONENT_INDEX
 	for &camera in world.editor_scene_cameras { if camera.entity_index == entity_index { camera.entity_index = INVALID_COMPONENT_INDEX } }
+	if entity.editor_ui_index >= 0 && entity.editor_ui_index < len(world.editor_uis) {
+		world.editor_uis[entity.editor_ui_index].entity_index = INVALID_COMPONENT_INDEX
+	}
+	entity.editor_ui_index = INVALID_COMPONENT_INDEX
 	entity.has_shadow_caster = false
 	entity.has_shadow_receiver = false
 	entity.render_dirty = false

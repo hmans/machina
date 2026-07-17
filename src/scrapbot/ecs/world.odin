@@ -94,6 +94,28 @@ init_world_entity :: proc(
 	}
 }
 
+@(private)
+coalesce_dirty_entity_entries :: proc(entries: ^[dynamic]int, entity_index: int) -> bool {
+	if entries == nil {
+		return false
+	}
+	found := false
+	entry_index := 0
+	for entry_index < len(entries^) {
+		if entries^[entry_index] != entity_index {
+			entry_index += 1
+			continue
+		}
+		if !found {
+			found = true
+			entry_index += 1
+			continue
+		}
+		unordered_remove(entries, entry_index)
+	}
+	return found
+}
+
 create_world_entity :: proc(
 	world: ^World,
 	name: string,
@@ -142,6 +164,11 @@ create_world_entity :: proc(
 	}
 	entity := init_world_entity(world, entity_index, generation, entity_uuid, origin, name)
 	if reusing_slot {
+		entity.render_dirty = coalesce_dirty_entity_entries(
+			&world.render_dirty_entities,
+			entity_index,
+		)
+		entity.ui_dirty = coalesce_dirty_entity_entries(&world.ui_dirty_entities, entity_index)
 		world.entities[entity_index] = entity
 	} else {
 		append(&world.entities, entity)

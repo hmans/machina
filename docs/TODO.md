@@ -125,6 +125,7 @@
 
 - [x] Pin OLS and `odinfmt` with shared project configuration, mise tasks, and a staged-content pre-commit check.
 - [ ] Apply a dedicated baseline `odinfmt` pass and promote format checking into the default test gate.
+- [x] Add compile-time-gated world-integrity validation and seeded editor lifecycle state-machine coverage.
 - [x] Add structured runtime storage, allocator, and update-cost statistics.
 - [x] Add deterministic entity/component churn invariants to the normal test suite.
 - [x] Add an opt-in lifecycle-heavy CPU/RAM growth soak.
