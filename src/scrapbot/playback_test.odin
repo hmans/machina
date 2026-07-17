@@ -113,6 +113,73 @@ test_playback_baseline_restores_runtime_material_edits :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_playback_cycles_preserve_authored_render_resource_references :: proc(t: ^testing.T) {
+	material_resource := "a4000000-0000-4000-8000-000000000002"
+	geometry_resource := "icosphere"
+	resource_id, valid := shared.resource_uuid_parse(material_resource)
+	testing.expect(t, valid)
+	registry: resources.Registry
+	defer resources.destroy_registry(&registry)
+	handle, register_err := resources.register_project_material(
+		&registry,
+		resource_id,
+		"Cycled Material",
+		"cycled.resource.toml",
+		{base_color = {0.2, 0.3, 0.4, 1}},
+	)
+	testing.expect(t, register_err == "")
+	scene: shared.Scene
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = shared.entity_uuid_from_engine_name("playback-resource-cycle"),
+			name = "Authored Resource Entity",
+			has_geometry = true,
+			geometry_resource = geometry_resource,
+			has_material = true,
+			material_resource = material_resource,
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	geometry_handle := shared.Geometry_Handle {
+		index = 3,
+		generation = 2,
+	}
+	ecs.resolve_geometry_reference(&world, 0, geometry_handle)
+	ecs.resolve_material_reference(&world, 0, handle)
+	runtime: script.Runtime
+	runtime.world = &world
+	baseline: Playback_Baseline
+	defer destroy_playback_baseline(&baseline)
+	testing.expect(t, capture_playback_baseline(&baseline, &world, &registry) == "")
+
+	for _ in 0 ..< 4 {
+		testing.expect(t, restore_playback_baseline(&baseline, &runtime, &world, &registry) == "")
+		testing.expect_value(t, world.entities[0].geometry_resource, geometry_resource)
+		testing.expect(t, world.entities[0].geometry_index >= 0)
+		if world.entities[0].geometry_index >= 0 {
+			testing.expect_value(
+				t,
+				world.geometries[world.entities[0].geometry_index].handle,
+				geometry_handle,
+			)
+		}
+		testing.expect_value(t, world.entities[0].material_resource, material_resource)
+		testing.expect(t, world.entities[0].material_index >= 0)
+		if world.entities[0].material_index >= 0 {
+			testing.expect_value(
+				t,
+				world.materials[world.entities[0].material_index].handle,
+				handle,
+			)
+		}
+		testing.expect(t, capture_playback_baseline(&baseline, &world, &registry) == "")
+	}
+}
+
+@(test)
 test_created_entity_survives_play_stop_and_remains_undoable :: proc(t: ^testing.T) {
 	world: shared.World
 	defer ecs.destroy_world(&world)

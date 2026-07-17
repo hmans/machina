@@ -101,10 +101,10 @@ restore_playback_baseline :: proc(
 			return "authoring baseline restored an incomplete world"
 		}
 		if entry.has_geometry {
-			ecs.add_geometry(&next_world, entity_index, entry.geometry)
+			ecs.resolve_geometry_reference(&next_world, entity_index, entry.geometry)
 		}
 		if entry.has_material {
-			ecs.add_material(&next_world, entity_index, entry.material)
+			ecs.resolve_material_reference(&next_world, entity_index, entry.material)
 		}
 		next_world.entities[entity_index].component_revision = entry.component_revision
 	}
