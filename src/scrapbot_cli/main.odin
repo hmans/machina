@@ -30,6 +30,7 @@ Build_Options :: struct {
 Run_Options :: struct {
 	path: string `args:"pos=0" usage:"Project directory to run."`,
 	backend: string `usage:"Renderer backend: null or wgpu. Defaults to wgpu."`,
+	cpu_culling: bool `name:"cpu-culling" usage:"Use the CPU frustum-culling reference path with WGPU indirect drawing."`,
 	window: bool `usage:"Open a platform window. Enabled by default for source-project runs."`,
 	headless: bool `usage:"Run without a visible window; use the null backend or request a framegrab."`,
 	hot_reload: bool `name:"hot-reload" usage:"Enable project hot reload. Enabled by default for source-project runs."`,
@@ -47,6 +48,7 @@ Run_Options :: struct {
 
 Packaged_Run_Options :: struct {
 	backend: string `usage:"Renderer backend: null or wgpu."`,
+	cpu_culling: bool `name:"cpu-culling" usage:"Use the CPU frustum-culling reference path with WGPU indirect drawing."`,
 	window: bool `usage:"Open a platform window for renderer runs."`,
 	headless: bool `usage:"Force headless mode."`,
 	frames: u32 `usage:"Limit renderer frames."`,
@@ -79,12 +81,14 @@ Run_Result :: struct {
 	backend: string,
 	entities, cameras, geometries, renderables, draw_batches: int,
 	scheduler_workers, parallel_stages, max_parallel_width: int,
+	render_stats: scrapbot.Render_Stats,
 }
 Run_Stats_Result :: struct {
 	backend: string,
 	entities, cameras, geometries, renderables, draw_batches: int,
 	scheduler_workers, parallel_stages, max_parallel_width: int,
 	runtime_stats: scrapbot.Runtime_Stats,
+	render_stats: scrapbot.Render_Stats,
 }
 Error_Result :: struct {}
 
@@ -230,6 +234,7 @@ run_packaged :: proc(args: []string) -> int {
 		   0 { message := "--runtime-stats requires --frames for windowed runs"; if opt.json { emit_json_error("run", "SCRAPBOT_ARGUMENT_ERROR", message, root) } else { fmt.eprintln(message) }; return 1 }
 	config := scrapbot.Run_Config {
 		backend = backend,
+		cpu_culling = opt.cpu_culling,
 		window = opt.window && !opt.headless,
 		hot_reload = false,
 		max_frames = opt.frames,
@@ -247,7 +252,7 @@ run_packaged :: proc(args: []string) -> int {
 		return 1
 	}
 	if opt.json {
-		if result.runtime_stats.enabled { emit_json_success("run", Run_Stats_Result{backend = scrapbot.renderer_backend_name(backend), entities = result.frame.entity_count, cameras = result.frame.camera_count, geometries = result.frame.mesh_count, renderables = result.frame.renderable_count, draw_batches = result.draw_batches, scheduler_workers = result.scheduler_workers, parallel_stages = result.parallel_stages, max_parallel_width = result.max_parallel_width, runtime_stats = result.runtime_stats}) } else { emit_json_success("run", Run_Result{backend = scrapbot.renderer_backend_name(backend), entities = result.frame.entity_count, cameras = result.frame.camera_count, geometries = result.frame.mesh_count, renderables = result.frame.renderable_count, draw_batches = result.draw_batches, scheduler_workers = result.scheduler_workers, parallel_stages = result.parallel_stages, max_parallel_width = result.max_parallel_width}) }
+		if result.runtime_stats.enabled { emit_json_success("run", Run_Stats_Result{backend = scrapbot.renderer_backend_name(backend), entities = result.frame.entity_count, cameras = result.frame.camera_count, geometries = result.frame.mesh_count, renderables = result.frame.renderable_count, draw_batches = result.draw_batches, scheduler_workers = result.scheduler_workers, parallel_stages = result.parallel_stages, max_parallel_width = result.max_parallel_width, runtime_stats = result.runtime_stats, render_stats = result.render_stats}) } else { emit_json_success("run", Run_Result{backend = scrapbot.renderer_backend_name(backend), entities = result.frame.entity_count, cameras = result.frame.camera_count, geometries = result.frame.mesh_count, renderables = result.frame.renderable_count, draw_batches = result.draw_batches, scheduler_workers = result.scheduler_workers, parallel_stages = result.parallel_stages, max_parallel_width = result.max_parallel_width, render_stats = result.render_stats}) }
 		return 0
 	}
 	if opt.runtime_stats { print_runtime_stats(result.runtime_stats) }
@@ -295,6 +300,7 @@ run_project :: proc(args: []string) -> int {
 
 	config := scrapbot.Run_Config {
 		backend = backend,
+		cpu_culling = opt.cpu_culling,
 		window = windowed,
 		hot_reload = hot_reload,
 		editor = opt.editor,
@@ -327,6 +333,7 @@ run_project :: proc(args: []string) -> int {
 					parallel_stages = result.parallel_stages,
 					max_parallel_width = result.max_parallel_width,
 					runtime_stats = result.runtime_stats,
+					render_stats = result.render_stats,
 				},
 			)
 		} else {
@@ -342,6 +349,7 @@ run_project :: proc(args: []string) -> int {
 					scheduler_workers = result.scheduler_workers,
 					parallel_stages = result.parallel_stages,
 					max_parallel_width = result.max_parallel_width,
+					render_stats = result.render_stats,
 				},
 			)
 		}
@@ -474,7 +482,7 @@ print_help :: proc() {
   scrapbot init [path] [name]    Create project.toml and scenes/main.scene.toml
   scrapbot check [path]          Validate project.toml and the default scene
   scrapbot build [path]          Build a host-native runnable game package
-  scrapbot run [path] [--backend null|wgpu] [--window] [--editor] [--hot-reload] [--scheduler-trace] [--runtime-stats] [--frames n] [--framegrab out.png] [--framegrab-region x,y,width,height] [--ui-script actions.json] [--ui-dump tree.json]
+  scrapbot run [path] [--backend null|wgpu] [--cpu-culling] [--window] [--editor] [--hot-reload] [--scheduler-trace] [--runtime-stats] [--frames n] [--framegrab out.png] [--framegrab-region x,y,width,height] [--ui-script actions.json] [--ui-dump tree.json]
                                   Load the project and render
   scrapbot help <command>         Print command-specific options
   scrapbot --version             Print the engine version`,

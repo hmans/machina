@@ -37,6 +37,13 @@ Runtime_Save_Proc :: #type proc(
 ) -> string
 Render_Stats :: struct {
 	draw_batches: int,
+	gpu_driven: bool,
+	compute_culling: bool,
+	instance_capacity: int,
+	instance_slots: int,
+	visible_capacity: int,
+	instance_uploads: u64,
+	instance_upload_bytes: u64,
 }
 Framegrab_Region :: struct {
 	x, y, width, height: u32,
@@ -71,6 +78,7 @@ Runtime_Stats_Collector :: struct {
 }
 Run_Config :: struct {
 	backend: Renderer_Backend,
+	cpu_culling: bool,
 	window: bool,
 	hot_reload: bool,
 	editor: bool,

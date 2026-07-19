@@ -199,6 +199,9 @@ wgpu_init_renderer :: proc(
 	if err = wgpu_create_render_pipeline(&renderer); err != "" {
 		return renderer, err
 	}
+	if err = wgpu_create_gpu_driven_pipelines(&renderer); err != "" {
+		return renderer, err
+	}
 	if err = wgpu_create_post_process_pipelines(&renderer); err != "" {
 		return renderer, err
 	}
@@ -224,7 +227,68 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	if renderer.ui_font_texture != nil { wgpu.TextureRelease(renderer.ui_font_texture) }
 	if renderer.ui_vertex_buffer != nil { wgpu.BufferRelease(renderer.ui_vertex_buffer) }
 	delete(renderer.ui_vertices)
+	delete(renderer.draw_batch_cache.source_indices)
+	delete(renderer.gpu_instance_records)
+	delete(renderer.gpu_instance_sources)
+	delete(renderer.gpu_active_slots)
+	delete(renderer.gpu_dirty_indices)
+	delete(renderer.gpu_live_slots)
+	delete(renderer.gpu_batch_by_source)
+	delete(renderer.gpu_cpu_visible)
+	delete(renderer.gpu_cpu_shadow_visible)
 	ecs.destroy_render_list(&renderer.render_list)
+	wgpu_release_batch_bind_groups(&renderer.draw_batch_cache)
+	if renderer.gpu_cull_bind_group != nil {
+		wgpu.BindGroupRelease(renderer.gpu_cull_bind_group)
+	}
+	if renderer.gpu_cull_pipeline != nil {
+		wgpu.ComputePipelineRelease(renderer.gpu_cull_pipeline)
+	}
+	if renderer.gpu_cull_pipeline_layout != nil {
+		wgpu.PipelineLayoutRelease(renderer.gpu_cull_pipeline_layout)
+	}
+	if renderer.gpu_cull_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.gpu_cull_bind_group_layout)
+	}
+	if renderer.gpu_cull_shader != nil {
+		wgpu.ShaderModuleRelease(renderer.gpu_cull_shader)
+	}
+	if renderer.gpu_driven_pipeline != nil {
+		wgpu.RenderPipelineRelease(renderer.gpu_driven_pipeline)
+	}
+	if renderer.gpu_driven_shadow_pipeline != nil {
+		wgpu.RenderPipelineRelease(renderer.gpu_driven_shadow_pipeline)
+	}
+	if renderer.gpu_driven_pipeline_layout != nil {
+		wgpu.PipelineLayoutRelease(renderer.gpu_driven_pipeline_layout)
+	}
+	if renderer.gpu_driven_shadow_pipeline_layout != nil {
+		wgpu.PipelineLayoutRelease(renderer.gpu_driven_shadow_pipeline_layout)
+	}
+	if renderer.gpu_driven_world_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.gpu_driven_world_bind_group_layout)
+	}
+	if renderer.gpu_driven_shadow_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.gpu_driven_shadow_bind_group_layout)
+	}
+	if renderer.gpu_driven_shader != nil {
+		wgpu.ShaderModuleRelease(renderer.gpu_driven_shader)
+	}
+	gpu_buffers := [?]wgpu.Buffer {
+		renderer.gpu_instance_buffer,
+		renderer.gpu_batch_info_buffer,
+		renderer.gpu_visible_buffer,
+		renderer.gpu_shadow_visible_buffer,
+		renderer.gpu_indirect_template_buffer,
+		renderer.gpu_indirect_buffer,
+		renderer.gpu_shadow_indirect_buffer,
+		renderer.gpu_cull_uniform_buffer,
+	}
+	for buffer in gpu_buffers {
+		if buffer != nil {
+			wgpu.BufferRelease(buffer)
+		}
+	}
 	if renderer.ui_pipeline_layout !=
 	   nil { wgpu.PipelineLayoutRelease(renderer.ui_pipeline_layout) }
 	if renderer.ui_bind_group_layout !=

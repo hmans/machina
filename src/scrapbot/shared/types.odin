@@ -870,6 +870,7 @@ Renderable :: struct {
 }
 
 Render_Instance :: struct {
+	slot: int,
 	entity: World_Entity,
 	transform: Transform_Component,
 	mesh: Mesh_Component,

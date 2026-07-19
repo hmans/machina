@@ -28,6 +28,7 @@ Renderer_Backend :: shared.Renderer_Backend
 Run_Config :: render.Run_Config
 Framegrab_Region :: render.Framegrab_Region
 Runtime_Stats :: render.Runtime_Stats
+Render_Stats :: render.Render_Stats
 World_Storage_Stats :: ecs.World_Storage_Stats
 parse_framegrab_region :: render.parse_framegrab_region
 Project_Load_Result :: project.Project_Load_Result
@@ -38,6 +39,7 @@ Runtime_Result :: struct {
 	parallel_stages: int,
 	max_parallel_width: int,
 	draw_batches: int,
+	render_stats: Render_Stats,
 	runtime_stats: Runtime_Stats,
 }
 
@@ -506,7 +508,8 @@ run_project_internal_untracked :: proc(
 		hot_reload := new(Hot_Reload_State)
 		defer free(hot_reload)
 		defer destroy_hot_reload_state(hot_reload)
-		if err := init_hot_reload_state(hot_reload, root, &loaded, &world); err != "" {
+		if err := init_hot_reload_state(hot_reload, root, &loaded, &world, run_config.log_enabled);
+		   err != "" {
 			result.err = err
 			return result
 		}
@@ -533,6 +536,7 @@ run_project_internal_untracked :: proc(
 		result.parallel_stages = hot_reload.executor.parallel_stages
 		result.max_parallel_width = hot_reload.executor.max_parallel_width
 		result.draw_batches = render_stats.draw_batches
+		result.render_stats = render_stats
 		return result
 	}
 
@@ -618,6 +622,7 @@ run_project_internal_untracked :: proc(
 	result.parallel_stages = frame_runtime.executor.parallel_stages
 	result.max_parallel_width = frame_runtime.executor.max_parallel_width
 	result.draw_batches = render_stats.draw_batches
+	result.render_stats = render_stats
 	return result
 }
 

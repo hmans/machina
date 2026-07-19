@@ -51,6 +51,7 @@ Hot_Reload_State :: struct {
 	native_sources: native.Source_Set,
 	last_good_script_source: string,
 	has_last_good_script: bool,
+	log_enabled: bool,
 	seconds_until_next_check: f32,
 }
 
@@ -67,9 +68,11 @@ init_hot_reload_state :: proc(
 	root: string,
 	loaded: ^project.Project_Load_Result,
 	world: ^shared.World,
+	log_enabled: bool = true,
 ) -> string {
 	state^ = {}
 	state.root = root
+	state.log_enabled = log_enabled
 
 	project_path, project_join_err := filepath.join({root, shared.PROJECT_FILE})
 	if project_join_err != nil {
@@ -361,6 +364,7 @@ reload_project_world_and_script :: proc(state: ^Hot_Reload_State, world: ^shared
 		state.script_path,
 		&next_world,
 		&state.resources,
+		state.log_enabled,
 	)
 	if script_load.err != "" {
 		reload_err := script_load.err
@@ -422,7 +426,13 @@ reload_project_world_and_script :: proc(state: ^Hot_Reload_State, world: ^shared
 }
 
 load_script_runtime :: proc(state: ^Hot_Reload_State, world: ^shared.World) -> string {
-	script_load := load_script_from_path(state.root, state.script_path, world, &state.resources)
+	script_load := load_script_from_path(
+		state.root,
+		state.script_path,
+		world,
+		&state.resources,
+		state.log_enabled,
+	)
 	if script_load.err != "" {
 		reload_err := script_load.err
 		destroy_script_load(&script_load)
@@ -453,6 +463,7 @@ load_script_from_path :: proc(
 	root, path: string,
 	world: ^shared.World,
 	resource_registry: ^resources.Registry,
+	log_enabled: bool = true,
 ) -> Script_Load {
 	result: Script_Load
 	registry: component.Registry
@@ -488,7 +499,7 @@ load_script_from_path :: proc(
 		world,
 		&registry,
 		script.Source_Options {
-			log_enabled = true,
+			log_enabled = log_enabled,
 			resource_registry = resource_registry,
 			project_root = root,
 		},
@@ -531,6 +542,7 @@ restore_last_good_script_runtime :: proc(
 		state.last_good_script_source,
 		world,
 		&state.resources,
+		state.log_enabled,
 	)
 	if script_load.err != "" {
 		destroy_script_load(&script_load)
@@ -551,6 +563,7 @@ load_script_from_source :: proc(
 	root, source: string,
 	world: ^shared.World,
 	resource_registry: ^resources.Registry,
+	log_enabled: bool = true,
 ) -> Script_Load {
 	result: Script_Load
 	registry: component.Registry
@@ -572,7 +585,7 @@ load_script_from_source :: proc(
 		world,
 		&registry,
 		script.Source_Options {
-			log_enabled = true,
+			log_enabled = log_enabled,
 			resource_registry = resource_registry,
 			project_root = root,
 		},

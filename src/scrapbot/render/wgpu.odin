@@ -19,6 +19,9 @@ Render_List :: shared.Render_List
 Mat4 :: [16]f32
 
 WGPU_MAX_INSTANCES :: 64
+WGPU_MAX_GPU_INSTANCES :: 131_072
+WGPU_MAX_DRAW_BATCHES :: 64
+WGPU_VISIBLE_ALIGNMENT :: 64
 WGPU_BLOOM_LEVELS :: 5
 
 WGPU_Render_Uniform :: struct {
@@ -42,17 +45,69 @@ WGPU_Draw_Batch :: struct {
 	material: shared.Material_Handle,
 	first_instance: u32,
 	instance_count: u32,
+	visible_offset: u32,
+	visible_capacity: u32,
+	world_bind_group: wgpu.BindGroup,
+	shadow_bind_group: wgpu.BindGroup,
 }
 
 WGPU_Draw_Batch_Cache :: struct {
 	world_uuid: shared.Entity_UUID,
 	topology_revision: u64,
 	valid: bool,
-	batches: [64]WGPU_Draw_Batch,
+	overflowed: bool,
+	batches: [WGPU_MAX_DRAW_BATCHES]WGPU_Draw_Batch,
 	batch_count: int,
-	source_indices: [WGPU_MAX_INSTANCES]int,
+	source_indices: [dynamic]int,
 	instance_count: int,
 	rebuild_count: u64,
+}
+
+WGPU_GPU_Instance :: struct {
+	model: Mat4,
+	normal_model: Mat4,
+	color: [4]f32,
+	emissive: [4]f32,
+	shadow_flags: [4]f32,
+	bounds: [4]f32,
+	batch_index: u32,
+	active: u32,
+	_padding: [2]u32,
+}
+#assert(size_of(WGPU_GPU_Instance) == 208)
+
+WGPU_GPU_Cull_Uniform :: struct {
+	camera_planes: [6][4]f32,
+	shadow_planes: [6][4]f32,
+	slot_count: u32,
+	batch_count: u32,
+	_padding: [2]u32,
+}
+
+WGPU_Draw_Indexed_Indirect :: struct {
+	index_count: u32,
+	instance_count: u32,
+	first_index: u32,
+	base_vertex: i32,
+	first_instance: u32,
+}
+#assert(size_of(WGPU_Draw_Indexed_Indirect) == 20)
+
+WGPU_GPU_Batch_Info :: struct {
+	visible_offset: u32,
+	visible_capacity: u32,
+	_padding: [2]u32,
+}
+
+WGPU_Instance_Source_State :: struct {
+	transform: shared.Transform_Component,
+	geometry: shared.Geometry_Handle,
+	material: shared.Material_Handle,
+	geometry_version: u32,
+	material_version: u32,
+	shadow_caster: bool,
+	shadow_receiver: bool,
+	batch_index: u32,
 }
 
 WGPU_Geometry_Cache :: struct {
@@ -130,6 +185,42 @@ WGPU_Renderer :: struct {
 	ui_vertex_capacity: int,
 	render_list: Render_List,
 	draw_batch_cache: WGPU_Draw_Batch_Cache,
+	gpu_driven_shader: wgpu.ShaderModule,
+	gpu_driven_pipeline: wgpu.RenderPipeline,
+	gpu_driven_shadow_pipeline: wgpu.RenderPipeline,
+	gpu_driven_pipeline_layout: wgpu.PipelineLayout,
+	gpu_driven_shadow_pipeline_layout: wgpu.PipelineLayout,
+	gpu_driven_world_bind_group_layout: wgpu.BindGroupLayout,
+	gpu_driven_shadow_bind_group_layout: wgpu.BindGroupLayout,
+	gpu_cull_shader: wgpu.ShaderModule,
+	gpu_cull_pipeline: wgpu.ComputePipeline,
+	gpu_cull_pipeline_layout: wgpu.PipelineLayout,
+	gpu_cull_bind_group_layout: wgpu.BindGroupLayout,
+	gpu_cull_bind_group: wgpu.BindGroup,
+	gpu_instance_buffer: wgpu.Buffer,
+	gpu_batch_info_buffer: wgpu.Buffer,
+	gpu_visible_buffer: wgpu.Buffer,
+	gpu_shadow_visible_buffer: wgpu.Buffer,
+	gpu_indirect_template_buffer: wgpu.Buffer,
+	gpu_indirect_buffer: wgpu.Buffer,
+	gpu_shadow_indirect_buffer: wgpu.Buffer,
+	gpu_cull_uniform_buffer: wgpu.Buffer,
+	gpu_instance_records: [dynamic]WGPU_GPU_Instance,
+	gpu_instance_sources: [dynamic]WGPU_Instance_Source_State,
+	gpu_active_slots: [dynamic]bool,
+	gpu_dirty_indices: [dynamic]int,
+	gpu_live_slots: [dynamic]int,
+	gpu_batch_by_source: [dynamic]int,
+	gpu_cpu_visible: [dynamic]u32,
+	gpu_cpu_shadow_visible: [dynamic]u32,
+	gpu_indirect_templates: [WGPU_MAX_DRAW_BATCHES]WGPU_Draw_Indexed_Indirect,
+	gpu_slot_count: int,
+	gpu_visible_capacity: int,
+	gpu_topology_revision: u64,
+	gpu_world_uuid: shared.Entity_UUID,
+	gpu_topology_valid: bool,
+	gpu_instance_upload_count: u64,
+	gpu_instance_upload_bytes: u64,
 	shadow_bind_group_layout: wgpu.BindGroupLayout,
 	shadow_bind_group: wgpu.BindGroup,
 	shadow_pipeline_layout: wgpu.PipelineLayout,
@@ -334,11 +425,14 @@ wgpu_rebuild_draw_batch_cache :: proc(cache: ^WGPU_Draw_Batch_Cache, render_list
 		return
 	}
 	rebuild_count := cache.rebuild_count + 1
+	source_indices := cache.source_indices
+	clear(&source_indices)
 	cache^ = {
 		world_uuid = render_list.world_uuid,
 		topology_revision = render_list.topology_revision,
 		valid = true,
 		rebuild_count = rebuild_count,
+		source_indices = source_indices,
 	}
 	for candidate in render_list.instances {
 		found := false
@@ -350,7 +444,11 @@ wgpu_rebuild_draw_batch_cache :: proc(cache: ^WGPU_Draw_Batch_Cache, render_list
 				break
 			}
 		}
-		if found || cache.batch_count >= len(cache.batches) {
+		if found {
+			continue
+		}
+		if cache.batch_count >= len(cache.batches) {
+			cache.overflowed = true
 			continue
 		}
 		cache.batches[cache.batch_count] = {
@@ -367,10 +465,7 @@ wgpu_rebuild_draw_batch_cache :: proc(cache: ^WGPU_Draw_Batch_Cache, render_list
 			   candidate.material.handle != batch.material {
 				continue
 			}
-			if cache.instance_count >= len(cache.source_indices) {
-				break
-			}
-			cache.source_indices[cache.instance_count] = source_index
+			append(&cache.source_indices, source_index)
 			cache.instance_count += 1
 			batch.instance_count += 1
 		}
@@ -605,9 +700,8 @@ wgpu_encode_render_pass :: proc(
 			u32(viewport.width),
 			u32(viewport.height),
 		)
-		wgpu.RenderPassEncoderSetPipeline(render_pass, renderer.pipeline)
-		wgpu.RenderPassEncoderSetBindGroup(render_pass, 0, renderer.bind_group)
-		for batch in batches {
+		wgpu.RenderPassEncoderSetPipeline(render_pass, renderer.gpu_driven_pipeline)
+		for batch, batch_index in batches {
 			cached, cache_err := wgpu_geometry_cache(renderer, registry, batch.geometry)
 			if cache_err != "" { return cache_err }
 			material_cached, material_err := wgpu_material_cache(
@@ -616,6 +710,7 @@ wgpu_encode_render_pass :: proc(
 				batch.material,
 			)
 			if material_err != "" { return material_err }
+			wgpu.RenderPassEncoderSetBindGroup(render_pass, 0, batch.world_bind_group)
 			wgpu.RenderPassEncoderSetBindGroup(render_pass, 1, material_cached.bind_group)
 			wgpu.RenderPassEncoderSetVertexBuffer(
 				render_pass,
@@ -631,13 +726,10 @@ wgpu_encode_render_pass :: proc(
 				0,
 				wgpu.WHOLE_SIZE,
 			)
-			wgpu.RenderPassEncoderDrawIndexed(
+			wgpu.RenderPassEncoderDrawIndexedIndirect(
 				render_pass,
-				cached.index_count,
-				batch.instance_count,
-				0,
-				0,
-				batch.first_instance,
+				renderer.gpu_indirect_buffer,
+				u64(batch_index * size_of(WGPU_Draw_Indexed_Indirect)),
 			)
 		}
 	}
@@ -943,11 +1035,11 @@ wgpu_encode_shadow_pass :: proc(
 	if pass == nil { return "failed to begin wgpu shadow pass" }
 	defer wgpu.RenderPassEncoderRelease(pass)
 	if len(batches) > 0 {
-		wgpu.RenderPassEncoderSetPipeline(pass, renderer.shadow_pipeline)
-		wgpu.RenderPassEncoderSetBindGroup(pass, 0, renderer.shadow_bind_group)
-		for batch in batches {
+		wgpu.RenderPassEncoderSetPipeline(pass, renderer.gpu_driven_shadow_pipeline)
+		for batch, batch_index in batches {
 			cached, err := wgpu_geometry_cache(renderer, registry, batch.geometry)
 			if err != "" { return err }
+			wgpu.RenderPassEncoderSetBindGroup(pass, 0, batch.shadow_bind_group)
 			wgpu.RenderPassEncoderSetVertexBuffer(
 				pass,
 				0,
@@ -962,13 +1054,10 @@ wgpu_encode_shadow_pass :: proc(
 				0,
 				wgpu.WHOLE_SIZE,
 			)
-			wgpu.RenderPassEncoderDrawIndexed(
+			wgpu.RenderPassEncoderDrawIndexedIndirect(
 				pass,
-				cached.index_count,
-				batch.instance_count,
-				0,
-				0,
-				batch.first_instance,
+				renderer.gpu_shadow_indirect_buffer,
+				u64(batch_index * size_of(WGPU_Draw_Indexed_Indirect)),
 			)
 		}
 	}
@@ -1046,14 +1135,34 @@ wgpu_draw_frame :: proc(
 		config.ui_state != nil && config.ui_state.editor_visible,
 	)
 	viewport := ui.editor_viewport(config.ui_state, f32(renderer.width), f32(renderer.height))
-	batches, batch_count := wgpu_prepare_draw_batches(
+	batches, batch_count, prepare_err := wgpu_prepare_gpu_draw_batches(
 		renderer,
 		&renderer.render_list,
 		config.resource_registry,
 		u32(viewport.width),
 		u32(viewport.height),
 	)
-	if config.stats != nil { config.stats.draw_batches = batch_count }
+	if prepare_err != "" {
+		return false, false, prepare_err
+	}
+	if config.cpu_culling {
+		wgpu_prepare_cpu_culling(
+			renderer,
+			&renderer.render_list,
+			u32(viewport.width),
+			u32(viewport.height),
+		)
+	}
+	if config.stats != nil {
+		config.stats.draw_batches = batch_count
+		config.stats.gpu_driven = true
+		config.stats.compute_culling = !config.cpu_culling
+		config.stats.instance_capacity = WGPU_MAX_GPU_INSTANCES
+		config.stats.instance_slots = renderer.gpu_slot_count
+		config.stats.visible_capacity = renderer.gpu_visible_capacity
+		config.stats.instance_uploads = renderer.gpu_instance_upload_count
+		config.stats.instance_upload_bytes = renderer.gpu_instance_upload_bytes
+	}
 	record_system_profile_phase(config, .Render_Prepare, render_prepare_start)
 	finish_runtime_frame(config, world, frame_start)
 
@@ -1066,6 +1175,11 @@ wgpu_draw_frame :: proc(
 		return false, false, "failed to create wgpu command encoder"
 	}
 	defer wgpu.CommandEncoderRelease(encoder)
+	if !config.cpu_culling {
+		if err = wgpu_encode_gpu_culling(renderer, encoder, batch_count); err != "" {
+			return false, false, err
+		}
+	}
 	if err = wgpu_encode_shadow_pass(
 		renderer,
 		encoder,
@@ -1132,14 +1246,34 @@ wgpu_render_offscreen_frame :: proc(
 		config.ui_state != nil && config.ui_state.editor_visible,
 	)
 	viewport := ui.editor_viewport(config.ui_state, f32(width), f32(height))
-	batches, batch_count := wgpu_prepare_draw_batches(
+	batches, batch_count, prepare_err := wgpu_prepare_gpu_draw_batches(
 		renderer,
 		&renderer.render_list,
 		config.resource_registry,
 		u32(viewport.width),
 		u32(viewport.height),
 	)
-	if config != nil && config.stats != nil { config.stats.draw_batches = batch_count }
+	if prepare_err != "" {
+		return prepare_err
+	}
+	if config.cpu_culling {
+		wgpu_prepare_cpu_culling(
+			renderer,
+			&renderer.render_list,
+			u32(viewport.width),
+			u32(viewport.height),
+		)
+	}
+	if config != nil && config.stats != nil {
+		config.stats.draw_batches = batch_count
+		config.stats.gpu_driven = true
+		config.stats.compute_culling = !config.cpu_culling
+		config.stats.instance_capacity = WGPU_MAX_GPU_INSTANCES
+		config.stats.instance_slots = renderer.gpu_slot_count
+		config.stats.visible_capacity = renderer.gpu_visible_capacity
+		config.stats.instance_uploads = renderer.gpu_instance_upload_count
+		config.stats.instance_upload_bytes = renderer.gpu_instance_upload_bytes
+	}
 	record_system_profile_phase(config, .Render_Prepare, render_prepare_start)
 	finish_runtime_frame(config, world, frame_start)
 
@@ -1152,6 +1286,11 @@ wgpu_render_offscreen_frame :: proc(
 		return "failed to create wgpu command encoder"
 	}
 	defer wgpu.CommandEncoderRelease(encoder)
+	if !config.cpu_culling {
+		if err := wgpu_encode_gpu_culling(renderer, encoder, batch_count); err != "" {
+			return err
+		}
+	}
 	if err := wgpu_encode_shadow_pass(
 		renderer,
 		encoder,

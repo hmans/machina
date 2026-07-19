@@ -1038,6 +1038,7 @@ populate_resource_render_list :: proc(
 		append(
 			&list.instances,
 			Render_Instance {
+				slot = entity.render_instance_index,
 				entity = entity,
 				transform = world_transform,
 				geometry = Geometry_Component{handle = internal.geometry},
