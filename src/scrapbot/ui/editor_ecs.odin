@@ -202,6 +202,12 @@ editor_ui_handle_activation :: proc(
 					return
 				case .Inspector_Component_Menu_Button:
 					state.editor_component_menu_open = !state.editor_component_menu_open
+					if state.editor_component_menu_open {
+						state.editor_snapshot_valid = false
+						if selected, ok := editor_selected_world_index(state, world); ok {
+							editor_ui_build_component_menu(state, world, selected)
+						}
+					}
 					state.editor_layout_invalidated = true
 					if menu, found := editor_ui_entity(world, .Inspector_Component_Menu); found {
 						editor_ui_set_hidden(world, menu, !state.editor_component_menu_open)
@@ -256,6 +262,10 @@ editor_ui_handle_activation :: proc(
 						return
 					}
 					state.editor_resource_menu_open = !state.editor_resource_menu_open
+					if state.editor_resource_menu_open {
+						state.editor_snapshot_valid = false
+						editor_ui_build_resource_menu(state, world)
+					}
 					state.editor_layout_invalidated = true
 					if menu, found := editor_ui_entity(world, .Inspector_Resource_Menu); found {
 						editor_ui_set_hidden(world, menu, !state.editor_resource_menu_open)
@@ -3940,122 +3950,165 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 		editor_ui_set_text(world, status, mode)
 	}
 
-	if header, found := editor_ui_entity(world, .Inspector_Header); found {
-		header_layout := &world.ui_layouts[world.entities[header].ui_layout_index]
-		header_layout.position.y = 82
-		if state.editor_has_resource_selection {
-			header_layout.position.y = 114
-			id_buffer: [36]u8
-			editor_ui_set_text(
-				world,
-				header,
-				shared.resource_uuid_to_string(state.editor_selected_resource, id_buffer[:]),
-			)
-		} else if !state.editor_has_selection {
-			editor_ui_set_text(world, header, "Select an entity or resource to inspect")
-		} else {
-			index := int(state.editor_selected_entity.index)
-			if index >= 0 && index < len(world.entities) {
-				entity := world.entities[index]
-				origin := "SCENE ENTITY"
-				if entity.origin == .Runtime { origin = "RUNTIME ENTITY" }
-				id_buffer: [36]u8
-				id := shared.entity_uuid_to_string(entity.uuid, id_buffer[:])
-				editor_ui_set_text(world, header, fmt.tprintf("%s  /  %s", origin, id))
+	selected_component_revision := u64(0)
+	if state.editor_has_selection {
+		selected_index := int(state.editor_selected_entity.index)
+		if selected_index >= 0 && selected_index < len(world.entities) {
+			selected_component_revision = world.entities[selected_index].component_revision
+		}
+	}
+	selected_resource_version := u32(0)
+	if state.editor_has_resource_selection && state.resource_registry != nil {
+		if handle, found := resources.material_by_uuid(
+			state.resource_registry,
+			state.editor_selected_resource,
+		); found {
+			if material, alive := resources.get_material(state.resource_registry, handle); alive {
+				selected_resource_version = material.version
 			}
 		}
 	}
-	if name_input, found := editor_ui_entity(world, .Inspector_Entity_Name); found {
-		hidden := !state.editor_has_selection || state.editor_has_resource_selection
-		editor_ui_set_hidden(world, name_input, hidden)
-		if !hidden {
-			selected_index := int(state.editor_selected_entity.index)
-			if selected_index >= 0 && selected_index < len(world.entities) {
-				input := &world.ui_inputs[world.entities[name_input].ui_input_index]
-				input.read_only =
-					!state.editor_simulation_stopped ||
-					world.entities[selected_index].origin != .Scene
-				if !state.has_focused_input ||
-				   state.focused_input != world.entities[name_input].id {
-					_ = ecs.set_ui_input_value(
-						world,
-						name_input,
-						world.entities[selected_index].name,
-					)
+	refresh_inspector :=
+		!state.editor_snapshot_valid ||
+		!state.editor_inspector_snapshot_valid ||
+		state.editor_inspector_snapshot_entity != state.editor_selected_entity ||
+		state.editor_inspector_snapshot_component_revision != selected_component_revision ||
+		state.editor_inspector_snapshot_has_resource != state.editor_has_resource_selection ||
+		state.editor_inspector_snapshot_resource != state.editor_selected_resource ||
+		state.editor_inspector_snapshot_resource_version != selected_resource_version ||
+		state.editor_inspector_snapshot_stopped != state.editor_simulation_stopped
+	if refresh_inspector {
+		if header, found := editor_ui_entity(world, .Inspector_Header); found {
+			header_layout := &world.ui_layouts[world.entities[header].ui_layout_index]
+			header_layout.position.y = 82
+			if state.editor_has_resource_selection {
+				header_layout.position.y = 114
+				id_buffer: [36]u8
+				editor_ui_set_text(
+					world,
+					header,
+					shared.resource_uuid_to_string(state.editor_selected_resource, id_buffer[:]),
+				)
+			} else if !state.editor_has_selection {
+				editor_ui_set_text(world, header, "Select an entity or resource to inspect")
+			} else {
+				index := int(state.editor_selected_entity.index)
+				if index >= 0 && index < len(world.entities) {
+					entity := world.entities[index]
+					origin := "SCENE ENTITY"
+					if entity.origin == .Runtime { origin = "RUNTIME ENTITY" }
+					id_buffer: [36]u8
+					id := shared.entity_uuid_to_string(entity.uuid, id_buffer[:])
+					editor_ui_set_text(world, header, fmt.tprintf("%s  /  %s", origin, id))
 				}
 			}
 		}
-	}
-	resource_name, resource_name_found := editor_ui_entity(world, .Inspector_Resource_Name)
-	resource_source, resource_source_found := editor_ui_entity(world, .Inspector_Resource_Source)
-	find_usage, find_usage_found := editor_ui_entity(world, .Project_Resource_Find_Usage)
-	resource_selected :=
-		state.editor_has_resource_selection &&
-		state.resource_registry != nil &&
-		resource_name_found &&
-		resource_source_found
-	if resource_name_found {
-		editor_ui_set_hidden(world, resource_name, !resource_selected)
-	}
-	if resource_source_found {
-		editor_ui_set_hidden(world, resource_source, !resource_selected)
-	}
-	if find_usage_found {
-		editor_ui_set_hidden(
-			world,
-			find_usage,
-			!resource_selected ||
-			editor_resource_usage_count(world, state.editor_selected_resource) == 0,
-		)
-	}
-	if resource_selected {
-		handle, resource_found := resources.material_by_uuid(
-			state.resource_registry,
-			state.editor_selected_resource,
-		)
-		if resource_found {
-			material, alive := resources.get_material(state.resource_registry, handle)
-			if alive {
-				inputs := [2]int{resource_name, resource_source}
-				values := [2]string{material.name, material.source}
-				for input_entity, input_index in inputs {
-					input := &world.ui_inputs[world.entities[input_entity].ui_input_index]
-					input.read_only = !state.editor_simulation_stopped
+		if name_input, found := editor_ui_entity(world, .Inspector_Entity_Name); found {
+			hidden := !state.editor_has_selection || state.editor_has_resource_selection
+			editor_ui_set_hidden(world, name_input, hidden)
+			if !hidden {
+				selected_index := int(state.editor_selected_entity.index)
+				if selected_index >= 0 && selected_index < len(world.entities) {
+					input := &world.ui_inputs[world.entities[name_input].ui_input_index]
+					input.read_only =
+						!state.editor_simulation_stopped ||
+						world.entities[selected_index].origin != .Scene
 					if !state.has_focused_input ||
-					   state.focused_input != world.entities[input_entity].id {
-						_ = ecs.set_ui_input_value(world, input_entity, values[input_index])
+					   state.focused_input != world.entities[name_input].id {
+						_ = ecs.set_ui_input_value(
+							world,
+							name_input,
+							world.entities[selected_index].name,
+						)
 					}
+				}
+			}
+		}
+		resource_name, resource_name_found := editor_ui_entity(world, .Inspector_Resource_Name)
+		resource_source, resource_source_found := editor_ui_entity(
+			world,
+			.Inspector_Resource_Source,
+		)
+		find_usage, find_usage_found := editor_ui_entity(world, .Project_Resource_Find_Usage)
+		resource_selected :=
+			state.editor_has_resource_selection &&
+			state.resource_registry != nil &&
+			resource_name_found &&
+			resource_source_found
+		if resource_name_found {
+			editor_ui_set_hidden(world, resource_name, !resource_selected)
+		}
+		if resource_source_found {
+			editor_ui_set_hidden(world, resource_source, !resource_selected)
+		}
+		if find_usage_found {
+			editor_ui_set_hidden(
+				world,
+				find_usage,
+				!resource_selected ||
+				editor_resource_usage_count(world, state.editor_selected_resource) == 0,
+			)
+		}
+		if resource_selected {
+			handle, resource_found := resources.material_by_uuid(
+				state.resource_registry,
+				state.editor_selected_resource,
+			)
+			if resource_found {
+				material, alive := resources.get_material(state.resource_registry, handle)
+				if alive {
+					inputs := [2]int{resource_name, resource_source}
+					values := [2]string{material.name, material.source}
+					for input_entity, input_index in inputs {
+						input := &world.ui_inputs[world.entities[input_entity].ui_input_index]
+						input.read_only = !state.editor_simulation_stopped
+						if !state.has_focused_input ||
+						   state.focused_input != world.entities[input_entity].id {
+							_ = ecs.set_ui_input_value(world, input_entity, values[input_index])
+						}
+					}
+				} else {
+					state.editor_has_resource_selection = false
 				}
 			} else {
 				state.editor_has_resource_selection = false
 			}
-		} else {
-			state.editor_has_resource_selection = false
 		}
-	}
-	if header_entity := find_parent_entity(
-		world,
-		shared.entity_uuid_from_engine_name(EDITOR_UI_INSPECTOR_HEADER_NAME),
-		.Editor,
-	); header_entity >= 0 {
-		header_layout := &world.ui_layouts[world.entities[header_entity].ui_layout_index]
-		header_layout.size.y = 132
-		if resource_selected {
-			header_layout.size.y = 184
+		if header_entity := find_parent_entity(
+			world,
+			shared.entity_uuid_from_engine_name(EDITOR_UI_INSPECTOR_HEADER_NAME),
+			.Editor,
+		); header_entity >= 0 {
+			header_layout := &world.ui_layouts[world.entities[header_entity].ui_layout_index]
+			header_layout.size.y = 132
+			if resource_selected {
+				header_layout.size.y = 184
+			}
 		}
-	}
-	if content, found := editor_ui_entity(world, .Inspector_Content); found {
-		if state.editor_has_resource_selection {
-			editor_ui_build_resource_inspector_panels(
-				state,
-				world,
-				content,
-				state.editor_selected_resource,
-			)
-		} else {
-			selected_index := -1
-			if state.editor_has_selection { selected_index = int(state.editor_selected_entity.index) }
-			editor_ui_build_inspector_panels(state, world, content, selected_index)
+		if content, found := editor_ui_entity(world, .Inspector_Content); found {
+			if state.editor_has_resource_selection {
+				editor_ui_build_resource_inspector_panels(
+					state,
+					world,
+					content,
+					state.editor_selected_resource,
+				)
+			} else {
+				selected_index := -1
+				if state.editor_has_selection { selected_index = int(state.editor_selected_entity.index) }
+				editor_ui_build_inspector_panels(state, world, content, selected_index)
+			}
+		}
+		state.editor_inspector_snapshot_valid = true
+		state.editor_inspector_snapshot_entity = state.editor_selected_entity
+		state.editor_inspector_snapshot_component_revision = selected_component_revision
+		state.editor_inspector_snapshot_has_resource = state.editor_has_resource_selection
+		state.editor_inspector_snapshot_resource = state.editor_selected_resource
+		state.editor_inspector_snapshot_resource_version = selected_resource_version
+		state.editor_inspector_snapshot_stopped = state.editor_simulation_stopped
+		state.editor_inspector_snapshot_refresh_count += 1
+		if root, found := editor_ui_entity(world, .Root); found {
+			ecs.mark_ui_layout_changed(world, root)
 		}
 	}
 	state.editor_snapshot_elapsed = 0
@@ -4063,9 +4116,6 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 	state.editor_snapshot_has_selection = state.editor_has_selection
 	state.editor_snapshot_selected_entity = state.editor_selected_entity
 	state.editor_snapshot_refresh_count += 1
-	if root, found := editor_ui_entity(world, .Root); found {
-		ecs.mark_ui_layout_changed(world, root)
-	}
 }
 
 reconcile_editor_ui_world :: proc(state: ^State, world: ^shared.World) {

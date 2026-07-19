@@ -184,6 +184,9 @@ WGPU_Renderer :: struct {
 	ui_vertices: [dynamic]WGPU_UI_Vertex,
 	ui_vertex_buffer: wgpu.Buffer,
 	ui_vertex_capacity: int,
+	ui_overlay_vertices: [dynamic]WGPU_UI_Vertex,
+	ui_overlay_vertex_buffer: wgpu.Buffer,
+	ui_overlay_vertex_capacity: int,
 	ui_paint_signature: u64,
 	ui_paint_signature_valid: bool,
 	ui_vertex_rebuild_count: u64,
@@ -283,8 +286,6 @@ WGPU_Live_Resize_State :: struct {
 WGPU_UI_Paint_Key :: struct {
 	paint_count: int,
 	editor_paint_start: int,
-	editor_gizmo_paint_start: int,
-	editor_gizmo_paint_end: int,
 	target_width: u32,
 	target_height: u32,
 	viewport: ui.Rect,
@@ -297,8 +298,6 @@ wgpu_ui_paint_signature :: proc(state: ^ui.State, target_width, target_height: u
 	key := WGPU_UI_Paint_Key {
 		paint_count = state.paint_count,
 		editor_paint_start = state.editor_paint_start,
-		editor_gizmo_paint_start = state.editor_gizmo_paint_start,
-		editor_gizmo_paint_end = state.editor_gizmo_paint_end,
 		target_width = target_width,
 		target_height = target_height,
 		viewport = ui.editor_viewport(state, f32(target_width), f32(target_height)),
@@ -310,31 +309,250 @@ wgpu_ui_paint_signature :: proc(state: ^ui.State, target_width, target_height: u
 	return hash.fnv64a(paint_bytes, signature)
 }
 
-wgpu_upload_ui_vertices :: proc(renderer: ^WGPU_Renderer, vertices: []WGPU_UI_Vertex) -> bool {
+wgpu_append_ui_vertices :: proc(
+	vertices: ^[dynamic]WGPU_UI_Vertex,
+	commands: []ui.Paint_Command,
+	editor_paint_start: int,
+	viewport: ui.Rect,
+	drawable_width, drawable_height: f32,
+) {
+	for command, command_index in commands {
+		rect := command.rect
+		radius := command.corner_radius
+		clip := [4]f32{0, 0, drawable_width, drawable_height}
+		project_command := command_index < editor_paint_start
+		if project_command {
+			scale_x, scale_y := viewport.width / 1280, viewport.height / 720
+			rect = {
+				viewport.x + rect.x * scale_x,
+				viewport.y + rect.y * scale_y,
+				rect.width * scale_x,
+				rect.height * scale_y,
+			}
+			radius *= min(scale_x, scale_y)
+			if command.has_clip {
+				clip = {
+					viewport.x + command.clip.x * scale_x,
+					viewport.y + command.clip.y * scale_y,
+					viewport.x + (command.clip.x + command.clip.width) * scale_x,
+					viewport.y + (command.clip.y + command.clip.height) * scale_y,
+				}
+			}
+		} else if command.has_clip {
+			clip = {
+				command.clip.x,
+				command.clip.y,
+				command.clip.x + command.clip.width,
+				command.clip.y + command.clip.height,
+			}
+		}
+		positions: [4][2]f32
+		shape_width, shape_height := rect.width, rect.height
+		if command.kind == .Line {
+			dx := command.line_end.x - command.line_start.x
+			dy := command.line_end.y - command.line_start.y
+			line_length := math.sqrt(dx * dx + dy * dy)
+			if line_length <= 0.0001 {
+				line_length = 0.0001
+			}
+			half := command.line_thickness * 0.5
+			px := -dy / line_length * half
+			py := dx / line_length * half
+			points := [4]shared.Vec2 {
+				{command.line_start.x - px, command.line_start.y - py},
+				{command.line_end.x - px, command.line_end.y - py},
+				{command.line_end.x + px, command.line_end.y + py},
+				{command.line_start.x + px, command.line_start.y + py},
+			}
+			for point, index in points {
+				positions[index] = {
+					point.x / drawable_width * 2 - 1,
+					1 - point.y / drawable_height * 2,
+				}
+			}
+			shape_width = line_length
+			shape_height = command.line_thickness
+		} else if command.kind == .Triangle {
+			for point, index in command.triangle {
+				positions[index] = {
+					point.x / drawable_width * 2 - 1,
+					1 - point.y / drawable_height * 2,
+				}
+			}
+			positions[3] = positions[2]
+			shape_width = 1
+			shape_height = 1
+		} else if command.kind == .Ring {
+			center, axis_x, axis_y := command.ring_center, command.ring_axis_x, command.ring_axis_y
+			extent := f32(1.0 / 0.92)
+			axis_x.x *= extent
+			axis_x.y *= extent
+			axis_y.x *= extent
+			axis_y.y *= extent
+			points := [4]shared.Vec2 {
+				{center.x - axis_x.x - axis_y.x, center.y - axis_x.y - axis_y.y},
+				{center.x + axis_x.x - axis_y.x, center.y + axis_x.y - axis_y.y},
+				{center.x + axis_x.x + axis_y.x, center.y + axis_x.y + axis_y.y},
+				{center.x - axis_x.x + axis_y.x, center.y - axis_x.y + axis_y.y},
+			}
+			for point, index in points {
+				positions[index] = {
+					point.x / drawable_width * 2 - 1,
+					1 - point.y / drawable_height * 2,
+				}
+			}
+			shape_width = math.sqrt(axis_x.x * axis_x.x + axis_x.y * axis_x.y) * 2
+			shape_height = math.sqrt(axis_y.x * axis_y.x + axis_y.y * axis_y.y) * 2
+			radius = command.ring_thickness
+		} else {
+			x0 := rect.x / drawable_width * 2 - 1
+			x1 := (rect.x + rect.width) / drawable_width * 2 - 1
+			y0 := 1 - rect.y / drawable_height * 2
+			y1 := 1 - (rect.y + rect.height) / drawable_height * 2
+			positions = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}
+		}
+		u0, v0, u1, v1 := command.uv.x, command.uv.y, command.uv.z, command.uv.w
+		kind := f32(0)
+		if command.kind == .Glyph {
+			kind = 1
+		} else if command.kind == .Triangle {
+			kind = 2
+		} else if command.kind == .Ring {
+			kind = 3
+		} else if command.kind == .Disclosure {
+			kind = 4
+			if command.disclosure_expanded {
+				radius = -radius
+			}
+		} else if command.kind == .Checkmark {
+			kind = 5
+		}
+		if command.kind == .Panel ||
+		   command.kind == .Line ||
+		   command.kind == .Triangle ||
+		   command.kind == .Ring ||
+		   command.kind == .Disclosure ||
+		   command.kind == .Checkmark {
+			u0 = 0
+			v0 = 0
+			u1 = 1
+			v1 = 1
+		}
+		color := [4]f32{command.color.x, command.color.y, command.color.z, command.color.w}
+		border_color := [4]f32 {
+			command.border_color.x,
+			command.border_color.y,
+			command.border_color.z,
+			command.border_color.w,
+		}
+		border_width := command.border_width
+		if project_command {
+			border_width *= min(viewport.width / 1280, viewport.height / 720)
+		}
+		params := [3]f32{shape_width, shape_height, radius}
+		append(
+			vertices,
+			WGPU_UI_Vertex {
+				position = positions[0],
+				uv = {u0, v0},
+				color = color,
+				kind = kind,
+				size_radius = params,
+				clip = clip,
+				border_color = border_color,
+				border_width = border_width,
+				font_layer = command.font_layer,
+			},
+			WGPU_UI_Vertex {
+				position = positions[1],
+				uv = {u1, v0},
+				color = color,
+				kind = kind,
+				size_radius = params,
+				clip = clip,
+				border_color = border_color,
+				border_width = border_width,
+				font_layer = command.font_layer,
+			},
+			WGPU_UI_Vertex {
+				position = positions[2],
+				uv = {u1, v1},
+				color = color,
+				kind = kind,
+				size_radius = params,
+				clip = clip,
+				border_color = border_color,
+				border_width = border_width,
+				font_layer = command.font_layer,
+			},
+			WGPU_UI_Vertex {
+				position = positions[0],
+				uv = {u0, v0},
+				color = color,
+				kind = kind,
+				size_radius = params,
+				clip = clip,
+				border_color = border_color,
+				border_width = border_width,
+				font_layer = command.font_layer,
+			},
+			WGPU_UI_Vertex {
+				position = positions[2],
+				uv = {u1, v1},
+				color = color,
+				kind = kind,
+				size_radius = params,
+				clip = clip,
+				border_color = border_color,
+				border_width = border_width,
+				font_layer = command.font_layer,
+			},
+			WGPU_UI_Vertex {
+				position = positions[3],
+				uv = {u0, v1},
+				color = color,
+				kind = kind,
+				size_radius = params,
+				clip = clip,
+				border_color = border_color,
+				border_width = border_width,
+				font_layer = command.font_layer,
+			},
+		)
+	}
+}
+
+wgpu_upload_ui_vertices :: proc(
+	renderer: ^WGPU_Renderer,
+	vertices: []WGPU_UI_Vertex,
+	vertex_buffer: ^wgpu.Buffer,
+	vertex_capacity: ^int,
+	label: string,
+) -> bool {
 	if renderer == nil || len(vertices) == 0 {
 		return false
 	}
-	if renderer.ui_vertex_buffer == nil || renderer.ui_vertex_capacity < len(vertices) {
-		if renderer.ui_vertex_buffer != nil {
-			wgpu.BufferRelease(renderer.ui_vertex_buffer)
+	if vertex_buffer^ == nil || vertex_capacity^ < len(vertices) {
+		if vertex_buffer^ != nil {
+			wgpu.BufferRelease(vertex_buffer^)
 		}
-		renderer.ui_vertex_capacity = max(len(vertices), max(renderer.ui_vertex_capacity * 2, 256))
-		renderer.ui_vertex_buffer = wgpu.DeviceCreateBuffer(
+		vertex_capacity^ = max(len(vertices), max(vertex_capacity^ * 2, 256))
+		vertex_buffer^ = wgpu.DeviceCreateBuffer(
 			renderer.device,
 			&wgpu.BufferDescriptor {
-				label = "Scrapbot UI Vertex Buffer",
+				label = label,
 				usage = {.Vertex, .CopyDst},
-				size = u64(renderer.ui_vertex_capacity * size_of(WGPU_UI_Vertex)),
+				size = u64(vertex_capacity^ * size_of(WGPU_UI_Vertex)),
 			},
 		)
-		if renderer.ui_vertex_buffer == nil {
-			renderer.ui_vertex_capacity = 0
+		if vertex_buffer^ == nil {
+			vertex_capacity^ = 0
 			return false
 		}
 	}
 	wgpu.QueueWriteBuffer(
 		renderer.queue,
-		renderer.ui_vertex_buffer,
+		vertex_buffer^,
 		0,
 		raw_data(vertices),
 		uint(len(vertices) * size_of(WGPU_UI_Vertex)),
@@ -781,7 +999,7 @@ wgpu_encode_render_pass :: proc(
 	}
 	record_system_profile_phase(config, .Render_Post, post_start)
 	ui_start := time.tick_now()
-	if ui_state != nil && ui_state.paint_count > 0 {
+	if ui_state != nil && (ui_state.paint_count > 0 || ui_state.editor_overlay_paint_count > 0) {
 		ui_color_attachment := wgpu.RenderPassColorAttachment {
 			view = color_view,
 			depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
@@ -815,171 +1033,47 @@ wgpu_encode_render_pass :: proc(
 		viewport := ui.editor_viewport(ui_state, drawable_width, drawable_height)
 		if rebuild_vertices {
 			clear(vertices)
-			for command, command_index in ui_state.paint[:ui_state.paint_count] {
-				rect := command.rect; radius := command.corner_radius
-				clip := [4]f32{0, 0, drawable_width, drawable_height}
-				if command_index < ui_state.editor_paint_start {
-					scale_x, scale_y := viewport.width / 1280, viewport.height / 720
-					rect = {
-						viewport.x + rect.x * scale_x,
-						viewport.y + rect.y * scale_y,
-						rect.width * scale_x,
-						rect.height * scale_y,
-					}; radius *= min(scale_x, scale_y)
-					if command.has_clip { clip = {viewport.x + command.clip.x * scale_x, viewport.y + command.clip.y * scale_y, viewport.x + (command.clip.x + command.clip.width) * scale_x, viewport.y + (command.clip.y + command.clip.height) * scale_y} }
-				} else if command.has_clip {
-					clip = {
-						command.clip.x,
-						command.clip.y,
-						command.clip.x + command.clip.width,
-						command.clip.y + command.clip.height,
-					}
-				}
-				positions: [4][2]f32; shape_width, shape_height := rect.width, rect.height
-				if command.kind == .Line {
-					dx :=
-						command.line_end.x -
-						command.line_start.x; dy := command.line_end.y - command.line_start.y; line_length := math.sqrt(dx * dx + dy * dy)
-					if line_length <=
-					   0.0001 { line_length = 0.0001 }; half := command.line_thickness * 0.5; px := -dy / line_length * half; py := dx / line_length * half
-					points := [4]shared.Vec2 {
-						{command.line_start.x - px, command.line_start.y - py},
-						{command.line_end.x - px, command.line_end.y - py},
-						{command.line_end.x + px, command.line_end.y + py},
-						{command.line_start.x + px, command.line_start.y + py},
-					}
-					for point, i in points {positions[i] = {
-							point.x / drawable_width * 2 - 1,
-							1 - point.y / drawable_height * 2,
-						}}
-					shape_width = line_length; shape_height = command.line_thickness
-				} else if command.kind == .Triangle {
-					for point, i in command.triangle { positions[i] = {point.x / drawable_width * 2 - 1, 1 - point.y / drawable_height * 2} }
-					positions[3] = positions[2]
-					shape_width = 1; shape_height = 1
-				} else if command.kind == .Ring {
-					center, axis_x, axis_y :=
-						command.ring_center, command.ring_axis_x, command.ring_axis_y
-					extent := f32(
-						1.0 / 0.92,
-					); axis_x.x *= extent; axis_x.y *= extent; axis_y.x *= extent; axis_y.y *= extent
-					points := [4]shared.Vec2 {
-						{center.x - axis_x.x - axis_y.x, center.y - axis_x.y - axis_y.y},
-						{center.x + axis_x.x - axis_y.x, center.y + axis_x.y - axis_y.y},
-						{center.x + axis_x.x + axis_y.x, center.y + axis_x.y + axis_y.y},
-						{center.x - axis_x.x + axis_y.x, center.y - axis_x.y + axis_y.y},
-					}
-					for point, i in points {positions[i] = {
-							point.x / drawable_width * 2 - 1,
-							1 - point.y / drawable_height * 2,
-						}}
-					shape_width =
-						math.sqrt(axis_x.x * axis_x.x + axis_x.y * axis_x.y) *
-						2; shape_height = math.sqrt(axis_y.x * axis_y.x + axis_y.y * axis_y.y) * 2; radius = command.ring_thickness
-				} else {
-					x0 :=
-						rect.x / drawable_width * 2 -
-						1; x1 := (rect.x + rect.width) / drawable_width * 2 - 1; y0 := 1 - rect.y / drawable_height * 2; y1 := 1 - (rect.y + rect.height) / drawable_height * 2
-					positions = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}
-				}
-				u0, v0, u1, v1 := command.uv.x, command.uv.y, command.uv.z, command.uv.w
-				kind := f32(
-					0,
-				); if command.kind == .Glyph { kind = 1 } else if command.kind == .Triangle { kind = 2 } else if command.kind == .Ring { kind = 3 } else if command.kind == .Disclosure { kind = 4; if command.disclosure_expanded { radius = -radius } } else if command.kind == .Checkmark { kind = 5 }
-				if command.kind == .Panel ||
-				   command.kind == .Line ||
-				   command.kind == .Triangle ||
-				   command.kind == .Ring ||
-				   command.kind == .Disclosure ||
-				   command.kind == .Checkmark { u0 = 0; v0 = 0; u1 = 1; v1 = 1 }
-				color := [4]f32{command.color.x, command.color.y, command.color.z, command.color.w}
-				border_color := [4]f32 {
-					command.border_color.x,
-					command.border_color.y,
-					command.border_color.z,
-					command.border_color.w,
-				}
-				border_width := command.border_width
-				font_layer := command.font_layer
-				if command_index <
-				   ui_state.editor_paint_start { border_width *= min(viewport.width / 1280, viewport.height / 720) }
-				params := [3]f32{shape_width, shape_height, radius}
-				append(
-					vertices,
-					WGPU_UI_Vertex {
-						position = positions[0],
-						uv = {u0, v0},
-						color = color,
-						kind = kind,
-						size_radius = params,
-						clip = clip,
-						border_color = border_color,
-						border_width = border_width,
-						font_layer = font_layer,
-					},
-					WGPU_UI_Vertex {
-						position = positions[1],
-						uv = {u1, v0},
-						color = color,
-						kind = kind,
-						size_radius = params,
-						clip = clip,
-						border_color = border_color,
-						border_width = border_width,
-						font_layer = font_layer,
-					},
-					WGPU_UI_Vertex {
-						position = positions[2],
-						uv = {u1, v1},
-						color = color,
-						kind = kind,
-						size_radius = params,
-						clip = clip,
-						border_color = border_color,
-						border_width = border_width,
-						font_layer = font_layer,
-					},
-					WGPU_UI_Vertex {
-						position = positions[0],
-						uv = {u0, v0},
-						color = color,
-						kind = kind,
-						size_radius = params,
-						clip = clip,
-						border_color = border_color,
-						border_width = border_width,
-						font_layer = font_layer,
-					},
-					WGPU_UI_Vertex {
-						position = positions[2],
-						uv = {u1, v1},
-						color = color,
-						kind = kind,
-						size_radius = params,
-						clip = clip,
-						border_color = border_color,
-						border_width = border_width,
-						font_layer = font_layer,
-					},
-					WGPU_UI_Vertex {
-						position = positions[3],
-						uv = {u0, v1},
-						color = color,
-						kind = kind,
-						size_radius = params,
-						clip = clip,
-						border_color = border_color,
-						border_width = border_width,
-						font_layer = font_layer,
-					},
-				)
-			}
-			if !wgpu_upload_ui_vertices(renderer, vertices[:]) {
+			wgpu_append_ui_vertices(
+				vertices,
+				ui_state.paint[:ui_state.paint_count],
+				ui_state.editor_paint_start,
+				viewport,
+				drawable_width,
+				drawable_height,
+			)
+			if !wgpu_upload_ui_vertices(
+				renderer,
+				vertices[:],
+				&renderer.ui_vertex_buffer,
+				&renderer.ui_vertex_capacity,
+				"Scrapbot UI Vertex Buffer",
+			) {
 				return "failed to upload UI vertices"
 			}
 			renderer.ui_paint_signature = paint_signature
 			renderer.ui_paint_signature_valid = true
 			renderer.ui_vertex_rebuild_count += 1
+		}
+		overlay_vertices := &renderer.ui_overlay_vertices
+		clear(overlay_vertices)
+		if ui_state.editor_overlay_paint_count > 0 {
+			wgpu_append_ui_vertices(
+				overlay_vertices,
+				ui_state.editor_overlay_paint[:ui_state.editor_overlay_paint_count],
+				0,
+				viewport,
+				drawable_width,
+				drawable_height,
+			)
+			if !wgpu_upload_ui_vertices(
+				renderer,
+				overlay_vertices[:],
+				&renderer.ui_overlay_vertex_buffer,
+				&renderer.ui_overlay_vertex_capacity,
+				"Scrapbot Editor Overlay Vertex Buffer",
+			) {
+				return "failed to upload editor overlay vertices"
+			}
 		}
 		wgpu.RenderPassEncoderSetViewport(
 			ui_pass,
@@ -990,24 +1084,49 @@ wgpu_encode_render_pass :: proc(
 			0,
 			1,
 		); wgpu.RenderPassEncoderSetScissorRect(ui_pass, 0, 0, target_width, target_height)
-		wgpu.RenderPassEncoderSetPipeline(
-			ui_pass,
-			renderer.ui_pipeline,
-		); wgpu.RenderPassEncoderSetBindGroup(ui_pass, 0, renderer.ui_bind_group); wgpu.RenderPassEncoderSetVertexBuffer(ui_pass, 0, renderer.ui_vertex_buffer, 0, wgpu.WHOLE_SIZE)
+		wgpu.RenderPassEncoderSetPipeline(ui_pass, renderer.ui_pipeline)
+		wgpu.RenderPassEncoderSetBindGroup(ui_pass, 0, renderer.ui_bind_group)
+		if len(vertices^) > 0 {
+			wgpu.RenderPassEncoderSetVertexBuffer(
+				ui_pass,
+				0,
+				renderer.ui_vertex_buffer,
+				0,
+				wgpu.WHOLE_SIZE,
+			)
+		}
 		if ui_state.editor_visible {
 			project_vertex_count := u32(ui_state.editor_paint_start * 6)
 			if project_vertex_count >
 			   0 { wgpu.RenderPassEncoderSetScissorRect(ui_pass, u32(viewport.x), u32(viewport.y), u32(viewport.width), u32(viewport.height)); wgpu.RenderPassEncoderDraw(ui_pass, project_vertex_count, 1, 0, 0) }
-			gizmo_start := u32(
-				ui_state.editor_gizmo_paint_start * 6,
-			); gizmo_end := u32(ui_state.editor_gizmo_paint_end * 6); total := u32(len(vertices^))
 			wgpu.RenderPassEncoderSetScissorRect(ui_pass, 0, 0, target_width, target_height)
-			if gizmo_start >
-			   project_vertex_count { wgpu.RenderPassEncoderDraw(ui_pass, gizmo_start - project_vertex_count, 1, project_vertex_count, 0) }
-			if gizmo_end >
-			   gizmo_start { wgpu.RenderPassEncoderSetScissorRect(ui_pass, u32(viewport.x), u32(viewport.y), u32(viewport.width), u32(viewport.height)); wgpu.RenderPassEncoderDraw(ui_pass, gizmo_end - gizmo_start, 1, gizmo_start, 0) }
-			if total >
-			   gizmo_end { wgpu.RenderPassEncoderSetScissorRect(ui_pass, 0, 0, target_width, target_height); wgpu.RenderPassEncoderDraw(ui_pass, total - gizmo_end, 1, gizmo_end, 0) }
+			static_vertex_count := u32(len(vertices^))
+			if static_vertex_count > project_vertex_count {
+				wgpu.RenderPassEncoderDraw(
+					ui_pass,
+					static_vertex_count - project_vertex_count,
+					1,
+					project_vertex_count,
+					0,
+				)
+			}
+			if len(overlay_vertices^) > 0 {
+				wgpu.RenderPassEncoderSetScissorRect(
+					ui_pass,
+					u32(viewport.x),
+					u32(viewport.y),
+					u32(viewport.width),
+					u32(viewport.height),
+				)
+				wgpu.RenderPassEncoderSetVertexBuffer(
+					ui_pass,
+					0,
+					renderer.ui_overlay_vertex_buffer,
+					0,
+					wgpu.WHOLE_SIZE,
+				)
+				wgpu.RenderPassEncoderDraw(ui_pass, u32(len(overlay_vertices^)), 1, 0, 0)
+			}
 		} else {
 			wgpu.RenderPassEncoderSetScissorRect(
 				ui_pass,

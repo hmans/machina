@@ -12,6 +12,7 @@ import "core:strings"
 
 MAX_NODES :: 4096
 MAX_PAINT_COMMANDS :: 16384
+MAX_EDITOR_OVERLAY_PAINT_COMMANDS :: 1024
 FONT_FIRST_CHAR :: shared.FONT_FIRST_CHAR
 FONT_CHAR_COUNT :: shared.FONT_CHAR_COUNT
 FONT_ATLAS_SIZE :: shared.FONT_ATLAS_SIZE
@@ -238,6 +239,10 @@ State :: struct {
 	node_count: int,
 	paint: [MAX_PAINT_COMMANDS]Paint_Command,
 	paint_count: int,
+	editor_overlay_paint: [MAX_EDITOR_OVERLAY_PAINT_COMMANDS]Paint_Command,
+	editor_overlay_paint_count: int,
+	paint_editor_overlay: bool,
+	editor_paint_end: int,
 	project_paint_signature, editor_paint_signature: u64,
 	project_paint_signature_valid, editor_paint_signature_valid: bool,
 	font: Font_Atlas,
@@ -306,6 +311,14 @@ State :: struct {
 	editor_snapshot_has_selection: bool,
 	editor_snapshot_selected_entity: shared.Entity,
 	editor_snapshot_refresh_count: u64,
+	editor_inspector_snapshot_valid: bool,
+	editor_inspector_snapshot_entity: shared.Entity,
+	editor_inspector_snapshot_component_revision: u64,
+	editor_inspector_snapshot_has_resource: bool,
+	editor_inspector_snapshot_resource: shared.Resource_UUID,
+	editor_inspector_snapshot_resource_version: u32,
+	editor_inspector_snapshot_stopped: bool,
+	editor_inspector_snapshot_refresh_count: u64,
 	editor_component_menu_open: bool,
 	editor_resource_menu_open: bool,
 	editor_layout_invalidated: bool,
@@ -364,8 +377,6 @@ State :: struct {
 	editor_gizmo_drag_camera_up: shared.Vec3,
 	editor_gizmo_drag_pixels: f32,
 	editor_gizmo_drag_world_scale: f32,
-	editor_gizmo_paint_start: int,
-	editor_gizmo_paint_end: int,
 	err: string,
 }
 
@@ -1192,20 +1203,14 @@ reconcile :: proc(
 					scale_paint_command(&state.paint[i], editor_scale)
 				}
 			}
-			state.editor_gizmo_paint_start = state.paint_count
+			state.editor_paint_end = state.paint_count
 			state.editor_paint_signature = editor_paint_signature
 			state.editor_paint_signature_valid = true
 		} else {
-			state.paint_count = state.editor_gizmo_paint_start
+			state.paint_count = state.editor_paint_end
 		}
-		state.editor_gizmo_paint_start = state.paint_count
-		select_font(state, "")
-		if err := append_editor_camera_mesh(state); err != "" { return err }
-		if err := append_editor_gizmo(state); err != "" { return err }
-		state.editor_gizmo_paint_end = state.paint_count
 	} else {
-		state.editor_gizmo_paint_start = state.paint_count
-		state.editor_gizmo_paint_end = state.paint_count
+		state.editor_paint_end = state.paint_count
 		state.editor_paint_signature = editor_paint_signature
 		state.editor_paint_signature_valid = true
 	}
@@ -4112,6 +4117,20 @@ scale_paint_command :: proc(command: ^Paint_Command, scale: f32) {
 	if command.has_clip { command.clip = {command.clip.x * scale, command.clip.y * scale, command.clip.width * scale, command.clip.height * scale} }
 }
 
+rebuild_editor_world_overlay :: proc(state: ^State) -> string {
+	if state == nil {
+		return ""
+	}
+	state.editor_overlay_paint_count = 0
+	state.paint_editor_overlay = true
+	defer state.paint_editor_overlay = false
+	select_font(state, "")
+	if err := append_editor_camera_mesh(state); err != "" {
+		return err
+	}
+	return append_editor_gizmo(state)
+}
+
 append_editor_camera_mesh :: proc(state: ^State) -> string {
 	if state == nil || state.editor_camera_mesh_segment_count <= 0 {
 		return ""
@@ -4700,12 +4719,23 @@ measure_text_ink :: proc(state: ^State, text: string, size: f32) -> (Rect, bool)
 	return {min_x, min_y, max_x - min_x, max_y - min_y}, has_ink
 }
 
-append_paint :: proc(
-	state: ^State,
-	command_value: Paint_Command,
-) -> string {if state.paint_count >= MAX_PAINT_COMMANDS { return "too many UI paint commands" }
+append_paint :: proc(state: ^State, command_value: Paint_Command) -> string {
+	if state.paint_editor_overlay {
+		if state.editor_overlay_paint_count >= MAX_EDITOR_OVERLAY_PAINT_COMMANDS {
+			return "too many editor overlay paint commands"
+		}
+		command := command_value
+		if command.kind == .Glyph {
+			command.font_layer = state.font.layer
+		}
+		state.editor_overlay_paint[state.editor_overlay_paint_count] = command
+		state.editor_overlay_paint_count += 1
+		return ""
+	}
+	if state.paint_count >= MAX_PAINT_COMMANDS { return "too many UI paint commands" }
 	command := command_value
 	if command.kind == .Glyph { command.font_layer = state.font.layer }
 	state.paint[state.paint_count] = command
 	state.paint_count += 1
-	return ""}
+	return ""
+}

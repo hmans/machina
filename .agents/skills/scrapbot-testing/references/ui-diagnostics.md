@@ -61,6 +61,8 @@ The command writes the tree dump even when replay fails. It also preserves the l
 Start with:
 
 - `driver_action_index`, `driver_action`, and `driver_target` to locate the stalled step.
+- `editor_component_menu_open` to distinguish popup state from stale popup layout.
+- `editor_inspector_snapshot_refresh_count` to confirm that a stable selection is not rebuilding its inspector during unrelated browser refreshes.
 - `screen_rect`, `visible_screen_rect`, and `clip` to diagnose padding, scroll, and overdraw.
 - `parent_uuid` and component-kind flags to verify retained hierarchy and control type.
 - `hovered`, `active`, and `focused` to separate interaction failure from paint failure.

@@ -4944,17 +4944,21 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			focus_input(state, &world, button_input)
 			button_index := world.entities[0].ui_button_index
 			world.entities[0].ui_button_index = -1
+			ecs.bump_component_revision(&world, 0)
 			testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 300, 0.21) == "")
 			testing.expect(t, !state.has_focused_input)
 			world.entities[0].ui_button_index = button_index
+			ecs.bump_component_revision(&world, 0)
 		}
 
 		focus_input(state, &world, position_input)
 		transform_index := world.entities[0].transform_index
 		world.entities[0].transform_index = -1
+		ecs.bump_component_revision(&world, 0)
 		testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 300, 0) == "")
 		testing.expect(t, !state.has_focused_input)
 		world.entities[0].transform_index = transform_index
+		ecs.bump_component_revision(&world, 0)
 
 		focus_input(state, &world, position_input)
 		world.entities[0].alive = false
@@ -5396,21 +5400,29 @@ test_editor_entity_and_component_snapshots_refresh_at_five_hz :: proc(t: ^testin
 	testing.expect(t, editor_select_entity(state, &world, world.entities[0].id, 720))
 	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 0, 0, 0) == "")
 	testing.expect(t, state.editor_snapshot_refresh_count == 1)
+	testing.expect(t, state.editor_inspector_snapshot_refresh_count == 1)
 	testing.expect(t, editor_browser_row_count(&world) == 1)
 
 	world.entities[1].alive = true
-	world.transforms[world.entities[0].transform_index].position.x = 99
 	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 0, 0, 0.1) == "")
 	testing.expect(t, state.editor_snapshot_refresh_count == 1)
 	testing.expect(t, editor_browser_row_count(&world) == 1)
 	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 0, 0, 0.11) == "")
 	testing.expect(t, state.editor_snapshot_refresh_count == 2)
+	testing.expect(t, state.editor_inspector_snapshot_refresh_count == 1)
 	testing.expect(t, editor_browser_row_count(&world) == 2)
+
+	world.transforms[world.entities[0].transform_index].position.x = 99
+	ecs.bump_component_revision(&world, 0)
+	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 0, 0, 0.21) == "")
+	testing.expect(t, state.editor_snapshot_refresh_count == 3)
+	testing.expect(t, state.editor_inspector_snapshot_refresh_count == 2)
 
 	// Selection changes bypass the interval so the inspector never opens stale.
 	testing.expect(t, editor_select_entity(state, &world, world.entities[1].id, 720))
 	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 0, 0, 0) == "")
-	testing.expect(t, state.editor_snapshot_refresh_count == 3)
+	testing.expect(t, state.editor_snapshot_refresh_count == 4)
+	testing.expect(t, state.editor_inspector_snapshot_refresh_count == 3)
 }
 
 @(test)
@@ -5606,6 +5618,8 @@ test_editor_gizmo_appends_three_axis_lines_and_handles :: proc(t: ^testing.T) {
 test_editor_camera_mesh_appends_editor_viewport_lines :: proc(t: ^testing.T) {
 	state := new(State)
 	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
 	state.editor_camera_mesh_segment_count = 2
 	state.editor_camera_mesh_segments[0] = {
 		start = {10, 20},
@@ -5620,11 +5634,18 @@ test_editor_camera_mesh_appends_editor_viewport_lines :: proc(t: ^testing.T) {
 		thickness = 2.25,
 	}
 
-	testing.expect(t, append_editor_camera_mesh(state) == "")
-	testing.expect(t, state.paint_count == 2)
-	testing.expect(t, state.paint[0].kind == .Line)
-	testing.expect(t, state.paint[0].line_start == shared.Vec2{10, 20})
-	testing.expect(t, state.paint[1].line_thickness == 2.25)
+	state.paint_count = 1
+	state.paint[0] = {
+		kind = .Panel,
+		rect = {0, 0, 10, 10},
+	}
+	testing.expect(t, rebuild_editor_world_overlay(state) == "")
+	testing.expect(t, state.paint_count == 1)
+	testing.expect(t, state.paint[0].kind == .Panel)
+	testing.expect(t, state.editor_overlay_paint_count == 2)
+	testing.expect(t, state.editor_overlay_paint[0].kind == .Line)
+	testing.expect(t, state.editor_overlay_paint[0].line_start == shared.Vec2{10, 20})
+	testing.expect(t, state.editor_overlay_paint[1].line_thickness == 2.25)
 }
 
 @(test)

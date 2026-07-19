@@ -555,6 +555,9 @@ run_frame_system_unmeasured :: proc(
 			camera,
 			has_camera,
 		)
+		if err := ui.rebuild_editor_world_overlay(config.ui_state); err != "" {
+			return err
+		}
 		record_system_profile_phase(config, .Editor_Gizmo, gizmo_system_start)
 		ui_system_start := time.tick_now()
 		if err := ui.reconcile(

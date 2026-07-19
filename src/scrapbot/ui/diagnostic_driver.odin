@@ -94,6 +94,8 @@ Diagnostic_Tree_Dump :: struct {
 	drawable_width: f32,
 	drawable_height: f32,
 	editor_visible: bool,
+	editor_component_menu_open: bool,
+	editor_inspector_snapshot_refresh_count: u64,
 	driver_action_index: int,
 	driver_action_count: int,
 	driver_action: string,
@@ -895,6 +897,8 @@ diagnostic_driver_write_dump :: proc(
 		drawable_width = drawable_width,
 		drawable_height = drawable_height,
 		editor_visible = state.editor_visible,
+		editor_component_menu_open = state.editor_component_menu_open,
+		editor_inspector_snapshot_refresh_count = state.editor_inspector_snapshot_refresh_count,
 		nodes = nodes[:],
 	}
 	if driver != nil {

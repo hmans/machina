@@ -429,6 +429,14 @@ test_wgpu_ui_paint_signature_tracks_only_rendered_output :: proc(t: ^testing.T) 
 	changed_paint := wgpu_ui_paint_signature(state, 1280, 720)
 	testing.expect(t, changed_paint != first)
 	testing.expect(t, wgpu_ui_paint_signature(state, 1920, 1080) != changed_paint)
+	state.editor_overlay_paint_count = 1
+	state.editor_overlay_paint[0] = {
+		kind = .Line,
+		line_start = {10, 10},
+		line_end = {20, 20},
+		line_thickness = 2,
+	}
+	testing.expect(t, wgpu_ui_paint_signature(state, 1280, 720) == changed_paint)
 
 	state.paint_count = 0
 	testing.expect(t, wgpu_ui_paint_signature(state, 1280, 720) == 0)
