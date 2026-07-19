@@ -6,8 +6,12 @@ import ui "../ui"
 import "core:math"
 
 EDITOR_CAMERA_MESH_SCREEN_SIZE :: f32(54)
-EDITOR_CAMERA_MESH_POINT_COUNT :: 12
-EDITOR_CAMERA_MESH_SEGMENT_COUNT :: 20
+EDITOR_CAMERA_MESH_POINT_COUNT :: 21
+EDITOR_CAMERA_MESH_BODY_SEGMENT_COUNT :: 20
+EDITOR_CAMERA_MESH_FRUSTUM_SEGMENT_COUNT :: 12
+EDITOR_CAMERA_MESH_SEGMENT_COUNT ::
+	EDITOR_CAMERA_MESH_BODY_SEGMENT_COUNT + EDITOR_CAMERA_MESH_FRUSTUM_SEGMENT_COUNT
+EDITOR_CAMERA_MESH_PICK_RADIUS :: f32(8)
 
 editor_camera_mesh_system :: proc(
 	state: ^ui.State,
@@ -56,7 +60,13 @@ editor_camera_mesh_system :: proc(
 			EDITOR_CAMERA_MESH_SCREEN_SIZE,
 			0.05,
 		)
-		points := editor_camera_mesh_world_points(transform, world_size)
+		camera_component := world.cameras[entity.camera_index]
+		points := editor_camera_mesh_world_points(
+			transform,
+			camera_component,
+			viewport.width / viewport.height,
+			world_size,
+		)
 		projected: [EDITOR_CAMERA_MESH_POINT_COUNT]shared.Vec2
 		visible := true
 		for point, point_index in points {
@@ -78,17 +88,28 @@ editor_camera_mesh_system :: proc(
 
 		selected := state.editor_has_selection && state.editor_selected_entity == entity.id
 		color := shared.Vec4{0.38, 0.72, 0.96, 0.88}
+		frustum_color := shared.Vec4{0.38, 0.72, 0.96, 0.52}
 		thickness := f32(1.5) * max(state.editor_pixel_density, 1)
 		if selected {
 			color = {1, 0.68, 0.22, 1}
+			frustum_color = {1, 0.68, 0.22, 0.68}
 			thickness = 2.25 * max(state.editor_pixel_density, 1)
 		}
-		editor_camera_mesh_append_segments(state, projected, color, thickness)
+		editor_camera_mesh_append_segments(
+			state,
+			projected,
+			entity.id,
+			color,
+			frustum_color,
+			thickness,
+		)
 	}
 }
 
 editor_camera_mesh_world_points :: proc(
 	transform: shared.Transform_Component,
+	camera: shared.Camera_Component,
+	aspect: f32,
 	size: f32,
 ) -> [EDITOR_CAMERA_MESH_POINT_COUNT]shared.Vec3 {
 	right := shared.camera_right(transform.rotation)
@@ -125,6 +146,43 @@ editor_camera_mesh_world_points :: proc(
 			signs[1] * 0.16 * size,
 		)
 	}
+
+	points[12] = transform.position
+	fov := camera.fov
+	if fov <= 0 {
+		fov = 60
+	}
+	near_distance := max(camera.near, 0.05)
+	far_limit := camera.far
+	if far_limit <= near_distance {
+		far_limit = near_distance * 2
+	}
+	far_distance := min(max(size * 2.2, near_distance * 2), far_limit)
+	tangent := math.tan(math.to_radians(fov) * 0.5)
+	near_half_height := tangent * near_distance
+	near_half_width := near_half_height * max(aspect, 0.01)
+	far_half_height := tangent * far_distance
+	far_half_width := far_half_height * max(aspect, 0.01)
+	for signs, corner in corner_signs {
+		points[corner + 13] = editor_camera_mesh_point(
+			transform.position,
+			right,
+			up,
+			forward,
+			near_distance,
+			signs[0] * near_half_width,
+			signs[1] * near_half_height,
+		)
+		points[corner + 17] = editor_camera_mesh_point(
+			transform.position,
+			right,
+			up,
+			forward,
+			far_distance,
+			signs[0] * far_half_width,
+			signs[1] * far_half_height,
+		)
+	}
 	return points
 }
 
@@ -144,7 +202,8 @@ editor_camera_mesh_point :: proc(
 editor_camera_mesh_append_segments :: proc(
 	state: ^ui.State,
 	points: [EDITOR_CAMERA_MESH_POINT_COUNT]shared.Vec2,
-	color: shared.Vec4,
+	entity: shared.Entity,
+	body_color, frustum_color: shared.Vec4,
 	thickness: f32,
 ) {
 	edges := [EDITOR_CAMERA_MESH_SEGMENT_COUNT][2]int {
@@ -168,18 +227,57 @@ editor_camera_mesh_append_segments :: proc(
 		{5, 9},
 		{6, 10},
 		{7, 11},
+		{12, 17},
+		{12, 18},
+		{12, 19},
+		{12, 20},
+		{13, 14},
+		{14, 15},
+		{15, 16},
+		{16, 13},
+		{17, 18},
+		{18, 19},
+		{19, 20},
+		{20, 17},
 	}
-	for edge in edges {
+	for edge, edge_index in edges {
 		index := state.editor_camera_mesh_segment_count
 		if index >= len(state.editor_camera_mesh_segments) {
 			return
 		}
+		color := body_color
+		segment_thickness := thickness
+		if edge_index >= EDITOR_CAMERA_MESH_BODY_SEGMENT_COUNT {
+			color = frustum_color
+			segment_thickness *= 0.8
+		}
 		state.editor_camera_mesh_segments[index] = {
+			entity = entity,
 			start = points[edge[0]],
 			end = points[edge[1]],
 			color = color,
-			thickness = thickness,
+			thickness = segment_thickness,
 		}
 		state.editor_camera_mesh_segment_count += 1
 	}
+}
+
+editor_pick_camera_mesh :: proc(state: ^ui.State, position: shared.Vec2) -> (shared.Entity, bool) {
+	if state == nil || !state.editor_visible {
+		return {}, false
+	}
+	radius := EDITOR_CAMERA_MESH_PICK_RADIUS * max(state.editor_pixel_density, 1)
+	nearest := radius
+	picked: shared.Entity
+	found := false
+	count := min(state.editor_camera_mesh_segment_count, len(state.editor_camera_mesh_segments))
+	for segment in state.editor_camera_mesh_segments[:count] {
+		distance := screen_point_segment_distance(position, segment.start, segment.end)
+		if distance < nearest {
+			nearest = distance
+			picked = segment.entity
+			found = true
+		}
+	}
+	return picked, found
 }

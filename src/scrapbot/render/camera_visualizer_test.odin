@@ -3,6 +3,7 @@ package render
 import ecs "../ecs"
 import shared "../shared"
 import ui "../ui"
+import "core:math"
 import "core:testing"
 
 @(test)
@@ -37,11 +38,43 @@ test_editor_camera_mesh_tracks_project_cameras_and_excludes_the_fly_camera :: pr
 	editor_camera_mesh_system(state, &world, {0, 0, 800, 600}, view_camera, true, true)
 	testing.expect(t, state.editor_camera_mesh_segment_count == EDITOR_CAMERA_MESH_SEGMENT_COUNT)
 	testing.expect(t, state.editor_camera_mesh_segments[0].color == shared.Vec4{1, 0.68, 0.22, 1})
+	testing.expect(t, state.editor_camera_mesh_segments[0].entity == world.entities[0].id)
+	testing.expect(
+		t,
+		state.editor_camera_mesh_segments[EDITOR_CAMERA_MESH_BODY_SEGMENT_COUNT].color ==
+		shared.Vec4{1, 0.68, 0.22, 0.68},
+	)
 	testing.expect(
 		t,
 		state.editor_camera_mesh_segments[0].start != state.editor_camera_mesh_segments[0].end,
 	)
+	pick_position := shared.Vec2 {
+		(state.editor_camera_mesh_segments[0].start.x +
+			state.editor_camera_mesh_segments[0].end.x) *
+		0.5,
+		(state.editor_camera_mesh_segments[0].start.y +
+			state.editor_camera_mesh_segments[0].end.y) *
+		0.5,
+	}
+	picked, picked_ok := editor_pick_camera_mesh(state, pick_position)
+	testing.expect(t, picked_ok && picked == world.entities[0].id)
+	_, picked_ok = editor_pick_camera_mesh(state, {-100, -100})
+	testing.expect(t, !picked_ok)
 
 	editor_camera_mesh_system(state, &world, {0, 0, 800, 600}, view_camera, true, false)
 	testing.expect(t, state.editor_camera_mesh_segment_count == 0)
+}
+
+@(test)
+test_editor_camera_mesh_frustum_reflects_fov_aspect_and_clip_limits :: proc(t: ^testing.T) {
+	transform := shared.Transform_Component {
+		scale = {1, 1, 1},
+	}
+	narrow := editor_camera_mesh_world_points(transform, {fov = 30, near = 0.25, far = 10}, 1.5, 1)
+	wide := editor_camera_mesh_world_points(transform, {fov = 90, near = 0.25, far = 10}, 2, 1)
+
+	testing.expect(t, narrow[13].z == -0.25)
+	testing.expect(t, narrow[17].z < narrow[13].z)
+	testing.expect(t, math.abs(wide[17].x) > math.abs(narrow[17].x))
+	testing.expect(t, math.abs(wide[17].y) > math.abs(narrow[17].y))
 }

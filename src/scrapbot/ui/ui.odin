@@ -92,9 +92,10 @@ Editor_Gizmo_Handle :: enum {
 	Center,
 }
 EDITOR_GIZMO_RING_POINT_COUNT :: 64
-EDITOR_CAMERA_MESH_MAX_SEGMENTS :: 320
+EDITOR_CAMERA_MESH_MAX_SEGMENTS :: 512
 
 Editor_Camera_Mesh_Segment :: struct {
+	entity: shared.Entity,
 	start, end: shared.Vec2,
 	color: shared.Vec4,
 	thickness: f32,

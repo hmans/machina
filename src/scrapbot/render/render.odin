@@ -582,19 +582,32 @@ run_frame_system_unmeasured :: proc(
 		picking_system_start := time.tick_now()
 		if config.ui_state.editor_pick_requested {
 			config.ui_state.editor_pick_requested = false
-			if config.resource_registry != nil {
+			picked, found := editor_pick_camera_mesh(
+				config.ui_state,
+				config.ui_state.editor_pick_position,
+			)
+			if !found && config.resource_registry != nil {
 				list := ecs.build_resource_render_list(
 					world,
 					config.resource_registry,
 					config.ui_state.editor_visible,
 				); defer ecs.destroy_render_list(&list)
-				if entity, found := editor_pick_entity(
+				picked, found = editor_pick_entity(
 					&list,
 					config.resource_registry,
 					config.ui_state.editor_pick_position,
 					viewport,
-				);
-				found { ui.editor_select_entity(config.ui_state, world, entity, drawable_height / max(config.ui_state.editor_pixel_density, 1)) } else { ui.editor_clear_selection(config.ui_state) }
+				)
+			}
+			if found {
+				ui.editor_select_entity(
+					config.ui_state,
+					world,
+					picked,
+					drawable_height / max(config.ui_state.editor_pixel_density, 1),
+				)
+			} else {
+				ui.editor_clear_selection(config.ui_state)
 			}
 		}
 		record_system_profile_phase(config, .Picking, picking_system_start)
