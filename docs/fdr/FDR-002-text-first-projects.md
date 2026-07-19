@@ -1,7 +1,7 @@
 # FDR-002: Text-first projects
 
 **Status:** Active
-**Last reviewed:** 2026-07-17
+**Last reviewed:** 2026-07-18
 
 ## Overview
 
@@ -18,6 +18,7 @@ Text-first projects let users run Scrapbot from an ordinary project directory co
 - `scrapbot init` creates a runnable camera-and-cube starter, derives the project name from the destination when omitted, creates ignore and Luau editor metadata, and refuses to overwrite any file it owns.
 - Scene files describe entities and known components in TOML.
 - Every scene entity has a required, non-zero, project-wide UUID. Names are editable display labels, and cross-entity references use UUIDs.
+- A Transform may reference another Transform entity by UUID. Its position, rotation, and scale are then local to that parent; missing targets, self-parenting, and cycles fail scene validation.
 - Authored resources live in standalone `resources/**/*.resource.toml` files, have their own project-wide UUIDs, and are referenced by UUID from scenes. Resources are project data outside the ECS and are not owned by a scene.
 - Project validation rejects missing manifests, unsafe scene or resource paths, malformed project metadata, malformed scene or resource data, duplicate resource UUIDs, unresolved resource references, unknown scene components, and scene data that does not match registered component schemas.
 - Project validation refreshes generated Luau type definitions from the component registry.
@@ -62,9 +63,15 @@ Text-first projects let users run Scrapbot from an ordinary project directory co
 **Why:** Projects should be easy to navigate and version-control without mixing source, IDE metadata, caches, and distributable output at the same level.
 **Tradeoff:** Existing generated `types/` and `build/extensions`/`build/fonts` paths move and must be regenerated.
 
+### 7. Store spatial hierarchy as local Transform data
+
+**Decision:** Give `scrapbot.transform` an optional UUID parent and serialize only local TRS values, following ADR-033.
+**Why:** A scene needs durable hierarchy without making derived world poses another authored source of truth.
+**Tradeoff:** Reparenting must recalculate local values to preserve world pose, and the current TRS representation cannot preserve shear beneath rotated non-uniform scale.
+
 ## Related
 
-- **ADRs:** ADR-002, ADR-008, ADR-023, ADR-032
+- **ADRs:** ADR-002, ADR-008, ADR-023, ADR-032, ADR-033
 - **FDRs:** FDR-001, FDR-004, FDR-006
 
 ## Open Questions

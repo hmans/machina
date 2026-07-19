@@ -28,7 +28,7 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type referen
 
 | Component | Kind | Purpose |
 | --- | --- | --- |
-| `scrapbot.transform` | Data | Position, Euler rotation, and local scale. |
+| `scrapbot.transform` | Data | Optional UUID parent plus local position, Euler rotation, and scale. |
 | `scrapbot.camera` | Data | Perspective camera projection. |
 | `scrapbot.ambient_light` | Data | Scene-wide ambient contribution. |
 | `scrapbot.directional_light` | Data | Directional light and the source for the current shadow map. |
@@ -60,11 +60,12 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type referen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `position` | Vec3 | World position. |
-| `rotation` | Vec3 | Euler rotation in radians: X pitch, Y yaw, Z roll. |
+| `parent` | string | Optional parent entity UUID. Empty means this Transform is a root. |
+| `position` | Vec3 | Local position relative to `parent`; world position for a root. |
+| `rotation` | Vec3 | Local Euler rotation in radians: X pitch, Y yaw, Z roll. |
 | `scale` | Vec3 | Local X/Y/Z scale. An entirely omitted or zero scene scale normalizes to `[1, 1, 1]`. |
 
-Luau queries expose all three fields. A system must declare `scrapbot.transform` in `writes` before mutating its query payload.
+Parent UUIDs must resolve to another entity with a Transform and may not form a self-reference or cycle. Rendering, cameras, point lights, picking, and gizmos consume the world transform derived from the complete chain. Luau queries expose all four fields. A system must declare `scrapbot.transform` in `writes` before mutating its query payload; invalid parent writeback is rejected.
 
 ### `scrapbot.camera`
 
@@ -122,6 +123,7 @@ Vectors use `{x, y}`, `{x, y, z}`, or `{x, y, z, w}` in Luau and fixed arrays in
 | `fill_width: bool`, `fill_height: bool` | Consume available parent space on each axis. |
 | `fit_content_width: bool`, `fit_content_height: bool` | Size around visible descendants on each axis. |
 | `fixed_in_fill: bool` | Preserve authored main-axis size while flexible stack siblings divide remaining space. |
+| `tree_item: bool`, `tree_parent: string`, `tree_order: number`, `tree_collapsed: bool` | Opt a direct child of a tree-enabled list into its semantic hierarchy. Parent is another row UUID, order is sibling-local, and collapse omits descendants without despawning them. |
 
 ### `scrapbot.ui_hstack` and `scrapbot.ui_vstack`
 
@@ -177,8 +179,19 @@ Panels do not own a special close/remove control. Any direct child `ui_button` w
 | `selection_background` | `[0.045, 0.095, 0.105, 1]` |
 | `hover_background` | `[0.028, 0.038, 0.050, 1]` |
 | `active_background` | `[0.040, 0.055, 0.072, 1]` |
+| `draggable` | `false` |
+| `drag_threshold` | `5` |
+| `drop_edge_fraction` | `0.25` |
+| `drop_target_background` | `[0.055, 0.12, 0.13, 1]` |
+| `drop_indicator_color` | `[0.42, 0.92, 0.84, 1]` |
+| `drop_indicator_thickness` | `2` |
+| `drop_indicator_inset` | `8` |
+| `tree_enabled` | `false` |
+| `tree_indent` | `14` |
 
-Direct children become full-width selectable rows. Clicking a row or descendant stores the direct child's UUID in `selected`.
+Direct children become full-width selectable rows. Clicking a row or descendant stores the direct child's UUID in `selected`. With `draggable = true`, dragging resolves source and target to direct children. The top and bottom `drop_edge_fraction` of a row classify as `before` and `after` and paint a clipped lander line; its middle classifies as `into` and paints `drop_target_background`. The placement is published through the list's `ui_state`. Threshold, indicator thickness, and inset must be non-negative; the edge fraction must be between 0 and 0.5.
+
+With `tree_enabled = true`, direct children whose layout has `tree_item = true` are flattened depth-first after ordinary direct children. `tree_parent` references another tree row UUID, `tree_order` orders siblings, `tree_indent` offsets row contents without narrowing the full-width selection box, and `tree_collapsed` suppresses descendants. Invalid or cyclic metadata is rendered safely and deterministically. A successful drop mutates the source row's public `tree_parent` and normalizes the affected sibling orders: `into` reparents beneath the target, while `before`/`after` adopts the target's parent and inserts beside it. Descendants follow their row automatically. Disclosure controls remain ordinary composable buttons whose project system toggles `tree_collapsed`.
 
 ### `scrapbot.ui_progress`
 
@@ -198,6 +211,8 @@ Direct children become full-width selectable rows. Clicking a row or descendant 
 | `activated`, `changed`, `submitted`, `cancelled` | Transient edges from the latest UI pass. |
 | `valid` | Current input validity. |
 | `activation_revision`, `change_revision`, `submit_revision`, `cancel_revision` | Monotonic counters for systems that may miss transient booleans. |
+| `dragging`, `drag_source`, `drop_target`, `drop_placement` | Current draggable-list gesture, direct-child UUIDs, and `none`/`before`/`into`/`after` placement. An empty target with `into` means list background. |
+| `drop_revision` | Monotonic counter advanced by a completed drop inside the source list. |
 
 This component is renderer-owned and read-only. It is queryable from Luau and native systems but invalid in scene TOML, spawn payloads, and component writes.
 
@@ -217,7 +232,7 @@ This component is renderer-owned and read-only. It is queryable from Luau and na
 | `color`, `size`, `alignment` | White, `16`, `center` | Normal label style. |
 | `hover_background`, `active_background` | Transparent | State-specific layout background overrides. |
 | `hover_color`, `active_color` | Transparent | State-specific text colors; transparent falls back to normal color. |
-| `icon` | `none` | `none`, `close`, or `plus`; an icon-only button needs no text. |
+| `icon` | `none` | `none`, `close`, `plus`, `chevron_right`, or `chevron_down`; an icon-only button needs no text. |
 | `icon_inset`, `icon_stroke` | `6`, `1.5` | Non-negative SDF icon geometry. Twice the inset cannot exceed the button's layout width or height. |
 | `panel_action` | `false` | Place this direct child button in its parent's panel title band. |
 

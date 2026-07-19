@@ -95,6 +95,7 @@ Use layout policy instead of repairing rectangles after layout:
 - Stack `draggable = true` turns gaps into resize handles; `min_size` limits pane shrinking.
 - Table `proportional_columns = true` treats the first row's authored widths as column weights for every row.
 - Table `resizable_columns = true` turns column gaps into resize handles; `min_column_width` limits shrinking.
+- List `tree_enabled = true` flattens direct tree rows by their public semantic parent/order metadata and indents only their contents.
 - `hidden = true` removes the complete subtree from layout, painting, focus traversal, and pointer input without despawning it.
 
 Use `ui_scroll_area` when content can exceed its viewport. Its content moves by continuous pixel offsets, including fractional trackpad deltas, and nested scroll areas consume wheel input from the deepest hovered viewport.
@@ -116,7 +117,9 @@ Scrapbot does not have a shared theme resource yet. Reuse style values in your s
 
 ## React through `ui_state`
 
-The renderer attaches a read-only `scrapbot.ui_state` to laid-out elements. It reports hover, active, and focus state plus activation, change, validation, submit, and cancel edges.
+The renderer attaches a read-only `scrapbot.ui_state` to laid-out elements. It reports hover, active, and focus state plus activation, change, validation, submit, cancel, and draggable-list drop edges. A draggable list publishes `dragging`, direct-child `drag_source`/`drop_target` UUIDs, `drop_placement` (`before`, `into`, or `after`), and a monotonic `drop_revision`; an empty target with `into` means the list background rather than another row.
+
+For a reusable nested tree, set `tree_enabled = true` on the list and `tree_item = true` on each row's layout. Rows remain ordinary direct children of the list for composition and selection. Their `tree_parent` points to another row UUID, `tree_order` is sibling-local, and `tree_collapsed` hides the descendant branch. The shared list lays rows out depth-first, applies `tree_indent` to row contents while retaining edge-to-edge selection chrome, rejects cyclic drops, and updates parent/order metadata atomically for `before`, `into`, and `after`. A normal child button can paint a disclosure icon and toggle its row's `tree_collapsed` field; no editor-only tree widget is involved.
 
 Transient booleans describe the latest UI pass. Use revision counters when a system must not miss an edge between its own updates:
 

@@ -80,10 +80,13 @@ Transform:
 
 ```toml
 [entities.transform]
+parent = "20000000-0000-4000-8000-000000000001"
 position = [0, 2, 6]
 rotation = [-0.321751, 0, 0]
 scale = [1, 1, 1]
 ```
+
+`parent` is optional. When present, it must be the UUID of another scene entity. Position, rotation, and scale are local to that parent; a parent without a Transform contributes an identity spatial basis, while roots use world-space values. Missing parents, self-parenting, and cycles fail validation. The derived world transform is runtime state and is never written as a second source value. This TRS model does not preserve shear beneath rotated non-uniform scale.
 
 Camera:
 
@@ -94,7 +97,7 @@ near = 0.1
 far = 100
 ```
 
-A camera reads its position and Euler orientation from the entity's transform. Rotation is expressed in radians: X controls pitch, Y controls yaw, and Z controls roll.
+A camera reads its world position and Euler orientation from the entity's resolved transform chain. Rotation is expressed in radians: X controls pitch, Y controls yaw, and Z controls roll.
 
 Built-in primitive convenience:
 
@@ -299,9 +302,9 @@ corner_radius = 2
 right_to_left = true
 ```
 
-The renderer automatically attaches a read-only `ui_state` component to every laid-out element. Project systems can query it for hover, active, focus, activation, change, validation, submission, and cancellation state. Transient booleans describe the most recent UI pass; the matching revision counters are monotonic counters for reliable edge detection. Projects do not author or mutate `ui_state`.
+The renderer automatically attaches a read-only `ui_state` component to every laid-out element. Project systems can query it for hover, active, focus, activation, change, validation, submission, cancellation, and draggable-list drop state. Transient booleans describe the most recent UI pass; the matching revision counters are monotonic counters for reliable edge detection. Projects do not author or mutate `ui_state`.
 
-Pointer hit testing gives the topmost element under the pointer hover state. Pressing the primary button captures active state on that element until release and advances its public activation revision. Buttons can consume those generic states through `hover_background`, `active_background`, `hover_color`, and `active_color`; a zero-alpha state color falls back to the normal layout background or button text color. Button labels use `alignment = "left"`, `"center"`, or `"right"` inside the padded box and default to centered. A button may instead set `icon = "close"` or `icon = "plus"`; `icon_inset` and `icon_stroke` control its SDF geometry, and text is optional when an icon is present.
+Pointer hit testing gives the topmost element under the pointer hover state. Pressing the primary button captures active state on that element until release and advances its public activation revision. Buttons can consume those generic states through `hover_background`, `active_background`, `hover_color`, and `active_color`; a zero-alpha state color falls back to the normal layout background or button text color. Button labels use `alignment = "left"`, `"center"`, or `"right"` inside the padded box and default to centered. A button may instead set `icon = "close"`, `"plus"`, `"chevron_right"`, or `"chevron_down"`; `icon_inset` and `icon_stroke` control its SDF geometry, and text is optional when an icon is present.
 
 Set `font` on `ui_text`, `ui_button`, `ui_input`, or `ui_panel` to a name declared in `project.toml`; omit it to use Inter. A panel's selection applies to its title, while child controls select their own fonts independently.
 
@@ -315,7 +318,7 @@ A `ui_checkbox` stores its current boolean in `checked` and toggles on primary-b
 
 A `ui_scroll_area` clips descendants to its padded content rectangle and scrolls vertically when the pointer wheel is over it. Give its nested pane an explicit size larger than the viewport; that pane may contain overlays or stacks of any size. `scroll_speed` is the target movement per wheel unit and `smoothness` controls frame-time interpolation toward that target. Both must be positive. Nested scroll clips intersect, and only the topmost hovered scroll area consumes a wheel update.
 
-A `ui_list` lays out its direct children as full-width selectable rows in scene order. Clicking a row or any of its descendants stores that row's UUID in the list's ECS-owned `selected` field. `gap` controls row spacing, while `selection_background`, `hover_background`, and `active_background` style interaction states. Combine it with `ui_scroll_area` on the same entity for long lists:
+A `ui_list` lays out its direct children as full-width selectable rows in scene order. Clicking a row or any of its descendants stores that row's UUID in the list's ECS-owned `selected` field. `gap` controls row spacing, while `selection_background`, `hover_background`, and `active_background` style interaction states. Set `draggable = true` to resolve drag sources and targets to direct children. `drag_threshold` controls gesture recognition. `drop_edge_fraction` assigns the top and bottom portions of a target row to `before` and `after`; the middle is `into`. `drop_indicator_color`, `drop_indicator_thickness`, and `drop_indicator_inset` style insertion lines, while `drop_target_background` styles an into target. During a gesture, the list's read-only `ui_state` exposes `dragging`, `drag_source`, `drop_target`, and `drop_placement`; a completed in-list drop increments `drop_revision` and `change_revision`. An empty target UUID with `into` means the list background. Set `tree_enabled = true` to interpret direct children with layout `tree_item = true` as a nested tree. Their `tree_parent` is another row UUID, `tree_order` is sibling-local, and `tree_collapsed` hides descendants. `tree_indent` defaults to 14 pixels. Tree drops update those public layout fields: `into` reparents, while `before` and `after` can reparent and reorder in one operation. Combine the list with `ui_scroll_area` on the same entity for long lists:
 
 ```toml
 [[entities]]

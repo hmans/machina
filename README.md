@@ -192,7 +192,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] ECS-built material resource browser with selection and inline inspection
   - [ ] Specialized enum, color, entity-reference, array, and nested-value editors
   - [ ] Searchable browser
-  - [ ] Hierarchical browser
+  - [x] Expandable UUID-backed spatial hierarchy with drag-to-reparent
 - Editing
   - [x] Live transform, camera, light, and custom Vec3 inspector editing
   - [x] UUID-addressed authoring transactions with inspector and gizmo undo/redo

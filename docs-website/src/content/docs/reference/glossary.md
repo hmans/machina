@@ -29,6 +29,15 @@ A system with declared component reads and writes. Scrapbot batches scheduled sy
 **Deferred command buffer**  
 A runtime queue of entity/component lifecycle mutations applied after systems finish the frame.
 
+**Spatial hierarchy**<br>
+The acyclic graph formed by optional parent UUIDs on Transform components. Parent links use stable entity identity rather than names or runtime storage slots.
+
+**Local transform**<br>
+An entity's authored position, rotation, and scale relative to its Transform parent. A root entity's local transform is also its world transform.
+
+**World transform**<br>
+The derived position, rotation, and scale produced by composing an entity's local Transform with its ancestor chain. Rendering and editor spatial tools consume this value; it is not separately authored.
+
 ## Projects
 
 **Project directory**  

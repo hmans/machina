@@ -52,6 +52,12 @@
 
 **World** - The in-memory ECS state built from a project scene and used by runtime systems and rendering.
 
+**Spatial hierarchy** - The acyclic graph formed by optional parent UUIDs on Transform components. Parent links use stable entity identity rather than names or runtime storage slots.
+
+**Local transform** - An entity's authored position, rotation, and scale relative to its Transform parent. A root entity's local transform is also its world transform.
+
+**World transform** - The derived position, rotation, and scale produced by composing an entity's local Transform with its ancestor chain. Rendering and editor spatial tools consume this value; it is not separately authored.
+
 ## Projects
 
 **Project directory** - The directory where a user runs Scrapbot. It contains `project.toml`, scene files, standalone resources, scripts, assets, and optional native extension code.

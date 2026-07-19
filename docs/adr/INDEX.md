@@ -34,3 +34,4 @@
 | [ADR-030](ADR-030-identify-project-resources-by-uuid-outside-the-ecs.md) | Identify project resources by UUID outside the ECS | 2026-07-17 |
 | [ADR-031](ADR-031-commit-project-save-as-one-recoverable-transaction.md) | Commit project Save as one recoverable transaction | 2026-07-17 |
 | [ADR-032](ADR-032-separate-project-source-state-and-products.md) | Separate project source, engine state, and products | 2026-07-17 |
+| [ADR-033](ADR-033-model-spatial-hierarchy-with-local-transforms-and-uuid-parents.md) | Model spatial hierarchy with local transforms and UUID parents | 2026-07-18 |

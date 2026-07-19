@@ -31,6 +31,8 @@ For project-resource work, keep persistent identity separate from runtime storag
 
 For ECS UI work, also use the `scrapbot-ui-development` skill. The editor must remain a consumer of the public UI contract, and a public field is incomplete until every applicable authoring and runtime surface agrees.
 
+For spatial hierarchy work, keep `scrapbot.transform.parent` UUID-based and local TRS as the only authored pose. Keep display order independent from live ECS storage handles; audit scene-block ordering, structural Save, and Undo/Redo when adding hierarchy reorder behavior. Also audit scene validation, Luau and native writeback, world-transform consumers (render instances, cameras, lights, picking, and gizmos), cycle rejection, parent removal, and world-pose-preserving editor reparent Undo/Redo. Use `tests/fixtures/ui/scene-hierarchy.json` for the visual tree companion; semantic drags can target the top/center/bottom of destination rows.
+
 ## Generated Luau Types
 
 When changing built-in components, Luau APIs, query types, or component schemas:

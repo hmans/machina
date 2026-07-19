@@ -44,6 +44,8 @@ Current decisions:
 | ADR-029 | Postprocess the HDR world before UI composition |
 | ADR-030 | Identify project resources by UUID outside the ECS |
 | ADR-031 | Commit project Save as one recoverable transaction |
+| ADR-032 | Separate project source, engine state, and products |
+| ADR-033 | Model spatial hierarchy with local transforms and UUID parents |
 
 ## FDRs
 

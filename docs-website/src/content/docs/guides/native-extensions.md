@@ -63,7 +63,7 @@ scrapbot.system(&reg, "scrappyphysics.motion", accesses[:], motion_system)
 return scrapbot.err(&reg)
 ```
 
-The callback receives `scrapbot.System_Context`. The context includes a read-only `time` snapshot and can query entities by component names, read/write `scrapbot.transform`, read/write vec3 fields on schema-backed custom components, and consume the same public ECS UI payloads used by scenes, Luau, and editor chrome. Native and Luau systems share the same scheduler.
+The callback receives `scrapbot.System_Context`. The context includes a read-only `time` snapshot and can query entities by component names, read/write `scrapbot.transform`, read/write vec3 fields on schema-backed custom components, and consume the same public ECS UI payloads used by scenes, Luau, and editor chrome. A Transform's optional `parent` is a stable entity UUID; its position, rotation, and scale are local to that parent, and invalid or cyclic parent writes are rejected. Native and Luau systems share the same scheduler.
 
 Native systems with complete, non-conflicting access declarations run concurrently on Scrapbot's worker pool. Conflicting systems preserve registration order, Luau systems remain serial, and systems without access declarations execute exclusively. Parallel native systems queue lifecycle commands privately; Scrapbot merges those commands deterministically after the stage.
 
