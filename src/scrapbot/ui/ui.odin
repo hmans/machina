@@ -425,6 +425,9 @@ editor_toggle :: proc(state: ^State) {
 		return
 	}
 	state.editor_visible = !state.editor_visible
+	if !state.editor_visible {
+		editor_play(state)
+	}
 	state.editor_snapshot_valid = false
 }
 

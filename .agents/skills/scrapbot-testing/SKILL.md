@@ -113,7 +113,7 @@ Use `tests/fixtures/ui/resource-to-entity-selection.json` when changing editor s
 
 Use `tests/fixtures/ui/resource-inputs.json` when changing inline resource input bindings or playback behavior. It edits one material channel through typing and another through whole-control scrubbing while simulation is running, waits through inspector refreshes, and asserts both live values.
 
-Use `tests/fixtures/ui/editor-shortcuts.json` when changing editor visibility or transport command shortcuts. It drives the same editor keyboard input used by the platform, verifies Pause and resume, and proves that closing and reopening the shell preserves running playback. Pair it with the state-machine and playback-restoration unit tests for Stop, Step, and world replacement.
+Use `tests/fixtures/ui/editor-shortcuts.json` when changing editor visibility or transport command shortcuts. It drives the same editor keyboard input used by the platform, verifies Pause and resume, and proves that closing a paused shell resumes playback before it is reopened. Pair it with the state-machine and playback-restoration unit tests for Stop, Step, and world replacement.
 
 Use `tests/fixtures/ui/playback-warning.json` when changing playback-mode chrome or disposable-edit messaging. It captures the complete editor root during playback so the top-bar tint, viewport frame, and status treatment can be reviewed together. Pair it with the transport unit test, which crosses transport states and asserts the exact status copy plus both playback and stopped style tokens.
 

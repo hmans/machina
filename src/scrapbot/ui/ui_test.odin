@@ -2850,15 +2850,17 @@ test_editor_command_shortcuts_toggle_shell_and_drive_transport :: proc(t: ^testi
 		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {editor_toggle = true}) == "",
 	)
 	testing.expect(t, !state.editor_visible)
+	testing.expect(t, state.editor_simulation_playing)
 	testing.expect(
 		t,
 		reconcile(state, &world, 1280, 720, {}, 0, 0, 1.0 / 60.0, {editor_toggle = true}) == "",
 	)
 	testing.expect(t, state.editor_visible)
+	testing.expect(t, state.editor_simulation_playing)
 }
 
 @(test)
-test_editor_toggle_preserves_playback_state :: proc(t: ^testing.T) {
+test_editor_toggle_resumes_playback_when_the_editor_closes :: proc(t: ^testing.T) {
 	scene := shared.Scene{}
 	defer delete(scene.entities)
 	world := ecs.build_world(&scene)
@@ -2868,7 +2870,7 @@ test_editor_toggle_preserves_playback_state :: proc(t: ^testing.T) {
 	testing.expect(t, init(state) == "")
 	defer destroy(state)
 
-	// Opening and closing the editor never changes a running game.
+	// Opening preserves a running game, and closing keeps it running.
 	testing.expect(t, state.editor_simulation_playing)
 	testing.expect(
 		t,
@@ -2884,18 +2886,17 @@ test_editor_toggle_preserves_playback_state :: proc(t: ^testing.T) {
 	testing.expect(t, !state.editor_visible)
 	testing.expect(t, state.editor_simulation_playing)
 
-	// A pre-existing pause survives the same round trip.
+	// Opening preserves a pre-existing pause, while closing resumes it.
 	editor_pause(state)
 	editor_toggle(state)
 	testing.expect(t, state.editor_visible)
 	testing.expect(t, !state.editor_simulation_playing)
 	editor_toggle(state)
 	testing.expect(t, !state.editor_visible)
-	testing.expect(t, !state.editor_simulation_playing)
+	testing.expect(t, state.editor_simulation_playing)
 	testing.expect(t, !state.editor_simulation_stopped)
 
-	// Stopped authoring mode also remains stopped across visibility changes.
-	editor_play(state)
+	// Opening preserves stopped authoring mode. Closing starts playback and requests its baseline.
 	editor_stop(state)
 	testing.expect(t, state.editor_simulation_stopped)
 	testing.expect(t, consume_playback_stop_request(state))
@@ -2906,7 +2907,9 @@ test_editor_toggle_preserves_playback_state :: proc(t: ^testing.T) {
 	testing.expect(t, state.editor_simulation_stopped)
 	editor_toggle(state)
 	testing.expect(t, !state.editor_visible)
-	testing.expect(t, state.editor_simulation_stopped)
+	testing.expect(t, state.editor_simulation_playing)
+	testing.expect(t, !state.editor_simulation_stopped)
+	testing.expect(t, consume_playback_begin_request(state))
 }
 
 @(test)

@@ -19,7 +19,7 @@ Pass `--editor` to start with the editor already open:
 bin/scrapbot run examples/ecs-showcase --editor
 ```
 
-Opening or closing the editor does not change project playback. Its world and project-authored UI fill all currently available center space without enforcing a fixed aspect ratio. Drag either vertical separator beside the viewport to resize the scene or inspector sidebar; the center viewport automatically fills the remainder and the panes keep their proportions as the window changes. Each complete sidebar also has a contrasting 10-pixel frame around its smooth scroll viewport, with a small gutter between separate tool sections, so the dock hierarchy stays legible and every section remains reachable in a short window. Systems, Scene, Inspector, and component sections share the same titled card, colors, disclosure arrow, and collapse behavior; click any title band to fold that section. Wheel input over a nested Systems, scene-browser, or inspector pane scrolls that pane; wheel input over sidebar padding or non-scrollable chrome scrolls the complete sidebar. During a native window resize, the simulation, surface, camera aspect, viewport, and editor layout continue updating throughout the drag.
+Opening the editor preserves the current playback state. Closing it always starts or resumes normal playback, including when the project was paused or stopped. The project world and project-authored UI fill all currently available center space without enforcing a fixed aspect ratio. Drag either vertical separator beside the viewport to resize the scene or inspector sidebar; the center viewport automatically fills the remainder and the panes keep their proportions as the window changes. Each complete sidebar also has a contrasting 10-pixel frame around its smooth scroll viewport, with a small gutter between separate tool sections, so the dock hierarchy stays legible and every section remains reachable in a short window. Systems, Scene, Inspector, and component sections share the same titled card, colors, disclosure arrow, and collapse behavior; click any title band to fold that section. Wheel input over a nested Systems, scene-browser, or inspector pane scrolls that pane; wheel input over sidebar padding or non-scrollable chrome scrolls the complete sidebar. During a native window resize, the simulation, surface, camera aspect, viewport, and editor layout continue updating throughout the drag.
 
 The top bar contains the Scrapbot title and project simulation controls. The bottom bar reports simulation and persistence status. Running and paused playback display `PLAY MODE / <STATE> / CHANGES ARE TEMPORARY`; amber top and status bars plus an amber viewport frame keep that warning visible across the workspace. Pausing preserves the play-mode treatment because edits remain disposable. Stop returns the editor to neutral authoring chrome.
 
@@ -37,11 +37,11 @@ The transport also has command shortcuts while the editor is open:
 
 | Shortcut | Behavior |
 | --- | --- |
-| `Cmd/Ctrl+E` | Toggle editor visibility without changing playback state. |
+| `Cmd/Ctrl+E` | Toggle editor visibility. Opening preserves playback state; closing starts or resumes playback. |
 | `Cmd/Ctrl+R` | Play when stopped, resume when paused, and stop when running. |
 | `Cmd/Ctrl+T` | Pause when running; advance one fixed step when paused or stopped. |
 
-The shell and transport are independent: running, paused, and stopped projects keep that state when the editor opens or closes. Use the explicit Play, Pause, Stop, and Step controls or their shortcuts to change simulation state.
+Opening the shell never changes transport state. Leaving it always enters running playback, so a paused project resumes and a stopped authoring world captures its in-memory playback baseline before project systems advance. Use the explicit Play, Pause, Stop, and Step controls or their shortcuts while editing.
 
 Transport shortcuts are ignored while the scene camera captures the pointer or a project-owned input has focus. Command-modified E and R do not change the transform-gizmo mode.
 
