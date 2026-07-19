@@ -864,7 +864,14 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 	entity.editor_transform_gizmo_index = INVALID_COMPONENT_INDEX
 	for &camera in world.editor_scene_cameras { if camera.entity_index == entity_index { camera.entity_index = INVALID_COMPONENT_INDEX } }
 	if entity.editor_ui_index >= 0 && entity.editor_ui_index < len(world.editor_uis) {
-		world.editor_uis[entity.editor_ui_index].entity_index = INVALID_COMPONENT_INDEX
+		binding := &world.editor_uis[entity.editor_ui_index]
+		if world.editor_ui_by_role_slot != nil {
+			delete_key(
+				&world.editor_ui_by_role_slot,
+				shared.Editor_UI_Lookup_Key{role = binding.role, slot = binding.slot},
+			)
+		}
+		binding.entity_index = INVALID_COMPONENT_INDEX
 	}
 	entity.editor_ui_index = INVALID_COMPONENT_INDEX
 	entity.has_shadow_caster = false

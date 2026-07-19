@@ -46,6 +46,7 @@ mark_ui_submitted :: proc(world: ^World, entity_index: int) -> bool {
 	}
 	state.submitted = true
 	state.submit_revision += 1
+	mark_ui_paint_changed(world, entity_index)
 	return true
 }
 
@@ -56,6 +57,7 @@ mark_ui_cancelled :: proc(world: ^World, entity_index: int) -> bool {
 	}
 	state.cancelled = true
 	state.cancel_revision += 1
+	mark_ui_paint_changed(world, entity_index)
 	return true
 }
 
@@ -66,6 +68,7 @@ mark_ui_activated :: proc(world: ^World, entity_index: int) -> bool {
 	}
 	state.activated = true
 	state.activation_revision += 1
+	mark_ui_paint_changed(world, entity_index)
 	return true
 }
 
@@ -76,6 +79,7 @@ mark_ui_changed :: proc(world: ^World, entity_index: int) -> bool {
 	}
 	state.changed = true
 	state.change_revision += 1
+	mark_ui_paint_changed(world, entity_index)
 	return true
 }
 
@@ -190,12 +194,30 @@ set_ui_layout :: proc(world: ^World, entity_index: int, value: UI_Layout_Compone
 	if entity.ui_layout_index >= 0 && entity.ui_layout_index < len(world.ui_layouts) {
 		current := &world.ui_layouts[entity.ui_layout_index]
 		hierarchy_changed := current.parent != value.parent || current.hidden != value.hidden
-		layout_changed := current^ != value
+		paint_changed := current^ != value
+		layout_changed :=
+			current.position != value.position ||
+			current.size != value.size ||
+			current.min_size != value.min_size ||
+			current.margin != value.margin ||
+			current.padding != value.padding ||
+			current.hidden != value.hidden ||
+			current.fill_width != value.fill_width ||
+			current.fill_height != value.fill_height ||
+			current.fit_content_width != value.fit_content_width ||
+			current.fit_content_height != value.fit_content_height ||
+			current.fixed_in_fill != value.fixed_in_fill ||
+			current.tree_item != value.tree_item ||
+			current.tree_parent != value.tree_parent ||
+			current.tree_order != value.tree_order ||
+			current.tree_collapsed != value.tree_collapsed
 		current^ = value
 		if hierarchy_changed {
 			mark_ui_subtree_dirty(world, entity_index)
 		} else if layout_changed {
 			mark_ui_layout_changed(world, entity_index)
+		} else if paint_changed {
+			mark_ui_paint_changed(world, entity_index)
 		}
 		return true
 	}
@@ -267,6 +289,9 @@ set_ui_scroll_area :: proc(
 	entity := &world.entities[entity_index]
 	if entity.ui_scroll_area_index >= 0 &&
 	   entity.ui_scroll_area_index < len(world.ui_scroll_areas) {
+		if world.ui_scroll_areas[entity.ui_scroll_area_index] != value {
+			mark_ui_paint_changed(world, entity_index)
+		}
 		world.ui_scroll_areas[entity.ui_scroll_area_index] = value
 		return true
 	}
@@ -291,6 +316,7 @@ set_ui_panel :: proc(world: ^World, entity_index: int, value: UI_Panel_Component
 	entity := &world.entities[entity_index]
 	if entity.ui_panel_index >= 0 && entity.ui_panel_index < len(world.ui_panels) {
 		current := &world.ui_panels[entity.ui_panel_index]
+		paint_changed := current^ != value
 		layout_changed :=
 			current.title != value.title ||
 			current.font != value.font ||
@@ -306,6 +332,8 @@ set_ui_panel :: proc(world: ^World, entity_index: int, value: UI_Panel_Component
 		current^ = panel
 		if layout_changed {
 			mark_ui_layout_changed(world, entity_index)
+		} else if paint_changed {
+			mark_ui_paint_changed(world, entity_index)
 		}
 		return true
 	}
@@ -349,8 +377,11 @@ set_ui_list :: proc(world: ^World, entity_index: int, value: UI_List_Component) 
 	}
 	entity := &world.entities[entity_index]
 	if entity.ui_list_index >= 0 && entity.ui_list_index < len(world.ui_lists) {
-		if world.ui_lists[entity.ui_list_index].gap != value.gap {
+		current := world.ui_lists[entity.ui_list_index]
+		if current.gap != value.gap {
 			mark_ui_layout_changed(world, entity_index)
+		} else if current != value {
+			mark_ui_paint_changed(world, entity_index)
 		}
 		world.ui_lists[entity.ui_list_index] = value
 		return true
@@ -372,6 +403,9 @@ set_ui_progress :: proc(world: ^World, entity_index: int, value: UI_Progress_Com
 	}
 	entity := &world.entities[entity_index]
 	if entity.ui_progress_index >= 0 && entity.ui_progress_index < len(world.ui_progresses) {
+		if world.ui_progresses[entity.ui_progress_index] != value {
+			mark_ui_paint_changed(world, entity_index)
+		}
 		world.ui_progresses[entity.ui_progress_index] = value
 		return true
 	}
@@ -396,6 +430,7 @@ set_ui_text :: proc(world: ^World, entity_index: int, value: UI_Text_Component) 
 	entity := &world.entities[entity_index]
 	if entity.ui_text_index >= 0 && entity.ui_text_index < len(world.ui_texts) {
 		current := &world.ui_texts[entity.ui_text_index]
+		paint_changed := current^ != value
 		intrinsic_changed :=
 			current.text != value.text ||
 			current.font != value.font ||
@@ -406,6 +441,9 @@ set_ui_text :: proc(world: ^World, entity_index: int, value: UI_Text_Component) 
 		current^ = text
 		if intrinsic_changed {
 			mark_ui_intrinsic_layout_changed(world, entity_index)
+		}
+		if paint_changed {
+			mark_ui_paint_changed(world, entity_index)
 		}
 		return true
 	}
@@ -430,6 +468,7 @@ set_ui_button :: proc(world: ^World, entity_index: int, value: UI_Button_Compone
 	entity := &world.entities[entity_index]
 	if entity.ui_button_index >= 0 && entity.ui_button_index < len(world.ui_buttons) {
 		current := &world.ui_buttons[entity.ui_button_index]
+		paint_changed := current^ != value
 		intrinsic_changed :=
 			current.text != value.text ||
 			current.font != value.font ||
@@ -442,6 +481,9 @@ set_ui_button :: proc(world: ^World, entity_index: int, value: UI_Button_Compone
 		current^ = button
 		if intrinsic_changed {
 			mark_ui_intrinsic_layout_changed(world, entity_index)
+		}
+		if paint_changed {
+			mark_ui_paint_changed(world, entity_index)
 		}
 		return true
 	}
@@ -467,6 +509,7 @@ set_ui_input :: proc(world: ^World, entity_index: int, value: UI_Input_Component
 	entity := &world.entities[entity_index]
 	if entity.ui_input_index >= 0 && entity.ui_input_index < len(world.ui_inputs) {
 		current := &world.ui_inputs[entity.ui_input_index]
+		paint_changed := current^ != value
 		intrinsic_changed :=
 			current.text != value.text ||
 			current.font != value.font ||
@@ -480,6 +523,9 @@ set_ui_input :: proc(world: ^World, entity_index: int, value: UI_Input_Component
 		current^ = input
 		if intrinsic_changed {
 			mark_ui_intrinsic_layout_changed(world, entity_index)
+		}
+		if paint_changed {
+			mark_ui_paint_changed(world, entity_index)
 		}
 		return true
 	}
@@ -500,10 +546,14 @@ set_ui_checkbox :: proc(world: ^World, entity_index: int, value: UI_Checkbox_Com
 	}
 	entity := &world.entities[entity_index]
 	if entity.ui_checkbox_index >= 0 && entity.ui_checkbox_index < len(world.ui_checkboxes) {
+		paint_changed := world.ui_checkboxes[entity.ui_checkbox_index] != value
 		if world.ui_checkboxes[entity.ui_checkbox_index].box_size != value.box_size {
 			mark_ui_intrinsic_layout_changed(world, entity_index)
 		}
 		world.ui_checkboxes[entity.ui_checkbox_index] = value
+		if paint_changed {
+			mark_ui_paint_changed(world, entity_index)
+		}
 		return true
 	}
 	if index, found := take_free_slot(&world.free_ui_checkbox_indices); found {
@@ -564,6 +614,7 @@ set_ui_text_value :: proc(world: ^World, entity_index: int, value: string) -> bo
 	delete_world_string(world, text.text)
 	text.text = clone_world_string(world, value)
 	mark_ui_intrinsic_layout_changed(world, entity_index)
+	mark_ui_paint_changed(world, entity_index)
 	return true
 }
 
@@ -582,6 +633,7 @@ set_ui_input_value :: proc(world: ^World, entity_index: int, value: string) -> b
 	delete_world_string(world, input.text)
 	input.text = clone_world_string(world, value)
 	mark_ui_intrinsic_layout_changed(world, entity_index)
+	mark_ui_paint_changed(world, entity_index)
 	return true
 }
 
@@ -601,6 +653,7 @@ set_ui_input_prefix :: proc(world: ^World, entity_index: int, value: string) -> 
 	delete_world_string(world, input.prefix)
 	input.prefix = next
 	mark_ui_intrinsic_layout_changed(world, entity_index)
+	mark_ui_paint_changed(world, entity_index)
 	return true
 }
 

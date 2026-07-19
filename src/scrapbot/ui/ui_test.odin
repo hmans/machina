@@ -5656,3 +5656,27 @@ test_editor_gizmo_modes_render_rings_and_square_scale_handles :: proc(t: ^testin
 		state.editor_gizmo_active_handle == .None && !state.editor_gizmo_captures_pointer,
 	)
 }
+
+@(test)
+test_editor_ui_role_lookup_is_indexed_and_repairs_a_missing_entry :: proc(t: ^testing.T) {
+	world: shared.World
+	defer ecs.destroy_world(&world)
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.editor_visible = true
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+
+	root, found := editor_ui_entity(&world, .Root)
+	testing.expect(t, found)
+	key := shared.Editor_UI_Lookup_Key {
+		role = .Root,
+	}
+	testing.expect(t, world.editor_ui_by_role_slot[key] == root)
+	delete_key(&world.editor_ui_by_role_slot, key)
+
+	repaired_root, repaired := editor_ui_entity(&world, .Root)
+	testing.expect(t, repaired && repaired_root == root)
+	testing.expect(t, world.editor_ui_by_role_slot[key] == root)
+}

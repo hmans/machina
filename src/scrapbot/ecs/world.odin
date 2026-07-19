@@ -316,6 +316,7 @@ destroy_world :: proc(world: ^World) {
 	delete(world.editor_transform_gizmos)
 	delete(world.editor_scene_cameras)
 	delete(world.editor_uis)
+	delete(world.editor_ui_by_role_slot)
 	delete(world.custom_components)
 	delete(world.ui_dirty_entities)
 	world^ = {}
@@ -439,6 +440,20 @@ mark_ui_structure_changed :: proc(world: ^World) {
 	}
 }
 
+mark_ui_paint_changed :: proc(world: ^World, entity_index: int) {
+	if world == nil || entity_index < 0 || entity_index >= len(world.entities) {
+		return
+	}
+	revision := &world.ui_project_paint_revision
+	if world.entities[entity_index].origin == .Editor {
+		revision = &world.ui_editor_paint_revision
+	}
+	revision^ += 1
+	if revision^ == 0 {
+		revision^ = 1
+	}
+}
+
 mark_ui_layout_changed :: proc(world: ^World, entity_index: int) {
 	if world == nil || entity_index < 0 || entity_index >= len(world.entities) {
 		return
@@ -451,6 +466,7 @@ mark_ui_layout_changed :: proc(world: ^World, entity_index: int) {
 	if revision^ == 0 {
 		revision^ = 1
 	}
+	mark_ui_paint_changed(world, entity_index)
 }
 
 mark_ui_intrinsic_layout_changed :: proc(world: ^World, entity_index: int) {

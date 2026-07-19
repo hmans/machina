@@ -215,6 +215,22 @@ Editor_Edit_Transaction :: struct {
 	component_structural: ^Editor_Component_Structural_Change,
 	resource_structural: ^Editor_Resource_Structural_Change,
 }
+
+Editor_Transport_Visual_State :: struct {
+	playing: bool,
+	stopped: bool,
+	dirty: bool,
+	save_failed: bool,
+	revert_failed: bool,
+	history_cursor: int,
+	history_count: int,
+}
+
+Editor_Gizmo_Toolbar_Visual_State :: struct {
+	visible: bool,
+	space: shared.Editor_Gizmo_Space,
+}
+
 State :: struct {
 	events: [MAX_UI_EVENTS]UI_Event,
 	event_count: int,
@@ -236,6 +252,8 @@ State :: struct {
 	ui_structure_synced: bool,
 	ui_project_layout_revision: u64,
 	ui_editor_layout_revision: u64,
+	ui_project_paint_revision: u64,
+	ui_editor_paint_revision: u64,
 	ui_layout_valid: bool,
 	ui_project_viewport: Rect,
 	ui_editor_viewport: Rect,
@@ -291,6 +309,10 @@ State :: struct {
 	editor_component_menu_open: bool,
 	editor_resource_menu_open: bool,
 	editor_layout_invalidated: bool,
+	editor_transport_visual_state: Editor_Transport_Visual_State,
+	editor_transport_visual_valid: bool,
+	editor_gizmo_toolbar_visual_state: Editor_Gizmo_Toolbar_Visual_State,
+	editor_gizmo_toolbar_visual_valid: bool,
 	system_profile: ^shared.System_Profile,
 	editor_system_profile_revision: u64,
 	editor_previous_primary_down: bool,
@@ -796,6 +818,8 @@ UI_Paint_Signature_Key :: struct {
 	input_blink_phase: int,
 	input_valid: bool,
 	editor_pixel_density: f32,
+	world_paint_revision: u64,
+	state_paint_revision: u64,
 }
 
 ui_paint_signature_add_memory :: proc(signature: u64, data: rawptr, size: int) -> u64 {
@@ -804,13 +828,6 @@ ui_paint_signature_add_memory :: proc(signature: u64, data: rawptr, size: int) -
 	}
 	bytes := (cast([^]byte)data)[:size]
 	return hash.fnv64a(bytes, signature)
-}
-
-ui_paint_signature_add_string :: proc(signature: u64, value: string) -> u64 {
-	if len(value) == 0 {
-		return signature
-	}
-	return hash.fnv64a(transmute([]byte)value, signature)
 }
 
 ui_paint_input_signature :: proc(state: ^State, world: ^shared.World, editor: bool) -> u64 {
@@ -830,107 +847,13 @@ ui_paint_input_signature :: proc(state: ^State, world: ^shared.World, editor: bo
 	}
 	if editor {
 		key.editor_pixel_density = state.editor_pixel_density
+		key.world_paint_revision = world.ui_editor_paint_revision
+		key.state_paint_revision = state.ui_editor_paint_revision
+	} else {
+		key.world_paint_revision = world.ui_project_paint_revision
+		key.state_paint_revision = state.ui_project_paint_revision
 	}
 	signature := hash.fnv64a((cast([^]byte)&key)[:size_of(key)])
-	for &node in state.nodes[:state.node_count] {
-		if (node.origin == .Editor) != editor {
-			continue
-		}
-		signature = ui_paint_signature_add_memory(signature, &node, size_of(node))
-		entity_index := int(node.entity.index)
-		if entity_index < 0 || entity_index >= len(world.entities) {
-			continue
-		}
-		entity := &world.entities[entity_index]
-		if node.layout_index >= 0 && node.layout_index < len(world.ui_layouts) {
-			signature = ui_paint_signature_add_memory(
-				signature,
-				&world.ui_layouts[node.layout_index],
-				size_of(shared.UI_Layout_Component),
-			)
-		}
-		if node.scroll_area_index >= 0 && node.scroll_area_index < len(world.ui_scroll_areas) {
-			signature = ui_paint_signature_add_memory(
-				signature,
-				&world.ui_scroll_areas[node.scroll_area_index],
-				size_of(shared.UI_Scroll_Area_Component),
-			)
-		}
-		if node.panel_index >= 0 && node.panel_index < len(world.ui_panels) {
-			panel := &world.ui_panels[node.panel_index]
-			signature = ui_paint_signature_add_memory(
-				signature,
-				panel,
-				size_of(shared.UI_Panel_Component),
-			)
-			signature = ui_paint_signature_add_string(signature, panel.title)
-			signature = ui_paint_signature_add_string(signature, panel.font)
-		}
-		if node.list_index >= 0 && node.list_index < len(world.ui_lists) {
-			signature = ui_paint_signature_add_memory(
-				signature,
-				&world.ui_lists[node.list_index],
-				size_of(shared.UI_List_Component),
-			)
-		}
-		if node.progress_index >= 0 && node.progress_index < len(world.ui_progresses) {
-			signature = ui_paint_signature_add_memory(
-				signature,
-				&world.ui_progresses[node.progress_index],
-				size_of(shared.UI_Progress_Component),
-			)
-		}
-		if node.text_index >= 0 && node.text_index < len(world.ui_texts) {
-			text := &world.ui_texts[node.text_index]
-			signature = ui_paint_signature_add_memory(
-				signature,
-				text,
-				size_of(shared.UI_Text_Component),
-			)
-			signature = ui_paint_signature_add_string(signature, text.text)
-			signature = ui_paint_signature_add_string(signature, text.font)
-		}
-		if node.button_index >= 0 && node.button_index < len(world.ui_buttons) {
-			button := &world.ui_buttons[node.button_index]
-			signature = ui_paint_signature_add_memory(
-				signature,
-				button,
-				size_of(shared.UI_Button_Component),
-			)
-			signature = ui_paint_signature_add_string(signature, button.text)
-			signature = ui_paint_signature_add_string(signature, button.font)
-		}
-		if node.input_index >= 0 && node.input_index < len(world.ui_inputs) {
-			input := &world.ui_inputs[node.input_index]
-			signature = ui_paint_signature_add_memory(
-				signature,
-				input,
-				size_of(shared.UI_Input_Component),
-			)
-			signature = ui_paint_signature_add_string(signature, input.text)
-			signature = ui_paint_signature_add_string(signature, input.font)
-			signature = ui_paint_signature_add_string(signature, input.prefix)
-		}
-		if node.checkbox_index >= 0 && node.checkbox_index < len(world.ui_checkboxes) {
-			signature = ui_paint_signature_add_memory(
-				signature,
-				&world.ui_checkboxes[node.checkbox_index],
-				size_of(shared.UI_Checkbox_Component),
-			)
-		}
-		if entity.ui_state_index >= 0 && entity.ui_state_index < len(world.ui_states) {
-			signature = ui_paint_signature_add_memory(
-				signature,
-				&world.ui_states[entity.ui_state_index],
-				size_of(shared.UI_State_Component),
-			)
-		}
-	}
-	for &handle in state.split_handles[:state.split_handle_count] {
-		if handle.editor == editor {
-			signature = ui_paint_signature_add_memory(signature, &handle, size_of(handle))
-		}
-	}
 	if state.resource_registry != nil {
 		for &font in state.resource_registry.fonts {
 			alive := u32(0)
@@ -1683,10 +1606,18 @@ layout_all :: proc(
 	if layout_project {
 		state.ui_project_layout_revision = world.ui_project_layout_revision
 		state.ui_project_viewport = project_viewport
+		state.ui_project_paint_revision += 1
+		if state.ui_project_paint_revision == 0 {
+			state.ui_project_paint_revision = 1
+		}
 	}
 	if layout_editor {
 		state.ui_editor_layout_revision = world.ui_editor_layout_revision
 		state.ui_editor_viewport = editor_viewport
+		state.ui_editor_paint_revision += 1
+		if state.ui_editor_paint_revision == 0 {
+			state.ui_editor_paint_revision = 1
+		}
 	}
 	state.ui_layout_valid = true
 	return ""
@@ -2504,12 +2435,14 @@ current_pointer_cursor :: proc(state: ^State) -> Pointer_Cursor {
 }
 
 update_split_interaction :: proc(state: ^State, pointer: Pointer_Input, editor: bool) -> bool {
+	previous_visual_signature := split_handle_visual_signature(state, editor)
 	for &handle in state.split_handles[:state.split_handle_count] { if handle.editor == editor { handle.hovered = false; handle.active = false } }
 	changed := false
 	if !pointer.available {
 		if state.active_split_handle >= 0 &&
 		   state.active_split_editor == editor { state.active_split_handle = -1 }
 		if editor { state.editor_split_previous_primary_down = false } else { state.split_previous_primary_down = false }
+		update_split_handle_paint_revision(state, editor, previous_visual_signature)
 		return false
 	}
 	hit := -1
@@ -2548,7 +2481,43 @@ update_split_interaction :: proc(state: ^State, pointer: Pointer_Input, editor: 
 	} else if !pointer.primary_down &&
 	   state.active_split_editor == editor { state.active_split_handle = -1 }
 	if editor { state.editor_split_previous_primary_down = pointer.primary_down } else { state.split_previous_primary_down = pointer.primary_down }
+	update_split_handle_paint_revision(state, editor, previous_visual_signature)
 	return changed
+}
+
+split_handle_visual_signature :: proc(state: ^State, editor: bool) -> u64 {
+	if state == nil {
+		return 0
+	}
+	signature := u64(14695981039346656037)
+	for handle, index in state.split_handles[:state.split_handle_count] {
+		if handle.editor != editor {
+			continue
+		}
+		value := u64(index + 1) << 2
+		if handle.hovered {
+			value |= 1
+		}
+		if handle.active {
+			value |= 2
+		}
+		signature = hash.fnv64a((cast([^]byte)&value)[:size_of(value)], signature)
+	}
+	return signature
+}
+
+update_split_handle_paint_revision :: proc(state: ^State, editor: bool, previous_signature: u64) {
+	if state == nil || split_handle_visual_signature(state, editor) == previous_signature {
+		return
+	}
+	revision := &state.ui_project_paint_revision
+	if editor {
+		revision = &state.ui_editor_paint_revision
+	}
+	revision^ += 1
+	if revision^ == 0 {
+		revision^ = 1
+	}
 }
 
 append_split_handles :: proc(state: ^State, editor: bool) -> string {
@@ -3094,11 +3063,21 @@ sync_ui_interaction_states :: proc(state: ^State, world: ^shared.World) {
 		if interaction == nil {
 			continue
 		}
+		was_hovered := interaction.hovered
+		was_active := interaction.active
+		was_focused := interaction.focused
+		was_valid := interaction.valid
 		interaction.hovered = node.hovered
 		interaction.active = node.active
 		interaction.focused = state.has_focused_input && state.focused_input == node.entity
 		if interaction.focused {
 			interaction.valid = state.input_valid
+		}
+		if was_hovered != interaction.hovered ||
+		   was_active != interaction.active ||
+		   was_focused != interaction.focused ||
+		   was_valid != interaction.valid {
+			ecs.mark_ui_paint_changed(world, entity_index)
 		}
 	}
 }
@@ -3204,7 +3183,11 @@ list_drag_reset :: proc(state: ^State, world: ^shared.World, slot: int) {
 	   world.entities[list_index].id == drag.list {
 		interaction := ecs.ensure_ui_state(world, list_index)
 		if interaction != nil {
+			paint_changed := interaction.dragging
 			interaction.dragging = false
+			if paint_changed {
+				ecs.mark_ui_paint_changed(world, list_index)
+			}
 		}
 	}
 	drag^ = {}
@@ -3478,6 +3461,10 @@ list_drag_update :: proc(
 	}
 	interaction := ecs.ensure_ui_state(world, list_index)
 	if interaction != nil {
+		was_dragging := interaction.dragging
+		was_source := interaction.drag_source
+		was_target := interaction.drop_target
+		was_placement := interaction.drop_placement
 		interaction.dragging = drag.dragging
 		interaction.drag_source = {}
 		source_index := int(drag.source.index)
@@ -3496,6 +3483,12 @@ list_drag_update :: proc(
 			   world.entities[target_index].id == drag.target {
 				interaction.drop_target = world.entities[target_index].uuid
 			}
+		}
+		if was_dragging != interaction.dragging ||
+		   was_source != interaction.drag_source ||
+		   was_target != interaction.drop_target ||
+		   was_placement != interaction.drop_placement {
+			ecs.mark_ui_paint_changed(world, list_index)
 		}
 	}
 	if !released {

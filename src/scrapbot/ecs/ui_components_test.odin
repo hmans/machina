@@ -133,6 +133,41 @@ test_runtime_spawn_uses_shared_world_entity_creation_and_reuses_slots :: proc(t:
 }
 
 @(test)
+test_ui_paint_revisions_are_domain_scoped_and_do_not_force_layout :: proc(t: ^testing.T) {
+	world: World
+	defer destroy_world(&world)
+	project_index, project_created := create_world_entity(&world, "Project UI")
+	editor_index, editor_created := create_world_entity(&world, "Editor UI")
+	testing.expect(t, project_created && editor_created)
+	world.entities[project_index].origin = .Scene
+	world.entities[editor_index].origin = .Editor
+	testing.expect(t, set_ui_layout(&world, project_index, {size = {100, 30}}))
+	testing.expect(t, set_ui_layout(&world, editor_index, {size = {100, 30}}))
+	project_layout_revision := world.ui_project_layout_revision
+	editor_layout_revision := world.ui_editor_layout_revision
+	project_paint_revision := world.ui_project_paint_revision
+	editor_paint_revision := world.ui_editor_paint_revision
+
+	project_layout := world.ui_layouts[world.entities[project_index].ui_layout_index]
+	project_layout.background = {0.2, 0.3, 0.4, 1}
+	testing.expect(t, set_ui_layout(&world, project_index, project_layout))
+	testing.expect(t, world.ui_project_layout_revision == project_layout_revision)
+	testing.expect(t, world.ui_project_paint_revision > project_paint_revision)
+	testing.expect(t, world.ui_editor_layout_revision == editor_layout_revision)
+	testing.expect(t, world.ui_editor_paint_revision == editor_paint_revision)
+
+	project_paint_revision = world.ui_project_paint_revision
+	testing.expect(t, set_ui_layout(&world, project_index, project_layout))
+	testing.expect(t, world.ui_project_paint_revision == project_paint_revision)
+
+	editor_layout := world.ui_layouts[world.entities[editor_index].ui_layout_index]
+	editor_layout.size.x = 120
+	testing.expect(t, set_ui_layout(&world, editor_index, editor_layout))
+	testing.expect(t, world.ui_editor_layout_revision > editor_layout_revision)
+	testing.expect(t, world.ui_editor_paint_revision > editor_paint_revision)
+}
+
+@(test)
 test_ui_component_churn_reclaims_all_storage_slots :: proc(t: ^testing.T) {
 	world: World
 	defer destroy_world(&world)

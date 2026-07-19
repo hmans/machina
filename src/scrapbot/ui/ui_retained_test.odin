@@ -92,7 +92,9 @@ test_retained_layout_and_paint_visit_only_nodes_and_hierarchy_edges :: proc(t: ^
 	expect_retained_hierarchy_consistent(t, state)
 
 	// Paint-only changes invalidate retained commands without forcing layout.
-	world.ui_layouts[world.entities[root_index].ui_layout_index].background = {0.2, 0.3, 0.4, 1}
+	root_layout := world.ui_layouts[world.entities[root_index].ui_layout_index]
+	root_layout.background = {0.2, 0.3, 0.4, 1}
+	testing.expect(t, ecs.set_ui_layout(&world, root_index, root_layout))
 	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
 	testing.expect(t, state.layout_node_visit_count == 0)
 	testing.expect(t, state.layout_child_edge_visit_count == 0)

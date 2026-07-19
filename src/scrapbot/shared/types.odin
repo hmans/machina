@@ -780,6 +780,11 @@ Editor_UI_Component :: struct {
 	input_was_scrubbed: bool,
 }
 
+Editor_UI_Lookup_Key :: struct {
+	role: Editor_UI_Role,
+	slot: int,
+}
+
 Mesh_Component :: struct {
 	primitive: string,
 }
@@ -974,10 +979,13 @@ World :: struct {
 	editor_transform_gizmos: [dynamic]Editor_Transform_Gizmo_Component,
 	editor_scene_cameras: [dynamic]Editor_Scene_Camera_Component,
 	editor_uis: [dynamic]Editor_UI_Component,
+	editor_ui_by_role_slot: map[Editor_UI_Lookup_Key]int,
 	custom_components: [dynamic]Custom_Component_Storage,
 	ui_structure_revision: u64,
 	ui_project_layout_revision: u64,
 	ui_editor_layout_revision: u64,
+	ui_project_paint_revision: u64,
+	ui_editor_paint_revision: u64,
 	ui_dirty_entities: [dynamic]int,
 	query_candidate_visit_count: u64,
 	custom_teardown_storage_visit_count: u64,

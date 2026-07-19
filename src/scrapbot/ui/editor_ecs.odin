@@ -56,6 +56,29 @@ editor_ui_entity :: proc(
 	int,
 	bool,
 ) {
+	key := shared.Editor_UI_Lookup_Key {
+		role = role,
+		slot = slot,
+	}
+	if world.editor_ui_by_role_slot != nil {
+		if entity_index, found := world.editor_ui_by_role_slot[key]; found {
+			if entity_index >= 0 && entity_index < len(world.entities) {
+				entity := world.entities[entity_index]
+				if entity.alive &&
+				   entity.origin == .Editor &&
+				   entity.editor_ui_index >= 0 &&
+				   entity.editor_ui_index < len(world.editor_uis) {
+					component := world.editor_uis[entity.editor_ui_index]
+					if component.entity_index == entity_index &&
+					   component.role == role &&
+					   component.slot == slot {
+						return entity_index, true
+					}
+				}
+			}
+			delete_key(&world.editor_ui_by_role_slot, key)
+		}
+	}
 	for component, component_index in world.editor_uis {
 		if component.role != role || component.slot != slot { continue }
 		if component.entity_index < 0 || component.entity_index >= len(world.entities) { continue }
@@ -63,6 +86,10 @@ editor_ui_entity :: proc(
 		if !entity.alive ||
 		   entity.origin != .Editor ||
 		   entity.editor_ui_index != component_index { continue }
+		if world.editor_ui_by_role_slot == nil {
+			world.editor_ui_by_role_slot = make(map[shared.Editor_UI_Lookup_Key]int)
+		}
+		world.editor_ui_by_role_slot[key] = component.entity_index
 		return component.entity_index, true
 	}
 	return -1, false
@@ -595,6 +622,11 @@ editor_ui_create_box :: proc(
 		},
 	)
 	world.entities[entity_index].editor_ui_index = role_index
+	if world.editor_ui_by_role_slot == nil {
+		world.editor_ui_by_role_slot = make(map[shared.Editor_UI_Lookup_Key]int)
+	}
+	world.editor_ui_by_role_slot[shared.Editor_UI_Lookup_Key{role = role, slot = slot}] =
+		entity_index
 	_ = ecs.set_ui_layout(world, entity_index, layout_value)
 	return entity_index
 }
@@ -1438,6 +1470,20 @@ format_system_profile_time :: proc(average_nanoseconds: f64, sampled: bool) -> s
 
 editor_ui_update_transport :: proc(state: ^State, world: ^shared.World) {
 	if state == nil || world == nil { return }
+	visual_state := Editor_Transport_Visual_State {
+		playing = state.editor_simulation_playing,
+		stopped = state.editor_simulation_stopped,
+		dirty = state.editor_scene_dirty,
+		save_failed = state.editor_scene_save_failed,
+		revert_failed = state.editor_scene_revert_failed,
+		history_cursor = state.editor_history_cursor,
+		history_count = state.editor_history_count,
+	}
+	if state.editor_transport_visual_valid && state.editor_transport_visual_state == visual_state {
+		return
+	}
+	state.editor_transport_visual_state = visual_state
+	state.editor_transport_visual_valid = true
 	playback := !state.editor_simulation_stopped
 	if top, found := ecs.entity_index_by_uuid(
 		world,
@@ -1561,6 +1607,9 @@ editor_ui_update_transport :: proc(state: ^State, world: ^shared.World) {
 			if playback { world.ui_texts[entity.ui_text_index].color = EDITOR_PLAYBACK_TEXT }
 		}
 	}
+	if root, found := editor_ui_entity(world, .Root); found {
+		ecs.mark_ui_paint_changed(world, root)
+	}
 }
 
 editor_ui_update_gizmo_toolbar :: proc(state: ^State, world: ^shared.World) {
@@ -1572,6 +1621,16 @@ editor_ui_update_gizmo_toolbar :: proc(state: ^State, world: ^shared.World) {
 		entity := world.entities[selected]
 		visible = entity.transform_index >= 0 && entity.transform_index < len(world.transforms)
 	}
+	visual_state := Editor_Gizmo_Toolbar_Visual_State {
+		visible = visible,
+		space = state.editor_gizmo_space,
+	}
+	if state.editor_gizmo_toolbar_visual_valid &&
+	   state.editor_gizmo_toolbar_visual_state == visual_state {
+		return
+	}
+	state.editor_gizmo_toolbar_visual_state = visual_state
+	state.editor_gizmo_toolbar_visual_valid = true
 	editor_ui_set_hidden(world, toolbar, !visible)
 	for component in world.editor_uis {
 		if component.role != .Gizmo_Space_World && component.role != .Gizmo_Space_Local {
@@ -1600,6 +1659,9 @@ editor_ui_update_gizmo_toolbar :: proc(state: ^State, world: ^shared.World) {
 			layout.border_color = {0.06, 0.72, 0.63, 0.8}
 			button.color = {0.42, 0.92, 0.82, 1}
 		}
+	}
+	if root, found := editor_ui_entity(world, .Root); found {
+		ecs.mark_ui_paint_changed(world, root)
 	}
 }
 
@@ -1657,6 +1719,9 @@ editor_ui_refresh_system_profile :: proc(state: ^State, world: ^shared.World) {
 	}
 	if state.system_profile != nil {
 		state.editor_system_profile_revision = state.system_profile.revision
+	}
+	if root, found := editor_ui_entity(world, .Root); found {
+		ecs.mark_ui_paint_changed(world, root)
 	}
 }
 
@@ -3998,6 +4063,9 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 	state.editor_snapshot_has_selection = state.editor_has_selection
 	state.editor_snapshot_selected_entity = state.editor_selected_entity
 	state.editor_snapshot_refresh_count += 1
+	if root, found := editor_ui_entity(world, .Root); found {
+		ecs.mark_ui_layout_changed(world, root)
+	}
 }
 
 reconcile_editor_ui_world :: proc(state: ^State, world: ^shared.World) {
