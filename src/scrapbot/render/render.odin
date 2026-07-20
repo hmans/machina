@@ -84,6 +84,18 @@ Render_Stats :: struct {
 	ui_vertex_uploads: u64,
 	ui_vertex_upload_bytes: u64,
 }
+
+PERFORMANCE_DIAGNOSTICS_PUBLISH_INTERVAL_FRAMES :: 5
+PERFORMANCE_DIAGNOSTICS_ROLLING_WINDOW_FRAMES :: 50
+
+Performance_Diagnostics_Accumulator :: struct {
+	snapshot: shared.Performance_Diagnostics,
+	frame_ms_samples: [PERFORMANCE_DIAGNOSTICS_ROLLING_WINDOW_FRAMES]f64,
+	frame_ms_total: f64,
+	sample_cursor: int,
+	sample_count: int,
+	frames_since_publish: int,
+}
 Framegrab_Region :: struct {
 	x, y, width, height: u32,
 }
@@ -143,6 +155,7 @@ Run_Config :: struct {
 	runtime_revert_data: rawptr,
 	resource_registry: ^resources.Registry,
 	stats: ^Render_Stats,
+	performance_diagnostics: ^Performance_Diagnostics_Accumulator,
 	collect_runtime_stats: bool,
 	runtime_stats: ^Runtime_Stats,
 	runtime_stats_collector: ^Runtime_Stats_Collector,
@@ -153,6 +166,51 @@ Run_Config :: struct {
 	ui_driver: ^ui.Diagnostic_Driver,
 	last_drawable_width: f32,
 	last_drawable_height: f32,
+}
+
+performance_diagnostics_commit_frame :: proc(
+	accumulator: ^Performance_Diagnostics_Accumulator,
+	stats: ^Render_Stats,
+	world: ^World,
+	delta_seconds: f32,
+) {
+	if accumulator == nil || stats == nil || world == nil {
+		return
+	}
+	frame_ms := f64(max(delta_seconds, 0)) * 1000
+	previous := f64(0)
+	if accumulator.sample_count == PERFORMANCE_DIAGNOSTICS_ROLLING_WINDOW_FRAMES {
+		previous = accumulator.frame_ms_samples[accumulator.sample_cursor]
+	}
+	accumulator.frame_ms_samples[accumulator.sample_cursor] = frame_ms
+	accumulator.frame_ms_total += frame_ms - previous
+	accumulator.sample_cursor =
+		(accumulator.sample_cursor + 1) % PERFORMANCE_DIAGNOSTICS_ROLLING_WINDOW_FRAMES
+	accumulator.sample_count = min(
+		accumulator.sample_count + 1,
+		PERFORMANCE_DIAGNOSTICS_ROLLING_WINDOW_FRAMES,
+	)
+	accumulator.frames_since_publish += 1
+	if accumulator.frames_since_publish < PERFORMANCE_DIAGNOSTICS_PUBLISH_INTERVAL_FRAMES {
+		return
+	}
+	average_frame_ms := accumulator.frame_ms_total / f64(accumulator.sample_count)
+	snapshot := &accumulator.snapshot
+	snapshot.frame_ms = average_frame_ms
+	if average_frame_ms > 0 {
+		snapshot.fps = 1000 / average_frame_ms
+	}
+	snapshot.gpu_frame_ms = stats.gpu_frame_ms
+	snapshot.gpu_timestamps_valid = stats.gpu_timestamps_valid
+	snapshot.entity_count = world.scene_entity_count + world.runtime_entity_count
+	snapshot.draw_batches = stats.draw_batches
+	snapshot.instance_count = stats.instance_slots
+	snapshot.frustum_candidates = stats.frustum_candidates
+	snapshot.visible_instances = stats.visible_instances
+	snapshot.occlusion_culled_instances = stats.occlusion_culled_instances
+	snapshot.sample_frames = accumulator.sample_count
+	snapshot.revision += 1
+	accumulator.frames_since_publish = 0
 }
 
 renderer_window_size :: proc(config: Run_Config) -> (int, int) {
@@ -296,6 +354,12 @@ run_renderer :: proc(config: Run_Config, world: ^World) -> (frame: Render_Frame,
 				}
 				record_system_profile_phase(&run_config, .Render_Prepare, render_prepare_start)
 				finish_runtime_frame(&run_config, world, frame_start)
+				performance_diagnostics_commit_frame(
+					run_config.performance_diagnostics,
+					run_config.stats,
+					world,
+					1.0 / 60.0,
+				)
 				render_phases := [8]Engine_System_Profile_Phase {
 					Engine_System_Profile_Phase.Render_Cull,
 					Engine_System_Profile_Phase.Render_Shadow,

@@ -186,6 +186,12 @@ The editor shell turns a running Scrapbot project into its own editing workspace
 **Why:** Spatial hierarchy should be visible and editable without introducing an editor-only tree widget or a second hierarchy model.
 **Tradeoff:** The reusable list gesture provides distinct insertion lines and into-row tint but no drag ghost. Insertion intentionally follows tree-editor convention: its destination level is the target's level, so a cross-level insertion also changes parent. Authored parent deletion is conservative until one transaction can safely encode parent deletion plus child detachment.
 
+### 23. Publish frame diagnostics through a retained snapshot
+
+**Decision:** Accumulate frame duration in fixed storage over a rolling 50-frame window, publish a revisioned diagnostics snapshot every five frames, and copy the renderer's latest GPU timestamp, draw-batch, instance, and visibility counters into that snapshot. Maintain scene, runtime, and editor entity counts at spawn/despawn boundaries so diagnostics never scan world capacity. Render the initial FPS, CPU frame, GPU frame, project-entity, draw-batch, and occlusion-cull values through an editor-origin collapsible panel composed only from the public panel, table, VStack, layout, and text components.
+**Why:** Basic performance health should be visible without leaving the editor, but observing the engine must not add an entity scan, rebuild UI every frame, or introduce private diagnostic widgets. A revision lets stable frames reuse the existing panel and paint stream.
+**Tradeoff:** FPS reflects the rolling CPU frame interval and GPU frame time appears only when timestamp queries have produced a valid asynchronous sample. “Draw batches” is the retained GPU-driven grouping unit; it is intentionally not labeled “draw calls,” because one batch can participate in multiple render passes and UI/postprocess commands have different submission shapes.
+
 ## Related
 
 - **ADRs:** ADR-003, ADR-005, ADR-014, ADR-016, ADR-017, ADR-018, ADR-019, ADR-021, ADR-023, ADR-024, ADR-025, ADR-026, ADR-027, ADR-028, ADR-031, ADR-033

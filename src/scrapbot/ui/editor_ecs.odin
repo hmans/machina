@@ -15,6 +15,7 @@ EDITOR_UI_TRANSPORT_NAME :: "__scrapbot_editor_transport"
 EDITOR_UI_WORKSPACE_NAME :: "__scrapbot_editor_workspace"
 EDITOR_UI_LEFT_NAME :: "__scrapbot_editor_left"
 EDITOR_UI_LEFT_CONTENT_NAME :: "__scrapbot_editor_left_content"
+EDITOR_UI_DIAGNOSTICS_NAME :: "__scrapbot_editor_diagnostics"
 EDITOR_UI_SYSTEMS_NAME :: "__scrapbot_editor_systems"
 EDITOR_UI_SCENE_NAME :: "__scrapbot_editor_scene"
 EDITOR_UI_SCENE_TOOLS_NAME :: "__scrapbot_editor_scene_tools"
@@ -295,6 +296,9 @@ editor_ui_handle_activation :: proc(
 				case .None,
 				     .Root,
 				     .Gizmo_Toolbar,
+				     .Diagnostics_Panel,
+				     .Diagnostics_Label,
+				     .Diagnostics_Value,
 				     .Systems_Scroll,
 				     .Systems_Row,
 				     .Systems_Name,
@@ -959,6 +963,63 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		left_content,
 		{gap = EDITOR_SIDEBAR_SECTION_GAP, fill = true, draggable = true, min_size = 160},
 	)
+	diagnostics := editor_ui_create_box(
+		world,
+		EDITOR_UI_DIAGNOSTICS_NAME,
+		EDITOR_UI_LEFT_CONTENT_NAME,
+		.Diagnostics_Panel,
+		editor_ui_section_layout({EDITOR_LEFT_SIDEBAR_WIDTH, 232}),
+	)
+	diagnostics_layout := &world.ui_layouts[world.entities[diagnostics].ui_layout_index]
+	diagnostics_layout.padding = {0, 8, 8, 8}
+	diagnostics_layout.min_size.y = 232
+	diagnostics_layout.fixed_in_fill = true
+	diagnostics_layout.fit_content_height = true
+	editor_ui_add_section_panel(world, diagnostics, "PERFORMANCE")
+	editor_ui_add_vstack(world, diagnostics, {})
+	diagnostics_table := editor_ui_create_box(
+		world,
+		"__scrapbot_editor_diagnostics_table",
+		EDITOR_UI_DIAGNOSTICS_NAME,
+		.None,
+		{size = {100, 156}, fill_width = true, fit_content_height = true},
+	)
+	editor_ui_add_table(
+		world,
+		diagnostics_table,
+		{columns = 2, column_gap = 8, row_gap = 0, proportional_columns = true},
+	)
+	diagnostic_labels := [?]string {
+		"FPS",
+		"FRAME",
+		"GPU FRAME",
+		"ENTITIES",
+		"DRAW BATCHES",
+		"OCCLUSION CULLED",
+	}
+	for label_text, slot in diagnostic_labels {
+		label_name := fmt.tprintf("__scrapbot_editor_diagnostics_label_%d", slot)
+		label := editor_ui_create_box(
+			world,
+			label_name,
+			"__scrapbot_editor_diagnostics_table",
+			.Diagnostics_Label,
+			{size = {1, SYSTEM_PROFILE_CELL_HEIGHT}, padding = {4, 3, 3, 4}},
+			slot,
+		)
+		editor_ui_add_text(world, label, label_text, {0.62, 0.65, 0.71, 1}, EDITOR_TEXT_SIZE)
+		value_name := fmt.tprintf("__scrapbot_editor_diagnostics_value_%d", slot)
+		value := editor_ui_create_box(
+			world,
+			value_name,
+			"__scrapbot_editor_diagnostics_table",
+			.Diagnostics_Value,
+			{size = {1, SYSTEM_PROFILE_CELL_HEIGHT}, padding = {4, 3, 3, 4}},
+			slot,
+		)
+		editor_ui_add_text(world, value, "--", {0.82, 0.85, 0.90, 1}, EDITOR_TEXT_SIZE)
+		world.ui_texts[world.entities[value].ui_text_index].alignment = .Right
+	}
 	systems := editor_ui_create_box(
 		world,
 		EDITOR_UI_SYSTEMS_NAME,
@@ -1476,6 +1537,33 @@ format_system_profile_time :: proc(average_nanoseconds: f64, sampled: bool) -> s
 		return "--"
 	}
 	return fmt.tprintf("%.3f ms", average_nanoseconds / 1_000_000)
+}
+
+editor_ui_refresh_performance_diagnostics :: proc(state: ^State, world: ^shared.World) {
+	if state == nil || world == nil || state.performance_diagnostics == nil {
+		return
+	}
+	diagnostics := state.performance_diagnostics
+	values := [6]string {
+		fmt.tprintf("%.1f", diagnostics.fps),
+		fmt.tprintf("%.2f ms", diagnostics.frame_ms),
+		"--",
+		fmt.tprintf("%d", diagnostics.entity_count),
+		fmt.tprintf("%d", diagnostics.draw_batches),
+		fmt.tprintf("%d", diagnostics.occlusion_culled_instances),
+	}
+	if diagnostics.gpu_timestamps_valid {
+		values[2] = fmt.tprintf("%.2f ms", diagnostics.gpu_frame_ms)
+	}
+	for value, slot in values {
+		if cell, found := editor_ui_entity(world, .Diagnostics_Value, slot); found {
+			editor_ui_set_text(world, cell, value)
+		}
+	}
+	state.editor_performance_diagnostics_revision = diagnostics.revision
+	if panel, found := editor_ui_entity(world, .Diagnostics_Panel); found {
+		ecs.mark_ui_paint_changed(world, panel)
+	}
 }
 
 editor_ui_update_transport :: proc(state: ^State, world: ^shared.World) {
@@ -4016,6 +4104,7 @@ editor_hierarchy_visible_entities :: proc(
 }
 
 refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
+	editor_ui_refresh_performance_diagnostics(state, world)
 	editor_ui_refresh_system_profile(state, world)
 	hierarchy_indices, hierarchy_depths: [MAX_NODES]int
 	hierarchy_has_children: [MAX_NODES]bool

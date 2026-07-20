@@ -864,6 +864,15 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 	detach_transform_children(world, entity_index)
 
 	entity := &world.entities[entity_index]
+	world.live_entity_count = max(world.live_entity_count - 1, 0)
+	switch entity.origin {
+		case .Scene:
+			world.scene_entity_count = max(world.scene_entity_count - 1, 0)
+		case .Runtime:
+			world.runtime_entity_count = max(world.runtime_entity_count - 1, 0)
+		case .Editor:
+			world.editor_entity_count = max(world.editor_entity_count - 1, 0)
+	}
 	if world.entity_by_uuid != nil {
 		delete_key(&world.entity_by_uuid, entity.uuid)
 	}

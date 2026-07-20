@@ -57,6 +57,17 @@ exact render dirty queue ──> retained backend-neutral render list
 
 Cameras and bounded lights are compact frame inputs. Stable renderable membership and instance records are not re-extracted or uploaded without a mutation signal.
 
+## Performance diagnostics
+
+```text
+frame interval ──> fixed 50-frame rolling accumulator ──┐
+WGPU timing / draw / visibility counters ──────────────┼─> revisioned snapshot every 5 frames
+spawn/despawn-maintained entity-origin counts ─────────┘                │
+                                                               public ECS UI panel
+```
+
+The editor formats values only when the snapshot revision changes. GPU timestamp values are asynchronous, and draw batches describe retained GPU-driven grouping rather than every API draw command in every pass.
+
 ## ECS UI and editor
 
 ```text

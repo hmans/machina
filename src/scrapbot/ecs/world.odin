@@ -185,7 +185,44 @@ create_world_entity :: proc(
 		append(&world.entities, entity)
 	}
 	world.entity_by_uuid[entity_uuid] = entity_index
+	world.live_entity_count += 1
+	switch origin {
+		case .Scene:
+			world.scene_entity_count += 1
+		case .Runtime:
+			world.runtime_entity_count += 1
+		case .Editor:
+			world.editor_entity_count += 1
+	}
 	return entity_index, true
+}
+
+set_entity_origin :: proc(world: ^World, entity_index: int, origin: Entity_Origin) -> bool {
+	if !entity_is_alive(world, entity_index) {
+		return false
+	}
+	entity := &world.entities[entity_index]
+	if entity.origin == origin {
+		return true
+	}
+	switch entity.origin {
+		case .Scene:
+			world.scene_entity_count = max(world.scene_entity_count - 1, 0)
+		case .Runtime:
+			world.runtime_entity_count = max(world.runtime_entity_count - 1, 0)
+		case .Editor:
+			world.editor_entity_count = max(world.editor_entity_count - 1, 0)
+	}
+	entity.origin = origin
+	switch origin {
+		case .Scene:
+			world.scene_entity_count += 1
+		case .Runtime:
+			world.runtime_entity_count += 1
+		case .Editor:
+			world.editor_entity_count += 1
+	}
+	return true
 }
 
 Query_View :: struct {
@@ -344,6 +381,8 @@ build_world :: proc(scene: ^Scene) -> World {
 	world.string_allocator = runtime.heap_allocator()
 	world.instance_uuid = shared.entity_uuid_generate()
 	world.entity_by_uuid = make(map[shared.Entity_UUID]int)
+	world.live_entity_count = len(scene.entities)
+	world.scene_entity_count = len(scene.entities)
 	for entity, scene_order in scene.entities {
 		id := Entity {
 			index = u32(len(world.entities)),

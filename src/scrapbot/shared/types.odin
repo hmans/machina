@@ -726,6 +726,21 @@ System_Profile :: struct {
 	revision: u64,
 }
 
+Performance_Diagnostics :: struct {
+	fps: f64,
+	frame_ms: f64,
+	gpu_frame_ms: f64,
+	gpu_timestamps_valid: bool,
+	entity_count: int,
+	draw_batches: int,
+	instance_count: int,
+	frustum_candidates: u32,
+	visible_instances: u32,
+	occlusion_culled_instances: u32,
+	sample_frames: int,
+	revision: u64,
+}
+
 Editor_UI_Role :: enum {
 	None,
 	Root,
@@ -745,6 +760,9 @@ Editor_UI_Role :: enum {
 	Entity_Duplicate,
 	Entity_Delete,
 	Entity_Promote,
+	Diagnostics_Panel,
+	Diagnostics_Label,
+	Diagnostics_Value,
 	Systems_Scroll,
 	Systems_Row,
 	Systems_Name,
@@ -973,6 +991,10 @@ World :: struct {
 	entities: [dynamic]World_Entity,
 	free_entity_indices: [dynamic]int,
 	entity_by_uuid: map[Entity_UUID]int,
+	live_entity_count: int,
+	scene_entity_count: int,
+	runtime_entity_count: int,
+	editor_entity_count: int,
 	transforms: #soa[dynamic]Transform_Component,
 	resolved_world_transforms: [dynamic]Transform_Component,
 	resolved_world_transform_epochs: [dynamic]u64,

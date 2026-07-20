@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "timeout_frames": 120,
+  "actions": [
+    {"action": "wait", "frames": 10},
+    {"action": "expect", "target": {"text": "PERFORMANCE", "origin": "editor"}, "expect": "visible"},
+    {"action": "expect", "target": {"text": "FPS", "origin": "editor"}, "expect": "visible"},
+    {"action": "expect", "target": {"text": "GPU FRAME", "origin": "editor"}, "expect": "visible"},
+    {"action": "expect", "target": {"text": "ENTITIES", "origin": "editor"}, "expect": "visible"},
+    {"action": "expect", "target": {"text": "DRAW BATCHES", "origin": "editor"}, "expect": "visible"},
+    {"action": "expect", "target": {"text": "OCCLUSION CULLED", "origin": "editor"}, "expect": "visible"},
+    {"action": "capture", "target": {"name": "__scrapbot_editor_diagnostics", "origin": "editor"}, "padding": 4}
+  ]
+}

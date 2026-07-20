@@ -491,6 +491,8 @@ run_project_internal_untracked :: proc(
 	run_config := config
 	render_stats: render.Render_Stats
 	run_config.stats = &render_stats
+	performance_diagnostics: render.Performance_Diagnostics_Accumulator
+	run_config.performance_diagnostics = &performance_diagnostics
 
 	loaded := project.load_project(root)
 	defer project.destroy_project_load_result(&loaded)
@@ -517,6 +519,7 @@ run_project_internal_untracked :: proc(
 	defer free(ui_state)
 	if ui_err := ui.init(ui_state); ui_err != "" { result.err = ui_err; return result }
 	ui_state.editor_visible = run_config.editor
+	ui_state.performance_diagnostics = &performance_diagnostics.snapshot
 	defer ui.destroy(ui_state)
 	run_config.ui_state = ui_state
 

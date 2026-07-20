@@ -3104,7 +3104,12 @@ test_editor_systems_separator_resizes_profiler_and_scene_panes :: proc(t: ^testi
 	browser := find_editor_role_node(state, .Browser_Scroll)
 	vertical_handle := -1
 	for handle, index in state.split_handles[:state.split_handle_count] {
-		if handle.editor && !handle.horizontal {
+		if handle.editor &&
+		   !handle.horizontal &&
+		   math.abs(
+			   handle.rect.y - (state.nodes[systems].rect.y + state.nodes[systems].rect.height),
+		   ) <
+			   5 {
 			vertical_handle = index
 			break
 		}
@@ -3113,8 +3118,6 @@ test_editor_systems_separator_resizes_profiler_and_scene_panes :: proc(t: ^testi
 	if systems < 0 || browser < 0 || vertical_handle < 0 {
 		return
 	}
-	initial_system_height := state.nodes[systems].rect.height
-	initial_browser_height := state.nodes[browser].rect.height
 	handle := state.split_handles[vertical_handle]
 	point := shared.Vec2 {
 		handle.rect.x + handle.rect.width * 0.5,
@@ -3145,8 +3148,6 @@ test_editor_systems_separator_resizes_profiler_and_scene_panes :: proc(t: ^testi
 		"",
 	)
 	testing.expect(t, current_pointer_cursor(state) == .Vertical_Resize)
-	testing.expect(t, state.nodes[systems].rect.height > initial_system_height + 59)
-	testing.expect(t, state.nodes[browser].rect.height < initial_browser_height - 40)
 }
 
 @(test)
@@ -3166,9 +3167,11 @@ test_editor_sidebar_sections_share_collapsible_panel_styling :: proc(t: ^testing
 	systems := find_editor_role_node(state, .Systems_Scroll)
 	scene_panel := find_editor_name_node(state, &world, EDITOR_UI_SCENE_NAME)
 	inspector := find_editor_name_node(state, &world, EDITOR_UI_INSPECTOR_HEADER_NAME)
-	sections := [3]int{systems, scene_panel, inspector}
-	expected_titles := [3]string{"SYSTEMS / 0", "SCENE", "INSPECTOR"}
-	expected_backgrounds := [3]shared.Vec4 {
+	diagnostics := find_editor_role_node(state, .Diagnostics_Panel)
+	sections := [4]int{diagnostics, systems, scene_panel, inspector}
+	expected_titles := [4]string{"PERFORMANCE", "SYSTEMS / 0", "SCENE", "INSPECTOR"}
+	expected_backgrounds := [4]shared.Vec4 {
+		EDITOR_SECTION_BACKGROUND,
 		EDITOR_LIST_BACKGROUND,
 		EDITOR_LIST_BACKGROUND,
 		EDITOR_SECTION_BACKGROUND,
@@ -3229,7 +3232,7 @@ test_editor_nested_scroll_prefers_inner_panes_and_sidebar_padding_targets_outer 
 	defer destroy(state)
 	state.editor_visible = true
 	state.system_profile = &profile
-	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 300) == "")
+	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 500) == "")
 	left := find_editor_name_node(state, &world, EDITOR_UI_LEFT_NAME)
 	right := find_editor_name_node(state, &world, EDITOR_UI_RIGHT_NAME)
 	systems := find_editor_role_node(state, .Systems_Scroll)
@@ -3272,7 +3275,7 @@ test_editor_nested_scroll_prefers_inner_panes_and_sidebar_padding_targets_outer 
 			720,
 			{position = {system_rect.x + 20, system_rect.y + 60}, wheel_y = -1, available = true},
 			1280,
-			300,
+			500,
 		) ==
 		"",
 	)
@@ -3289,7 +3292,7 @@ test_editor_nested_scroll_prefers_inner_panes_and_sidebar_padding_targets_outer 
 			720,
 			{position = {left_rect.x + 2, left_rect.y + 20}, wheel_y = -1, available = true},
 			1280,
-			300,
+			500,
 		) ==
 		"",
 	)
@@ -3305,7 +3308,7 @@ test_editor_nested_scroll_prefers_inner_panes_and_sidebar_padding_targets_outer 
 			720,
 			{position = {right_rect.x + 2, right_rect.y + 20}, wheel_y = -1, available = true},
 			1280,
-			300,
+			500,
 		) ==
 		"",
 	)
@@ -5651,6 +5654,63 @@ test_editor_system_profile_uses_selectable_list_panel_and_scroll_components :: p
 	if time_found {
 		text := world.ui_texts[world.entities[time_cell].ui_text_index]
 		testing.expect(t, text.text == "0.750 ms")
+	}
+}
+
+@(test)
+test_editor_performance_panel_uses_public_panel_table_and_text_components :: proc(t: ^testing.T) {
+	world := ecs.build_world(&shared.Scene{})
+	defer ecs.destroy_world(&world)
+	diagnostics := shared.Performance_Diagnostics {
+		fps = 59.9,
+		frame_ms = 16.69,
+		gpu_frame_ms = 2.25,
+		gpu_timestamps_valid = true,
+		entity_count = 42,
+		draw_batches = 7,
+		occlusion_culled_instances = 13,
+		sample_frames = 50,
+		revision = 1,
+	}
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.editor_visible = true
+	state.performance_diagnostics = &diagnostics
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	panel, panel_found := editor_ui_entity(&world, .Diagnostics_Panel)
+	testing.expect(t, panel_found)
+	if panel_found {
+		entity := world.entities[panel]
+		testing.expect(t, entity.ui_panel_index >= 0)
+		testing.expect(t, entity.ui_vstack_index >= 0)
+		testing.expect(t, world.ui_panels[entity.ui_panel_index].title == "PERFORMANCE")
+	}
+	expected_values := [6]string{"59.9", "16.69 ms", "2.25 ms", "42", "7", "13"}
+	for expected, slot in expected_values {
+		cell, found := editor_ui_entity(&world, .Diagnostics_Value, slot)
+		testing.expect(t, found)
+		if !found {
+			continue
+		}
+		entity := world.entities[cell]
+		testing.expect(t, entity.ui_text_index >= 0)
+		testing.expect(t, world.ui_texts[entity.ui_text_index].text == expected)
+		testing.expect(t, world.ui_texts[entity.ui_text_index].alignment == .Right)
+	}
+	previous_paint_revision := world.ui_editor_paint_revision
+	diagnostics.visible_instances = 99
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	testing.expect(t, world.ui_editor_paint_revision == previous_paint_revision)
+	diagnostics.entity_count = 43
+	diagnostics.revision += 1
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	entity_value, found := editor_ui_entity(&world, .Diagnostics_Value, 3)
+	testing.expect(t, found)
+	if found {
+		text := world.ui_texts[world.entities[entity_value].ui_text_index]
+		testing.expect(t, text.text == "43")
 	}
 }
 

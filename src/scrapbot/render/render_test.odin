@@ -4,6 +4,8 @@ import ecs "../ecs"
 import resources "../resources"
 import shared "../shared"
 import ui "../ui"
+
+import "core:math"
 import "core:testing"
 
 @(test)
@@ -27,6 +29,57 @@ test_renderer_window_size_uses_project_values_and_engine_defaults :: proc(t: ^te
 	width, height = renderer_window_size({})
 	testing.expect(t, width == shared.DEFAULT_WINDOW_WIDTH)
 	testing.expect(t, height == shared.DEFAULT_WINDOW_HEIGHT)
+}
+
+@(test)
+test_performance_diagnostics_publish_retained_rolling_snapshot :: proc(t: ^testing.T) {
+	world: shared.World
+	defer ecs.destroy_world(&world)
+	_, scene_ok := ecs.create_world_entity(&world, "Scene", {}, .Scene)
+	runtime_index, runtime_ok := ecs.create_world_entity(&world, "Runtime", {}, .Runtime)
+	_, editor_ok := ecs.create_world_entity(&world, "Editor", {}, .Editor)
+	testing.expect(t, scene_ok && runtime_ok && editor_ok)
+	testing.expect(t, world.scene_entity_count == 1)
+	testing.expect(t, world.runtime_entity_count == 1)
+	testing.expect(t, world.editor_entity_count == 1)
+	testing.expect(t, ecs.set_entity_origin(&world, runtime_index, .Scene))
+	testing.expect(t, world.scene_entity_count == 2)
+	testing.expect(t, world.runtime_entity_count == 0)
+	stats := Render_Stats {
+		draw_batches = 7,
+		gpu_timestamps_valid = true,
+		gpu_frame_ms = 2.25,
+		instance_slots = 12,
+		frustum_candidates = 11,
+		visible_instances = 8,
+		occlusion_culled_instances = 3,
+	}
+	accumulator: Performance_Diagnostics_Accumulator
+	for index in 0 ..< PERFORMANCE_DIAGNOSTICS_PUBLISH_INTERVAL_FRAMES {
+		performance_diagnostics_commit_frame(&accumulator, &stats, &world, 0.02)
+		if index < PERFORMANCE_DIAGNOSTICS_PUBLISH_INTERVAL_FRAMES - 1 {
+			testing.expect(t, accumulator.snapshot.revision == 0)
+		}
+	}
+	snapshot := accumulator.snapshot
+	testing.expect(t, snapshot.revision == 1)
+	testing.expect(t, snapshot.sample_frames == PERFORMANCE_DIAGNOSTICS_PUBLISH_INTERVAL_FRAMES)
+	testing.expect(t, math.abs(snapshot.fps - 50) < 0.001)
+	testing.expect(t, math.abs(snapshot.frame_ms - 20) < 0.001)
+	testing.expect(t, snapshot.gpu_frame_ms == 2.25)
+	testing.expect(t, snapshot.gpu_timestamps_valid)
+	testing.expect(t, snapshot.entity_count == 2)
+	testing.expect(t, snapshot.draw_batches == 7)
+	testing.expect(t, snapshot.instance_count == 12)
+	testing.expect(t, snapshot.frustum_candidates == 11)
+	testing.expect(t, snapshot.visible_instances == 8)
+	testing.expect(t, snapshot.occlusion_culled_instances == 3)
+	ecs.despawn_entity(&world, runtime_index, world.entities[runtime_index].id.generation)
+	for _ in 0 ..< PERFORMANCE_DIAGNOSTICS_PUBLISH_INTERVAL_FRAMES {
+		performance_diagnostics_commit_frame(&accumulator, &stats, &world, 0.02)
+	}
+	testing.expect(t, accumulator.snapshot.entity_count == 1)
+	testing.expect(t, accumulator.snapshot.revision == 2)
 }
 
 @(test)

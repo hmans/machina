@@ -737,7 +737,7 @@ apply_entity_snapshot :: proc(world: ^World, snapshot: ^Entity_Snapshot) -> (int
 
 	value := &snapshot.entity
 	entity := &world.entities[entity_index]
-	entity.origin = snapshot.origin
+	_ = set_entity_origin(world, entity_index, snapshot.origin)
 	set_entity_scene_order_index(world, entity_index, value.scene_order)
 	set_entity_name(world, entity_index, value.name)
 	set_optional_transform(world, entity_index, value.has_transform, value.transform)
@@ -796,8 +796,7 @@ promote_entity_to_scene :: proc(world: ^World, entity_index: int) -> bool {
 	if !entity_is_alive(world, entity_index) {
 		return false
 	}
-	world.entities[entity_index].origin = .Scene
-	return true
+	return set_entity_origin(world, entity_index, .Scene)
 }
 
 clone_snapshot_string :: proc(value: string) -> string {

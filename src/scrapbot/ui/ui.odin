@@ -336,6 +336,8 @@ State :: struct {
 	editor_gizmo_toolbar_visual_valid: bool,
 	system_profile: ^shared.System_Profile,
 	editor_system_profile_revision: u64,
+	performance_diagnostics: ^shared.Performance_Diagnostics,
+	editor_performance_diagnostics_revision: u64,
 	editor_previous_primary_down: bool,
 	focused_input: shared.Entity,
 	has_focused_input: bool,
@@ -1195,6 +1197,12 @@ reconcile :: proc(
 		system_profile_changed :=
 			state.system_profile != nil &&
 			state.editor_system_profile_revision != state.system_profile.revision
+		performance_diagnostics_changed :=
+			state.performance_diagnostics != nil &&
+			state.editor_performance_diagnostics_revision != state.performance_diagnostics.revision
+		if performance_diagnostics_changed && !state.input_scrubbing {
+			editor_ui_refresh_performance_diagnostics(state, world)
+		}
 		if system_profile_changed && !state.input_scrubbing {
 			editor_ui_refresh_system_profile(state, world)
 		}

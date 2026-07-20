@@ -1645,6 +1645,12 @@ wgpu_draw_frame :: proc(
 		config.stats.ui_vertex_uploads = renderer.ui_vertex_upload_count
 		config.stats.ui_vertex_upload_bytes = renderer.ui_vertex_upload_bytes
 	}
+	performance_diagnostics_commit_frame(
+		config.performance_diagnostics,
+		config.stats,
+		world,
+		delta_time,
+	)
 	commit_system_profile_frame(config)
 
 	return true, false, ""
@@ -1814,6 +1820,12 @@ wgpu_render_offscreen_frame :: proc(
 		config.stats.ui_vertex_uploads = renderer.ui_vertex_upload_count
 		config.stats.ui_vertex_upload_bytes = renderer.ui_vertex_upload_bytes
 	}
+	performance_diagnostics_commit_frame(
+		config.performance_diagnostics,
+		config.stats,
+		world,
+		1.0 / 60.0,
+	)
 	commit_system_profile_frame(config)
 	return ""
 }
