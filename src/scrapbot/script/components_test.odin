@@ -147,6 +147,31 @@ scrapbot.component("scrapbot.transform", {
 }
 
 @(test)
+test_luau_components_can_be_marked_advanced :: proc(t: ^testing.T) {
+	runtime := new(Runtime)
+	defer free(runtime)
+	defer destroy_runtime(runtime)
+	result := run_source(
+		runtime,
+		`
+scrapbot.component("simulation_state", {
+	elapsed = scrapbot.number,
+}, {
+	advanced = true,
+})
+`,
+		"=test",
+		nil,
+	)
+
+	testing.expect(t, result.err == "")
+	testing.expect(t, result.ran)
+	definition, found := component.find_definition(&runtime.registry, "simulation_state")
+	testing.expect(t, found)
+	testing.expect(t, definition.advanced)
+}
+
+@(test)
 test_luau_scripts_can_register_library_components :: proc(t: ^testing.T) {
 	scene, parse_result := project.parse_scene(
 		`[[entities]]

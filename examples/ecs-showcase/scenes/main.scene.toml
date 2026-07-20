@@ -249,7 +249,8 @@ resource = "20000000-0000-4000-8000-000000000002"
 [entities.shadow_receiver]
 
 [entities.components.showcase.emitter]
-state = [0, 0, 0]
+elapsed = 0
+sequence = 0
 
 [entities.components.showcase.fountain]
 spawn_rate = 18

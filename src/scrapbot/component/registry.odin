@@ -78,6 +78,7 @@ Definition :: struct {
 	id: Component_ID,
 	name: string,
 	owner: Owner,
+	advanced: bool,
 	storage_kind: Storage_Kind,
 	lifecycle: Lifecycle,
 	fields: [MAX_COMPONENT_FIELDS]Field_Definition,

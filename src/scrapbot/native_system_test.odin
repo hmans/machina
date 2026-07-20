@@ -81,6 +81,9 @@ test_native_extension_system_steps_world :: proc(t: ^testing.T) {
 	)
 	testing.expect(t, extensions.system_count == 2)
 	testing.expect(t, extensions.systems[0].declaration.access_count == 6)
+	marker_definition, marker_found := component.find_definition(&registry, "nativespin.marker")
+	testing.expect(t, marker_found)
+	testing.expect(t, marker_definition.advanced)
 
 	frame_runtime := new(Frame_Runtime)
 	defer free(frame_runtime)
@@ -247,7 +250,7 @@ import scrapbot "scrapbot:extension"
 
 Spin_Component :: scrapbot.Component{name = "nativespin.spin"}
 Spin_Angular_Velocity :: scrapbot.Vec3_Field{component = Spin_Component, name = "angular_velocity"}
-Marker_Component :: scrapbot.Component{name = "nativespin.marker"}
+Marker_Component :: scrapbot.Component{name = "nativespin.marker", advanced = true}
 Marker_Value :: scrapbot.Vec3_Field{component = Marker_Component, name = "value"}
 Despawn_Component :: scrapbot.Component{name = "nativespin.despawn"}
 Despawn_Value :: scrapbot.Vec3_Field{component = Despawn_Component, name = "value"}

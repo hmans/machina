@@ -970,8 +970,7 @@ reconcile :: proc(
 		!state.previous_primary_down &&
 		!state.editor_previous_primary_down
 	if !state.editor_visible && state.has_focused_input && state.focused_input_editor {
-		if !finish_input_edit(state, world) { cancel_input_edit(state, world) }
-		clear_input_focus(state)
+		blur_input_edit(state, world)
 	}
 	validate_focused_editor_input(state, world)
 	project_pointer := project_pointer_input(
@@ -1141,15 +1140,13 @@ reconcile :: proc(
 	   !pressed_ok &&
 	   state.has_focused_input &&
 	   state.focused_input_editor {
-		if !finish_input_edit(state, world) { cancel_input_edit(state, world) }
-		clear_input_focus(state)
+		blur_input_edit(state, world)
 	}
 	if project_press_started &&
 	   !project_pressed_ok &&
 	   state.has_focused_input &&
 	   !state.focused_input_editor {
-		if !finish_input_edit(state, world) { cancel_input_edit(state, world) }
-		clear_input_focus(state)
+		blur_input_edit(state, world)
 	}
 	editor_save_shortcut :=
 		state.editor_visible &&
@@ -2683,6 +2680,30 @@ clear_input_focus :: proc(state: ^State) {
 	state.input_scrubbing = false
 }
 
+blur_input_edit :: proc(state: ^State, world: ^shared.World) {
+	if state == nil || world == nil || !state.has_focused_input {
+		return
+	}
+	entity_index := int(state.focused_input.index)
+	if entity_index >= 0 && entity_index < len(world.entities) {
+		entity := world.entities[entity_index]
+		if entity.alive &&
+		   entity.id == state.focused_input &&
+		   entity.ui_input_index >= 0 &&
+		   entity.ui_input_index < len(world.ui_inputs) {
+			input := world.ui_inputs[entity.ui_input_index]
+			if input.numeric {
+				if input.text != state.input_original_text {
+					cancel_input_edit(state, world)
+				}
+			} else if !finish_input_edit(state, world) {
+				cancel_input_edit(state, world)
+			}
+		}
+	}
+	clear_input_focus(state)
+}
+
 focus_input :: proc(state: ^State, world: ^shared.World, entity_index: int) {
 	if state == nil || world == nil || entity_index < 0 || entity_index >= len(world.entities) {
 		return
@@ -2719,20 +2740,22 @@ handle_input_press :: proc(
 	if index < 0 || index >= len(world.entities) { return }
 	entity := world.entities[index]
 	if !entity.alive || entity.id != pressed || entity.ui_input_index < 0 {
-		if !finish_input_edit(state, world) { cancel_input_edit(state, world) }
-		clear_input_focus(state)
+		blur_input_edit(state, world)
 		return
 	}
 	if state.has_focused_input {
 		if state.focused_input == pressed {
-			if !finish_input_edit(state, world) {
-				state.input_anchor = 0
-				state.input_cursor = len(world.ui_inputs[entity.ui_input_index].text)
-				return
+			state.input_anchor = 0
+			state.input_cursor = len(world.ui_inputs[entity.ui_input_index].text)
+			input := world.ui_inputs[entity.ui_input_index]
+			if input.numeric && input.draggable && !input.read_only {
+				state.input_scrub_armed = state.input_has_original_number
+				state.input_scrub_start_x = position.x
+				state.input_scrub_start_number = state.input_original_number
 			}
-		} else if !finish_input_edit(state, world) {
-			cancel_input_edit(state, world)
+			return
 		}
+		blur_input_edit(state, world)
 	}
 	focus_input(state, world, index)
 	input := world.ui_inputs[entity.ui_input_index]
@@ -2797,6 +2820,11 @@ ui_numeric_valid :: proc(input: shared.UI_Input_Component, number: f32) -> bool 
 	return true
 }
 
+numeric_input_text_valid :: proc(input: shared.UI_Input_Component) -> bool {
+	number, ok := strconv.parse_f32(strings.trim_space(input.text))
+	return ok && ui_numeric_valid(input, number)
+}
+
 apply_numeric_input :: proc(state: ^State, world: ^shared.World, entity_index: int) -> bool {
 	if entity_index < 0 || entity_index >= len(world.entities) {
 		return false
@@ -2839,7 +2867,11 @@ finish_input_edit :: proc(state: ^State, world: ^shared.World) -> bool {
 			}
 			return false
 		}
+		changed := !state.input_has_original_number || number != state.input_original_number
 		input.number = number
+		if changed && !state.input_scrubbing {
+			_ = ecs.mark_ui_changed(world, entity_index)
+		}
 		state.input_original_number = number
 		state.input_has_original_number = true
 	}
@@ -2969,7 +3001,6 @@ set_numeric_input_text :: proc(
 	trimmed := strings.trim_right(formatted, "0")
 	if strings.has_suffix(trimmed, ".") { trimmed = trimmed[:len(trimmed) - 1] }
 	_ = ecs.set_ui_input_value(world, entity_index, trimmed)
-	input.number = number
 	state.input_anchor = 0
 	state.input_cursor = len(input.text)
 	state.input_blink_elapsed = 0
@@ -3064,10 +3095,10 @@ update_focused_input :: proc(
 			}
 		}
 		if edited {
-			_ = ecs.mark_ui_changed(world, entity_index)
 			if numeric {
-				state.input_valid = apply_numeric_input(state, world, entity_index)
+				state.input_valid = numeric_input_text_valid(input^)
 			} else {
+				_ = ecs.mark_ui_changed(world, entity_index)
 				state.input_valid = true
 			}
 		}
@@ -3082,7 +3113,12 @@ update_focused_input :: proc(
 		return
 	}
 	if keyboard.tab {
-		if finish_input_edit(state, world) { move_input_focus(state, world, keyboard.shift) }
+		if input.numeric {
+			cancel_input_edit(state, world)
+			move_input_focus(state, world, keyboard.shift)
+		} else if finish_input_edit(state, world) {
+			move_input_focus(state, world, keyboard.shift)
+		}
 	}
 }
 

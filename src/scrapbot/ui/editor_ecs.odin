@@ -2452,6 +2452,14 @@ editor_ui_begin_inspector_component :: proc(
 	editor_ui_set_hidden(builder.world, panel, false)
 	editor_ui_set_hidden(builder.world, table, false)
 	panel_value := builder.world.ui_panels[builder.world.entities[panel].ui_panel_index]
+	binding := &builder.world.editor_uis[builder.world.entities[panel].editor_ui_index]
+	definition_id := shared.INVALID_COMPONENT_ID
+	if definition != nil {
+		definition_id = definition.id
+	}
+	if binding.target != builder.target || binding.reflected_component_id != definition_id {
+		panel_value.collapsed = definition != nil && definition.advanced
+	}
 	can_remove :=
 		definition != nil &&
 		editor_authoring_definition_is_supported(definition) &&
@@ -2461,9 +2469,8 @@ editor_ui_begin_inspector_component :: proc(
 			int(builder.target.index),
 		)
 	_ = ecs.set_ui_panel(builder.world, panel, panel_value)
-	binding := &builder.world.editor_uis[builder.world.entities[panel].editor_ui_index]
 	binding.target = builder.target
-	binding.reflected_component_id = shared.INVALID_COMPONENT_ID
+	binding.reflected_component_id = definition_id
 	action := editor_ui_ensure_inspector_panel_action(
 		builder.world,
 		builder.panel_count - 1,
@@ -4516,6 +4523,14 @@ editor_ui_input_binding :: proc(
 }
 
 editor_ui_prepare_input_focus :: proc(state: ^State, world: ^shared.World, entity_index: int) {
+	if state != nil &&
+	   world != nil &&
+	   state.has_focused_input &&
+	   entity_index >= 0 &&
+	   entity_index < len(world.entities) &&
+	   state.focused_input == world.entities[entity_index].id {
+		return
+	}
 	binding, input, found := editor_ui_input_binding(world, entity_index)
 	if !found || !input.numeric {
 		return
@@ -4699,12 +4714,19 @@ editor_ui_handle_history_shortcut :: proc(
 	}
 	if state.has_focused_input {
 		entity_index := int(state.focused_input.index)
-		if !finish_input_edit(state, world) {
-			cancel_input_edit(state, world)
+		entity := world.entities[entity_index]
+		if entity.ui_input_index >= 0 &&
+		   entity.ui_input_index < len(world.ui_inputs) &&
+		   world.ui_inputs[entity.ui_input_index].numeric {
+			blur_input_edit(state, world)
+		} else {
+			if !finish_input_edit(state, world) {
+				cancel_input_edit(state, world)
+			}
+			sync_ui_interaction_states(state, world)
+			editor_ui_consume_input_state(state, world, entity_index)
+			clear_input_focus(state)
 		}
-		sync_ui_interaction_states(state, world)
-		editor_ui_consume_input_state(state, world, entity_index)
-		clear_input_focus(state)
 	}
 	if keyboard.redo {
 		_ = editor_redo(state, world)
@@ -4728,12 +4750,19 @@ editor_ui_handle_save_shortcut :: proc(
 	}
 	if state.has_focused_input {
 		entity_index := int(state.focused_input.index)
-		if !finish_input_edit(state, world) {
-			cancel_input_edit(state, world)
+		entity := world.entities[entity_index]
+		if entity.ui_input_index >= 0 &&
+		   entity.ui_input_index < len(world.ui_inputs) &&
+		   world.ui_inputs[entity.ui_input_index].numeric {
+			blur_input_edit(state, world)
+		} else {
+			if !finish_input_edit(state, world) {
+				cancel_input_edit(state, world)
+			}
+			sync_ui_interaction_states(state, world)
+			editor_ui_consume_input_state(state, world, entity_index)
+			clear_input_focus(state)
 		}
-		sync_ui_interaction_states(state, world)
-		editor_ui_consume_input_state(state, world, entity_index)
-		clear_input_focus(state)
 	}
 	editor_save(state)
 	return true

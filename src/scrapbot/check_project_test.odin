@@ -107,7 +107,7 @@ end)
 		t,
 		strings.contains(
 			types_text,
-			"library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,",
+			"library_component: <T>(name: string, schema: ScrapbotComponentSchema, options: ScrapbotComponentOptions?) -> ScrapbotComponent<T, T>,",
 		),
 	)
 	testing.expect(t, strings.contains(types_text, "export type ScrappyphysicsRigidbody = {"))

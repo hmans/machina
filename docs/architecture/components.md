@@ -4,7 +4,7 @@
 **Source of truth:** `src/scrapbot/component/registry.odin`  
 **Canonical public field reference:** `docs-website/src/content/docs/reference/components.md`
 
-The engine registry gives every component a runtime-local ID, ownership, storage kind, lifecycle, field schema, and cached namespace tokens. This page inventories architecture and availability; keep exhaustive public fields and defaults in the public component reference.
+The engine registry gives every component a runtime-local ID, ownership, storage kind, lifecycle, field schema, cached namespace tokens, and presentation metadata. The current `advanced` hint never changes storage or authorability: it keeps a component inspectable while asking editor consumers to start its panel collapsed. This page inventories architecture and availability; keep exhaustive public fields and defaults in the public component reference.
 
 Lifecycle meanings:
 
@@ -249,11 +249,11 @@ These entries deliberately omit exhaustive field/default documentation. Follow t
 
 ### `scrapbot.ui_input`
 
-- **Contract:** Single-line text/numeric editor with selection, navigation, validation, stepping, and opt-in numerical scrubbing.
+- **Contract:** Single-line text/numeric editor with selection, navigation, validation, staged Enter-to-commit numeric typing, cancel-on-focus-transfer, and opt-in live numerical scrubbing.
 - **Storage/lifecycle:** Dedicated typed UI storage plus retained caret/selection/scrub state; authored component.
 - **Producers:** Public project UI surfaces, editor reflected-field bindings, keyboard/pointer input.
 - **Consumers:** Measurement, focus/navigation order, editing/validation, paint, editor history bindings.
-- **Invalidation:** External value/style changes target layout/paint; editing advances change/submit/cancel revisions without rebuilding unrelated UI.
+- **Invalidation:** External value/style changes target layout/paint; numeric keyboard edits change only retained text/validity until submission, while live scrubbing advances change revisions and release advances submission without rebuilding unrelated UI.
 - **Surfaces:** Shared public UI contract across projects and editor; see the [public component reference](../../docs-website/src/content/docs/reference/components.md#scrapbotui_input).
 - **Source/tests:** `ecs/ui_components.odin`, `ui/ui.odin`, `ui/editor_inspector_binding.odin`; `ui/ui_test.odin`, `ui/ui_retained_test.odin`.
 

@@ -53,6 +53,28 @@ test_registry_revision_changes_with_definition_updates :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_registry_preserves_advanced_component_presentation_metadata :: proc(t: ^testing.T) {
+	registry: Registry
+	init_registry(&registry)
+
+	testing.expect(
+		t,
+		register_project_component(&registry, {name = "simulation_state", advanced = true}) == "",
+	)
+	definition, found := find_definition(&registry, "simulation_state")
+	testing.expect(t, found)
+	testing.expect(t, definition.advanced)
+
+	testing.expect(
+		t,
+		register_project_component(&registry, {name = "simulation_state", advanced = false}) == "",
+	)
+	definition, found = find_definition(&registry, "simulation_state")
+	testing.expect(t, found)
+	testing.expect(t, !definition.advanced)
+}
+
+@(test)
 test_public_ui_registry_fields_exactly_match_component_structs :: proc(t: ^testing.T) {
 	registry: Registry
 	init_registry(&registry)
@@ -302,7 +324,7 @@ test_luau_types_include_registered_components :: proc(t: ^testing.T) {
 		t,
 		strings.contains(
 			text,
-			"library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,",
+			"library_component: <T>(name: string, schema: ScrapbotComponentSchema, options: ScrapbotComponentOptions?) -> ScrapbotComponent<T, T>,",
 		),
 	)
 	testing.expect(t, strings.contains(text, "export type ScrappyphysicsRigidbody = {"))

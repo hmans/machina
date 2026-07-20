@@ -37,17 +37,28 @@ Scrapbot currently compiles project extensions from source and treats this layou
 ```odin
 Field_Type :: enum c.int {
 	Vec3 = 1,
+	Number,
+	Vec2,
+	Vec4,
+	Color,
 }
 
 Field_Definition :: struct {
 	name: cstring,
 	field_type: Field_Type,
+	draggable: c.int,
+	step: f32,
+	has_minimum: c.int,
+	minimum: f32,
+	has_maximum: c.int,
+	maximum: f32,
 }
 
 Component_Definition :: struct {
 	name: cstring,
 	fields: [^]Field_Definition,
 	field_count: c.int,
+	advanced: c.int,
 }
 ```
 
@@ -58,6 +69,7 @@ Rules:
 - field names must be single identifier tokens;
 - supported field types are Number, Vec2, Vec3, Vec4, and semantic RGBA Color;
 - numeric field definitions may publish opt-in drag, step, and optional bound metadata;
+- nonzero `advanced` keeps the component inspectable but asks editor consumers to start its panel collapsed;
 - the maximum native-extension field count is 16.
 
 ## System definitions

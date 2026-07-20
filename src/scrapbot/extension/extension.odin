@@ -22,6 +22,7 @@ Registry :: struct {
 
 Component :: struct {
 	name: cstring,
+	advanced: bool,
 }
 
 Vec3_Field :: struct {
@@ -374,6 +375,7 @@ component_by_name :: proc "contextless" (
 	ctx: ^Context,
 	name: cstring,
 	fields: []Field,
+	advanced: bool = false,
 ) -> cstring {
 	if ctx == nil || ctx.api == nil || ctx.api.register_library_component == nil {
 		return "Scrapbot component registration API is not available"
@@ -382,6 +384,7 @@ component_by_name :: proc "contextless" (
 		name = name,
 		fields = raw_data(fields),
 		field_count = c.int(len(fields)),
+		advanced = 1 if advanced else 0,
 	}
 	return ctx.api.register_library_component(ctx.api, &definition)
 }
@@ -391,7 +394,7 @@ component_by_descriptor :: proc "contextless" (
 	descriptor: Component,
 	fields: []Field,
 ) -> cstring {
-	return component_by_name(ctx, descriptor.name, fields)
+	return component_by_name(ctx, descriptor.name, fields, descriptor.advanced)
 }
 
 component_with_registry :: proc "contextless" (

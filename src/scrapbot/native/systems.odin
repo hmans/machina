@@ -83,6 +83,7 @@ extension_register_library_component :: proc "c" (
 
 	component_definition: component.Definition
 	component_definition.name = string(definition.name)
+	component_definition.advanced = definition.advanced != 0
 	component_definition.field_count = int(definition.field_count)
 	for i in 0 ..< component_definition.field_count {
 		field := definition.fields[i]

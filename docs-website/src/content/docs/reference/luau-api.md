@@ -17,8 +17,8 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the most precise API ref
 
 | API | Meaning |
 | --- | --- |
-| `scrapbot.component(name, schema)` | Register a project-level component. |
-| `scrapbot.library_component(name, schema)` | Register a dotted library component from Luau. |
+| `scrapbot.component(name, schema, options?)` | Register a project-level component. Set `advanced = true` to keep it inspectable but initially collapse its editor panel. |
+| `scrapbot.library_component(name, schema, options?)` | Register a dotted library component from Luau, with the same optional presentation metadata. |
 | `scrapbot.component_handle(name)` | Retrieve an already registered component handle. |
 | `scrapbot.number` | Schema field marker for scalar numeric payload fields. |
 | `scrapbot.vec2`, `scrapbot.vec3`, `scrapbot.vec4` | Schema field markers for two-, three-, and four-channel numeric payloads. |
@@ -26,6 +26,8 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the most precise API ref
 | `scrapbot.field(type, options?)` | Add editor metadata to a field type. Options are `draggable`, positive `step`, `minimum`, and `maximum`. |
 
 Legacy strings (`"number"`, `"vec2"`, `"vec3"`, `"vec4"`, and `"color"`) remain accepted, but marker values generate better project-local declarations. Numeric pointer dragging is opt-in through `scrapbot.field(..., { draggable = true })`; bounds and steps are schema metadata shared by the editor rather than Luau-only behavior.
+
+Component options are tooling hints, not storage or visibility rules. `{ advanced = true }` leaves the component fully queryable, authorable, and visible in the inspector, but starts its inspector panel collapsed. This is appropriate for simulation bookkeeping that can still be useful while debugging.
 
 Built-in handles:
 

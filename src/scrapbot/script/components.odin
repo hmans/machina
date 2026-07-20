@@ -73,6 +73,11 @@ register_luau_component :: proc "c" (
 		name = component_name,
 		owner = owner,
 	}
+	if lua_type(L, 3) == LUA_TTABLE {
+		definition.advanced = luau_optional_boolean_field(L, 3, "advanced", false)
+	} else if lua_type(L, 3) != LUA_TNIL && lua_type(L, 3) != LUA_TNONE {
+		return luau_push_error(L, "component options must be a table")
+	}
 
 	lua_pushnil(L)
 	for lua_next(L, 2) != 0 {

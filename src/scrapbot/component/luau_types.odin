@@ -10,8 +10,8 @@ export type Scrapbot = {
 	log: (message: any) -> (),
 	entity_count: () -> number,
 	renderable_count: () -> number,
-	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,
-	library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,
+	component: <T>(name: string, schema: ScrapbotComponentSchema, options: ScrapbotComponentOptions?) -> ScrapbotComponent<T, T>,
+	library_component: <T>(name: string, schema: ScrapbotComponentSchema, options: ScrapbotComponentOptions?) -> ScrapbotComponent<T, T>,
 	component_handle: <T, R>(name: string) -> ScrapbotComponent<T, R>,
 	field: <T, R>(field: ScrapbotComponentField<T, R>, options: ScrapbotFieldOptions?) -> ScrapbotComponentField<T, R>,
 	number: ScrapbotComponentField<number, number>,
@@ -184,6 +184,10 @@ export type ScrapbotQueryComponentsItem = {
 
 export type ScrapbotComponentSchema = {
 	[string]: ScrapbotComponentFieldType,
+}
+
+export type ScrapbotComponentOptions = {
+	advanced: boolean?,
 }
 
 export type ScrapbotComponentField<T, R> = {

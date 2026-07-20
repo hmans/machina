@@ -1767,14 +1767,31 @@ test_numeric_input_exposes_reusable_validation_submit_cancel_and_scrub_state :: 
 	testing.expect(t, reconcile(state, &world, 200, 80, {}, 0, 0, 1.0 / 60.0, {up = true}) == "")
 	input := &world.ui_inputs[world.entities[0].ui_input_index]
 	interaction := &world.ui_states[world.entities[0].ui_state_index]
-	testing.expect(t, input.number == 1.5 && input.text == "1.5")
-	testing.expect(t, interaction.changed && interaction.change_revision == 1)
+	testing.expect(t, input.number == 1 && input.text == "1.5")
+	testing.expect(t, !interaction.changed && interaction.change_revision == 0)
 	testing.expect(
 		t,
 		reconcile(state, &world, 200, 80, {}, 0, 0, 1.0 / 60.0, {enter = true}) == "",
 	)
+	testing.expect(t, input.number == 1.5 && input.text == "1.5")
+	testing.expect(t, interaction.changed && interaction.change_revision == 1)
 	testing.expect(t, interaction.submitted && interaction.submit_revision == 1)
 	testing.expect(t, interaction.valid)
+
+	// Keyboard edits remain staged until Enter and Escape restores the committed value.
+	testing.expect(t, reconcile(state, &world, 200, 80, press) == "")
+	testing.expect(
+		t,
+		reconcile(state, &world, 200, 80, {}, 0, 0, 1.0 / 60.0, {text = "1.75"}) == "",
+	)
+	testing.expect(t, input.text == "1.75" && input.number == 1.5)
+	testing.expect(t, interaction.change_revision == 1)
+	testing.expect(
+		t,
+		reconcile(state, &world, 200, 80, {}, 0, 0, 1.0 / 60.0, {escape = true}) == "",
+	)
+	testing.expect(t, input.text == "1.5" && input.number == 1.5)
+	testing.expect(t, interaction.cancelled && interaction.cancel_revision == 1)
 
 	testing.expect(t, reconcile(state, &world, 200, 80, press) == "")
 	testing.expect(
@@ -1787,7 +1804,7 @@ test_numeric_input_exposes_reusable_validation_submit_cancel_and_scrub_state :: 
 		reconcile(state, &world, 200, 80, {}, 0, 0, 1.0 / 60.0, {escape = true}) == "",
 	)
 	testing.expect(t, input.text == "1.5" && input.number == 1.5)
-	testing.expect(t, interaction.cancelled && interaction.cancel_revision == 1)
+	testing.expect(t, interaction.cancelled && interaction.cancel_revision == 2)
 	testing.expect(t, interaction.valid)
 
 	// Draggable numeric inputs scrub from their complete surface.
@@ -4441,6 +4458,64 @@ test_editor_scene_camera_and_editor_ui_are_hidden_from_the_entity_browser :: pro
 }
 
 @(test)
+test_advanced_inspector_components_start_collapsed_and_remember_expansion :: proc(t: ^testing.T) {
+	scene := shared.Scene{}
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			name = "Advanced Camera",
+			has_camera = true,
+			camera = {fov = 60, near = 0.1, far = 500},
+		},
+	)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	registry: component.Registry
+	component.init_registry(&registry)
+	camera_index, camera_found := component.find_definition_index(&registry, "scrapbot.camera")
+	testing.expect(t, camera_found)
+	if !camera_found {
+		return
+	}
+	registry.definitions[camera_index].advanced = true
+
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	state.component_registry = &registry
+	state.editor_visible = true
+	testing.expect(t, editor_select_entity(state, &world, world.entities[0].id, 300))
+	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 300) == "")
+
+	panel_entity := -1
+	for binding in world.editor_uis {
+		if binding.role != .Inspector_Panel ||
+		   binding.reflected_component_id != registry.definitions[camera_index].id {
+			continue
+		}
+		entity := world.entities[binding.entity_index]
+		if entity.alive &&
+		   !world.ui_layouts[entity.ui_layout_index].hidden &&
+		   world.ui_panels[entity.ui_panel_index].title == "CAMERA" {
+			panel_entity = binding.entity_index
+			break
+		}
+	}
+	testing.expect(t, panel_entity >= 0)
+	if panel_entity < 0 {
+		return
+	}
+	panel_index := world.entities[panel_entity].ui_panel_index
+	testing.expect(t, world.ui_panels[panel_index].collapsed)
+	world.ui_panels[panel_index].collapsed = false
+	state.editor_snapshot_valid = false
+	testing.expect(t, reconcile(state, &world, 1280, 720, {}, 1280, 300) == "")
+	testing.expect(t, !world.ui_panels[panel_index].collapsed)
+}
+
+@(test)
 test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t: ^testing.T) {
 	scene := shared.Scene{}; defer delete(scene.entities)
 	append(
@@ -4697,7 +4772,7 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			t,
 			reconcile(state, &world, 1280, 720, {}, 1280, 300, 1.0 / 60.0, {text = "9"}) == "",
 		)
-		testing.expect(t, world.transforms[0].position == shared.Vec3{9, 2.5, -3})
+		testing.expect(t, world.transforms[0].position == shared.Vec3{1, 2.5, -3})
 		testing.expect(
 			t,
 			reconcile(state, &world, 1280, 720, {}, 1280, 300, 1.0 / 60.0, {escape = true}) == "",
@@ -4752,9 +4827,9 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			) ==
 			"",
 		)
-		testing.expect(t, world.transforms[0].position == shared.Vec3{4, 5, 6})
+		testing.expect(t, world.transforms[0].position == shared.Vec3{1, 2.5, 6})
 		testing.expect(t, !state.has_focused_input)
-		testing.expect(t, state.editor_history_count == 3)
+		testing.expect(t, state.editor_history_count == 1)
 
 		// Axis prefixes reserve text width while horizontal reveal keeps the caret inside.
 		focus_input(state, &world, position_inputs[0])
@@ -4809,7 +4884,7 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			reconcile(state, &world, 1280, 720, {}, 1280, 300, 1.0 / 60.0, {text = "nope"}) == "",
 		)
 		testing.expect(t, !state.input_valid)
-		testing.expect(t, world.transforms[0].position == shared.Vec3{4, 5, 6})
+		testing.expect(t, world.transforms[0].position == shared.Vec3{1, 2.5, 6})
 		testing.expect(
 			t,
 			reconcile(state, &world, 1280, 720, {}, 1280, 300, 1.0 / 60.0, {enter = true}) == "",
@@ -4851,7 +4926,7 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			) ==
 			"",
 		)
-		testing.expect(t, world.transforms[0].position.x == 5)
+		testing.expect(t, world.transforms[0].position.x == 1)
 		testing.expect(
 			t,
 			reconcile(
@@ -4867,7 +4942,7 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			) ==
 			"",
 		)
-		testing.expect(t, math.abs(world.transforms[0].position.x - 4.99) < 0.001)
+		testing.expect(t, math.abs(world.transforms[0].position.x - 1.99) < 0.001)
 
 		// Dragging the X axis label scrubs, commits on release, and participates in undo/redo.
 		x_node = find_node_by_entity_index(state, position_inputs[0])
@@ -4912,7 +4987,7 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			testing.expect(t, state.input_scrubbing)
 			testing.expect(t, state.editor_snapshot_refresh_count == scrub_refresh_count)
 			scrubbed := world.transforms[0].position.x
-			testing.expect(t, math.abs(scrubbed - 5.99) < 0.001)
+			testing.expect(t, math.abs(scrubbed - 2.99) < 0.001)
 			testing.expect(
 				t,
 				reconcile(
@@ -4929,14 +5004,14 @@ test_component_inspector_formats_live_fields_and_scrolls_independently :: proc(t
 			testing.expect(t, state.editor_history_count > 0)
 			if state.editor_history_count > 0 {
 				command := state.editor_history[state.editor_history_count - 1]
-				testing.expect(t, math.abs(command.changes[0].before_number - 4.99) < 0.001)
+				testing.expect(t, math.abs(command.changes[0].before_number - 1.99) < 0.001)
 				testing.expect(t, math.abs(command.changes[0].after_number - scrubbed) < 0.001)
 			}
 			testing.expect(
 				t,
 				reconcile(state, &world, 1280, 720, {}, 1280, 300, 0, {undo = true}) == "",
 			)
-			testing.expect(t, math.abs(world.transforms[0].position.x - 4.99) < 0.001)
+			testing.expect(t, math.abs(world.transforms[0].position.x - 1.99) < 0.001)
 			testing.expect(
 				t,
 				reconcile(state, &world, 1280, 720, {}, 1280, 300, 0, {redo = true}) == "",

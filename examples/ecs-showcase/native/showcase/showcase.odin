@@ -29,10 +29,15 @@ Velocity_Value :: scrapbot.Vec3_Field {
 
 Emitter_Component :: scrapbot.Component {
 	name = "showcase.emitter",
+	advanced = true,
 }
-Emitter_State :: scrapbot.Vec3_Field {
+Emitter_Elapsed :: scrapbot.Number_Field {
 	component = Emitter_Component,
-	name = "state",
+	name = "elapsed",
+}
+Emitter_Sequence :: scrapbot.Number_Field {
+	component = Emitter_Component,
+	name = "sequence",
 }
 
 Fountain_Component :: scrapbot.Component {
@@ -82,7 +87,10 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	velocity_fields := [?]scrapbot.Field{scrapbot.vec3(Velocity_Value)}
 	scrapbot.component(&reg, Velocity_Component, velocity_fields[:])
 
-	emitter_fields := [?]scrapbot.Field{scrapbot.vec3(Emitter_State)}
+	emitter_fields := [?]scrapbot.Field {
+		scrapbot.number(Emitter_Elapsed),
+		scrapbot.number(Emitter_Sequence),
+	}
 	scrapbot.component(&reg, Emitter_Component, emitter_fields[:])
 
 	fountain_fields := [?]scrapbot.Field {
@@ -308,8 +316,9 @@ emit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 			return "failed to read emitter transform"
 		}
 
-		state, state_ok := scrapbot.get(ctx, entity, Emitter_State)
-		if !state_ok {
+		elapsed, elapsed_ok := scrapbot.get(ctx, entity, Emitter_Elapsed)
+		sequence, sequence_ok := scrapbot.get(ctx, entity, Emitter_Sequence)
+		if !elapsed_ok || !sequence_ok {
 			return "failed to read emitter state"
 		}
 		spawn_rate_value, spawn_rate_ok := scrapbot.get(ctx, entity, Fountain_Spawn_Rate)
@@ -319,11 +328,11 @@ emit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 			return "failed to read fountain emission settings"
 		}
 
-		state.x += ctx.time.delta_time
+		elapsed += ctx.time.delta_time
 		spawn_rate := max(spawn_rate_value, 0)
 		if spawn_rate <= 0 {
-			state.x = 0
-			if !scrapbot.set(ctx, entity, Emitter_State, state) {
+			elapsed = 0
+			if !scrapbot.set(ctx, entity, Emitter_Elapsed, elapsed) {
 				return "failed to write emitter state"
 			}
 			continue
@@ -332,16 +341,18 @@ emit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 		burst_limit := clamp(i32(burst_limit_value), i32(1), i32(64))
 		launch_speed := max(launch_speed_value, 0)
 		spawn_count := 0
-		for state.x >= spawn_interval && spawn_count < int(burst_limit) {
-			state.x -= spawn_interval
-			if err := spawn_fountain_cube(ctx, transform, i32(state.z), launch_speed); err != nil {
+		for elapsed >= spawn_interval && spawn_count < int(burst_limit) {
+			elapsed -= spawn_interval
+			if err := spawn_fountain_cube(ctx, transform, i32(sequence), launch_speed);
+			   err != nil {
 				return err
 			}
-			state.z += 1
+			sequence += 1
 			spawn_count += 1
 		}
 
-		if !scrapbot.set(ctx, entity, Emitter_State, state) {
+		if !scrapbot.set(ctx, entity, Emitter_Elapsed, elapsed) ||
+		   !scrapbot.set(ctx, entity, Emitter_Sequence, sequence) {
 			return "failed to write emitter state"
 		}
 	}

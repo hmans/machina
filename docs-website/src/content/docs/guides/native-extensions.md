@@ -24,7 +24,10 @@ package scrappyphysics
 
 import scrapbot "scrapbot:extension"
 
-Rigidbody_Component :: scrapbot.Component{name = "scrappyphysics.rigidbody"}
+Rigidbody_Component :: scrapbot.Component {
+	name = "scrappyphysics.rigidbody",
+	advanced = true,
+}
 Rigidbody_Velocity :: scrapbot.Vec3_Field{component = Rigidbody_Component, name = "velocity"}
 Rigidbody_Drag :: scrapbot.Number_Field{component = Rigidbody_Component, name = "drag"}
 
@@ -47,6 +50,8 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 ```
 
 Extensions must export `scrapbot_extension_register`. The helper validates the host table and calls your project-local contextless `register` procedure. Component and field descriptors keep the rest of the extension from repeating string names. Scrapbot currently rebuilds extensions from source and fingerprints the host extension API in each artifact name, keeping host and extension layouts in lockstep; explicit ABI version negotiation is intentionally deferred.
+
+`advanced = true` is optional component presentation metadata. Advanced components remain public, queryable, authorable, and inspectable; the editor simply starts their component panels collapsed so internal simulation state does not dominate the inspector.
 
 ## Register a system
 

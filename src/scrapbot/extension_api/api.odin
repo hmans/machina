@@ -37,6 +37,7 @@ Component_Definition :: struct {
 	name: cstring,
 	fields: [^]Field_Definition,
 	field_count: c.int,
+	advanced: c.int,
 }
 
 System_Access :: struct {
