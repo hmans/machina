@@ -590,6 +590,30 @@ test_wgpu_instance_upload_ranges_coalesce_nearby_dirty_slots :: proc(t: ^testing
 }
 
 @(test)
+test_wgpu_existing_batch_membership_grows_without_rebuilding_draw_database :: proc(t: ^testing.T) {
+	cache: WGPU_Draw_Batch_Cache
+	defer delete(cache.batches)
+	append(
+		&cache.batches,
+		WGPU_Draw_Batch{instance_count = 1, visible_capacity = WGPU_VISIBLE_ALIGNMENT},
+	)
+	cache.batch_count = 1
+	cache.instance_count = 1
+	indices: [shared.MAX_GEOMETRY_LODS]u32
+	capacity_grew := wgpu_adjust_batch_membership(&cache, indices, 0, 1)
+	testing.expect(t, !capacity_grew)
+	testing.expect_value(t, cache.batches[0].instance_count, u32(2))
+	testing.expect_value(t, cache.instance_count, 2)
+	_ = wgpu_adjust_batch_membership(&cache, indices, 0, -1)
+	testing.expect_value(t, cache.batches[0].instance_count, u32(1))
+	testing.expect_value(t, cache.instance_count, 1)
+
+	cache.batches[0].instance_count = WGPU_VISIBLE_ALIGNMENT
+	capacity_grew = wgpu_adjust_batch_membership(&cache, indices, 0, 1)
+	testing.expect(t, capacity_grew)
+}
+
+@(test)
 test_wgpu_gpu_uniforms_upload_only_after_value_changes :: proc(t: ^testing.T) {
 	renderer: WGPU_Renderer
 	render_uniform: WGPU_GPU_Render_Uniform

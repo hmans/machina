@@ -4,6 +4,7 @@ import project "../project"
 import resources "../resources"
 import shared "../shared"
 import "core:fmt"
+import "core:slice"
 import "core:testing"
 
 MULTI_CUBE_SCENE :: `[[entities]]
@@ -99,6 +100,142 @@ test_render_reconciliation_tracks_geometry_and_material_eligibility :: proc(t: ^
 	remove_material(&world, 0)
 	reconcile_render_instances(&world, &registry)
 	testing.expect(t, world.entities[0].render_instance_index == -1)
+}
+
+@(test)
+test_resource_render_list_updates_only_dirty_entities_and_removes_slots_incrementally :: proc(
+	t: ^testing.T,
+) {
+	scene, result := project.parse_scene(MULTI_CUBE_SCENE)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, result.err == .None)
+	world := build_world(&scene)
+	defer destroy_world(&world)
+	registry: resources.Registry
+	defer resources.destroy_registry(&registry)
+	cube_desc, _ := resources.cube()
+	defer delete(cube_desc.vertices)
+	defer delete(cube_desc.indices)
+	_, geometry_err := resources.register_geometry(&registry, "cube", cube_desc)
+	_, material_err := resources.register_material(
+		&registry,
+		"default",
+		{base_color = {1, 1, 1, 1}},
+	)
+	testing.expect(t, geometry_err == "" && material_err == "")
+
+	list: Render_List
+	defer destroy_render_list(&list)
+	populate_resource_render_list(&world, &registry, &list)
+	testing.expect_value(t, len(list.instances), 2)
+	testing.expect(t, list.full_instance_sync)
+	initial_visits := list.instance_visit_count
+	populate_resource_render_list(&world, &registry, &list)
+	testing.expect(t, !list.full_instance_sync)
+	testing.expect_value(t, list.instance_visit_count, initial_visits)
+	testing.expect_value(t, len(list.dirty_instance_slots), 0)
+
+	left_index := 1
+	left_transform := world.entities[left_index].transform_index
+	world.transforms[left_transform].position.x = -9
+	mark_render_entity_dirty(&world, left_index)
+	populate_resource_render_list(&world, &registry, &list)
+	testing.expect_value(t, list.instance_visit_count, initial_visits + 1)
+	list_index := list.instance_index_by_entity[left_index]
+	testing.expect(t, list_index >= 0 && list_index < len(list.instances))
+	testing.expect_value(t, list.instances[list_index].transform.position.x, f32(-9))
+	testing.expect_value(t, len(list.dirty_instance_slots), 1)
+
+	topology_revision := world.render_topology_revision
+	right_index := 2
+	right_slot := world.entities[right_index].render_instance_index
+	despawn_entity(&world, right_index, world.entities[right_index].id.generation)
+	populate_resource_render_list(&world, &registry, &list)
+	testing.expect_value(t, world.render_topology_revision, topology_revision)
+	testing.expect_value(t, len(list.instances), 1)
+	testing.expect_value(t, list.instance_index_by_slot[right_slot], INVALID_COMPONENT_INDEX)
+	testing.expect(t, slice.contains(list.dirty_instance_slots[:], right_slot))
+}
+
+@(test)
+test_resource_render_list_updates_renderable_descendants_of_dirty_transforms :: proc(
+	t: ^testing.T,
+) {
+	parent_id, _ := shared.entity_uuid_parse("a2100000-0000-4000-8000-000000000001")
+	child_id, _ := shared.entity_uuid_parse("a2100000-0000-4000-8000-000000000002")
+	unrelated_id, _ := shared.entity_uuid_parse("a2100000-0000-4000-8000-000000000003")
+	second_parent_id, _ := shared.entity_uuid_parse("a2100000-0000-4000-8000-000000000004")
+	scene: shared.Scene
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = parent_id,
+			name = "Parent",
+			has_transform = true,
+			transform = {position = {2, 0, 0}, scale = {1, 1, 1}},
+		},
+		shared.Scene_Entity {
+			id = child_id,
+			name = "Child",
+			has_transform = true,
+			transform = {parent = parent_id, position = {1, 0, 0}, scale = {1, 1, 1}},
+			has_mesh = true,
+			mesh = {primitive = "cube"},
+		},
+		shared.Scene_Entity {
+			id = unrelated_id,
+			name = "Unrelated",
+			has_transform = true,
+			transform = {position = {8, 0, 0}, scale = {1, 1, 1}},
+			has_mesh = true,
+			mesh = {primitive = "cube"},
+		},
+		shared.Scene_Entity {
+			id = second_parent_id,
+			name = "Second Parent",
+			has_transform = true,
+			transform = {position = {10, 0, 0}, scale = {1, 1, 1}},
+		},
+	)
+	world := build_world(&scene)
+	defer destroy_world(&world)
+	registry: resources.Registry
+	defer resources.destroy_registry(&registry)
+	cube_desc, _ := resources.cube()
+	defer delete(cube_desc.vertices)
+	defer delete(cube_desc.indices)
+	_, geometry_err := resources.register_geometry(&registry, "cube", cube_desc)
+	_, material_err := resources.register_material(
+		&registry,
+		"default",
+		{base_color = {1, 1, 1, 1}},
+	)
+	testing.expect(t, geometry_err == "" && material_err == "")
+
+	list: Render_List
+	defer destroy_render_list(&list)
+	populate_resource_render_list(&world, &registry, &list)
+	testing.expect_value(t, len(list.instances), 2)
+	initial_visits := list.instance_visit_count
+	world.transforms[world.entities[0].transform_index].position.x = 5
+	mark_render_entity_dirty(&world, 0)
+	populate_resource_render_list(&world, &registry, &list)
+	testing.expect_value(t, list.instance_visit_count, initial_visits + 2)
+	child_list_index := list.instance_index_by_entity[1]
+	testing.expect(t, child_list_index >= 0 && child_list_index < len(list.instances))
+	testing.expect_value(t, list.instances[child_list_index].transform.position.x, f32(6))
+	testing.expect_value(t, len(list.dirty_instance_slots), 1)
+
+	testing.expect(t, set_transform_parent(&world, 1, second_parent_id, true))
+	populate_resource_render_list(&world, &registry, &list)
+	visits_after_reparent := list.instance_visit_count
+	world.transforms[world.entities[3].transform_index].position.x = 12
+	mark_render_entity_dirty(&world, 3)
+	populate_resource_render_list(&world, &registry, &list)
+	testing.expect_value(t, list.instance_visit_count, visits_after_reparent + 2)
+	child_list_index = list.instance_index_by_entity[1]
+	testing.expect_value(t, list.instances[child_list_index].transform.position.x, f32(8))
 }
 
 @(test)

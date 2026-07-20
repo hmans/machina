@@ -710,12 +710,10 @@ wgpu_sync_gpu_topology :: proc(
 ) {
 	topology_changed :=
 		!renderer.gpu_topology_valid ||
+		!renderer.draw_batch_cache.valid ||
 		renderer.gpu_world_uuid != render_list.world_uuid ||
 		renderer.gpu_topology_revision != render_list.topology_revision ||
 		renderer.draw_batch_cache.geometry_topology_revision != registry.geometry_topology_revision
-	if topology_changed {
-		wgpu_release_batch_bind_groups(&renderer.draw_batch_cache)
-	}
 	cache := wgpu_ensure_draw_batch_cache(renderer, render_list, registry)
 	if cache == nil {
 		return nil, "failed to build GPU draw batches"
@@ -723,6 +721,21 @@ wgpu_sync_gpu_topology :: proc(
 	if !topology_changed {
 		return cache, ""
 	}
+	if err := wgpu_refresh_gpu_batch_layout(renderer, cache, registry); err != "" {
+		return nil, err
+	}
+	renderer.gpu_topology_revision = render_list.topology_revision
+	renderer.gpu_world_uuid = render_list.world_uuid
+	renderer.gpu_topology_valid = true
+	return cache, ""
+}
+
+wgpu_refresh_gpu_batch_layout :: proc(
+	renderer: ^WGPU_Renderer,
+	cache: ^WGPU_Draw_Batch_Cache,
+	registry: ^resources.Registry,
+) -> string {
+	wgpu_release_batch_bind_groups(cache)
 	visible_offset: u32
 	for batch_index in 0 ..< cache.batch_count {
 		batch := &cache.batches[batch_index]
@@ -735,7 +748,7 @@ wgpu_sync_gpu_topology :: proc(
 		cache.batch_count,
 		int(visible_offset),
 	); buffer_err != "" {
-		return nil, buffer_err
+		return buffer_err
 	}
 	batch_info := make([]WGPU_GPU_Batch_Info, cache.batch_count)
 	defer delete(batch_info)
@@ -743,7 +756,7 @@ wgpu_sync_gpu_topology :: proc(
 		batch := &cache.batches[batch_index]
 		geometry, geometry_err := wgpu_geometry_cache(renderer, registry, batch.geometry)
 		if geometry_err != "" {
-			return nil, geometry_err
+			return geometry_err
 		}
 		batch_info[batch_index] = {
 			visible_offset = batch.visible_offset,
@@ -765,7 +778,7 @@ wgpu_sync_gpu_topology :: proc(
 			true,
 		)
 		if batch.world_bind_group == nil || batch.shadow_bind_group == nil {
-			return nil, "failed to create GPU-driven batch bind groups"
+			return "failed to create GPU-driven batch bind groups"
 		}
 	}
 	renderer.gpu_visible_capacity = int(visible_offset)
@@ -776,10 +789,7 @@ wgpu_sync_gpu_topology :: proc(
 		raw_data(batch_info),
 		uint(len(batch_info) * size_of(WGPU_GPU_Batch_Info)),
 	)
-	renderer.gpu_topology_revision = render_list.topology_revision
-	renderer.gpu_world_uuid = render_list.world_uuid
-	renderer.gpu_topology_valid = true
-	return cache, ""
+	return ""
 }
 
 wgpu_update_indirect_template_cache :: proc(
@@ -912,6 +922,94 @@ wgpu_find_draw_batch :: proc(
 		}
 	}
 	return -1
+}
+
+wgpu_render_instance_by_slot :: proc(
+	render_list: ^Render_List,
+	slot: int,
+) -> (
+	Render_Instance,
+	bool,
+) {
+	if render_list == nil || slot < 0 || slot >= len(render_list.instance_index_by_slot) {
+		return {}, false
+	}
+	instance_index := render_list.instance_index_by_slot[slot]
+	if instance_index < 0 || instance_index >= len(render_list.instances) {
+		return {}, false
+	}
+	instance := render_list.instances[instance_index]
+	return instance, instance.slot == slot
+}
+
+wgpu_batch_indices_for_instance :: proc(
+	cache: ^WGPU_Draw_Batch_Cache,
+	instance: Render_Instance,
+	registry: ^resources.Registry,
+) -> (
+	indices: [shared.MAX_GEOMETRY_LODS]u32,
+	ok: bool,
+) {
+	geometry, geometry_ok := resources.get_geometry(registry, instance.geometry.handle)
+	if !geometry_ok {
+		return {}, false
+	}
+	base_batch := wgpu_find_draw_batch(cache, instance.geometry.handle, instance.material.handle)
+	if base_batch < 0 {
+		return {}, false
+	}
+	indices[0] = u32(base_batch)
+	for handle, lod_index in geometry.lod_handles[:geometry.lod_count] {
+		lod_batch := wgpu_find_draw_batch(cache, handle, instance.material.handle)
+		if lod_batch < 0 {
+			return {}, false
+		}
+		indices[lod_index + 1] = u32(lod_batch)
+	}
+	return indices, true
+}
+
+wgpu_adjust_batch_membership :: proc(
+	cache: ^WGPU_Draw_Batch_Cache,
+	indices: [shared.MAX_GEOMETRY_LODS]u32,
+	lod_count: u32,
+	delta: int,
+) -> (
+	capacity_grew: bool,
+) {
+	count := min(int(lod_count) + 1, shared.MAX_GEOMETRY_LODS)
+	for ordinal in 0 ..< count {
+		index := indices[ordinal]
+		duplicate := false
+		for previous_ordinal in 0 ..< ordinal {
+			previous := indices[previous_ordinal]
+			if previous == index {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate || int(index) >= cache.batch_count {
+			continue
+		}
+		batch := &cache.batches[index]
+		if delta > 0 {
+			batch.instance_count += u32(delta)
+			cache.instance_count += delta
+			capacity_grew = capacity_grew || batch.instance_count > batch.visible_capacity
+		} else if batch.instance_count > 0 {
+			batch.instance_count -= u32(-delta)
+			cache.instance_count = max(cache.instance_count + delta, 0)
+		}
+	}
+	return
+}
+
+wgpu_instance_membership_matches :: proc(
+	previous: WGPU_Instance_Source_State,
+	indices: [shared.MAX_GEOMETRY_LODS]u32,
+	lod_count: u32,
+) -> bool {
+	return previous.lod_count == lod_count && previous.batch_indices == indices
 }
 
 wgpu_rebuild_instance_batch_cache :: proc(
@@ -1093,16 +1191,30 @@ wgpu_prepare_gpu_draw_batches :: proc(
 	int,
 	string,
 ) {
-	max_slot := -1
-	for instance in render_list.instances {
-		max_slot = max(max_slot, instance.slot)
-	}
-	if max_slot >= WGPU_MAX_GPU_INSTANCES {
+	slot_count := render_list.instance_slot_count
+	if slot_count > WGPU_MAX_GPU_INSTANCES {
 		return nil, 0, "GPU-driven renderer exceeded its instance-slot capacity"
 	}
-	slot_count := max_slot + 1
+	if renderer.gpu_topology_valid &&
+	   renderer.gpu_world_uuid == render_list.world_uuid &&
+	   renderer.draw_batch_cache.geometry_topology_revision ==
+		   registry.geometry_topology_revision {
+		for slot in render_list.dirty_instance_slots {
+			if instance, active := wgpu_render_instance_by_slot(render_list, slot); active {
+				if _, found := wgpu_batch_indices_for_instance(
+					&renderer.draw_batch_cache,
+					instance,
+					registry,
+				); !found {
+					renderer.draw_batch_cache.valid = false
+					break
+				}
+			}
+		}
+	}
 	topology_changed :=
 		!renderer.gpu_topology_valid ||
+		!renderer.draw_batch_cache.valid ||
 		renderer.gpu_world_uuid != render_list.world_uuid ||
 		renderer.gpu_topology_revision != render_list.topology_revision ||
 		renderer.draw_batch_cache.geometry_topology_revision != registry.geometry_topology_revision
@@ -1195,9 +1307,12 @@ wgpu_prepare_gpu_draw_batches :: proc(
 		resize(&renderer.gpu_active_slots, slot_count)
 	}
 	clear(&renderer.gpu_dirty_indices)
-	reset_instances := renderer.gpu_slot_count != slot_count || topology_changed
+	reset_instances := render_list.full_instance_sync || topology_changed
 	if reset_instances {
-		for slot in renderer.gpu_live_slots {
+		for slot in 0 ..< len(renderer.gpu_active_slots) {
+			if !renderer.gpu_active_slots[slot] {
+				continue
+			}
 			renderer.gpu_instance_records[slot] = {}
 			renderer.gpu_instance_sources[slot] = {}
 			renderer.gpu_active_slots[slot] = false
@@ -1205,7 +1320,12 @@ wgpu_prepare_gpu_draw_batches :: proc(
 		}
 		clear(&renderer.gpu_live_slots)
 	}
-	for instance in render_list.instances {
+	capacity_grew := false
+	instances := render_list.instances[:]
+	if !reset_instances {
+		instances = nil
+	}
+	for instance in instances {
 		if instance.slot < 0 || instance.slot >= slot_count {
 			continue
 		}
@@ -1242,6 +1362,99 @@ wgpu_prepare_gpu_draw_batches :: proc(
 		}
 		if reset_instances {
 			append(&renderer.gpu_live_slots, slot)
+		}
+	}
+	if !reset_instances {
+		for slot in render_list.dirty_instance_slots {
+			if slot < 0 || slot >= slot_count {
+				continue
+			}
+			instance, active := wgpu_render_instance_by_slot(render_list, slot)
+			previous_active := renderer.gpu_active_slots[slot]
+			previous_source := renderer.gpu_instance_sources[slot]
+			if !active {
+				if previous_active {
+					_ = wgpu_adjust_batch_membership(
+						cache,
+						previous_source.batch_indices,
+						previous_source.lod_count,
+						-1,
+					)
+					renderer.gpu_instance_records[slot] = {}
+					renderer.gpu_instance_sources[slot] = {}
+					renderer.gpu_active_slots[slot] = false
+					append(&renderer.gpu_dirty_indices, slot)
+				}
+				continue
+			}
+			geometry, geometry_ok := resources.get_geometry(registry, instance.geometry.handle)
+			material, material_ok := resources.get_material(registry, instance.material.handle)
+			if !geometry_ok || !material_ok {
+				continue
+			}
+			batch_indices, batches_ok := wgpu_batch_indices_for_instance(cache, instance, registry)
+			if !batches_ok {
+				return nil, 0, "GPU instance is missing its draw batch"
+			}
+			source := WGPU_Instance_Source_State {
+				transform = instance.transform,
+				geometry = instance.geometry.handle,
+				material = instance.material.handle,
+				geometry_version = geometry.version,
+				material_version = material.version,
+				shadow_caster = instance.shadow_caster,
+				shadow_receiver = instance.shadow_receiver,
+				batch_indices = batch_indices,
+				lod_screen_radii = {
+					geometry.lod_screen_radii[0],
+					geometry.lod_screen_radii[1],
+					geometry.lod_screen_radii[2],
+					0,
+				},
+				lod_count = u32(geometry.lod_count),
+			}
+			membership_changed :=
+				!previous_active ||
+				!wgpu_instance_membership_matches(
+						previous_source,
+						batch_indices,
+						u32(geometry.lod_count),
+					)
+			if membership_changed && previous_active {
+				_ = wgpu_adjust_batch_membership(
+					cache,
+					previous_source.batch_indices,
+					previous_source.lod_count,
+					-1,
+				)
+			}
+			if membership_changed {
+				capacity_grew =
+					wgpu_adjust_batch_membership(
+						cache,
+						batch_indices,
+						u32(geometry.lod_count),
+						1,
+					) ||
+					capacity_grew
+			}
+			if !previous_active || previous_source != source {
+				renderer.gpu_instance_records[slot] = wgpu_build_gpu_instance(
+					instance,
+					geometry,
+					material,
+					batch_indices,
+				)
+				renderer.gpu_instance_sources[slot] = source
+				renderer.gpu_active_slots[slot] = true
+				append(&renderer.gpu_dirty_indices, slot)
+			}
+		}
+	}
+	if capacity_grew {
+		if layout_err := wgpu_refresh_gpu_batch_layout(renderer, cache, registry);
+		   layout_err != "" {
+			return nil, 0, layout_err
 		}
 	}
 	instance_data_changed := len(renderer.gpu_dirty_indices) > 0

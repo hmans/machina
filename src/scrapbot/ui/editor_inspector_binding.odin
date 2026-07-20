@@ -248,6 +248,9 @@ write_inspector_numeric :: proc(
 				break
 			}
 	}
+	if written {
+		ecs.mark_render_entity_dirty(world, target_index)
+	}
 	if written && state != nil {
 		editor_mark_scene_dirty(state, target)
 	}

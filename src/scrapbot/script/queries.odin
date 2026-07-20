@@ -5,6 +5,7 @@ import component "../component"
 import ecs "../ecs"
 import schedule "../schedule"
 import shared "../shared"
+import base_runtime "base:runtime"
 import c "core:c"
 
 scrapbot_query :: proc "c" (L: Lua_State) -> c.int {
@@ -262,6 +263,7 @@ scrapbot_get_rotation :: proc "c" (L: Lua_State) -> c.int {
 }
 
 scrapbot_set_rotation :: proc "c" (L: Lua_State) -> c.int {
+	context = base_runtime.default_context()
 	runtime := cast(^Runtime)lua_getthreaddata(L)
 	if runtime == nil || runtime.world == nil {
 		return 0
@@ -283,6 +285,7 @@ scrapbot_set_rotation :: proc "c" (L: Lua_State) -> c.int {
 	transform := runtime.world.transforms[transform_index]
 	transform.rotation = rotation
 	runtime.world.transforms[transform_index] = transform
+	ecs.mark_render_entity_dirty(runtime.world, int(entity.index))
 	return 0
 }
 

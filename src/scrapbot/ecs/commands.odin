@@ -788,6 +788,7 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 	if !entity_is_current(world, entity_index, generation) {
 		return
 	}
+	mark_render_entity_dirty(world, entity_index)
 	detach_transform_children(world, entity_index)
 
 	entity := &world.entities[entity_index]
@@ -876,7 +877,6 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 	entity.editor_ui_index = INVALID_COMPONENT_INDEX
 	entity.has_shadow_caster = false
 	entity.has_shadow_receiver = false
-	entity.render_dirty = false
 	append(&world.free_entity_indices, entity_index)
 }
 
@@ -894,8 +894,22 @@ apply_add_component :: proc(world: ^World, command: ^Add_Component_Command) {
 	}
 	if command.has_geometry { add_geometry(world, command.entity_index, command.geometry); return }
 	if command.has_material { add_material(world, command.entity_index, command.material); return }
-	if command.has_shadow_caster { if !world.entities[command.entity_index].has_shadow_caster { world.entities[command.entity_index].has_shadow_caster = true; bump_component_revision(world, command.entity_index) }; return }
-	if command.has_shadow_receiver { if !world.entities[command.entity_index].has_shadow_receiver { world.entities[command.entity_index].has_shadow_receiver = true; bump_component_revision(world, command.entity_index) }; return }
+	if command.has_shadow_caster {
+		if !world.entities[command.entity_index].has_shadow_caster {
+			world.entities[command.entity_index].has_shadow_caster = true
+			bump_component_revision(world, command.entity_index)
+			mark_render_entity_dirty(world, command.entity_index)
+		}
+		return
+	}
+	if command.has_shadow_receiver {
+		if !world.entities[command.entity_index].has_shadow_receiver {
+			world.entities[command.entity_index].has_shadow_receiver = true
+			bump_component_revision(world, command.entity_index)
+			mark_render_entity_dirty(world, command.entity_index)
+		}
+		return
+	}
 	if command.ui_component.kind != .None {
 		apply_ui_component(world, command.entity_index, &command.ui_component)
 		return
@@ -968,10 +982,22 @@ apply_remove_component :: proc(world: ^World, command: ^Remove_Component_Command
 	}
 	if name == "scrapbot.geometry" { remove_geometry(world, command.entity_index); return }
 	if name == "scrapbot.material" { remove_material(world, command.entity_index); return }
-	if name ==
-	   "scrapbot.shadow_caster" { if world.entities[command.entity_index].has_shadow_caster { world.entities[command.entity_index].has_shadow_caster = false; bump_component_revision(world, command.entity_index) }; return }
-	if name ==
-	   "scrapbot.shadow_receiver" { if world.entities[command.entity_index].has_shadow_receiver { world.entities[command.entity_index].has_shadow_receiver = false; bump_component_revision(world, command.entity_index) }; return }
+	if name == "scrapbot.shadow_caster" {
+		if world.entities[command.entity_index].has_shadow_caster {
+			world.entities[command.entity_index].has_shadow_caster = false
+			bump_component_revision(world, command.entity_index)
+			mark_render_entity_dirty(world, command.entity_index)
+		}
+		return
+	}
+	if name == "scrapbot.shadow_receiver" {
+		if world.entities[command.entity_index].has_shadow_receiver {
+			world.entities[command.entity_index].has_shadow_receiver = false
+			bump_component_revision(world, command.entity_index)
+			mark_render_entity_dirty(world, command.entity_index)
+		}
+		return
+	}
 	if remove_ui_component(world, command.entity_index, name) {
 		return
 	}

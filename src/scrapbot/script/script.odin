@@ -5,6 +5,7 @@ import ecs "../ecs"
 import resources "../resources"
 import schedule "../schedule"
 import shared "../shared"
+import base_runtime "base:runtime"
 import c "core:c"
 import "core:fmt"
 import "core:os"
@@ -518,12 +519,14 @@ apply_transform_writebacks :: proc "c" (
 	writebacks: []Transform_Writeback,
 	prepared: ^Prepared_Transform_Writebacks,
 ) {
+	context = base_runtime.default_context()
 	for writeback, index in writebacks {
 		if world != nil &&
 		   writeback.transform_index >= 0 &&
 		   writeback.transform_index < len(world.transforms) {
 			if prepared.changed[index] {
 				world.transforms[writeback.transform_index] = prepared.transforms[index]
+				ecs.mark_render_entity_dirty(world, writeback.entity_index)
 			}
 		}
 	}
