@@ -989,6 +989,7 @@ World :: struct {
 	ui_lists: [dynamic]UI_List_Component,
 	ui_progresses: [dynamic]UI_Progress_Component,
 	ui_states: [dynamic]UI_State_Component,
+	ui_transient_state_entities: [dynamic]Entity,
 	ui_texts: [dynamic]UI_Text_Component,
 	ui_buttons: [dynamic]UI_Button_Component,
 	ui_inputs: [dynamic]UI_Input_Component,

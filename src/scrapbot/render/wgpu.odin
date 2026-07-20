@@ -7,7 +7,6 @@ import shared "../shared"
 import ui "../ui"
 import base_runtime "base:runtime"
 import "core:fmt"
-import "core:hash"
 import "core:math"
 import "core:time"
 import "vendor:wgpu"
@@ -241,15 +240,25 @@ WGPU_Renderer :: struct {
 	ui_font_view: wgpu.TextureView,
 	ui_font_sampler: wgpu.Sampler,
 	ui_font_versions: [shared.MAX_PROJECT_FONTS]u32,
-	ui_vertices: [dynamic]WGPU_UI_Vertex,
-	ui_vertex_buffer: wgpu.Buffer,
-	ui_vertex_capacity: int,
+	ui_project_vertices: [dynamic]WGPU_UI_Vertex,
+	ui_project_vertex_buffer: wgpu.Buffer,
+	ui_project_vertex_capacity: int,
+	ui_project_stream_key: WGPU_UI_Stream_Key,
+	ui_project_stream_key_valid: bool,
+	ui_editor_vertices: [dynamic]WGPU_UI_Vertex,
+	ui_editor_vertex_buffer: wgpu.Buffer,
+	ui_editor_vertex_capacity: int,
+	ui_editor_stream_key: WGPU_UI_Stream_Key,
+	ui_editor_stream_key_valid: bool,
 	ui_overlay_vertices: [dynamic]WGPU_UI_Vertex,
 	ui_overlay_vertex_buffer: wgpu.Buffer,
 	ui_overlay_vertex_capacity: int,
-	ui_paint_signature: u64,
-	ui_paint_signature_valid: bool,
+	ui_overlay_stream_key: WGPU_UI_Stream_Key,
+	ui_overlay_stream_key_valid: bool,
 	ui_vertex_rebuild_count: u64,
+	ui_project_vertex_rebuild_count: u64,
+	ui_editor_vertex_rebuild_count: u64,
+	ui_overlay_vertex_rebuild_count: u64,
 	ui_vertex_upload_count: u64,
 	ui_vertex_upload_bytes: u64,
 	render_list: Render_List,
@@ -387,30 +396,24 @@ WGPU_Live_Resize_State :: struct {
 	err: string,
 }
 
-WGPU_UI_Paint_Key :: struct {
-	paint_count: int,
-	editor_paint_start: int,
+WGPU_UI_Stream_Key :: struct {
+	revision: u64,
 	target_width: u32,
 	target_height: u32,
 	viewport: ui.Rect,
 }
 
-wgpu_ui_paint_signature :: proc(state: ^ui.State, target_width, target_height: u32) -> u64 {
-	if state == nil || state.paint_count == 0 {
-		return 0
-	}
-	key := WGPU_UI_Paint_Key {
-		paint_count = state.paint_count,
-		editor_paint_start = state.editor_paint_start,
+wgpu_ui_stream_key :: proc(
+	revision: u64,
+	target_width, target_height: u32,
+	viewport: ui.Rect = {},
+) -> WGPU_UI_Stream_Key {
+	return {
+		revision = revision,
 		target_width = target_width,
 		target_height = target_height,
-		viewport = ui.editor_viewport(state, f32(target_width), f32(target_height)),
+		viewport = viewport,
 	}
-	key_bytes := (cast([^]byte)&key)[:size_of(key)]
-	signature := hash.fnv64a(key_bytes)
-	paint_bytes := (cast([^]byte)raw_data(state.paint[:state.paint_count]))[:state.paint_count *
-	size_of(ui.Paint_Command)]
-	return hash.fnv64a(paint_bytes, signature)
 }
 
 wgpu_append_ui_vertices :: proc(
@@ -670,6 +673,33 @@ wgpu_upload_ui_vertices :: proc(
 	renderer.ui_vertex_upload_count += 1
 	renderer.ui_vertex_upload_bytes += u64(len(vertices) * size_of(WGPU_UI_Vertex))
 	return true
+}
+
+wgpu_rebuild_ui_vertex_stream :: proc(
+	renderer: ^WGPU_Renderer,
+	vertices: ^[dynamic]WGPU_UI_Vertex,
+	commands: []ui.Paint_Command,
+	project: bool,
+	viewport: ui.Rect,
+	drawable_width, drawable_height: f32,
+	vertex_buffer: ^wgpu.Buffer,
+	vertex_capacity: ^int,
+	label: string,
+) -> bool {
+	clear(vertices)
+	project_command_count := 0
+	if project {
+		project_command_count = len(commands)
+	}
+	wgpu_append_ui_vertices(
+		vertices,
+		commands,
+		project_command_count,
+		viewport,
+		drawable_width,
+		drawable_height,
+	)
+	return wgpu_upload_ui_vertices(renderer, vertices^[:], vertex_buffer, vertex_capacity, label)
 }
 
 wgpu_next_frame_delta :: proc(previous_tick: ^time.Tick, has_previous_frame: bool) -> f32 {
@@ -1086,108 +1116,138 @@ wgpu_encode_render_pass :: proc(
 		)
 		if ui_pass == nil { return "failed to begin UI overlay render pass" }
 		defer wgpu.RenderPassEncoderRelease(ui_pass)
-		paint_signature := wgpu_ui_paint_signature(ui_state, target_width, target_height)
-		rebuild_vertices :=
-			!renderer.ui_paint_signature_valid || renderer.ui_paint_signature != paint_signature
-		vertices := &renderer.ui_vertices
 		drawable_width := f32(target_width)
 		drawable_height := f32(target_height)
 		viewport := ui.editor_viewport(ui_state, drawable_width, drawable_height)
-		if rebuild_vertices {
-			clear(vertices)
-			wgpu_append_ui_vertices(
-				vertices,
-				ui_state.paint[:ui_state.paint_count],
-				ui_state.editor_paint_start,
+		project_command_count := clamp(ui_state.editor_paint_start, 0, ui_state.paint_count)
+		editor_command_end := clamp(
+			ui_state.editor_paint_end,
+			project_command_count,
+			ui_state.paint_count,
+		)
+		project_key := wgpu_ui_stream_key(
+			ui_state.project_paint_output_revision,
+			target_width,
+			target_height,
+			viewport,
+		)
+		if !renderer.ui_project_stream_key_valid || renderer.ui_project_stream_key != project_key {
+			stream_changed := project_command_count > 0 || len(renderer.ui_project_vertices) > 0
+			if !wgpu_rebuild_ui_vertex_stream(
+				renderer,
+				&renderer.ui_project_vertices,
+				ui_state.paint[:project_command_count],
+				true,
 				viewport,
 				drawable_width,
 				drawable_height,
-			)
-			if !wgpu_upload_ui_vertices(
-				renderer,
-				vertices[:],
-				&renderer.ui_vertex_buffer,
-				&renderer.ui_vertex_capacity,
-				"Scrapbot UI Vertex Buffer",
+				&renderer.ui_project_vertex_buffer,
+				&renderer.ui_project_vertex_capacity,
+				"Scrapbot Project UI Vertex Buffer",
 			) {
-				return "failed to upload UI vertices"
+				return "failed to upload project UI vertices"
 			}
-			renderer.ui_paint_signature = paint_signature
-			renderer.ui_paint_signature_valid = true
-			renderer.ui_vertex_rebuild_count += 1
+			renderer.ui_project_stream_key = project_key
+			renderer.ui_project_stream_key_valid = true
+			if stream_changed {
+				renderer.ui_vertex_rebuild_count += 1
+				renderer.ui_project_vertex_rebuild_count += 1
+			}
 		}
-		overlay_vertices := &renderer.ui_overlay_vertices
-		clear(overlay_vertices)
-		if ui_state.editor_overlay_paint_count > 0 {
-			wgpu_append_ui_vertices(
-				overlay_vertices,
-				ui_state.editor_overlay_paint[:ui_state.editor_overlay_paint_count],
-				0,
+		editor_key := wgpu_ui_stream_key(
+			ui_state.editor_paint_output_revision,
+			target_width,
+			target_height,
+		)
+		if !renderer.ui_editor_stream_key_valid || renderer.ui_editor_stream_key != editor_key {
+			stream_changed :=
+				editor_command_end > project_command_count || len(renderer.ui_editor_vertices) > 0
+			if !wgpu_rebuild_ui_vertex_stream(
+				renderer,
+				&renderer.ui_editor_vertices,
+				ui_state.paint[project_command_count:editor_command_end],
+				false,
 				viewport,
 				drawable_width,
 				drawable_height,
-			)
-			if !wgpu_upload_ui_vertices(
+				&renderer.ui_editor_vertex_buffer,
+				&renderer.ui_editor_vertex_capacity,
+				"Scrapbot Editor UI Vertex Buffer",
+			) {
+				return "failed to upload editor UI vertices"
+			}
+			renderer.ui_editor_stream_key = editor_key
+			renderer.ui_editor_stream_key_valid = true
+			if stream_changed {
+				renderer.ui_vertex_rebuild_count += 1
+				renderer.ui_editor_vertex_rebuild_count += 1
+			}
+		}
+		overlay_key := wgpu_ui_stream_key(
+			ui_state.editor_overlay_paint_output_revision,
+			target_width,
+			target_height,
+		)
+		if !renderer.ui_overlay_stream_key_valid || renderer.ui_overlay_stream_key != overlay_key {
+			stream_changed :=
+				ui_state.editor_overlay_paint_count > 0 || len(renderer.ui_overlay_vertices) > 0
+			if !wgpu_rebuild_ui_vertex_stream(
 				renderer,
-				overlay_vertices[:],
+				&renderer.ui_overlay_vertices,
+				ui_state.editor_overlay_paint[:ui_state.editor_overlay_paint_count],
+				false,
+				viewport,
+				drawable_width,
+				drawable_height,
 				&renderer.ui_overlay_vertex_buffer,
 				&renderer.ui_overlay_vertex_capacity,
 				"Scrapbot Editor Overlay Vertex Buffer",
 			) {
 				return "failed to upload editor overlay vertices"
 			}
+			renderer.ui_overlay_stream_key = overlay_key
+			renderer.ui_overlay_stream_key_valid = true
+			if stream_changed {
+				renderer.ui_vertex_rebuild_count += 1
+				renderer.ui_overlay_vertex_rebuild_count += 1
+			}
 		}
 		wgpu.RenderPassEncoderSetViewport(ui_pass, 0, 0, drawable_width, drawable_height, 0, 1)
 		wgpu.RenderPassEncoderSetScissorRect(ui_pass, 0, 0, target_width, target_height)
 		wgpu.RenderPassEncoderSetPipeline(ui_pass, renderer.ui_pipeline)
 		wgpu.RenderPassEncoderSetBindGroup(ui_pass, 0, renderer.ui_bind_group)
-		static_vertex_count := u32(len(vertices^))
-		if static_vertex_count > 0 {
+		project_vertex_count := u32(len(renderer.ui_project_vertices))
+		if project_vertex_count > 0 {
 			wgpu.RenderPassEncoderSetVertexBuffer(
 				ui_pass,
 				0,
-				renderer.ui_vertex_buffer,
+				renderer.ui_project_vertex_buffer,
 				0,
 				wgpu.WHOLE_SIZE,
 			)
-			if ui_state.editor_visible {
-				project_vertex_count := min(
-					u32(ui_state.editor_paint_start * 6),
-					static_vertex_count,
-				)
-				if project_vertex_count > 0 {
-					wgpu.RenderPassEncoderSetScissorRect(
-						ui_pass,
-						u32(viewport.x),
-						u32(viewport.y),
-						u32(viewport.width),
-						u32(viewport.height),
-					)
-					wgpu.RenderPassEncoderDraw(ui_pass, project_vertex_count, 1, 0, 0)
-				}
-				wgpu.RenderPassEncoderSetScissorRect(ui_pass, 0, 0, target_width, target_height)
-				if static_vertex_count > project_vertex_count {
-					wgpu.RenderPassEncoderDraw(
-						ui_pass,
-						static_vertex_count - project_vertex_count,
-						1,
-						project_vertex_count,
-						0,
-					)
-				}
-			} else {
-				wgpu.RenderPassEncoderSetScissorRect(
-					ui_pass,
-					u32(viewport.x),
-					u32(viewport.y),
-					u32(viewport.width),
-					u32(viewport.height),
-				)
-				wgpu.RenderPassEncoderDraw(ui_pass, static_vertex_count, 1, 0, 0)
-			}
+			wgpu.RenderPassEncoderSetScissorRect(
+				ui_pass,
+				u32(viewport.x),
+				u32(viewport.y),
+				u32(viewport.width),
+				u32(viewport.height),
+			)
+			wgpu.RenderPassEncoderDraw(ui_pass, project_vertex_count, 1, 0, 0)
+		}
+		editor_vertex_count := u32(len(renderer.ui_editor_vertices))
+		if ui_state.editor_visible && editor_vertex_count > 0 {
+			wgpu.RenderPassEncoderSetScissorRect(ui_pass, 0, 0, target_width, target_height)
+			wgpu.RenderPassEncoderSetVertexBuffer(
+				ui_pass,
+				0,
+				renderer.ui_editor_vertex_buffer,
+				0,
+				wgpu.WHOLE_SIZE,
+			)
+			wgpu.RenderPassEncoderDraw(ui_pass, editor_vertex_count, 1, 0, 0)
 		}
 		if ui_state.editor_visible {
-			if len(overlay_vertices^) > 0 {
+			if len(renderer.ui_overlay_vertices) > 0 {
 				wgpu.RenderPassEncoderSetScissorRect(
 					ui_pass,
 					u32(viewport.x),
@@ -1202,7 +1262,13 @@ wgpu_encode_render_pass :: proc(
 					0,
 					wgpu.WHOLE_SIZE,
 				)
-				wgpu.RenderPassEncoderDraw(ui_pass, u32(len(overlay_vertices^)), 1, 0, 0)
+				wgpu.RenderPassEncoderDraw(
+					ui_pass,
+					u32(len(renderer.ui_overlay_vertices)),
+					1,
+					0,
+					0,
+				)
 			}
 		}
 		wgpu.RenderPassEncoderEnd(ui_pass)
@@ -1573,6 +1639,9 @@ wgpu_draw_frame :: proc(
 		wgpu_publish_gpu_timing(renderer, config.stats)
 		wgpu_publish_visibility(renderer, config.stats)
 		config.stats.ui_vertex_rebuilds = renderer.ui_vertex_rebuild_count
+		config.stats.ui_project_vertex_rebuilds = renderer.ui_project_vertex_rebuild_count
+		config.stats.ui_editor_vertex_rebuilds = renderer.ui_editor_vertex_rebuild_count
+		config.stats.ui_overlay_vertex_rebuilds = renderer.ui_overlay_vertex_rebuild_count
 		config.stats.ui_vertex_uploads = renderer.ui_vertex_upload_count
 		config.stats.ui_vertex_upload_bytes = renderer.ui_vertex_upload_bytes
 	}
@@ -1739,6 +1808,9 @@ wgpu_render_offscreen_frame :: proc(
 		wgpu_publish_gpu_timing(renderer, config.stats)
 		wgpu_publish_visibility(renderer, config.stats)
 		config.stats.ui_vertex_rebuilds = renderer.ui_vertex_rebuild_count
+		config.stats.ui_project_vertex_rebuilds = renderer.ui_project_vertex_rebuild_count
+		config.stats.ui_editor_vertex_rebuilds = renderer.ui_editor_vertex_rebuild_count
+		config.stats.ui_overlay_vertex_rebuilds = renderer.ui_overlay_vertex_rebuild_count
 		config.stats.ui_vertex_uploads = renderer.ui_vertex_upload_count
 		config.stats.ui_vertex_upload_bytes = renderer.ui_vertex_upload_bytes
 	}

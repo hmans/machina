@@ -78,6 +78,9 @@ Render_Stats :: struct {
 	instance_uploads: u64,
 	instance_upload_bytes: u64,
 	ui_vertex_rebuilds: u64,
+	ui_project_vertex_rebuilds: u64,
+	ui_editor_vertex_rebuilds: u64,
+	ui_overlay_vertex_rebuilds: u64,
 	ui_vertex_uploads: u64,
 	ui_vertex_upload_bytes: u64,
 }

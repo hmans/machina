@@ -239,12 +239,19 @@ State :: struct {
 	node_count: int,
 	paint: [MAX_PAINT_COMMANDS]Paint_Command,
 	paint_count: int,
+	editor_paint_cache: [MAX_PAINT_COMMANDS]Paint_Command,
+	editor_paint_cache_count: int,
 	editor_overlay_paint: [MAX_EDITOR_OVERLAY_PAINT_COMMANDS]Paint_Command,
 	editor_overlay_paint_count: int,
+	editor_overlay_compare_count: int,
+	editor_overlay_rebuild_changed: bool,
 	paint_editor_overlay: bool,
 	editor_paint_end: int,
 	project_paint_signature, editor_paint_signature: u64,
 	project_paint_signature_valid, editor_paint_signature_valid: bool,
+	project_paint_output_revision: u64,
+	editor_paint_output_revision: u64,
+	editor_overlay_paint_output_revision: u64,
 	font: Font_Atlas,
 	resource_registry: ^resources.Registry,
 	component_registry: ^component.Registry,
@@ -263,6 +270,7 @@ State :: struct {
 	ui_project_viewport: Rect,
 	ui_editor_viewport: Rect,
 	ui_structure_sync_count: u64,
+	ui_hierarchy_rebuild_count: u64,
 	layout_node_visit_count: u64,
 	layout_child_edge_visit_count: u64,
 	paint_node_visit_count: u64,
@@ -738,9 +746,22 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 		}
 	}
 	if world_changed || state.ui_editor_visible != state.editor_visible {
-		for entity, entity_index in world.entities {
-			if entity.alive && entity.origin == .Editor && entity.ui_layout_index >= 0 {
-				ecs.mark_ui_entity_dirty(world, entity_index)
+		if state.editor_visible {
+			for component in world.editor_uis {
+				entity_index := component.entity_index
+				if entity_index < 0 || entity_index >= len(world.entities) {
+					continue
+				}
+				entity := world.entities[entity_index]
+				if entity.alive && entity.origin == .Editor && entity.ui_layout_index >= 0 {
+					ecs.mark_ui_entity_dirty(world, entity_index)
+				}
+			}
+		} else {
+			for node in state.nodes[:state.node_count] {
+				if node.origin == .Editor {
+					ecs.mark_ui_entity_dirty(world, int(node.entity.index))
+				}
 			}
 		}
 		state.ui_editor_visible = state.editor_visible
@@ -752,6 +773,7 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 	}
 
 	dirty_cursor := 0
+	hierarchy_changed := world_changed
 	for dirty_cursor < len(world.ui_dirty_entities) {
 		entity_index := world.ui_dirty_entities[dirty_cursor]
 		dirty_cursor += 1
@@ -770,18 +792,21 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 		if !eligible {
 			if node_index >= 0 {
 				remove_ui_node(state, node_index)
+				hierarchy_changed = true
 			}
 			continue
 		}
 		if node_index >= 0 && state.nodes[node_index].entity != entity.id {
 			remove_ui_node(state, node_index)
 			node_index = -1
+			hierarchy_changed = true
 		}
 		if node_index < 0 {
 			if state.node_count >= MAX_NODES {
 				return "too many UI entities"
 			}
 			node_index = insert_ui_node(state, entity_index)
+			hierarchy_changed = true
 		}
 		_ = ecs.ensure_ui_state(world, entity_index)
 		node := &state.nodes[node_index]
@@ -803,14 +828,20 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 		node.button_index = entity.ui_button_index
 		node.input_index = entity.ui_input_index
 		node.checkbox_index = entity.ui_checkbox_index
-		node.parent_entity_index = find_parent_entity(
+		parent_entity_index := find_parent_entity(
 			world,
 			world.ui_layouts[entity.ui_layout_index].parent,
 			entity.origin,
 		)
+		if node.parent_entity_index != parent_entity_index {
+			hierarchy_changed = true
+		}
+		node.parent_entity_index = parent_entity_index
 	}
-	if err := rebuild_ui_node_hierarchy(state); err != "" {
-		return err
+	if hierarchy_changed {
+		if err := rebuild_ui_node_hierarchy(state); err != "" {
+			return err
+		}
 	}
 	clear(&world.ui_dirty_entities)
 	state.ui_structure_revision = world.ui_structure_revision
@@ -898,12 +929,26 @@ reconcile :: proc(
 		state.paint_node_visit_count = 0
 		state.paint_child_edge_visit_count = 0
 	}
-	for &interaction in world.ui_states {
+	for entity_id in world.ui_transient_state_entities {
+		entity_index := int(entity_id.index)
+		if entity_index < 0 || entity_index >= len(world.entities) {
+			continue
+		}
+		entity := world.entities[entity_index]
+		if !entity.alive || entity.id.generation != entity_id.generation {
+			continue
+		}
+		state_index := entity.ui_state_index
+		if state_index < 0 || state_index >= len(world.ui_states) {
+			continue
+		}
+		interaction := &world.ui_states[state_index]
 		interaction.activated = false
 		interaction.changed = false
 		interaction.submitted = false
 		interaction.cancelled = false
 	}
+	clear(&world.ui_transient_state_entities)
 	surface_width := drawable_width; if surface_width <= 0 { surface_width = width }
 	surface_height := drawable_height; if surface_height <= 0 { surface_height = height }
 	if !state.font.ready { if err := init(state); err != "" { return err } }
@@ -1173,7 +1218,6 @@ reconcile :: proc(
 		!state.project_paint_signature_valid ||
 		state.project_paint_signature != project_paint_signature
 	rebuild_editor_paint :=
-		rebuild_project_paint ||
 		!state.editor_paint_signature_valid ||
 		state.editor_paint_signature != editor_paint_signature
 	if rebuild_project_paint {
@@ -1187,6 +1231,10 @@ reconcile :: proc(
 		state.editor_paint_start = state.paint_count
 		state.project_paint_signature = project_paint_signature
 		state.project_paint_signature_valid = true
+		state.project_paint_output_revision += 1
+		if state.project_paint_output_revision == 0 {
+			state.project_paint_output_revision = 1
+		}
 	} else {
 		state.paint_count = state.editor_paint_start
 	}
@@ -1204,15 +1252,39 @@ reconcile :: proc(
 				}
 			}
 			state.editor_paint_end = state.paint_count
+			state.editor_paint_cache_count = state.editor_paint_end - state.editor_paint_start
+			copy(
+				state.editor_paint_cache[:state.editor_paint_cache_count],
+				state.paint[state.editor_paint_start:state.editor_paint_end],
+			)
 			state.editor_paint_signature = editor_paint_signature
 			state.editor_paint_signature_valid = true
+			state.editor_paint_output_revision += 1
+			if state.editor_paint_output_revision == 0 {
+				state.editor_paint_output_revision = 1
+			}
 		} else {
-			state.paint_count = state.editor_paint_end
+			if state.editor_paint_start + state.editor_paint_cache_count > MAX_PAINT_COMMANDS {
+				return "too many retained editor UI paint commands"
+			}
+			copy(
+				state.paint[state.editor_paint_start:state.editor_paint_start +
+				state.editor_paint_cache_count],
+				state.editor_paint_cache[:state.editor_paint_cache_count],
+			)
+			state.paint_count = state.editor_paint_start + state.editor_paint_cache_count
+			state.editor_paint_end = state.paint_count
 		}
 	} else {
+		editor_output_changed := state.editor_paint_end != state.paint_count
 		state.editor_paint_end = state.paint_count
-		state.editor_paint_signature = editor_paint_signature
-		state.editor_paint_signature_valid = true
+		state.editor_paint_signature_valid = false
+		if editor_output_changed {
+			state.editor_paint_output_revision += 1
+			if state.editor_paint_output_revision == 0 {
+				state.editor_paint_output_revision = 1
+			}
+		}
 	}
 	return ""
 }
@@ -1487,6 +1559,7 @@ rebuild_ui_node_hierarchy :: proc(state: ^State) -> string {
 	if state == nil {
 		return ""
 	}
+	state.ui_hierarchy_rebuild_count += 1
 	last_children: [MAX_NODES]int
 	visit_states: [MAX_NODES]u8
 	path: [MAX_NODES]int
@@ -4121,6 +4194,8 @@ rebuild_editor_world_overlay :: proc(state: ^State) -> string {
 	if state == nil {
 		return ""
 	}
+	state.editor_overlay_compare_count = state.editor_overlay_paint_count
+	state.editor_overlay_rebuild_changed = false
 	state.editor_overlay_paint_count = 0
 	state.paint_editor_overlay = true
 	defer state.paint_editor_overlay = false
@@ -4128,7 +4203,17 @@ rebuild_editor_world_overlay :: proc(state: ^State) -> string {
 	if err := append_editor_camera_mesh(state); err != "" {
 		return err
 	}
-	return append_editor_gizmo(state)
+	if err := append_editor_gizmo(state); err != "" {
+		return err
+	}
+	if state.editor_overlay_rebuild_changed ||
+	   state.editor_overlay_compare_count != state.editor_overlay_paint_count {
+		state.editor_overlay_paint_output_revision += 1
+		if state.editor_overlay_paint_output_revision == 0 {
+			state.editor_overlay_paint_output_revision = 1
+		}
+	}
+	return ""
 }
 
 append_editor_camera_mesh :: proc(state: ^State) -> string {
@@ -4727,6 +4812,10 @@ append_paint :: proc(state: ^State, command_value: Paint_Command) -> string {
 		command := command_value
 		if command.kind == .Glyph {
 			command.font_layer = state.font.layer
+		}
+		if state.editor_overlay_paint_count >= state.editor_overlay_compare_count ||
+		   state.editor_overlay_paint[state.editor_overlay_paint_count] != command {
+			state.editor_overlay_rebuild_changed = true
 		}
 		state.editor_overlay_paint[state.editor_overlay_paint_count] = command
 		state.editor_overlay_paint_count += 1

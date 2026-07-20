@@ -301,6 +301,7 @@ destroy_world :: proc(world: ^World) {
 	delete(world.ui_lists)
 	delete(world.ui_progresses)
 	delete(world.ui_states)
+	delete(world.ui_transient_state_entities)
 	delete(world.ui_texts)
 	delete(world.ui_buttons)
 	delete(world.ui_inputs)

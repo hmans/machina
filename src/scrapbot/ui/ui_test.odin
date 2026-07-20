@@ -533,9 +533,11 @@ test_checkbox_paints_sdf_mark_and_toggles_unless_read_only :: proc(t: ^testing.T
 	testing.expect(t, reconcile(state, &world, 200, 120, pointer) == "")
 	testing.expect(t, !world.ui_checkboxes[0].checked)
 	testing.expect(t, checkbox_state.changed && checkbox_state.change_revision == 1)
+	testing.expect_value(t, len(world.ui_transient_state_entities), 1)
 	pointer.primary_down = false
 	testing.expect(t, reconcile(state, &world, 200, 120, pointer) == "")
 	testing.expect(t, !checkbox_state.changed)
+	testing.expect_value(t, len(world.ui_transient_state_entities), 0)
 	world.ui_checkboxes[0].read_only = true
 	pointer.primary_down = true
 	testing.expect(t, reconcile(state, &world, 200, 120, pointer) == "")
@@ -1029,24 +1031,35 @@ test_reconcile_tracks_ui_entity_appearance_and_disappearance :: proc(t: ^testing
 	}
 	testing.expect(t, state.paint_count > 2)
 	testing.expect(t, state.ui_structure_sync_count == 1)
+	testing.expect_value(t, state.ui_hierarchy_rebuild_count, u64(1))
+	project_output_revision := state.project_paint_output_revision
+	editor_output_revision := state.editor_paint_output_revision
 	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
 	testing.expect(t, state.ui_structure_sync_count == 1)
+	testing.expect_value(t, state.project_paint_output_revision, project_output_revision)
+	testing.expect_value(t, state.editor_paint_output_revision, editor_output_revision)
+	ecs.mark_ui_entity_dirty(&world, 1)
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	testing.expect_value(t, state.ui_structure_sync_count, u64(2))
+	testing.expect_value(t, state.ui_hierarchy_rebuild_count, u64(1))
 	world.ui_layouts[world.entities[0].ui_layout_index].hidden = true
 	ecs.mark_ui_subtree_dirty(&world, 0)
 	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
 	testing.expect(t, state.node_count == 0)
-	testing.expect(t, state.ui_structure_sync_count == 2)
+	testing.expect(t, state.ui_structure_sync_count == 3)
+	testing.expect_value(t, state.ui_hierarchy_rebuild_count, u64(2))
+	testing.expect(t, state.project_paint_output_revision > project_output_revision)
 	world.ui_layouts[world.entities[0].ui_layout_index].hidden = false
 	ecs.mark_ui_subtree_dirty(&world, 0)
 	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
 	testing.expect(t, state.node_count == 2)
-	testing.expect(t, state.ui_structure_sync_count == 3)
+	testing.expect(t, state.ui_structure_sync_count == 4)
 	world.entities[1].alive = false
 	ecs.mark_ui_entity_dirty(&world, 1)
 	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
 	testing.expect(t, state.node_count == 1)
 	testing.expect(t, state.paint_count == 1)
-	testing.expect(t, state.ui_structure_sync_count == 4)
+	testing.expect(t, state.ui_structure_sync_count == 5)
 }
 
 @(test)
@@ -2396,6 +2409,20 @@ test_editor_shell_is_an_editor_origin_ecs_ui_tree :: proc(t: ^testing.T) {
 	if viewport_node >= 0 { testing.expect(t, viewport == state.nodes[viewport_node].rect) }
 	testing.expect(t, state.editor_paint_start == 1)
 	testing.expect(t, state.paint_count > state.editor_paint_start)
+	project_revision := state.project_paint_output_revision
+	editor_revision := state.editor_paint_output_revision
+	editor_command_count := state.editor_paint_end - state.editor_paint_start
+	project_layout := world.ui_layouts[world.entities[0].ui_layout_index]
+	project_layout.background = {0.7, 0.2, 0.1, 1}
+	testing.expect(t, ecs.set_ui_layout(&world, 0, project_layout))
+	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+	testing.expect(t, state.project_paint_output_revision > project_revision)
+	testing.expect_value(t, state.editor_paint_output_revision, editor_revision)
+	testing.expect_value(
+		t,
+		state.editor_paint_end - state.editor_paint_start,
+		editor_command_count,
+	)
 	pointer := project_pointer_input(
 		state,
 		{
@@ -5640,12 +5667,19 @@ test_editor_camera_mesh_appends_editor_viewport_lines :: proc(t: ^testing.T) {
 		rect = {0, 0, 10, 10},
 	}
 	testing.expect(t, rebuild_editor_world_overlay(state) == "")
+	overlay_revision := state.editor_overlay_paint_output_revision
+	testing.expect(t, overlay_revision > 0)
 	testing.expect(t, state.paint_count == 1)
 	testing.expect(t, state.paint[0].kind == .Panel)
 	testing.expect(t, state.editor_overlay_paint_count == 2)
 	testing.expect(t, state.editor_overlay_paint[0].kind == .Line)
 	testing.expect(t, state.editor_overlay_paint[0].line_start == shared.Vec2{10, 20})
 	testing.expect(t, state.editor_overlay_paint[1].line_thickness == 2.25)
+	testing.expect(t, rebuild_editor_world_overlay(state) == "")
+	testing.expect_value(t, state.editor_overlay_paint_output_revision, overlay_revision)
+	state.editor_camera_mesh_segments[1].thickness = 3
+	testing.expect(t, rebuild_editor_world_overlay(state) == "")
+	testing.expect(t, state.editor_overlay_paint_output_revision > overlay_revision)
 }
 
 @(test)

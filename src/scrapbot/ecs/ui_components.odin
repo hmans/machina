@@ -39,6 +39,22 @@ ensure_ui_state :: proc(world: ^World, entity_index: int) -> ^UI_State_Component
 	return &world.ui_states[entity.ui_state_index]
 }
 
+mark_ui_state_transient :: proc(world: ^World, entity_index: int) {
+	if world == nil || entity_index < 0 || entity_index >= len(world.entities) {
+		return
+	}
+	state_index := world.entities[entity_index].ui_state_index
+	if state_index >= 0 && state_index < len(world.ui_states) {
+		entity_id := world.entities[entity_index].id
+		for queued_entity in world.ui_transient_state_entities {
+			if queued_entity == entity_id {
+				return
+			}
+		}
+		append(&world.ui_transient_state_entities, entity_id)
+	}
+}
+
 mark_ui_submitted :: proc(world: ^World, entity_index: int) -> bool {
 	state := ensure_ui_state(world, entity_index)
 	if state == nil {
@@ -46,6 +62,7 @@ mark_ui_submitted :: proc(world: ^World, entity_index: int) -> bool {
 	}
 	state.submitted = true
 	state.submit_revision += 1
+	mark_ui_state_transient(world, entity_index)
 	mark_ui_paint_changed(world, entity_index)
 	return true
 }
@@ -57,6 +74,7 @@ mark_ui_cancelled :: proc(world: ^World, entity_index: int) -> bool {
 	}
 	state.cancelled = true
 	state.cancel_revision += 1
+	mark_ui_state_transient(world, entity_index)
 	mark_ui_paint_changed(world, entity_index)
 	return true
 }
@@ -68,6 +86,7 @@ mark_ui_activated :: proc(world: ^World, entity_index: int) -> bool {
 	}
 	state.activated = true
 	state.activation_revision += 1
+	mark_ui_state_transient(world, entity_index)
 	mark_ui_paint_changed(world, entity_index)
 	return true
 }
@@ -79,6 +98,7 @@ mark_ui_changed :: proc(world: ^World, entity_index: int) -> bool {
 	}
 	state.changed = true
 	state.change_revision += 1
+	mark_ui_state_transient(world, entity_index)
 	mark_ui_paint_changed(world, entity_index)
 	return true
 }

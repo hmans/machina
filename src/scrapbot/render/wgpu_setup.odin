@@ -236,11 +236,17 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	if renderer.ui_font_sampler != nil { wgpu.SamplerRelease(renderer.ui_font_sampler) }
 	if renderer.ui_font_view != nil { wgpu.TextureViewRelease(renderer.ui_font_view) }
 	if renderer.ui_font_texture != nil { wgpu.TextureRelease(renderer.ui_font_texture) }
-	if renderer.ui_vertex_buffer != nil { wgpu.BufferRelease(renderer.ui_vertex_buffer) }
+	if renderer.ui_project_vertex_buffer != nil {
+		wgpu.BufferRelease(renderer.ui_project_vertex_buffer)
+	}
+	if renderer.ui_editor_vertex_buffer != nil {
+		wgpu.BufferRelease(renderer.ui_editor_vertex_buffer)
+	}
 	if renderer.ui_overlay_vertex_buffer != nil {
 		wgpu.BufferRelease(renderer.ui_overlay_vertex_buffer)
 	}
-	delete(renderer.ui_vertices)
+	delete(renderer.ui_project_vertices)
+	delete(renderer.ui_editor_vertices)
 	delete(renderer.ui_overlay_vertices)
 	delete(renderer.draw_batch_cache.source_indices)
 	delete(renderer.draw_batch_cache.batches)

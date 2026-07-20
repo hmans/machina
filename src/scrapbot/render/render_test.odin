@@ -541,34 +541,13 @@ test_wgpu_visible_batch_slices_are_storage_aligned :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_wgpu_ui_paint_signature_tracks_only_rendered_output :: proc(t: ^testing.T) {
-	state := new(ui.State)
-	defer free(state)
-	state.paint_count = 1
-	state.paint[0] = {
-		kind = .Panel,
-		rect = {x = 10, y = 20, width = 100, height = 40},
-		color = {0.2, 0.3, 0.4, 1},
-	}
-	first := wgpu_ui_paint_signature(state, 1280, 720)
-	testing.expect(t, first != 0)
-	testing.expect(t, wgpu_ui_paint_signature(state, 1280, 720) == first)
-
-	state.paint[0].color.x = 0.5
-	changed_paint := wgpu_ui_paint_signature(state, 1280, 720)
-	testing.expect(t, changed_paint != first)
-	testing.expect(t, wgpu_ui_paint_signature(state, 1920, 1080) != changed_paint)
-	state.editor_overlay_paint_count = 1
-	state.editor_overlay_paint[0] = {
-		kind = .Line,
-		line_start = {10, 10},
-		line_end = {20, 20},
-		line_thickness = 2,
-	}
-	testing.expect(t, wgpu_ui_paint_signature(state, 1280, 720) == changed_paint)
-
-	state.paint_count = 0
-	testing.expect(t, wgpu_ui_paint_signature(state, 1280, 720) == 0)
+test_wgpu_ui_stream_keys_track_revision_target_and_project_viewport :: proc(t: ^testing.T) {
+	viewport := ui.Rect{10, 20, 800, 600}
+	first := wgpu_ui_stream_key(7, 1280, 720, viewport)
+	testing.expect_value(t, wgpu_ui_stream_key(7, 1280, 720, viewport), first)
+	testing.expect(t, wgpu_ui_stream_key(8, 1280, 720, viewport) != first)
+	testing.expect(t, wgpu_ui_stream_key(7, 1920, 1080, viewport) != first)
+	testing.expect(t, wgpu_ui_stream_key(7, 1280, 720, {11, 20, 800, 600}) != first)
 }
 
 @(test)

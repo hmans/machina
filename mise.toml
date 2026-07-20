@@ -212,6 +212,8 @@ const result = JSON.parse(process.argv[1]);
 const stats = result.result?.render_stats;
 if (result.schema_version !== 1 || result.command !== "run" || result.ok !== true ||
     stats?.ui_vertex_rebuilds !== 1 || stats.ui_vertex_uploads !== 1 ||
+    stats.ui_project_vertex_rebuilds !== 0 || stats.ui_editor_vertex_rebuilds !== 1 ||
+    stats.ui_overlay_vertex_rebuilds !== 0 ||
     stats.ui_vertex_upload_bytes <= 0) {
   console.error("unexpected retained UI renderer diagnostics");
   process.exit(1);
@@ -221,7 +223,9 @@ node -e '
 const result = JSON.parse(process.argv[1]);
 const stats = result.result?.render_stats;
 if (result.schema_version !== 1 || result.command !== "run" || result.ok !== true ||
-    stats?.draw_database_rebuilds > 1) {
+    stats?.draw_database_rebuilds > 1 || stats.ui_project_vertex_rebuilds !== 0 ||
+    stats.ui_editor_vertex_rebuilds < 1 || stats.ui_editor_vertex_rebuilds >= 10 ||
+    stats.ui_overlay_vertex_rebuilds >= 10) {
   console.error("editor overlay lifecycle did not complete cleanly");
   process.exit(1);
 }
