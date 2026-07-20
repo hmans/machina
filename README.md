@@ -173,7 +173,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
 - Controls
   - [x] Text and pointer-styled button controls
   - [x] Reusable SDF checkbox controls
-  - [x] Reusable numeric editor controls with validation, stepping, and scrubbing
+  - [x] Reusable numeric editor controls with validation, stepping, and opt-in scrubbing
   - [ ] Additional form controls
   - [x] Single-line text input with cursor movement and selection
   - [x] Keyboard focus with Tab and Shift+Tab traversal
@@ -201,7 +201,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [ ] Searchable browser
   - [x] Expandable UUID-backed spatial hierarchy with drag-to-reparent
 - Editing
-  - [x] Live transform, camera, light, and custom Vec3 inspector editing
+  - [x] Live transform, camera, light, and custom Number/Vec2/Vec3/Vec4/Color inspector editing
   - [x] UUID-addressed authoring transactions with inspector and gizmo undo/redo
   - [x] Registry-driven, namespaced Add Component picker and panel-title removal actions with undo/redo
   - [x] Entity create, duplicate, rename, delete, and runtime promotion

@@ -158,6 +158,8 @@ For interactive UI bugs, prefer a semantic script plus `--ui-dump`. A script is 
 
 Use `tests/fixtures/ui/reflected-inspector.json` to verify that a registry-driven field edit reaches project ECS state, marks stopped authoring dirty, and restores exactly through Undo. Extend its unit companion in `src/scrapbot/ui/ui_test.odin` when adding a new reflected field shape or specialized picker.
 
+Use `tests/fixtures/ui/typed-component-inspector.json` when changing custom field types, registry editor metadata, native component schemas, or generic numeric inspector bindings. It scrolls both nested sidebars semantically, selects the native fountain emitter, asserts separate scalar settings, scrubs an opt-in Number field, and captures the exact custom-component panel. Pair it with scene parsing, Luau typed write-back, native extension compilation, and the non-draggable numeric-input unit test.
+
 When reproducing or verifying an editor/UI interaction bug, read
 [`references/ui-diagnostics.md`](references/ui-diagnostics.md) and follow its replay-dump-capture loop. Do not claim a visual fix from layout arithmetic or a successful process exit alone: assert the semantic state and inspect the smallest relevant 1:1 PNG.
 

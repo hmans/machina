@@ -1,7 +1,7 @@
 # FDR-006: Native extensions
 
 **Status:** Active
-**Last reviewed:** 2026-07-16
+**Last reviewed:** 2026-07-20
 
 ## Overview
 
@@ -52,9 +52,9 @@ Native extensions let project code add compiled engine/library behavior incremen
 
 ### 3. Keep the native ECS API narrow
 
-**Decision:** Expose component schema registration plus scheduled native systems with a small callback context for query, transform, mesh, vec3 field access, typed public UI access, and deferred lifecycle commands.
+**Decision:** Expose component schema registration plus scheduled native systems with a small callback context for query, transform, mesh, Number/Vec2/Vec3/Vec4/Color field access, typed public UI access, and deferred lifecycle commands. Carry editor metadata beside custom field types so native and Luau schemas drive the same generic inspector controls.
 **Why:** This proves the “move hot Luau code to compiled code” path while keeping extension authors away from internal ECS storage, allocator ownership, and threading details.
-**Tradeoff:** Native systems can only touch the supported typed ECS surfaces; they cannot yet allocate through a host allocator or access arbitrary reflected component field types.
+**Tradeoff:** Native systems can only touch the supported typed ECS surfaces; they cannot yet allocate through a host allocator or access arbitrary nested/collection field types.
 
 ### 4. Keep UI payload ownership ABI-safe
 

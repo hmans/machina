@@ -36,7 +36,7 @@ Naming communicates ownership:
 - A dotted name, such as `scrappyphysics.rigidbody`, belongs to an engine or library namespace.
 - The `scrapbot` namespace is reserved for engine components.
 
-Project and library schemas currently expose named vec3 fields. Engine components have typed built-in payloads covering transforms, cameras, render membership, lights, and the reusable UI system. See the [Engine Component Reference](/reference/components/) for the canonical field inventory and surface-specific names.
+Project and library schemas expose named Number, Vec2, Vec3, Vec4, and Color fields. A Color is RGBA data with a distinct semantic type so tooling can offer color-specific editing without pretending every Vec4 is a color. Engine components have typed built-in payloads covering transforms, cameras, render membership, lights, and the reusable UI system. See the [Engine Component Reference](/reference/components/) for the canonical field inventory and surface-specific names.
 
 Scene entities attach project or library components under their registered name:
 
@@ -73,6 +73,20 @@ scrapbot.system(Rotating, {
 }, function(time, entity, transform, autorotate)
 	transform.rotation.y += autorotate.speed.y * time.delta_time
 end)
+```
+
+Use `scrapbot.field` when a field needs editor behavior beyond its stored type. Pointer dragging is intentionally opt-in; text entry, validation, and keyboard stepping remain available for ordinary numeric fields.
+
+```lua
+local Fountain = scrapbot.component("fountain", {
+	spawn_rate = scrapbot.field(scrapbot.number, {
+		draggable = true,
+		step = 0.25,
+		minimum = 0,
+	}),
+	wind = scrapbot.vec2,
+	tint = scrapbot.color,
+})
 ```
 
 Native extensions use the same component sets through a forward-only query cursor. See [Luau API: Queries and views](/reference/luau-api/#queries-and-views) and [Native Extensions: Register a system](/guides/native-extensions/#register-a-system) for the exact APIs.

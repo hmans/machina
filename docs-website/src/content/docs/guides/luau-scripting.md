@@ -7,13 +7,20 @@ Scrapbot embeds Luau for project-local iteration. The current entry script is `s
 
 ## Define a project component
 
-Project components use single-token names and a small schema table. The first supported field marker is `scrapbot.vec3`.
+Project components use single-token names and a typed schema table. Available markers are `scrapbot.number`, `scrapbot.vec2`, `scrapbot.vec3`, `scrapbot.vec4`, and semantic RGBA `scrapbot.color`.
 
 ```lua
 local AutorotateComponent = scrapbot.component("autorotate", {
 	velocity = scrapbot.vec3,
+	speed = scrapbot.field(scrapbot.number, {
+		draggable = true,
+		step = 0.1,
+		minimum = 0,
+	}),
 }) :: AutorotateComponent
 ```
+
+`scrapbot.field(type, options)` keeps editor behavior in the same schema used by scene validation and generated types. `draggable` opts numeric controls into pointer scrubbing; `step`, `minimum`, and `maximum` configure reusable numeric editing. Do not pack unrelated scalar settings into a vector merely to make them inspectable.
 
 The generated type aliases are refreshed by:
 

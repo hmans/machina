@@ -56,8 +56,9 @@ Rules:
 - component names must be dotted;
 - native extensions cannot register the reserved `scrapbot` namespace;
 - field names must be single identifier tokens;
-- the first supported field type is vec3;
-- the maximum field count is 16.
+- supported field types are Number, Vec2, Vec3, Vec4, and semantic RGBA Color;
+- numeric field definitions may publish opt-in drag, step, and optional bound metadata;
+- the maximum native-extension field count is 16.
 
 ## System definitions
 

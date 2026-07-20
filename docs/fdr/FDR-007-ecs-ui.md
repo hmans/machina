@@ -1,7 +1,7 @@
 # FDR-007: ECS UI
 
 **Status:** Active
-**Last reviewed:** 2026-07-19
+**Last reviewed:** 2026-07-20
 
 ## Overview
 
@@ -25,7 +25,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 - Each interaction pass emits an engine-internal bounded, ordered stream of generic activation, change, and direct-child drop events addressed by entity UUID. Editor orchestration consumes that stream, while project systems observe the public `ui_state` revisions; layout and control mechanics do not dispatch editor commands.
 - Single-line input controls store authored text in their ECS component while the retained UI state owns focus, cursor, selection, horizontal reveal, and blink state. Clicking selects all text.
 - Checkbox controls store their boolean state and complete box, border, radius, checkmark, hover, and active styling in an ECS component, consume generic hover/active state, toggle on primary press, and render their box and checkmark analytically with SDFs. Read-only checkboxes retain their visual state without accepting pointer changes.
-- Focused inputs accept typed text, Left/Right/Home/End cursor movement, Shift-extended selection, Backspace/Delete, and Select All. Tab and Shift+Tab traverse inputs in paint order; Enter submits and leaves the field, while Escape restores the value present when focus began. Every writable numeric input provides bounds, stepping, validation, and horizontal pointer scrubbing across its complete control surface. Optional styled prefix badges remain presentation and do not gate interaction. Prefix spacing/radius, selection radius, focus/invalid borders, and caret geometry/colors are public styles.
+- Focused inputs accept typed text, Left/Right/Home/End cursor movement, Shift-extended selection, Backspace/Delete, and Select All. Tab and Shift+Tab traverse inputs in paint order; Enter submits and leaves the field, while Escape restores the value present when focus began. Numeric inputs provide bounds, stepping, and validation; `draggable = true` opts a writable numeric input into horizontal pointer scrubbing across its complete control surface and the matching resize cursor. Optional styled prefix badges remain presentation and do not gate interaction. Prefix spacing/radius, selection radius, focus/invalid borders, and caret geometry/colors are public styles.
 - Backgrounds and inset borders use GPU-evaluated signed-distance rounded rectangles, including square corners at a zero radius.
 - Structural dirty notifications add, update, or remove only affected retained nodes when UI components or entities appear and disappear. Updating values on already-attached UI components does not dirty retained membership; reparenting, hiding, attachment, and removal do. Structural synchronization also validates runtime-authored parent chains and rebuilds compact parent/first-child/next-sibling links, so responsive layout and painting traverse the retained hierarchy linearly instead of rediscovering every node's children through whole-tree scans. Project and editor domains carry independent monotonic layout and paint revisions. Typed ECS setters, retained scrolling, and interaction changes increment only the affected domain, so an unchanged frame skips hierarchy, layout, and paint traversal without hashing every node and component. The setters are shared by project Luau and programmatic engine/editor composition, while scene parsing produces the same public component structs.
 - Generated Luau queries expose the complete value and styling payload of every public UI component. `add_component` updates or attaches those same components to live entities, while `remove_component` removes them through the structural dirty path.
@@ -94,7 +94,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 **Why:** Systems and tools can observe the value through the ordinary world while frame-local interaction survives reconciliation without polluting scene data.
 **Tradeoff:** This first control is single-line and ASCII-only. It does not yet provide clipboard operations, IME composition, Unicode shaping, or multiline editing.
 
-Numeric mode is a complete interaction contract rather than a collection of opt-ins: `numeric = true` enables parsing, validation, stepping, and whole-surface horizontal scrubbing. A click without crossing the drag threshold still focuses and selects the input for text editing.
+Numeric mode enables parsing, validation, bounds, and keyboard stepping. Pointer scrubbing is a separate explicit capability: `draggable = true` enables whole-surface horizontal scrubbing only when the input is numeric and writable. A click without crossing the drag threshold still focuses and selects the input for text editing.
 
 ### 10. Make list selection ECS-owned
 

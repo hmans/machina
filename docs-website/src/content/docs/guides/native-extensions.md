@@ -26,6 +26,7 @@ import scrapbot "scrapbot:extension"
 
 Rigidbody_Component :: scrapbot.Component{name = "scrappyphysics.rigidbody"}
 Rigidbody_Velocity :: scrapbot.Vec3_Field{component = Rigidbody_Component, name = "velocity"}
+Rigidbody_Drag :: scrapbot.Number_Field{component = Rigidbody_Component, name = "drag"}
 
 @(export)
 scrapbot_extension_register :: proc "c" (api: ^scrapbot.API) -> cstring {
@@ -37,6 +38,7 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 
 	fields := [?]scrapbot.Field {
 		scrapbot.vec3(Rigidbody_Velocity),
+		scrapbot.number_draggable(Rigidbody_Drag, 0.05, 0),
 	}
 	scrapbot.component(&reg, Rigidbody_Component, fields[:])
 
@@ -63,7 +65,9 @@ scrapbot.system(&reg, "scrappyphysics.motion", accesses[:], motion_system)
 return scrapbot.err(&reg)
 ```
 
-The callback receives `scrapbot.System_Context`. The context includes a read-only `time` snapshot and can query entities by component names, read/write `scrapbot.transform`, read/write vec3 fields on schema-backed custom components, and consume the same public ECS UI payloads used by scenes, Luau, and editor chrome. A Transform's optional `parent` is a stable entity UUID; its position, rotation, and scale are local to that parent, and invalid or cyclic parent writes are rejected. Native and Luau systems share the same scheduler.
+The callback receives `scrapbot.System_Context`. The context includes a read-only `time` snapshot and can query entities by component names, read/write `scrapbot.transform`, read/write Number, Vec2, Vec3, Vec4, and Color fields on schema-backed custom components, and consume the same public ECS UI payloads used by scenes, Luau, and editor chrome. A Transform's optional `parent` is a stable entity UUID; its position, rotation, and scale are local to that parent, and invalid or cyclic parent writes are rejected. Native and Luau systems share the same scheduler.
+
+Custom schema constructors are `scrapbot.number`, `scrapbot.vec2`, `scrapbot.vec3`, `scrapbot.vec4`, and `scrapbot.color`; each accepts its typed field descriptor or a raw field name. `scrapbot.number_draggable(field, step, minimum?, maximum?)` opts a scalar into inspector scrubbing and publishes its step and bounds through the shared registry. Corresponding `*_value` payload constructors and `scrapbot.get`/`scrapbot.set` overloads avoid packing unrelated scalar settings into vectors.
 
 Native systems with complete, non-conflicting access declarations run concurrently on Scrapbot's worker pool. Conflicting systems preserve registration order, Luau systems remain serial, and systems without access declarations execute exclusively. Parallel native systems queue lifecycle commands privately; Scrapbot merges those commands deterministically after the stage.
 
@@ -159,7 +163,7 @@ if err != nil {
 _ = uuid // stable project-wide identity, also usable as a UI parent
 ```
 
-Use `scrapbot.get_ui` for a typed read/modify/write cycle and `scrapbot.set_ui` for the deferred update. The same payload supports responsive layout fields such as `min_size`, `fill_width`, and `fit_content_height`; proportional and pointer-resizable `scrapbot.ui_table` columns; reusable `scrapbot.ui_progress` values; and numeric `scrapbot.ui_input` controls with built-in horizontal scrubbing and optional prefix badges. `scrapbot.UI_State_Component` is readable but renderer-owned and cannot be written. Its activation, change, submit, and cancel revisions are stable edge counters for native systems that react less frequently than rendering; `valid` exposes numeric validation.
+Use `scrapbot.get_ui` for a typed read/modify/write cycle and `scrapbot.set_ui` for the deferred update. The same payload supports responsive layout fields such as `min_size`, `fill_width`, and `fit_content_height`; proportional and pointer-resizable `scrapbot.ui_table` columns; reusable `scrapbot.ui_progress` values; and numeric `scrapbot.ui_input` controls with optional horizontal scrubbing (`draggable = true`) and optional prefix badges. `scrapbot.UI_State_Component` is readable but renderer-owned and cannot be written. Its activation, change, submit, and cancel revisions are stable edge counters for native systems that react less frequently than rendering; `valid` exposes numeric validation.
 
 The raw ABI stores text, font names, and input prefixes in fixed inline buffers rather than passing allocator-owned Odin strings across the dynamic-library boundary. The Odin helper handles those buffers through `ui_text`, `ui_panel`, `ui_button`, `ui_input`, `ui_payload_text`, `ui_payload_font`, and `ui_payload_prefix`.
 

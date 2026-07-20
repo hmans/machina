@@ -136,7 +136,7 @@ scrapbot.system(Buttons, { name = "menu" }, function(_, entity, _, state)
 end)
 ```
 
-Buttons advance activation state. Checkboxes own a mutable `checked` value and advance change state. Inputs support focus, selection, cursor movement, Tab traversal, submission/cancellation, and numeric bounds and stepping. Every writable numeric input also scrubs horizontally from its complete control surface; prefix badges are presentation rather than an interaction requirement.
+Buttons advance activation state. Checkboxes own a mutable `checked` value and advance change state. Inputs support focus, selection, cursor movement, Tab traversal, submission/cancellation, and numeric bounds and stepping. Set `draggable = true` on a writable numeric input to opt into horizontal scrubbing from its complete control surface; prefix badges are presentation rather than an interaction requirement.
 
 ## Create and update UI from Luau
 

@@ -334,7 +334,7 @@ Set `font` on `ui_text`, `ui_button`, `ui_input`, or `ui_panel` to a name declar
 
 Clicking a `ui_input` focuses it and selects all its text. Focused inputs support typed single-line ASCII text, Left/Right/Home/End movement, Shift selection, Backspace/Delete, Select All, and paint-order Tab/Shift+Tab traversal. Enter submits the current value and removes focus; Escape restores the value present when focus began. The component's `text` field changes during editing, while `ui_state.changed`, `submitted`, and `cancelled` plus their revision counters expose reusable interaction edges.
 
-Set `numeric = true` to give an input a numeric `number`, positive `step`, optional `minimum`/`maximum`, Up/Down stepping, validation through `ui_state.valid`, and horizontal pointer scrubbing across the complete control surface. `prefix`, `prefix_width`, `prefix_color`, and `prefix_background` provide a reusable leading badge such as the inspector's X/Y/Z controls, but are not required for scrubbing. Set `read_only = true` to retain focus, selection, and traversal without allowing mutation. Clipboard operations, IME composition, Unicode shaping, and multiline editing are not implemented yet.
+Set `numeric = true` to give an input a numeric `number`, positive `step`, optional `minimum`/`maximum`, Up/Down stepping, and validation through `ui_state.valid`. Add `draggable = true` to opt a writable numeric input into horizontal pointer scrubbing across the complete control surface. `prefix`, `prefix_width`, `prefix_color`, and `prefix_background` provide a reusable leading badge such as the inspector's X/Y/Z controls, but are not required for scrubbing. Set `read_only = true` to retain focus, selection, and traversal without allowing mutation. Clipboard operations, IME composition, Unicode shaping, and multiline editing are not implemented yet.
 
 Control chrome is authored rather than editor-private. Scroll areas expose scrollbar width, right margin, vertical inset, minimum thumb size, track/thumb colors, and corner radius. Panels expose disclosure geometry plus trailing-action size, margin, icon inset, radius, and state colors. Inputs expose prefix gap/padding/radius, selection radius, focus and invalid borders, and caret color/width/inset. Checkboxes expose box and check radii, border width, and check inset. Set any corner radius to `0` for square corners; checkbox radii and check inset use `-1` as the automatic size-relative default.
 
@@ -416,6 +416,11 @@ Each child of `Stats Table` occupies the next table cell. Give the first three c
 [entities.components.autorotate]
 velocity = [0, 1.5707963, 0]
 
+[entities.components.fountain]
+spawn_rate = 18
+wind = [0.25, 0]
+tint = [1, 0.4, 0.1, 1]
+
 [entities.components.scrappyphysics.rigidbody]
 velocity = [0, 0, 0]
 ```
@@ -425,5 +430,6 @@ Rules:
 - single-token names are project components;
 - dotted names are engine or library components;
 - fields are single-token names;
-- the current supported field value is a vec3 array;
+- supported field values are finite numbers and two-, three-, or four-number arrays according to the registered Number, Vec2, Vec3, Vec4, or Color schema;
+- Color fields use four RGBA values and remain semantically distinct from ordinary Vec4 fields;
 - scene data must match a component schema collected from the engine, Luau, or native extensions.

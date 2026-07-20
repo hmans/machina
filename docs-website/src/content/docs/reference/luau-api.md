@@ -20,7 +20,12 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the most precise API ref
 | `scrapbot.component(name, schema)` | Register a project-level component. |
 | `scrapbot.library_component(name, schema)` | Register a dotted library component from Luau. |
 | `scrapbot.component_handle(name)` | Retrieve an already registered component handle. |
-| `scrapbot.vec3` | Schema field marker for vec3 payload fields. |
+| `scrapbot.number` | Schema field marker for scalar numeric payload fields. |
+| `scrapbot.vec2`, `scrapbot.vec3`, `scrapbot.vec4` | Schema field markers for two-, three-, and four-channel numeric payloads. |
+| `scrapbot.color` | Schema field marker for semantic RGBA payloads. Stored as four numbers and surfaced distinctly to tooling. |
+| `scrapbot.field(type, options?)` | Add editor metadata to a field type. Options are `draggable`, positive `step`, `minimum`, and `maximum`. |
+
+Legacy strings (`"number"`, `"vec2"`, `"vec3"`, `"vec4"`, and `"color"`) remain accepted, but marker values generate better project-local declarations. Numeric pointer dragging is opt-in through `scrapbot.field(..., { draggable = true })`; bounds and steps are schema metadata shared by the editor rather than Luau-only behavior.
 
 Built-in handles:
 
