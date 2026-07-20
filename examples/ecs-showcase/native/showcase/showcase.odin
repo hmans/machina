@@ -35,6 +35,14 @@ Emitter_State :: scrapbot.Vec3_Field {
 	name = "state",
 }
 
+Fountain_Component :: scrapbot.Component {
+	name = "showcase.fountain",
+}
+Fountain_Emission :: scrapbot.Vec3_Field {
+	component = Fountain_Component,
+	name = "rate_burst_speed",
+}
+
 Light_Orbit_Component :: scrapbot.Component {
 	name = "showcase.light_orbit",
 }
@@ -69,6 +77,9 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 	emitter_fields := [?]scrapbot.Field{scrapbot.vec3(Emitter_State)}
 	scrapbot.component(&reg, Emitter_Component, emitter_fields[:])
 
+	fountain_fields := [?]scrapbot.Field{scrapbot.vec3(Fountain_Emission)}
+	scrapbot.component(&reg, Fountain_Component, fountain_fields[:])
+
 	light_orbit_fields := [?]scrapbot.Field{scrapbot.vec3(Light_Orbit_Settings)}
 	scrapbot.component(&reg, Light_Orbit_Component, light_orbit_fields[:])
 
@@ -99,6 +110,7 @@ register :: proc "contextless" (ctx: ^scrapbot.Context) -> cstring {
 		scrapbot.write(scrapbot.Shadow_Caster_Component),
 		scrapbot.read(Emitter_Component),
 		scrapbot.write(Emitter_Component),
+		scrapbot.read(Fountain_Component),
 		scrapbot.write(Lifetime_Component),
 		scrapbot.write(Velocity_Component),
 		scrapbot.write(Spin_Component),
@@ -265,7 +277,11 @@ rigidbody_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstrin
 }
 
 emit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
-	components := [?]scrapbot.Component{scrapbot.Transform_Component, Emitter_Component}
+	components := [?]scrapbot.Component {
+		scrapbot.Transform_Component,
+		Emitter_Component,
+		Fountain_Component,
+	}
 	emitter_query := scrapbot.query(components[:])
 
 	cursor: scrapbot.Query_Cursor
@@ -284,12 +300,27 @@ emit_system :: proc "contextless" (ctx: ^scrapbot.System_Context) -> cstring {
 		if !state_ok {
 			return "failed to read emitter state"
 		}
+		emission, emission_ok := scrapbot.get(ctx, entity, Fountain_Emission)
+		if !emission_ok {
+			return "failed to read fountain emission settings"
+		}
 
 		state.x += ctx.time.delta_time
+		spawn_rate := max(emission.x, 0)
+		if spawn_rate <= 0 {
+			state.x = 0
+			if !scrapbot.set(ctx, entity, Emitter_State, state) {
+				return "failed to write emitter state"
+			}
+			continue
+		}
+		spawn_interval := 1 / spawn_rate
+		burst_limit := clamp(i32(emission.y), i32(1), i32(64))
+		launch_speed := max(emission.z, 0)
 		spawn_count := 0
-		for state.x >= state.y && spawn_count < 4 {
-			state.x -= state.y
-			if err := spawn_fountain_cube(ctx, transform, i32(state.z)); err != nil {
+		for state.x >= spawn_interval && spawn_count < int(burst_limit) {
+			state.x -= spawn_interval
+			if err := spawn_fountain_cube(ctx, transform, i32(state.z), launch_speed); err != nil {
 				return err
 			}
 			state.z += 1
@@ -308,6 +339,7 @@ spawn_fountain_cube :: proc "contextless" (
 	ctx: ^scrapbot.System_Context,
 	emitter: scrapbot.Transform,
 	sequence: i32,
+	launch_speed: f32,
 ) -> cstring {
 	angle := f32(sequence) * 2.3999631
 	ring := f32(sequence % 7) / 6.0
@@ -322,7 +354,7 @@ spawn_fountain_cube :: proc "contextless" (
 	}
 	velocity := scrapbot.Vec3 {
 		x = math.cos(angle) * speed,
-		y = 3.2 + ring * 0.9,
+		y = launch_speed + ring * 0.9,
 		z = math.sin(angle) * speed,
 	}
 	spin := scrapbot.Vec3 {
