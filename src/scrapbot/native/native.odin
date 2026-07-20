@@ -58,7 +58,7 @@ Source_Target :: struct {
 Extension_Set :: struct {
 	extensions: [MAX_EXTENSIONS]Extension,
 	extension_count: int,
-	systems: [MAX_NATIVE_SYSTEMS]Native_System,
+	systems: []Native_System,
 	system_count: int,
 	registry: ^component.Registry,
 	resources: ^resources.Registry,
@@ -87,6 +87,7 @@ load_project_extensions :: proc(
 	resource_registry: ^resources.Registry = nil,
 ) -> Load_Result {
 	destroy_extension_set(set)
+	init_extension_set(set)
 	set.registry = registry
 	set.resources = resource_registry
 	defer set.registry = nil
@@ -112,6 +113,14 @@ load_project_extensions :: proc(
 	return Load_Result{loaded_count = set.extension_count}
 }
 
+init_extension_set :: proc(set: ^Extension_Set) {
+	if set == nil {
+		return
+	}
+	set^ = {}
+	set.systems = make([]Native_System, MAX_NATIVE_SYSTEMS)
+}
+
 destroy_extension_set :: proc(set: ^Extension_Set) {
 	if set == nil {
 		return
@@ -122,6 +131,7 @@ destroy_extension_set :: proc(set: ^Extension_Set) {
 		}
 		delete(extension.path)
 	}
+	delete(set.systems)
 	set^ = {}
 }
 

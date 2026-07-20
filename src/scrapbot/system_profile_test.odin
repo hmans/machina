@@ -8,9 +8,13 @@ import "core:testing"
 @(test)
 test_system_profile_publishes_five_frame_updates_over_a_fifty_frame_window :: proc(t: ^testing.T) {
 	native_extensions: native.Extension_Set
+	native.init_extension_set(&native_extensions)
+	defer native.destroy_extension_set(&native_extensions)
 	native_extensions.system_count = 1
 	native_extensions.systems[0].name = "Physics"
 	script_runtime: script.Runtime
+	script.init_runtime(&script_runtime)
+	defer script.destroy_runtime(&script_runtime)
 	script_runtime.system_count = 1
 	script_name := "Orbit Lights"
 	script_runtime.systems[0].name_length = len(script_name)
@@ -88,4 +92,10 @@ test_system_profile_publishes_five_frame_updates_over_a_fifty_frame_window :: pr
 	testing.expect(t, profile.snapshot.sample_frames == 0)
 	testing.expect(t, profile.sample_count == 0)
 	testing.expect(t, profile.frames_since_publish == 0)
+}
+
+@(test)
+test_runtime_registries_do_not_inflate_stack_values :: proc(t: ^testing.T) {
+	testing.expect(t, size_of(script.Runtime) < 256 * 1024)
+	testing.expect(t, size_of(native.Extension_Set) < 256 * 1024)
 }

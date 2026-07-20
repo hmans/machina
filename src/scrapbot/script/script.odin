@@ -49,9 +49,9 @@ Runtime :: struct {
 	project_root: string,
 	log_enabled: bool,
 	commands: ecs.Command_Buffer,
-	systems: [MAX_SCRIPT_SYSTEMS]Script_System,
+	systems: []Script_System,
 	system_count: int,
-	query_objects: [MAX_QUERY_OBJECTS]Query_Object,
+	query_objects: []Query_Object,
 	query_object_count: int,
 	active_system: schedule.System,
 	has_active_system: bool,
@@ -213,8 +213,7 @@ run_source_with_options :: proc(
 ) -> Run_Result {
 	result: Run_Result
 	destroy_runtime(runtime)
-	runtime^ = {}
-	ecs.init_command_buffer(&runtime.commands)
+	init_runtime(runtime)
 	runtime.world = world
 	runtime.log_enabled = options.log_enabled
 	runtime.resource_registry = options.resource_registry
@@ -282,7 +281,20 @@ run_source_with_options :: proc(
 	return result
 }
 
+init_runtime :: proc(runtime: ^Runtime) {
+	if runtime == nil {
+		return
+	}
+	runtime^ = {}
+	ecs.init_command_buffer(&runtime.commands)
+	runtime.systems = make([]Script_System, MAX_SCRIPT_SYSTEMS)
+	runtime.query_objects = make([]Query_Object, MAX_QUERY_OBJECTS)
+}
+
 destroy_runtime :: proc(runtime: ^Runtime) {
+	if runtime == nil {
+		return
+	}
 	if runtime.L != nil {
 		for system in runtime.systems[:runtime.system_count] {
 			lua_unref(runtime.L, system.callback_ref)
@@ -293,6 +305,8 @@ destroy_runtime :: proc(runtime: ^Runtime) {
 		lua_close(runtime.L)
 	}
 	ecs.destroy_command_buffer(&runtime.commands)
+	delete(runtime.systems)
+	delete(runtime.query_objects)
 	runtime^ = {}
 }
 
