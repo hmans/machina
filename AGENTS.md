@@ -6,6 +6,14 @@ Scrapbot is an experimental, text-first game engine written in Odin with embedde
 
 Please refer to the `README.md` for a high-level overview of the engine's features and roadmap. Detailed features, design decisions, and implementation details are documented in ADRs and FDRs in `docs/adr/` and `docs/fdr/`.
 
+## Work Tracking
+
+- `docs/TODO.md` is the concise, agent-readable backlog of current actionable engineering work. Read the relevant section before feature, refactor, performance, or hardening work so the active change accounts for known follow-ups and does not duplicate an existing task.
+- Keep `docs/TODO.md` synchronized in the same change: add legitimate follow-up work discovered during implementation or review, rewrite partially completed items to describe only what remains, and remove completed items. Do not preserve checked-item history; Git owns completion history.
+- Keep tasks short and link to an ADR, FDR, issue, benchmark, or public document when details or acceptance criteria do not fit on one line. Use the `todo-list` skill when maintaining the file.
+- `README.md` owns the broad public roadmap; `docs/TODO.md` owns the narrower actionable engineering backlog; ADRs and FDRs own decisions and behavior. Link between them instead of duplicating exhaustive plans.
+- The backlog is context, not implicit authorization to perform unrelated work. The user's current request and the active task scope take precedence.
+
 ## Project Status
 
 - This project is in super-early development.
