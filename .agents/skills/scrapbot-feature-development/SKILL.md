@@ -11,6 +11,7 @@ description: Use when adding, changing, documenting, or auditing Scrapbot engine
 2. Trace the existing implementation end to end before choosing a design. Prefer established package boundaries and public APIs.
 3. Call out material choices when multiple user-visible or architectural options remain. Breaking changes are acceptable, but accidental surface divergence is not.
 4. Inspect the worktree and assigned scope. In multi-agent work, keep writers file-disjoint and leave shared registries, generated files, indexes, and integration checks to an explicit integration owner.
+5. Read `docs/architecture/INDEX.md` and use the `scrapbot-architecture-inventory` skill when the work changes systems, components, ownership or invalidation, major data flows, or package responsibilities.
 
 ## Public Surface Audit
 
@@ -51,17 +52,19 @@ Never hand-edit generated example declarations without changing their generator.
 - Update behavioral FDRs when a feature's supported behavior or design changes.
 - Add or amend an ADR only for a durable architectural decision.
 - Keep `README.md`, `docs/TODO.md`, examples, and the documentation website synchronized with shipped behavior.
+- Keep `docs/architecture/` synchronized with architectural surfaces and run its inventory audit when applicable.
 - Finish with `mise test`, `git diff --check`, and any feature-specific verification.
 - When integrating delegated work, review the combined diff rather than trusting per-agent test reports; cross-surface omissions usually appear only at integration time.
 
 ## Documentation Audits
 
-Treat `docs-website/src/content/docs/reference/components.md` as the canonical public inventory of engine-provided components. Treat `src/scrapbot/component/registry.odin` as its source of truth.
+Treat `src/scrapbot/component/registry.odin` as the source of truth for machine component facts. Treat `docs/architecture/components.md` as the complete engineering directory and `docs-website/src/content/docs/reference/components.md` as the canonical public usage reference. Do not duplicate internal ownership/invalidation prose into the website or exhaustive public field/default documentation into the architecture directory.
 
 When adding, removing, renaming, or changing an engine component:
 
 1. Update the canonical component page with its registry name, public fields, scene name, Luau handle, native descriptor/access pattern, defaults, constraints, ownership, and renderer-only behavior where applicable.
-2. Run `node .agents/skills/scrapbot-feature-development/scripts/check_component_docs.mjs` to catch registry entries missing from the canonical page.
-3. Check `reference/project-files.md`, `reference/luau-api.md`, `guides/native-extensions.md`, and `guides/ecs-ui.md` only for surface-specific behavior. Link to the component page instead of duplicating exhaustive field inventories.
-4. Audit both `docs/GLOSSARY.md` and the public website glossary for stale feature-state language.
-5. Build the documentation website with `pnpm run build` from `docs-website/`.
+2. Update the component's standardized entry in `docs/architecture/components.md` when its storage, lifecycle, producers, consumers, invalidation, surfaces, or implementation/test anchors change.
+3. Run both `node .agents/skills/scrapbot-feature-development/scripts/check_component_docs.mjs` and `node .agents/skills/scrapbot-architecture-inventory/scripts/check_inventory.mjs`.
+4. Check `reference/project-files.md`, `reference/luau-api.md`, `guides/native-extensions.md`, and `guides/ecs-ui.md` only for surface-specific behavior. Link to the component page instead of duplicating exhaustive field inventories.
+5. Audit both `docs/GLOSSARY.md` and the public website glossary for stale feature-state language.
+6. Build the documentation website with `pnpm run build` from `docs-website/`.

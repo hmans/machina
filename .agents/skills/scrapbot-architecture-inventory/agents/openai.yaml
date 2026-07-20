@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scrapbot Architecture Inventory"
+  short_description: "Audit and maintain Scrapbot architecture maps"
+  default_prompt: "Use $scrapbot-architecture-inventory to audit and update the Scrapbot architecture inventory."

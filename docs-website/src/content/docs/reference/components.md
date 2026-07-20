@@ -26,6 +26,7 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type referen
 
 ## Complete public inventory
 
+<!-- inventory:public-engine-components:start -->
 | Component | Kind | Purpose |
 | --- | --- | --- |
 | `scrapbot.transform` | Data | Optional UUID parent plus local position, Euler rotation, and scale. |
@@ -51,6 +52,7 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type referen
 | `scrapbot.ui_button` | UI content | Activatable text and/or SDF-icon button. |
 | `scrapbot.ui_input` | UI content | Single-line text or numeric input. |
 | `scrapbot.ui_checkbox` | UI content | Boolean control. |
+<!-- inventory:public-engine-components:end -->
 
 `scrapbot.internal.render_instance` is the only engine-registered internal component. Render reconciliation adds or removes it when an entity's Transform, geometry, and material references become renderable. It is intentionally unavailable to scene files, project Luau, native extensions, and editor authoring.
 
