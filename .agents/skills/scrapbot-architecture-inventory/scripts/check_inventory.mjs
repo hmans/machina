@@ -42,6 +42,20 @@ function tableRows(section) {
   return rows;
 }
 
+function allTableRows(section) {
+  const rows = [];
+  for (const line of section.split("\n")) {
+    if (!line.startsWith("|")) continue;
+    const columns = line
+      .split("|")
+      .slice(1, -1)
+      .map((column) => column.trim());
+    if (columns.length === 0 || columns[0] === "" || /^-+$/.test(columns[0])) continue;
+    rows.push(columns);
+  }
+  return rows;
+}
+
 function unquoteCode(value) {
   const match = value.match(/^`([^`]+)`$/);
   return match ? match[1] : value;
@@ -68,6 +82,8 @@ function compareSet(label, sourceValues, documentValues) {
 const requiredPages = [
   "systems.md",
   "components.md",
+  "resources.md",
+  "lifecycle.md",
   "state-ownership.md",
   "data-flows.md",
   "source-map.md",
@@ -188,7 +204,68 @@ for (const row of componentRows) {
   }
 }
 
+const sharedTypesSource = read("src/scrapbot/shared/types.odin");
+const resourceKindStart = sharedTypesSource.indexOf("Project_Resource_Kind :: enum {");
+const resourceKindEnd = sharedTypesSource.indexOf("}\n", resourceKindStart);
+if (resourceKindStart < 0 || resourceKindEnd < 0) {
+  fail("could not locate Project_Resource_Kind source boundary");
+}
+const resourceKindSource = sharedTypesSource.slice(resourceKindStart, resourceKindEnd);
+const sourceProjectResourceKinds = [...resourceKindSource.matchAll(/^\s*([A-Za-z0-9_]+),\s*$/gm)].map(
+  (match) => match[1],
+);
+const projectResourceRows = tableRows(
+  markedSection(read("docs/architecture/resources.md"), "project-resource-kinds"),
+);
+const documentedProjectResourceKinds = projectResourceRows.map((row) => unquoteCode(row[0]));
+compareExact("project resource kinds", sourceProjectResourceKinds, documentedProjectResourceKinds);
+
+const resourceRegistrySource = read("src/scrapbot/resources/resources.odin");
+const runtimeRegistryStart = resourceRegistrySource.indexOf("Registry :: struct {");
+const runtimeRegistryEnd = resourceRegistrySource.indexOf("}\n", runtimeRegistryStart);
+if (runtimeRegistryStart < 0 || runtimeRegistryEnd < 0) {
+  fail("could not locate resources.Registry source boundary");
+}
+const runtimeRegistryBody = resourceRegistrySource.slice(runtimeRegistryStart, runtimeRegistryEnd);
+const sourceRuntimeResourceFamilies = [
+  ...runtimeRegistryBody.matchAll(/^\s*[a-z_]+:\s*\[dynamic\]([A-Za-z0-9_]+),\s*$/gm),
+].map((match) => match[1]);
+const runtimeResourceRows = tableRows(
+  markedSection(read("docs/architecture/resources.md"), "runtime-resource-families"),
+);
+const documentedRuntimeResourceFamilies = runtimeResourceRows.map((row) => unquoteCode(row[0]));
+compareExact(
+  "runtime resource families",
+  sourceRuntimeResourceFamilies,
+  documentedRuntimeResourceFamilies,
+);
+
+const requiredLifecycleBoundaries = [
+  "Project load",
+  "Scene entity creation",
+  "Runtime spawn",
+  "Component add/remove/value mutation",
+  "Despawn",
+  "Enter Play",
+  "Pause",
+  "Step",
+  "Stop",
+  "Save",
+  "Revert",
+  "Script-only hot reload",
+  "Project/world hot reload",
+  "Shutdown",
+];
+const lifecycleRows = allTableRows(
+  markedSection(read("docs/architecture/lifecycle.md"), "lifecycle-boundaries"),
+).filter((row) => row[0] !== "Boundary");
+compareExact(
+  "required lifecycle boundaries",
+  requiredLifecycleBoundaries,
+  lifecycleRows.map((row) => row[0]),
+);
+
 if (process.exitCode) process.exit(process.exitCode);
 console.log(
-  `architecture inventory is current: ${sourceSystems.length} engine systems, ${sourceComponents.length} engine components, ${requiredPages.length} supporting maps`,
+  `architecture inventory is current: ${sourceSystems.length} engine systems, ${sourceComponents.length} engine components, ${sourceProjectResourceKinds.length} project resource kinds, ${sourceRuntimeResourceFamilies.length} runtime resource families, ${requiredLifecycleBoundaries.length} lifecycle boundaries, ${requiredPages.length} maps`,
 );

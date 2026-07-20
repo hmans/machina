@@ -1,6 +1,6 @@
 ---
 name: scrapbot-architecture-inventory
-description: Maintain and audit Scrapbot's source-oriented architecture inventory in docs/architecture. Use when adding, removing, renaming, or changing engine systems, component registrations, component ownership/lifecycle, authoritative or derived state, dirty queues/revisions/caches, frame/load/save/render/UI data flows, package responsibilities, or architectural documentation; also use for architecture overviews and inventory drift audits.
+description: Maintain and audit Scrapbot's source-oriented architecture inventory in docs/architecture. Use when adding, removing, renaming, or changing engine systems, component registrations, component ownership/lifecycle, project resources, runtime registries, UUID/handle/version semantics, load/spawn/playback/persistence/hot-reload lifecycles, authoritative or derived state, dirty queues/revisions/caches, frame/render/UI data flows, package responsibilities, or architectural documentation; also use for architecture overviews and inventory drift audits.
 ---
 
 # Scrapbot Architecture Inventory
@@ -14,6 +14,8 @@ Keep `docs/architecture/` an accurate present-tense map from architectural conce
 3. Update every affected inventory page in the same change:
    - `systems.md` for engine profile phases, frame order, scheduler boundaries, execution ownership, inputs/outputs, stable-frame behavior, backend/thread boundaries, or tests.
    - `components.md` for registry membership, ownership, storage kind, lifecycle, producers/consumers, invalidation, public availability, or tests.
+   - `resources.md` for persistent resource kinds, runtime registries, UUID/handle/version semantics, persistence, hot reload, or cache consumers.
+   - `lifecycle.md` for project load, entity/component lifecycle, playback, Save/Revert, hot reload, world replacement, or shutdown boundaries.
    - `state-ownership.md` for authoritative state, derived structures, invalidation, lifetime, or stable-frame work.
    - `data-flows.md` for project load, simulation, ECS mutation, render/UI extraction, playback, or persistence paths.
    - `source-map.md` for package/file responsibilities or dependency direction.
@@ -28,6 +30,8 @@ Keep `docs/architecture/` an accurate present-tense map from architectural conce
 - Keep exactly one standardized detail entry for every registered engine component and fixed engine system. Preserve all required labels so coverage remains machine-checkable.
 - Describe engine systems as profiled execution phases unless they are actually scheduler registrations. Keep dynamic native/Luau project systems out of the fixed engine table.
 - Distinguish authored, public read-only derived, and internal derived components.
+- Distinguish persistent project-resource UUIDs, runtime generational handles, per-entry content versions, registry topology revisions, and backend cache identity.
+- Keep the lifecycle matrix explicit about which state is retained, rebuilt, rebound, persisted, or rolled back at every boundary. Record partial rollback behavior as a current limitation rather than implying stronger transactions than source provides.
 - Name both the authoritative owner and the invalidation/lifetime mechanism for derived state.
 - Treat code as authority for names, fields, lifecycle, phase order, and ownership. Do not create a manually maintained JSON/YAML mirror. Prefer extracting structured facts from source or a compiled engine schema command.
 - Keep engineering contracts in `docs/architecture/`: producers, consumers, invalidation, execution/backend boundaries, and source/test anchors. Keep public authoring syntax, exhaustive fields/defaults, constraints, and examples in `docs-website/`. Link instead of copying across the boundary.
@@ -44,6 +48,8 @@ The bundled script enforces:
 - one labeled engineering-contract entry per engine system and component;
 - authored/derived component lifecycle and user-availability classification;
 - exact public-component membership in the website's canonical inventory;
+- exact project-resource kinds and runtime resource-registry families from source;
+- coverage of the required load, entity, playback, persistence, hot-reload, and shutdown boundaries;
 - presence and index linkage of all required architecture pages.
 
 It intentionally cannot prove prose-level responsibilities or data flow. Audit those against source manually.

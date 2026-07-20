@@ -20,6 +20,8 @@ Do not introduce a hand-maintained schema catalog beside the registry. Automated
 
 - [Engine systems](systems.md): profiled engine frame phases, execution order, and scheduling boundaries.
 - [Components](components.md): engine component registry, ownership, lifecycle, and project availability.
+- [Resources and registries](resources.md): persistent resource identity, generational runtime handles, versions, persistence, and cache consumers.
+- [Runtime and authoring lifecycle](lifecycle.md): load, spawn, mutation, playback, persistence, hot reload, and teardown boundaries.
 - [State ownership](state-ownership.md): authoritative state, derived structures, invalidation, and stable-frame expectations.
 - [Data flows](data-flows.md): project loading, frame execution, mutation, rendering, and authoring persistence.
 - [Source map](source-map.md): package and top-level file responsibilities.
@@ -32,6 +34,6 @@ Use the `scrapbot-architecture-inventory` skill when changing or auditing engine
 node .agents/skills/scrapbot-architecture-inventory/scripts/check_inventory.mjs
 ```
 
-The audit enforces exact membership for the engine-system and engine-component tables. The other pages require source-first review because their relationships cannot be validated from names alone.
+The audit enforces exact membership for engine systems, engine components, project resource kinds, runtime resource families, public component coverage, and the required lifecycle boundaries. Prose relationships still require source-first review because names alone cannot prove ownership or behavior.
 
 Keep these pages present-tense and compact. Put rationale in `docs/adr/`, detailed behavior in `docs/fdr/`, public API reference in `docs-website/`, and roadmap status in `README.md` or `docs/TODO.md`.
