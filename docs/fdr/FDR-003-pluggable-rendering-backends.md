@@ -19,9 +19,12 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 - Project UI, transform gizmos, editor-only project-camera bodies and projection frusta, and editor chrome render after world postprocessing and do not bloom.
 - Eligible entities receive internal render-instance components automatically.
 - Shared geometry/material pairs use one instanced draw batch, and geometry and material texture uploads are cached by handle and version.
-- WGPU keeps a persistent slot-addressed GPU instance table, uploads changed ranges, computes camera and shadow frustum visibility into compacted batch slices, and obtains instance counts from indexed indirect draw arguments.
+- WGPU keeps a persistent slot-addressed GPU instance table, coalesces nearby changed slots into bounded uploads, retains compact render/culling uniforms and instance-to-LOD batch mappings, computes camera and shadow frustum visibility into compacted batch slices, and obtains instance counts from indexed indirect draw arguments.
+- The retained draw database grows geometrically past the original 64-batch limit. It rebuilds only when render membership, geometry LOD topology, or required capacity changes.
+- Large stable scenes run a depth prepass, build a max-depth Hi-Z pyramid, and conservatively reject occluded bounding spheres from the following frame. Camera or persistent-instance changes disable stale-pyramid rejection for that frame.
+- UUID-backed `scrapbot.geometry_lod` project resources declare generated icosphere levels and descending projected screen-radius thresholds. The GPU visibility pass selects the geometry batch; the CPU-reference path implements the same result.
 - `--cpu-culling` runs the same conservative camera/shadow visibility contract on the CPU and uploads its compacted lists and counts; it is a compatibility and correctness-reference path, not the performance default.
-- Structured run results include renderer counters for GPU-driven mode, instance and visibility capacity, occupied slot span, and cumulative instance upload calls and bytes. They deliberately avoid synchronous visibility or timing readback.
+- Structured run results include renderer counters for GPU-driven mode, draw/instance/visibility capacity, database rebuilds, occupied slot span, cumulative instance upload calls and bytes, frustum/occlusion counts, per-LOD visible counts, and optional per-pass GPU milliseconds. Visibility and timing use asynchronous readback rings and never synchronously stall the frame.
 - The `wgpu` backend can also render a losslessly compressed headless final-frame PNG with `--framegrab`.
 - `--framegrab-region x,y,width,height` exports a top-left-origin 1:1 pixel crop without resampling; omitting it preserves the complete 1280×720 frame.
 - WGPU sizes the live world and project UI to the complete available viewport, deriving camera aspect from its dimensions, then paints engine chrome in a separate overlay pass.
@@ -112,7 +115,7 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 **Decision:** Preserve stable ECS render slots while WGPU owns persistent instance storage, compute frustum culling, per-batch visible-instance compaction, and indexed indirect arguments. Camera and shadow visibility use separate outputs. See ADR-034.
 **Why:** Unchanged instance data should stay resident, large scenes should not rebuild bounded uniform arrays, and project/ECS data should remain independent from WGPU objects.
-**Tradeoff:** The initial path has explicit 131,072-slot and 64-batch limits, uses conservative bounding spheres, and still encodes one indirect call per CPU-retained batch.
+**Tradeoff:** The path has an explicit 131,072-slot limit, uses conservative bounding spheres, requires one previous frame with stable camera and instance data before Hi-Z rejection, and still encodes one indirect call per CPU-retained geometry/material/LOD batch. The draw database itself grows instead of imposing a fixed batch ceiling.
 
 ## Related
 
@@ -121,6 +124,6 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 ## Open Questions
 
-- How should the render packet evolve for richer texture channels, cascaded shadows, occlusion, and LOD?
+- How should authored LOD evolve from generated icospheres to imported meshes, offline simplification, and meshlets?
 - How should offscreen render output be compared once scene rendering exists?
 - How long should the headful runtime loop live before the editor and game loop exist?

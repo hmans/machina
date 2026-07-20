@@ -20,6 +20,7 @@ Text-first projects let users run Scrapbot from an ordinary project directory co
 - Every scene entity has a required, non-zero, project-wide UUID. Names are editable display labels, and cross-entity references use UUIDs.
 - A Transform may reference another Transform entity by UUID. Its position, rotation, and scale are then local to that parent; missing targets, self-parenting, and cycles fail scene validation.
 - Authored resources live in standalone `resources/**/*.resource.toml` files, have their own project-wide UUIDs, and are referenced by UUID from scenes. Resources are project data outside the ECS and are not owned by a scene.
+- `scrapbot.material` resources store shared surface data. `scrapbot.geometry_lod` resources store generated icosphere levels plus descending screen-radius thresholds under one stable geometry identity.
 - Project validation rejects missing manifests, unsafe scene or resource paths, malformed project metadata, malformed scene or resource data, duplicate resource UUIDs, unresolved resource references, unknown scene components, and scene data that does not match registered component schemas.
 - Project validation refreshes generated Luau type definitions from the component registry.
 - Project validation builds declared native extension targets before loading extension schemas.

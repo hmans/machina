@@ -52,7 +52,7 @@ Embedded Inter is always available as the default and runtime fallback. The curr
 
 Scrapbot recursively discovers standalone files under `resources/` whose names end in `.resource.toml`. Resources are typed project data outside the ECS and are not owned by a scene. Every resource has a unique, non-zero UUID; names and file paths remain editable labels and storage locations.
 
-The first resource type is a material:
+Material resources store shared surface data:
 
 ```toml
 id = "b1000000-0000-4000-8000-000000000001"
@@ -67,7 +67,22 @@ texture = "assets/coral.png"
 
 `base_color` defaults to white, `emissive` defaults to black and accepts finite non-negative HDR values, and `texture` is optional. Texture paths must be safe relative `.png` paths under `assets/`. Scrapbot loads authored resources into its runtime registry before resolving scene entities. A changed resource preserves its runtime handle and increments its content version; removal invalidates old handles. Resource files participate in hot reload and host-native packaging.
 
-The live editor's Resources browser creates, duplicates, renames, moves, and deletes material resources as stopped-mode in-memory authoring transactions. Scene references remain stable because these operations preserve the resource UUID. Delete is unavailable while a live entity references the UUID. Explicit Save derives the required file writes and deletions from the disk baseline, rejects destination conflicts, and commits the complete project file set through the recoverable Save transaction.
+Generated icosphere LOD resources store one stable geometry identity plus up to four tessellation levels:
+
+```toml
+id = "b1000000-0000-4000-8000-000000000010"
+type = "scrapbot.geometry_lod"
+name = "Planet LOD"
+
+[geometry_lod]
+radius = 0.5
+subdivisions = [4, 2, 0]
+screen_radii = [0.15, 0.04]
+```
+
+`subdivisions` contains one to four icosphere subdivision levels from most detailed to least detailed; each value must be between `0` and `4`. `screen_radii` has one fewer value and must be positive and strictly descending. The WGPU visibility pass projects each instance's bounding sphere and selects the next level whenever its normalized screen radius falls below the corresponding threshold. The CPU-culling reference path uses the same rule. Editing the file and hot reloading preserves the stable base geometry handle while advancing renderer topology.
+
+The live editor's Resources browser creates, duplicates, renames, moves, and deletes material resources as stopped-mode in-memory authoring transactions. Scene references remain stable because these operations preserve the resource UUID. Delete is unavailable while a live entity references the UUID. Explicit Save derives the required file writes and deletions from the disk baseline, rejects destination conflicts, and commits the complete project file set through the recoverable Save transaction. Geometry LOD resources are text-authored in this slice; editor creation and inline level editing remain follow-up work.
 
 ## Scene entities
 
@@ -121,13 +136,13 @@ Explicit render resources:
 
 ```toml
 [entities.geometry]
-resource = "cube"
+resource = "b1000000-0000-4000-8000-000000000010"
 
 [entities.material]
 resource = "b1000000-0000-4000-8000-000000000001"
 ```
 
-Geometry remains a runtime name reference in this slice. Material is a stable project resource UUID and must resolve to an authored `scrapbot.material` resource. Entities become renderable once transform, geometry, and material references are valid.
+Geometry accepts either a transient runtime resource name such as `cube` or a stable UUID for an authored `scrapbot.geometry_lod` resource. Material is a stable project resource UUID and must resolve to an authored `scrapbot.material` resource. Entities become renderable once transform, geometry, and material references are valid.
 
 Lights:
 

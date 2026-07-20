@@ -12,7 +12,8 @@ my-game/
 ├── scenes/
 │   └── main.scene.toml
 ├── resources/
-│   └── default.resource.toml
+│   ├── default.resource.toml
+│   └── planet-lod.resource.toml
 ├── scripts/
 │   └── main.luau
 ├── assets/
@@ -67,7 +68,7 @@ rotation = [0, 0, 0]
 scale = [1, 1, 1]
 
 [entities.geometry]
-resource = "cube"
+resource = "b1000000-0000-4000-8000-000000000010"
 
 [entities.material]
 resource = "coral"
@@ -85,6 +86,8 @@ Built-in sections currently include:
 Custom components use `[entities.components.<name>]`. Single-token names such as `autorotate` are project-level components. Dotted names such as `scrappyphysics.rigidbody` are engine or library components and must be registered before validation succeeds.
 
 Scene entities can also compose the complete public `scrapbot.ui_*` component set. UI parents reference stable entity UUIDs, and the same component values can be queried, spawned, or updated from Luau and native Odin. See [ECS UI](/guides/ecs-ui/) for the component model and [Project File Reference](/reference/project-files/#built-in-component-sections) for every TOML field.
+
+Standalone resources use stable project UUIDs. Materials store shared surface data; `scrapbot.geometry_lod` resources currently generate an icosphere level chain and screen-radius thresholds for GPU selection. See [Project resources](/reference/project-files/#project-resources) for both schemas.
 
 ## Scripts
 

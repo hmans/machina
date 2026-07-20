@@ -18,7 +18,7 @@
 
 **Render resource** - Shared geometry or material data owned outside the ECS and referenced by generational handles from entity components. See [ADR-010](adr/ADR-010-keep-render-resources-outside-the-ecs.md).
 
-**Project resource** - A persistent typed bag of reusable project data stored outside the ECS in a standalone `resources/**/*.resource.toml` file. Each project resource has a stable UUID; materials are the first supported type.
+**Project resource** - A persistent typed bag of reusable project data stored outside the ECS in a standalone `resources/**/*.resource.toml` file. Each project resource has a stable UUID. Scrapbot currently supports materials and generated icosphere LOD chains.
 
 **Resource UUID** - The non-zero project-wide UUID serialized in a project resource file and used by scene references. It remains stable across resource renames and moves and resolves to a transient generational runtime handle.
 
@@ -81,6 +81,10 @@
 **WebGPU** - The modern graphics API model Scrapbot is targeting for its first real renderer.
 
 **`wgpu-native`** - The first real renderer backend, using the native WebGPU implementation exposed through Odin's vendor bindings.
+
+**Hi-Z pyramid** - A mipmapped max-depth texture built from the depth prepass. The WGPU visibility shader samples a previous stable-camera pyramid to conservatively reject bounding spheres hidden behind nearer geometry.
+
+**Geometry LOD** - One of several indexed geometry representations selected for an instance according to its projected screen radius. A project LOD resource owns one stable UUID and runtime base handle while WGPU selects among its retained alternate draw batches.
 
 ## Scripting And Editing
 

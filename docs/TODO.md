@@ -21,8 +21,11 @@
 - [x] Split renderer CPU profiling into cull, shadow, world, postprocess, UI, command-finalization, submission, and presentation phases.
 - [x] Retain unchanged UI vertex output and skip redundant WGPU uploads.
 - [x] Consolidate the bloom pyramid into one compute pass plus one composite pass.
-- [ ] Add asynchronous GPU timestamp queries for per-pass execution timing without synchronous readback.
-- [ ] Add Hi-Z occlusion culling, GPU LOD selection, meshlets, and richer GPU submission after measuring representative scenes.
+- [x] Add asynchronous GPU timestamp queries for per-pass execution timing without synchronous readback.
+- [x] Replace the fixed draw-batch ceiling with a geometrically growing retained draw database.
+- [x] Add a depth prepass, adaptive previous-frame Hi-Z occlusion, and asynchronous visibility counters.
+- [x] Add UUID-backed generated geometry LOD resources and GPU screen-radius selection with a CPU reference oracle.
+- [ ] Add imported mesh LODs, meshlets, and richer GPU submission after measuring representative scenes.
 - [ ] Expose camera exposure and bloom threshold, intensity, and scatter as project settings.
 - [ ] Add light selection or clustered lighting beyond the initial fixed limits.
 - [ ] Add visual comparison for offscreen render output.
@@ -153,4 +156,4 @@
 - [x] Plan queries from the smallest matching component storage instead of scanning world slots.
 - [x] Release custom component records on despawn without scanning every registered storage.
 - [x] Add dirty-root UI layout and retained render batching.
-- [ ] Add GPU timing diagnostics without blocking or driver-sensitive per-frame readbacks.
+- [x] Add asynchronous GPU timing and visibility diagnostics without blocking or per-frame readback stalls.

@@ -86,7 +86,7 @@ Use `--frames` for automated smoke checks so the command returns. Without `--fra
 
 Headless framegrab renders the same resource-backed ECS path into an offscreen texture, reads back the final frame, and writes a PNG:
 
-After changing instance storage, batching, culling, shadows, indirect drawing, postprocessing, UI geometry retention, or WGPU bind layouts, run `mise test-gpu`. It renders an 81-instance stress fixture through compute visibility and `--cpu-culling`, validates structured `render_stats`, instance upload reuse, and unchanged-frame UI vertex reuse, rejects visually empty output, and requires byte-identical PNG output.
+After changing instance storage, batching, culling, shadows, depth/Hi-Z, geometry LODs, indirect drawing, GPU timestamps/counters, postprocessing, UI geometry retention, or WGPU bind layouts, run `mise test-gpu`. It exercises a greater-than-64-batch scene with more than 256 instances, proves real Hi-Z rejection, validates asynchronous timing/visibility diagnostics and retained UI uploads, and requires byte-identical compute/CPU-reference PNG output. It also loads a UUID-backed `scrapbot.geometry_lod` fixture, requires one visible instance in each of LOD 0, 1, and 2, and compares its compute and CPU-reference frames byte for byte.
 
 ```sh
 bin/scrapbot run examples/minimal --backend wgpu --headless --frames 2 --framegrab /tmp/scrapbot-framegrab.png
@@ -114,6 +114,8 @@ Use `tests/fixtures/ui/resource-to-entity-selection.json` when changing editor s
 Use `tests/fixtures/ui/resource-inputs.json` when changing inline resource input bindings or playback behavior. It edits one material channel through typing and another through whole-control scrubbing while simulation is running, waits through inspector refreshes, and asserts both live values.
 
 Use `tests/fixtures/ui/editor-shortcuts.json` when changing editor visibility or transport command shortcuts. It drives the same editor keyboard input used by the platform, verifies Pause and resume, and proves that closing a paused shell resumes playback before it is reopened. Pair it with the state-machine and playback-restoration unit tests for Stop, Step, and world replacement.
+
+Use `tests/fixtures/ui/editor-overlay-lifecycle.json` when changing editor visibility, scene-camera overlays, retained UI vertex buffers, or UI render-pass encoding. It selects the project camera so dynamic editor-world overlay vertices exist, closes the editor, and waits through the zero-overlay transition. The WGPU run must finish without encoding a draw that lacks a bound vertex buffer.
 
 Use `tests/fixtures/ui/playback-warning.json` when changing playback-mode chrome or disposable-edit messaging. It captures the complete editor root during playback so the top-bar tint, viewport frame, and status treatment can be reviewed together. Pair it with the transport unit test, which crosses transport states and asserts the exact status copy plus both playback and stopped style tokens.
 
