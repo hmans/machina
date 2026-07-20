@@ -69,9 +69,9 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 
 ### 6. Use ECS renderable queries as the first backend boundary
 
-**Decision:** Change-driven engine synchronization derives internal render-instance components from valid transform, geometry, and material references and maintains dense active sets for renderables, cameras, and each light kind. ECS refreshes a reusable render list from those sets, while WGPU retains draw grouping until the world's render-topology revision changes.
+**Decision:** Change-driven engine synchronization derives internal render-instance components from valid transform, geometry, and material references and maintains dense active sets for renderables, cameras, and each light kind. ECS retains the render list and updates it from a separate extraction-dirty queue, while WGPU retains draw grouping and grows existing batch membership incrementally.
 **Why:** Backends need coherent scene instances, not just global component counts, and this keeps GPU code out of ECS storage without rescanning unchanged membership across the complete world every frame. See ADR-024.
-**Tradeoff:** Every structural render mutation must mark its entity dirty and invalidate retained grouping, active sets must repair indices after swap removal, and the first uniform layout caps a frame at 64 instances.
+**Tradeoff:** Every render-relevant value or structural mutation must mark its exact entity dirty, active sets and retained render-list maps must repair indices after swap removal, and new batch keys or capacity growth can still rebuild backend batch slices.
 
 ### 7. Share geometry and material resources by handle
 
@@ -113,8 +113,8 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 ### 13. Keep visibility and indirect state in the backend
 
-**Decision:** Preserve stable ECS render slots while WGPU owns persistent instance storage, compute frustum culling, per-batch visible-instance compaction, and indexed indirect arguments. Camera and shadow visibility use separate outputs. See ADR-034.
-**Why:** Unchanged instance data should stay resident, large scenes should not rebuild bounded uniform arrays, and project/ECS data should remain independent from WGPU objects.
+**Decision:** Preserve stable ECS render slots and a dirty-updated retained render list while WGPU owns persistent instance storage, retained grow-only batch membership, compute frustum culling, per-batch visible-instance compaction, and indexed indirect arguments. Camera and shadow visibility use separate outputs. See ADR-034.
+**Why:** Unchanged instance data should stay resident, active renderables should not be rescanned, membership churn in an existing batch should not rebuild the draw database, and project/ECS data should remain independent from WGPU objects.
 **Tradeoff:** The path has an explicit 131,072-slot limit, uses conservative bounding spheres, requires one previous frame with stable camera and instance data before Hi-Z rejection, and still encodes one indirect call per CPU-retained geometry/material/LOD batch. The draw database itself grows instead of imposing a fixed batch ceiling.
 
 ## Related

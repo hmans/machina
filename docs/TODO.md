@@ -18,6 +18,7 @@
 - [x] Add directional shadow maps with explicit shadow caster and receiver components.
 - [x] Render world geometry into an HDR target with emissive materials, multi-scale bloom, and final ACES-style tone mapping.
 - [x] Add persistent GPU instances, dirty-range uploads, compute camera/shadow frustum culling, visibility compaction, and indexed indirect drawing.
+- [x] Retain render extraction across frames and update existing GPU batches from dirty instance slots without full active-set scans or draw-database rebuilds.
 - [x] Split renderer CPU profiling into cull, shadow, world, postprocess, UI, command-finalization, submission, and presentation phases.
 - [x] Retain unchanged UI vertex output and skip redundant WGPU uploads.
 - [x] Consolidate the bloom pyramid into one compute pass plus one composite pass.

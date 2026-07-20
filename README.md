@@ -133,6 +133,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] Compute camera and shadow frustum culling
   - [x] Persistent GPU instances, visibility compaction, and indexed indirect drawing
   - [x] Dynamically growing retained draw database
+  - [x] Dirty-only retained render extraction and incremental existing-batch membership
   - [x] Depth prepass and adaptive Hi-Z occlusion culling
   - [x] GPU screen-radius LOD selection
   - [x] Asynchronous per-pass GPU timestamps and visibility/LOD counters

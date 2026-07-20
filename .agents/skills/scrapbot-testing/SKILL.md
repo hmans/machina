@@ -117,6 +117,8 @@ Use `tests/fixtures/ui/editor-shortcuts.json` when changing editor visibility or
 
 Use `tests/fixtures/ui/editor-overlay-lifecycle.json` when changing editor visibility, scene-camera overlays, retained UI vertex buffers, or UI render-pass encoding. It selects the project camera so dynamic editor-world overlay vertices exist, closes the editor, and waits through the zero-overlay transition. The WGPU run must finish without encoding a draw that lacks a bound vertex buffer.
 
+The same 60-frame lifecycle replay is the render-membership churn guard for `examples/ecs-showcase`: its fountain spawns and despawns instances inside existing batches while native and Luau systems mutate transforms. Keep its structured assertion that draw-database growth remains bounded. Pair renderer extraction changes with the ECS test proving unchanged frames visit zero render instances and one dirty mutation visits exactly one.
+
 Use `tests/fixtures/ui/playback-warning.json` when changing playback-mode chrome or disposable-edit messaging. It captures the complete editor root during playback so the top-bar tint, viewport frame, and status treatment can be reviewed together. Pair it with the transport unit test, which crosses transport states and asserts the exact status copy plus both playback and stopped style tokens.
 
 Use `tests/fixtures/ui/system-profiler.json` when changing system registration, provenance, timing publication, or the editor profiler. It asserts the complete engine profiler topology in the ECS UI and captures the Systems panel.
