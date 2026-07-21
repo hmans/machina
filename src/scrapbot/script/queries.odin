@@ -421,6 +421,9 @@ push_query_component_table :: proc "c" (
 		case "scrapbot.ui_progress":
 			push_ui_progress_table(L, world.ui_progresses[entity.ui_progress_index])
 			return
+		case "scrapbot.ui_viewport":
+			push_ui_viewport_table(L, world.ui_viewports[entity.ui_viewport_index])
+			return
 		case "scrapbot.ui_state":
 			push_ui_state_table(L, world.ui_states[entity.ui_state_index])
 			return
@@ -625,6 +628,22 @@ push_ui_progress_table :: proc "c" (L: Lua_State, value: shared.UI_Progress_Comp
 	push_vec4_field(L, "inset", value.inset)
 	push_number_field(L, "corner_radius", value.corner_radius)
 	push_bool_field(L, "right_to_left", value.right_to_left)
+}
+
+push_ui_viewport_table :: proc "c" (L: Lua_State, value: shared.UI_Viewport_Component) {
+	lua_createtable(L, 0, 7)
+	push_uuid_field(L, "camera", value.camera)
+	push_uuid_field(L, "root", value.root)
+	resource_buffer: [36]u8
+	push_string_field(
+		L,
+		"resource",
+		shared.resource_uuid_to_string(value.resource, resource_buffer[:]),
+	)
+	push_vec2_field(L, "orbit", value.orbit)
+	push_number_field(L, "distance", value.distance)
+	push_vec4_field(L, "clear_color", value.clear_color)
+	push_bool_field(L, "interactive", value.interactive)
 }
 
 push_ui_state_table :: proc "c" (L: Lua_State, value: shared.UI_State_Component) {

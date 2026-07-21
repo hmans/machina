@@ -83,6 +83,8 @@ Diagnostic_Node_Dump :: struct {
 	has_table: bool,
 	has_list: bool,
 	has_progress: bool,
+	has_viewport: bool,
+	viewport_orbit_x, viewport_orbit_y, viewport_distance: f32,
 	has_text: bool,
 	has_button: bool,
 	has_input: bool,
@@ -857,6 +859,10 @@ diagnostic_driver_write_dump :: proc(
 			drawable_width,
 			drawable_height,
 		)
+		viewport := shared.UI_Viewport_Component{}
+		if node.viewport_index >= 0 && node.viewport_index < len(world.ui_viewports) {
+			viewport = world.ui_viewports[node.viewport_index]
+		}
 		append(
 			&nodes,
 			Diagnostic_Node_Dump {
@@ -883,6 +889,10 @@ diagnostic_driver_write_dump :: proc(
 				has_table = node.table_index >= 0,
 				has_list = node.list_index >= 0,
 				has_progress = node.progress_index >= 0,
+				has_viewport = node.viewport_index >= 0,
+				viewport_orbit_x = viewport.orbit.x,
+				viewport_orbit_y = viewport.orbit.y,
+				viewport_distance = viewport.distance,
 				has_text = node.text_index >= 0,
 				has_button = node.button_index >= 0,
 				has_input = node.input_index >= 0,

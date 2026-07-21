@@ -36,6 +36,9 @@ test_world_entity_and_ui_component_api_is_shared_and_updates_in_place :: proc(t:
 			},
 		),
 	)
+	viewport := shared.ui_viewport_default()
+	viewport.resource, _ = shared.resource_uuid_parse("a6000000-0000-4000-8000-000000000099")
+	testing.expect(t, set_ui_viewport(&world, entity_index, viewport))
 	testing.expect(
 		t,
 		set_ui_scroll_area(&world, entity_index, {scroll_speed = 48, smoothness = 18}),
@@ -185,6 +188,7 @@ test_ui_component_churn_reclaims_all_storage_slots :: proc(t: ^testing.T) {
 		testing.expect(t, set_ui_table(&world, entity_index, shared.ui_table_default()))
 		testing.expect(t, set_ui_list(&world, entity_index, shared.ui_list_default()))
 		testing.expect(t, set_ui_progress(&world, entity_index, shared.ui_progress_default()))
+		testing.expect(t, set_ui_viewport(&world, entity_index, shared.ui_viewport_default()))
 		text := shared.ui_text_default()
 		text.text = "Transient"
 		testing.expect(t, set_ui_text(&world, entity_index, text))
@@ -205,6 +209,7 @@ test_ui_component_churn_reclaims_all_storage_slots :: proc(t: ^testing.T) {
 	testing.expect(t, len(world.ui_tables) == 1)
 	testing.expect(t, len(world.ui_lists) == 1)
 	testing.expect(t, len(world.ui_progresses) == 1)
+	testing.expect(t, len(world.ui_viewports) == 1)
 	testing.expect(t, len(world.ui_states) == 1)
 	testing.expect(t, len(world.ui_texts) == 1)
 	testing.expect(t, len(world.ui_buttons) == 1)

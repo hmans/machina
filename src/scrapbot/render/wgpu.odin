@@ -19,6 +19,7 @@ Render_List :: shared.Render_List
 Mat4 :: [16]f32
 
 WGPU_MAX_INSTANCES :: 64
+WGPU_VIEWPORT_TEXTURE_SIZE :: 512
 WGPU_MAX_GPU_INSTANCES :: 131_072
 WGPU_INITIAL_DRAW_CAPACITY :: 64
 WGPU_VISIBLE_ALIGNMENT :: 64
@@ -291,9 +292,24 @@ WGPU_Renderer :: struct {
 	ui_pipeline_layout: wgpu.PipelineLayout,
 	ui_shader: wgpu.ShaderModule,
 	ui_pipeline: wgpu.RenderPipeline,
+	ui_viewport_pipeline: wgpu.RenderPipeline,
 	ui_font_texture: wgpu.Texture,
 	ui_font_view: wgpu.TextureView,
 	ui_font_sampler: wgpu.Sampler,
+	ui_viewport_texture: wgpu.Texture,
+	ui_viewport_view: wgpu.TextureView,
+	ui_viewport_layer_views: [ui.MAX_EMBEDDED_VIEWPORTS]wgpu.TextureView,
+	ui_viewport_depth_textures: [ui.MAX_EMBEDDED_VIEWPORTS]wgpu.Texture,
+	ui_viewport_depth_views: [ui.MAX_EMBEDDED_VIEWPORTS]wgpu.TextureView,
+	ui_viewport_uniform_buffers: [ui.MAX_EMBEDDED_VIEWPORTS]wgpu.Buffer,
+	ui_viewport_bind_groups: [ui.MAX_EMBEDDED_VIEWPORTS]wgpu.BindGroup,
+	ui_viewport_cached_components: [ui.MAX_EMBEDDED_VIEWPORTS]shared.UI_Viewport_Component,
+	ui_viewport_cached_model_versions: [ui.MAX_EMBEDDED_VIEWPORTS]u32,
+	ui_viewport_cached_aspects: [ui.MAX_EMBEDDED_VIEWPORTS]f32,
+	ui_viewport_cached_geometry_revisions: [ui.MAX_EMBEDDED_VIEWPORTS]u64,
+	ui_viewport_cached_material_revisions: [ui.MAX_EMBEDDED_VIEWPORTS]u64,
+	ui_viewport_cache_valid: [ui.MAX_EMBEDDED_VIEWPORTS]bool,
+	ui_viewport_cache_warmup_frames: [ui.MAX_EMBEDDED_VIEWPORTS]u8,
 	ui_font_versions: [shared.MAX_PROJECT_FONTS]u32,
 	ui_project_vertices: [dynamic]WGPU_UI_Vertex,
 	ui_project_vertex_buffer: wgpu.Buffer,
@@ -616,6 +632,8 @@ wgpu_append_ui_vertices :: proc(
 			}
 		} else if command.kind == .Checkmark {
 			kind = 5
+		} else if command.kind == .Viewport {
+			kind = 6
 		}
 		if command.kind == .Panel ||
 		   command.kind == .Line ||
@@ -1151,6 +1169,7 @@ wgpu_encode_render_pass :: proc(
 	depth_view: wgpu.TextureView,
 	batches: []WGPU_Draw_Batch,
 	registry: ^resources.Registry,
+	world: ^World,
 	ui_state: ^ui.State,
 	config: ^Run_Config,
 	label: string,
@@ -1257,6 +1276,16 @@ wgpu_encode_render_pass :: proc(
 	} else {
 		renderer.gpu_hiz_valid = false
 		renderer.gpu_hiz_occlusion_enabled = false
+	}
+	if err := wgpu_encode_embedded_viewports(
+		renderer,
+		encoder,
+		ui_state,
+		registry,
+		world,
+		&renderer.render_list,
+	); err != "" {
+		return err
 	}
 	post_start := time.tick_now()
 	if err := wgpu_encode_bloom_and_composite(
@@ -1795,6 +1824,7 @@ wgpu_draw_frame :: proc(
 		renderer.depth_view,
 		batches[:batch_count],
 		config.resource_registry,
+		world,
 		config.ui_state,
 		config,
 		"Scrapbot Geometry Pass",
@@ -1971,6 +2001,7 @@ wgpu_render_offscreen_frame :: proc(
 		depth_view,
 		batches[:batch_count],
 		config.resource_registry,
+		world,
 		config.ui_state,
 		config,
 		"Scrapbot Headless Geometry Pass",

@@ -941,6 +941,33 @@ right_to_left = true
 }
 
 @(test)
+test_scene_parses_embedded_ui_viewport :: proc(t: ^testing.T) {
+	scene, result := parse_scene(
+		`[[entities]]
+id = "a6000000-0000-4000-8000-000000000042"
+name = "Viewport"
+[entities.ui_layout]
+size = [320, 180]
+[entities.ui_viewport]
+resource = "a7000000-0000-4000-8000-000000000001"
+orbit = [-0.25, 0.75]
+distance = 4
+clear_color = [0.01, 0.02, 0.03, 1]
+interactive = true
+`,
+	)
+	defer destroy_scene(&scene)
+	testing.expectf(t, result.err == .None, "parse failed: %s", result.message)
+	testing.expect(t, len(scene.entities) == 1)
+	testing.expect(t, scene.entities[0].has_ui_viewport)
+	viewport := scene.entities[0].ui_viewport
+	testing.expect(t, viewport.orbit == Vec2{-0.25, 0.75})
+	testing.expect(t, viewport.distance == 4)
+	testing.expect(t, viewport.clear_color == Vec4{0.01, 0.02, 0.03, 1})
+	testing.expect(t, viewport.interactive)
+}
+
+@(test)
 test_scene_rejects_collapsed_panel_without_collapsible_opt_in :: proc(t: ^testing.T) {
 	scene, result := parse_scene(
 		`[[entities]]

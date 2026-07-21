@@ -220,6 +220,23 @@ write_scene_ui_components :: proc(builder: ^strings.Builder, entity: ^shared.Sce
 		write_scene_value(builder, "corner_radius", scene_f32(value.corner_radius))
 		write_scene_value(builder, "right_to_left", scene_bool(value.right_to_left))
 	}
+	if entity.has_ui_viewport {
+		value := entity.ui_viewport
+		write_scene_section(builder, "ui_viewport")
+		if value.camera != (shared.Entity_UUID{}) {
+			write_scene_string(builder, "camera", scene_uuid(value.camera))
+		}
+		if value.root != (shared.Entity_UUID{}) {
+			write_scene_string(builder, "root", scene_uuid(value.root))
+		}
+		if value.resource != (shared.Resource_UUID{}) {
+			write_scene_string(builder, "resource", scene_resource_uuid(value.resource))
+		}
+		write_scene_value(builder, "orbit", scene_vec2(value.orbit))
+		write_scene_value(builder, "distance", scene_f32(value.distance))
+		write_scene_value(builder, "clear_color", scene_vec4(value.clear_color))
+		write_scene_value(builder, "interactive", scene_bool(value.interactive))
+	}
 	if entity.has_ui_text { write_scene_text(builder, "ui_text", entity.ui_text) }
 	if entity.has_ui_button { write_scene_button(builder, entity.ui_button) }
 	if entity.has_ui_input { write_scene_input(builder, entity.ui_input) }
@@ -338,6 +355,11 @@ write_scene_string :: proc(builder: ^strings.Builder, key, value: string) {
 scene_uuid :: proc(id: shared.Entity_UUID) -> string {
 	buffer: [36]u8
 	return fmt.tprintf("%s", shared.entity_uuid_to_string(id, buffer[:]))
+}
+
+scene_resource_uuid :: proc(id: shared.Resource_UUID) -> string {
+	buffer: [36]u8
+	return fmt.tprintf("%s", shared.resource_uuid_to_string(id, buffer[:]))
 }
 
 scene_vec2 :: proc(value: shared.Vec2) -> string {

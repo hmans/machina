@@ -17,6 +17,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 - Selectable-list containers arrange direct children vertically as full-width rows, store the selected child by stable UUID, and provide shared selected, hover, and active backgrounds. Lists compose with panels and scroll areas; clicking nested row content selects its direct row ancestor.
 - Tree-enabled lists flatten direct rows from semantic parent/order metadata on their public layout components, indent row contents while preserving full-width interaction chrome, omit collapsed or hidden branches, and apply cycle-safe subtree reparent/reorder drops.
 - Progress components render an optional track and a clamped fill with configurable inset, color, corner radius, maximum, and left-to-right or right-to-left direction. They compose with any ordinary layout box.
+- Viewport components embed a renderer-backed Model resource or retained World inside an ordinary UI box. They participate in normal clipping, scrolling, and paint order; pointer dragging orbits interactive targets and the wheel changes distance. Optional camera and root UUIDs select a World viewpoint and subtree. Static resource previews are revision-cached rather than redrawn on stable frames.
 - Panel decoration adds an optional title band with its own text and background styling and reserves that band above nested content. Titled panels can opt into pointer-driven collapse/expansion; collapsed state lives in the ECS component, contracts the panel to its title band, removes ordinary descendants from layout and interaction, and is indicated by an antialiased SDF disclosure chevron with overridable size, spacing, and radius. Direct child buttons can opt into trailing title-band placement. These are ordinary reusable buttons with text or SDF close, plus, right-chevron, or down-chevron icons, ordinary hover/active styling, and independent activation; multiple actions lay out from right to left and never toggle collapse. Panels can compose with overlay, stack, or table layout.
 - Scroll-area containers accept an explicitly oversized child pane, clip descendants to their padded content rectangle, and smoothly approach wheel-driven vertical offsets. Scrollbar width, placement, minimum thumb size, colors, and radius are public component styles.
 - Nested scroll clips intersect, the topmost hovered scroll area receives wheel input, and overflowing areas render a proportional scrollbar.
@@ -60,7 +61,7 @@ ECS UI lets projects describe screen-space interfaces with ordinary entities and
 
 ### 4. Compose controls from a shared box model
 
-**Decision:** Keep geometry and visual box styling in one layout component, then add independent stack, table, list, progress, panel, text, button, input, and checkbox components to an entity. Express title-band actions by composing ordinary icon-button child entities instead of adding a singular control API to panels.
+**Decision:** Keep geometry and visual box styling in one layout component, then add independent stack, table, list, progress, viewport, panel, text, button, input, and checkbox components to an entity. Express title-band actions by composing ordinary icon-button child entities instead of adding a singular control API to panels.
 **Why:** A shared box model makes margins, padding, backgrounds, and rounded corners consistent while ECS composition keeps layout and content roles explicit. See ADR-014.
 **Tradeoff:** Invalid combinations require scene validation. Generic activation/change revisions and the ordered event stream expose interaction edges, while higher-level command routing remains the responsibility of project or editor systems.
 
@@ -112,7 +113,7 @@ Tree mode is an opt-in extension of the same list rather than a second widget. D
 
 ## Related
 
-- **ADRs:** ADR-003, ADR-013, ADR-014, ADR-020, ADR-023, ADR-024, ADR-025
+- **ADRs:** ADR-003, ADR-013, ADR-014, ADR-020, ADR-023, ADR-024, ADR-025, ADR-037
 - **FDRs:** FDR-002, FDR-003, FDR-005, FDR-008
 
 ## Open Questions

@@ -13,6 +13,7 @@ import "core:strings"
 MAX_NODES :: 4096
 MAX_PAINT_COMMANDS :: 16384
 MAX_EDITOR_OVERLAY_PAINT_COMMANDS :: 1024
+MAX_EMBEDDED_VIEWPORTS :: 8
 FONT_FIRST_CHAR :: shared.FONT_FIRST_CHAR
 FONT_CHAR_COUNT :: shared.FONT_CHAR_COUNT
 FONT_ATLAS_SIZE :: shared.FONT_ATLAS_SIZE
@@ -63,6 +64,7 @@ Paint_Kind :: enum {
 	Ring,
 	Disclosure,
 	Checkmark,
+	Viewport,
 }
 Paint_Command :: struct {
 	kind: Paint_Kind,
@@ -120,7 +122,7 @@ Node :: struct {
 	entity: shared.Entity,
 	origin: shared.Entity_Origin,
 	editor_role: shared.Editor_UI_Role,
-	layout_index, hstack_index, vstack_index, scroll_area_index, panel_index, table_index, list_index, progress_index, text_index, button_index, input_index, checkbox_index, parent_entity_index: int,
+	layout_index, hstack_index, vstack_index, scroll_area_index, panel_index, table_index, list_index, progress_index, viewport_index, text_index, button_index, input_index, checkbox_index, parent_entity_index: int,
 	parent_node_index, first_child_node, next_sibling_node: int,
 	rect, clip: Rect,
 	resolved_size: shared.Vec2,
@@ -130,10 +132,20 @@ Node :: struct {
 	split_weight: f32,
 	split_parent: shared.Entity,
 	tree_depth: int,
+	viewport_layer: int,
 	split_weight_valid: bool,
 	seen, laid_out, hovered, active, has_clip: bool,
 	resolved_width_valid, resolved_height_valid: bool,
 	fill_width_valid, fill_height_valid: bool,
+}
+
+Viewport_Surface :: struct {
+	entity: shared.Entity,
+	rect: Rect,
+	clip: Rect,
+	has_clip: bool,
+	component: shared.UI_Viewport_Component,
+	editor: bool,
 }
 EDITOR_HISTORY_CAPACITY :: 128
 MAX_UI_EVENTS :: 256
@@ -266,6 +278,14 @@ State :: struct {
 	ui_editor_layout_revision: u64,
 	ui_project_paint_revision: u64,
 	ui_editor_paint_revision: u64,
+	viewport_surfaces: [MAX_EMBEDDED_VIEWPORTS]Viewport_Surface,
+	viewport_surface_count: int,
+	viewport_node_indices: [MAX_NODES]int,
+	viewport_node_count: int,
+	viewport_drag_entity: shared.Entity,
+	viewport_drag_editor: bool,
+	viewport_drag_active: bool,
+	viewport_drag_position: shared.Vec2,
 	ui_layout_valid: bool,
 	ui_project_viewport: Rect,
 	ui_editor_viewport: Rect,
@@ -829,6 +849,7 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 
 	dirty_cursor := 0
 	hierarchy_changed := world_changed
+	viewport_membership_changed := world_changed
 	for dirty_cursor < len(world.ui_dirty_entities) {
 		entity_index := world.ui_dirty_entities[dirty_cursor]
 		dirty_cursor += 1
@@ -865,6 +886,8 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 		}
 		_ = ecs.ensure_ui_state(world, entity_index)
 		node := &state.nodes[node_index]
+		had_viewport := node.entity == entity.id && node.viewport_index >= 0
+		node.viewport_layer = -1
 		node.entity = entity.id
 		node.origin = entity.origin
 		node.editor_role = .None
@@ -879,6 +902,10 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 		node.table_index = entity.ui_table_index
 		node.list_index = entity.ui_list_index
 		node.progress_index = entity.ui_progress_index
+		node.viewport_index = entity.ui_viewport_index
+		if had_viewport != (node.viewport_index >= 0) {
+			viewport_membership_changed = true
+		}
 		node.text_index = entity.ui_text_index
 		node.button_index = entity.ui_button_index
 		node.input_index = entity.ui_input_index
@@ -898,11 +925,25 @@ sync_ui_structure :: proc(state: ^State, world: ^shared.World) -> string {
 			return err
 		}
 	}
+	if hierarchy_changed || viewport_membership_changed {
+		rebuild_viewport_node_indices(state)
+	}
 	clear(&world.ui_dirty_entities)
 	state.ui_structure_revision = world.ui_structure_revision
 	state.ui_structure_synced = true
 	state.ui_structure_sync_count += 1
 	return ""
+}
+
+rebuild_viewport_node_indices :: proc(state: ^State) {
+	state.viewport_node_count = 0
+	for &node, node_index in state.nodes[:state.node_count] {
+		if node.viewport_index < 0 {
+			continue
+		}
+		state.viewport_node_indices[state.viewport_node_count] = node_index
+		state.viewport_node_count += 1
+	}
 }
 
 UI_Paint_Signature_Key :: struct {
@@ -1069,17 +1110,27 @@ reconcile :: proc(
 	}
 	state.pointer_cursor = split_pointer_cursor(state)
 	if state.active_split_handle >= 0 { project_pointer = {}; editor_pointer = {} }
+	project_viewport_wheel := update_viewport_interaction(state, world, project_pointer, false)
+	editor_viewport_wheel := update_viewport_interaction(state, world, editor_pointer, true)
+	project_scroll_pointer := project_pointer
+	if project_viewport_wheel {
+		project_scroll_pointer.wheel_y = 0
+	}
+	editor_scroll_pointer := editor_pointer
+	if editor_viewport_wheel {
+		editor_scroll_pointer.wheel_y = 0
+	}
 	if update_scroll_areas(
 		state,
 		world,
-		project_pointer,
+		project_scroll_pointer,
 		delta_seconds,
 		false,
 	) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }
 	if update_scroll_areas(
 		state,
 		world,
-		editor_pointer,
+		editor_scroll_pointer,
 		delta_seconds,
 		true,
 	) { if err := layout_all(state, world, project_layout, editor_layout); err != "" { return err } }
@@ -1270,6 +1321,15 @@ reconcile :: proc(
 	validate_focused_editor_input(state, world)
 	state.editor_snapshot_was_visible = state.editor_visible
 	if state.editor_pick_requested { state.editor_pick_position.x *= editor_scale; state.editor_pick_position.y *= editor_scale }
+	collect_viewport_surfaces(
+		state,
+		world,
+		surface_width,
+		surface_height,
+		width,
+		height,
+		editor_scale,
+	)
 	project_paint_signature := ui_paint_input_signature(state, world, false)
 	editor_paint_signature := ui_paint_input_signature(state, world, true)
 	rebuild_project_paint :=
@@ -1345,6 +1405,81 @@ reconcile :: proc(
 		}
 	}
 	return ""
+}
+
+collect_viewport_surfaces :: proc(
+	state: ^State,
+	world: ^shared.World,
+	surface_width, surface_height, project_width, project_height, editor_scale: f32,
+) {
+	state.viewport_surface_count = 0
+	for node_index in state.viewport_node_indices[:state.viewport_node_count] {
+		node := &state.nodes[node_index]
+		node.viewport_layer = -1
+	}
+	project_transform := project_canvas_transform(
+		state,
+		surface_width,
+		surface_height,
+		project_width,
+		project_height,
+	)
+	for node_index in state.viewport_node_indices[:state.viewport_node_count] {
+		node := &state.nodes[node_index]
+		if !node.laid_out ||
+		   node.viewport_index < 0 ||
+		   node.viewport_index >= len(world.ui_viewports) {
+			continue
+		}
+		if state.viewport_surface_count >= MAX_EMBEDDED_VIEWPORTS {
+			break
+		}
+		rect := node.rect
+		clip := node.clip
+		if node.origin == .Editor {
+			rect = {
+				rect.x * editor_scale,
+				rect.y * editor_scale,
+				rect.width * editor_scale,
+				rect.height * editor_scale,
+			}
+			clip = {
+				clip.x * editor_scale,
+				clip.y * editor_scale,
+				clip.width * editor_scale,
+				clip.height * editor_scale,
+			}
+		} else {
+			rect = {
+				project_transform.viewport.x + rect.x * project_transform.scale,
+				project_transform.viewport.y + rect.y * project_transform.scale,
+				rect.width * project_transform.scale,
+				rect.height * project_transform.scale,
+			}
+			clip = {
+				project_transform.viewport.x + clip.x * project_transform.scale,
+				project_transform.viewport.y + clip.y * project_transform.scale,
+				clip.width * project_transform.scale,
+				clip.height * project_transform.scale,
+			}
+		}
+		if node.has_clip {
+			rect = rect_intersection(rect, clip)
+		}
+		if rect.width <= 0 || rect.height <= 0 {
+			continue
+		}
+		state.viewport_surfaces[state.viewport_surface_count] = {
+			entity = node.entity,
+			rect = rect,
+			clip = clip,
+			has_clip = node.has_clip,
+			component = world.ui_viewports[node.viewport_index],
+			editor = node.origin == .Editor,
+		}
+		node.viewport_layer = state.viewport_surface_count
+		state.viewport_surface_count += 1
+	}
 }
 
 ui_entity_or_ancestor_hidden :: proc(world: ^shared.World, entity_index: int) -> bool {
@@ -2746,6 +2881,99 @@ update_scroll_areas :: proc(
 	return changed
 }
 
+viewport_node_at_pointer :: proc(
+	state: ^State,
+	world: ^shared.World,
+	point: shared.Vec2,
+	editor: bool,
+) -> int {
+	hit := -1
+	highest_order := -1
+	for index in state.viewport_node_indices[:state.viewport_node_count] {
+		node := state.nodes[index]
+		if (node.origin == .Editor) != editor ||
+		   !node.laid_out ||
+		   node.viewport_index < 0 ||
+		   node.viewport_index >= len(world.ui_viewports) {
+			continue
+		}
+		component := world.ui_viewports[node.viewport_index]
+		if component.interactive &&
+		   node_pointer_contains(node, point) &&
+		   node.paint_order >= highest_order {
+			hit = index
+			highest_order = node.paint_order
+		}
+	}
+	return hit
+}
+
+update_viewport_interaction :: proc(
+	state: ^State,
+	world: ^shared.World,
+	pointer: Pointer_Input,
+	editor: bool,
+) -> bool {
+	if state == nil || world == nil {
+		return false
+	}
+	previous_down := state.previous_primary_down
+	if editor {
+		previous_down = state.editor_previous_primary_down
+	}
+	hit := -1
+	if pointer.available {
+		hit = viewport_node_at_pointer(state, world, pointer.position, editor)
+	}
+	wheel_consumed := hit >= 0 && pointer.wheel_y != 0
+	if wheel_consumed {
+		node := &state.nodes[hit]
+		component := world.ui_viewports[node.viewport_index]
+		component.distance *= math.exp(pointer.wheel_y * -0.12)
+		component.distance = clamp(component.distance, f32(1.1), f32(20))
+		_ = ecs.set_ui_viewport(world, int(node.entity.index), component)
+	}
+	if pointer.available && pointer.primary_down && !previous_down && hit >= 0 {
+		node := state.nodes[hit]
+		state.viewport_drag_entity = node.entity
+		state.viewport_drag_editor = editor
+		state.viewport_drag_active = true
+		state.viewport_drag_position = pointer.position
+	}
+	if state.viewport_drag_active && state.viewport_drag_editor == editor {
+		if !pointer.available || !pointer.primary_down {
+			state.viewport_drag_active = false
+			state.viewport_drag_entity = {}
+		} else {
+			node_index := find_node(state, state.viewport_drag_entity)
+			if node_index < 0 {
+				state.viewport_drag_active = false
+				state.viewport_drag_entity = {}
+			} else {
+				node := &state.nodes[node_index]
+				if node.viewport_index >= 0 && node.viewport_index < len(world.ui_viewports) {
+					delta := shared.Vec2 {
+						pointer.position.x - state.viewport_drag_position.x,
+						pointer.position.y - state.viewport_drag_position.y,
+					}
+					if delta.x != 0 || delta.y != 0 {
+						component := world.ui_viewports[node.viewport_index]
+						component.orbit.x = clamp(
+							component.orbit.x + delta.y * 0.012,
+							f32(-1.45),
+							f32(1.45),
+						)
+						component.orbit.y += delta.x * 0.012
+						_ = ecs.set_ui_viewport(world, int(node.entity.index), component)
+					}
+					state.viewport_drag_position = pointer.position
+				}
+			}
+		}
+	}
+	return wheel_consumed
+}
+
 has_text_focus :: proc(state: ^State) -> bool {
 	return state != nil && state.has_focused_input
 }
@@ -3878,6 +4106,9 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 	background := layout.background
 	border_color := layout.border_color
 	border_width := layout.border_width
+	if node.viewport_index >= 0 && node.viewport_index < len(world.ui_viewports) {
+		background = {}
+	}
 	if node.parent_entity_index >= 0 && node.parent_entity_index < len(world.entities) {
 		parent := world.entities[node.parent_entity_index]
 		if parent.ui_list_index >= 0 && parent.ui_list_index < len(world.ui_lists) {
@@ -3934,6 +4165,20 @@ paint_node :: proc(state: ^State, world: ^shared.World, node_index, depth: int) 
 				border_width = border_width,
 			},
 		); err != "" { return err }
+	}
+	if node.viewport_layer >= 0 && node.viewport_layer < state.viewport_surface_count {
+		if err := append_paint(
+			state,
+			{
+				kind = .Viewport,
+				rect = node.rect,
+				color = {1, 1, 1, 1},
+				uv = {0, 0, 1, 1},
+				font_layer = f32(node.viewport_layer),
+			},
+		); err != "" {
+			return err
+		}
 	}
 	if node.panel_index >= 0 && node.panel_index < len(world.ui_panels) {
 		panel := world.ui_panels[node.panel_index]

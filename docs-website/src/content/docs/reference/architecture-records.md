@@ -47,6 +47,9 @@ Current decisions:
 | ADR-032 | Separate project source, engine state, and products |
 | ADR-033 | Model spatial hierarchy with local transforms and UUID parents |
 | ADR-034 | Keep GPU visibility backend-owned |
+| ADR-035 | Model runtime input as ECS singletons |
+| ADR-036 | Compile source assets into versioned resource products |
+| ADR-037 | Compose embedded worlds through ECS UI viewports |
 
 ## FDRs
 
@@ -65,6 +68,8 @@ Current features:
 | FDR-007 | ECS UI |
 | FDR-008 | Editor shell |
 | FDR-009 | Project resources |
+| FDR-010 | Runtime input |
+| FDR-011 | Asset imports |
 
 ## When to update records
 

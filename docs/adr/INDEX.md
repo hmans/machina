@@ -38,3 +38,4 @@
 | [ADR-034](ADR-034-keep-gpu-visibility-backend-owned.md) | Keep GPU visibility backend-owned | 2026-07-19 |
 | [ADR-035](ADR-035-model-runtime-input-as-ecs-singletons.md) | Model runtime input as ECS singletons | 2026-07-21 |
 | [ADR-036](ADR-036-compile-source-assets-into-versioned-resource-products.md) | Compile source assets into versioned resource products | 2026-07-21 |
+| [ADR-037](ADR-037-compose-embedded-worlds-through-ecs-ui-viewports.md) | Compose embedded worlds through ECS UI viewports | 2026-07-21 |

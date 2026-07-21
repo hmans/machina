@@ -56,6 +56,7 @@ Storage_Kind :: enum {
 	UI_Table,
 	UI_List,
 	UI_Progress,
+	UI_Viewport,
 	UI_Text,
 	UI_Button,
 	UI_Input,
@@ -286,6 +287,19 @@ init_registry :: proc(registry: ^Registry) {
 	)
 	register_engine_component(
 		registry,
+		"scrapbot.ui_viewport",
+		{
+			Field_Definition{name = "camera", field_type = .String},
+			Field_Definition{name = "root", field_type = .String},
+			Field_Definition{name = "resource", field_type = .String},
+			Field_Definition{name = "orbit", field_type = .Vec2},
+			Field_Definition{name = "distance", field_type = .Number},
+			Field_Definition{name = "clear_color", field_type = .Vec4},
+			Field_Definition{name = "interactive", field_type = .Bool},
+		},
+	)
+	register_engine_component(
+		registry,
 		"scrapbot.ui_state",
 		{
 			Field_Definition{name = "hovered", field_type = .Bool},
@@ -482,6 +496,8 @@ engine_component_storage :: proc "contextless" (name: string) -> (Storage_Kind, 
 			return .UI_List, .Authored
 		case "scrapbot.ui_progress":
 			return .UI_Progress, .Authored
+		case "scrapbot.ui_viewport":
+			return .UI_Viewport, .Authored
 		case "scrapbot.ui_text":
 			return .UI_Text, .Authored
 		case "scrapbot.ui_button":

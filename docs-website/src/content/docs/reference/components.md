@@ -50,6 +50,7 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type referen
 | `scrapbot.ui_table` | UI flow | Row-major multi-column layout. |
 | `scrapbot.ui_list` | UI flow | Selectable direct-child rows. |
 | `scrapbot.ui_progress` | UI indicator | Track and clamped progress fill. |
+| `scrapbot.ui_viewport` | UI content | Interactive renderer-backed Model or World view. |
 | `scrapbot.ui_state` | UI interaction | Renderer-owned interaction values and edge revisions. |
 | `scrapbot.ui_text` | UI content | Text label. |
 | `scrapbot.ui_button` | UI content | Activatable text and/or SDF-icon button. |
@@ -226,6 +227,20 @@ With `tree_enabled = true`, direct children whose layout has `tree_item = true` 
 | `inset` | Zero Vec4 | Non-negative track inset. |
 | `corner_radius` | `0` | Non-negative SDF radius. |
 | `right_to_left` | `false` | Anchor fill to the right edge. |
+
+### `scrapbot.ui_viewport`
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `resource` | Empty UUID | Render this Model resource. When empty, render the current retained World. |
+| `camera` | Empty UUID | Optional camera entity for a World target. The active project camera is used when empty. |
+| `root` | Empty UUID | Optional World subtree root; only that entity and its descendants render. |
+| `orbit` | `[-0.35, 0.55]` | Preview pitch and yaw in radians. |
+| `distance` | `3` | Model-radius camera multiplier; must be finite and at least `1.1`. |
+| `clear_color` | `[0.012, 0.017, 0.024, 1]` | Offscreen surface clear color. |
+| `interactive` | `true` | Drag to orbit and use the wheel to zoom. |
+
+The viewport is an ordinary UI element: `ui_layout` controls its size, padding ancestors can frame it, scroll areas clip it, and its render surface participates in normal paint order. Model targets use imported Geometry and Material resources and retain a cached layer until the component, aspect ratio, model, geometry, or material changes. World targets consume the retained render list and may select a camera or subtree by stable entity UUID. The initial WGPU implementation provides eight simultaneous 512-pixel layers.
 
 ### `scrapbot.ui_state`
 

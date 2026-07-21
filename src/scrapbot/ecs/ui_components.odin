@@ -153,6 +153,11 @@ remove_ui_component :: proc(world: ^World, entity_index: int, name: string) -> b
 			world.ui_progresses[entity.ui_progress_index] = {}
 			append(&world.free_ui_progress_indices, entity.ui_progress_index)
 			entity.ui_progress_index = INVALID_COMPONENT_INDEX
+		case "scrapbot.ui_viewport":
+			if entity.ui_viewport_index < 0 { return false }
+			world.ui_viewports[entity.ui_viewport_index] = {}
+			append(&world.free_ui_viewport_indices, entity.ui_viewport_index)
+			entity.ui_viewport_index = INVALID_COMPONENT_INDEX
 		case "scrapbot.ui_text":
 			if entity.ui_text_index < 0 { return false }
 			text := &world.ui_texts[entity.ui_text_index]
@@ -435,6 +440,26 @@ set_ui_progress :: proc(world: ^World, entity_index: int, value: UI_Progress_Com
 	} else {
 		entity.ui_progress_index = len(world.ui_progresses)
 		append(&world.ui_progresses, value)
+	}
+	mark_ui_entity_dirty(world, entity_index)
+	return true
+}
+
+set_ui_viewport :: proc(world: ^World, entity_index: int, value: UI_Viewport_Component) -> bool {
+	if !ui_entity_is_mutable(world, entity_index) {
+		return false
+	}
+	entity := &world.entities[entity_index]
+	if entity.ui_viewport_index >= 0 && entity.ui_viewport_index < len(world.ui_viewports) {
+		world.ui_viewports[entity.ui_viewport_index] = value
+		return true
+	}
+	if index, found := take_free_slot(&world.free_ui_viewport_indices); found {
+		entity.ui_viewport_index = index
+		world.ui_viewports[index] = value
+	} else {
+		entity.ui_viewport_index = len(world.ui_viewports)
+		append(&world.ui_viewports, value)
 	}
 	mark_ui_entity_dirty(world, entity_index)
 	return true

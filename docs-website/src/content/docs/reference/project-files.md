@@ -363,6 +363,27 @@ corner_radius = 2
 right_to_left = true
 ```
 
+A `ui_viewport` embeds a renderer-backed Model resource or the retained World inside its ordinary layout box. A Model target frames itself automatically; drag to orbit and use the wheel to zoom. Omit `resource` to render the World, optionally through a `camera` entity UUID and restricted to a `root` entity plus descendants:
+
+```toml
+[[entities]]
+id = "d4000000-0000-4000-8000-000000000017"
+name = "Ship Preview"
+
+[entities.ui_layout]
+size = [480, 270]
+corner_radius = 8
+
+[entities.ui_viewport]
+resource = "a7000000-0000-4000-8000-000000000001"
+orbit = [-0.35, 0.55]
+distance = 3
+clear_color = [0.012, 0.017, 0.024, 1]
+interactive = true
+```
+
+Viewport surfaces obey normal ancestor clipping, scrolling, and paint order. The initial WGPU implementation supports eight simultaneous 512-pixel layers. Static Model previews remain cached until their component, aspect, or referenced resources change.
+
 The renderer automatically attaches a read-only `ui_state` component to every laid-out element. Project systems can query it for hover, active, focus, activation, change, validation, submission, cancellation, and draggable-list drop state. Transient booleans describe the most recent UI pass; the matching revision counters are monotonic counters for reliable edge detection. Projects do not author or mutate `ui_state`.
 
 Pointer hit testing gives the topmost element under the pointer hover state. Pressing the primary button captures active state on that element until release and advances its public activation revision. Buttons can consume those generic states through `hover_background`, `active_background`, `hover_color`, and `active_color`; a zero-alpha state color falls back to the normal layout background or button text color. Button labels use `alignment = "left"`, `"center"`, or `"right"` inside the padded box and default to centered. A button may instead set `icon = "close"`, `"plus"`, `"chevron_right"`, or `"chevron_down"`; `icon_inset` and `icon_stroke` control its SDF geometry, and text is optional when an icon is present.

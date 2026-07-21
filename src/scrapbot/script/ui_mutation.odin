@@ -347,6 +347,27 @@ read_ui_component_command_from_luau :: proc "c" (
 			}
 			command.progress = value
 			return ecs.init_ui_component_command(command, .Progress)
+		case "scrapbot.ui_viewport":
+			value := current_ui_viewport(world, entity_index, base)
+			if err := read_ui_uuid_field(L, payload_index, "camera", &value.camera);
+			   err != "" { return err }
+			if err := read_ui_uuid_field(L, payload_index, "root", &value.root);
+			   err != "" { return err }
+			if err := read_ui_resource_uuid_field(L, payload_index, "resource", &value.resource);
+			   err != "" { return err }
+			if err := read_ui_vec2_field(L, payload_index, "orbit", &value.orbit);
+			   err != "" { return err }
+			if err := read_ui_number_field(L, payload_index, "distance", &value.distance);
+			   err != "" { return err }
+			if err := read_ui_vec4_field(L, payload_index, "clear_color", &value.clear_color);
+			   err != "" { return err }
+			if err := read_ui_bool_field(L, payload_index, "interactive", &value.interactive);
+			   err != "" { return err }
+			if !shared.ui_viewport_is_valid(value) {
+				return "ui_viewport requires a valid orbit, distance, and clear color"
+			}
+			command.viewport = value
+			return ecs.init_ui_component_command(command, .Viewport)
 		case "scrapbot.ui_text":
 			value := current_ui_text(world, entity_index, base)
 			if err := read_ui_string_field(L, payload_index, "text", &value.text);
@@ -755,6 +776,19 @@ current_ui_progress :: proc(
 	return shared.ui_progress_default()
 }
 
+current_ui_viewport :: proc(
+	world: ^shared.World,
+	entity_index: int,
+	base: ^ecs.UI_Component_Command,
+) -> shared.UI_Viewport_Component {
+	if base != nil && base.kind == .Viewport { return base.viewport }
+	if world != nil && entity_index >= 0 && entity_index < len(world.entities) {
+		index := world.entities[entity_index].ui_viewport_index
+		if index >= 0 && index < len(world.ui_viewports) { return world.ui_viewports[index] }
+	}
+	return shared.ui_viewport_default()
+}
+
 current_ui_input :: proc(
 	world: ^shared.World,
 	entity_index: int,
@@ -861,6 +895,22 @@ read_ui_uuid_field :: proc "c" (
 	if text == "" { return "" }
 	value, ok := shared.entity_uuid_parse(text)
 	if !ok { return "UI entity reference must be a UUID string" }
+	out^ = value
+	return ""
+}
+
+read_ui_resource_uuid_field :: proc "c" (
+	L: Lua_State,
+	index: c.int,
+	name: cstring,
+	out: ^shared.Resource_UUID,
+) -> string {
+	context = base_runtime.default_context()
+	text := ""
+	if err := read_ui_string_field(L, index, name, &text); err != "" { return err }
+	if text == "" { return "" }
+	value, ok := shared.resource_uuid_parse(text)
+	if !ok { return "UI resource reference must be a UUID string" }
 	out^ = value
 	return ""
 }

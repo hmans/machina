@@ -38,6 +38,7 @@ Lifecycle meanings:
 | `scrapbot.ui_list` | UI container | Authored | Yes | Selection plus generic list/tree drag, reorder, and reparent state. |
 | `scrapbot.ui_text` | UI content | Authored | Yes | MTSDF text content and style. |
 | `scrapbot.ui_progress` | UI content | Authored | Yes | Reusable bounded progress visualization. |
+| `scrapbot.ui_viewport` | UI content | Authored | Yes | Interactive renderer-backed Model or World surface composited through ordinary UI paint. |
 | `scrapbot.ui_state` | UI interaction | Derived | Read-only | Renderer-owned hover/focus/activation/change/drop state and monotonic revisions. |
 | `scrapbot.ui_button` | UI control | Authored | Yes | Text or SDF-icon activation control consuming generic element state. |
 | `scrapbot.ui_input` | UI control | Authored | Yes | Single-line text/numeric input with focus, selection, validation, stepping, and opt-in scrubbing. |
@@ -259,6 +260,16 @@ These entries deliberately omit exhaustive field/default documentation. Follow t
 - **Invalidation:** Value/style mutations dirty paint; geometry/inset changes also dirty layout where measurement changes.
 - **Surfaces:** Shared public UI contract across projects and editor; see the [public component reference](../../docs-website/src/content/docs/reference/components.md#scrapbotui_progress).
 - **Source/tests:** `ecs/ui_components.odin`, `ui/ui.odin`; `ui/ui_test.odin`, `ui/ui_retained_test.odin`.
+
+### `scrapbot.ui_viewport`
+
+- **Contract:** Embeds either a Model resource UUID or retained World inside an ordinary layout box, with optional World camera/root UUIDs plus orbit, distance, clear color, and interaction policy.
+- **Storage/lifecycle:** Dedicated typed UI storage; authored component with reconciler-owned drag state and renderer-owned texture layers/caches.
+- **Producers:** Scene TOML, Luau/native UI APIs, editor composition, and generic ECS setters.
+- **Consumers:** Retained viewport membership, shared pointer orbit/zoom interaction, WGPU offscreen rendering, and ordinary clipped UI paint.
+- **Invalidation:** Membership follows structural dirty queues; value changes update the bounded active viewport set without rebuilding UI paint. Static Model layers redraw only when component/aspect or referenced model/geometry/material revisions change; World targets consume the retained render list.
+- **Surfaces:** Shared public UI contract across projects and editor; see the [public component reference](../../docs-website/src/content/docs/reference/components.md#scrapbotui_viewport).
+- **Source/tests:** `ecs/ui_components.odin`, `ui/ui.odin`, `render/wgpu_viewports.odin`; `ecs/ui_components_test.odin`, `ui/ui_retained_test.odin`, headless WGPU asset-preview diagnostics.
 
 ### `scrapbot.ui_text`
 

@@ -10,6 +10,8 @@
     {"action": "wait", "frames": 2},
     {"action": "expect", "target": {"name": "__scrapbot_editor_inspector_resource_name", "origin": "editor"}, "expect": "text", "text": "Triangle Model"},
     {"action": "expect", "target": {"text": "Static glTF mesh data", "origin": "editor"}, "expect": "visible"},
+	{"action": "drag", "target": {"name": "__scrapbot_editor_asset_preview_0", "origin": "editor"}, "delta_x": 32, "delta_y": -12, "frames": 4},
+	{"action": "wait", "frames": 2},
     {"action": "capture", "target": {"name": "__scrapbot_editor_right", "origin": "editor"}, "padding": 8}
   ]
 }

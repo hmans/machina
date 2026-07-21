@@ -151,6 +151,8 @@ Scene_Entity :: struct {
 	ui_list: UI_List_Component,
 	has_ui_progress: bool,
 	ui_progress: UI_Progress_Component,
+	has_ui_viewport: bool,
+	ui_viewport: UI_Viewport_Component,
 	has_ui_text: bool,
 	ui_text: UI_Text_Component,
 	has_ui_button: bool,
@@ -328,6 +330,15 @@ UI_Progress_Component :: struct {
 	corner_radius: f32,
 	right_to_left: bool,
 }
+UI_Viewport_Component :: struct {
+	camera: Entity_UUID,
+	root: Entity_UUID,
+	resource: Resource_UUID,
+	orbit: Vec2,
+	distance: f32,
+	clear_color: Vec4,
+	interactive: bool,
+}
 UI_State_Component :: struct {
 	hovered: bool,
 	active: bool,
@@ -490,6 +501,15 @@ ui_progress_default :: proc "contextless" () -> UI_Progress_Component {
 	return {maximum = 1, fill_color = {1, 1, 1, 1}}
 }
 
+ui_viewport_default :: proc "contextless" () -> UI_Viewport_Component {
+	return {
+		orbit = {-0.35, 0.55},
+		distance = 3,
+		clear_color = {0.012, 0.017, 0.024, 1},
+		interactive = true,
+	}
+}
+
 ui_text_default :: proc "contextless" () -> UI_Text_Component {
 	return {color = {1, 1, 1, 1}, size = 16}
 }
@@ -610,6 +630,26 @@ ui_list_is_valid :: proc "contextless" (value: UI_List_Component) -> bool {
 
 ui_progress_is_valid :: proc "contextless" (value: UI_Progress_Component) -> bool {
 	return value.maximum > 0 && value.corner_radius >= 0 && ui_vec4_is_non_negative(value.inset)
+}
+
+ui_viewport_is_valid :: proc "contextless" (value: UI_Viewport_Component) -> bool {
+	return(
+		value.distance >= 1.1 &&
+		!math.is_nan(value.distance) &&
+		!math.is_inf(value.distance) &&
+		!math.is_nan(value.orbit.x) &&
+		!math.is_inf(value.orbit.x) &&
+		!math.is_nan(value.orbit.y) &&
+		!math.is_inf(value.orbit.y) &&
+		!math.is_nan(value.clear_color.x) &&
+		!math.is_inf(value.clear_color.x) &&
+		!math.is_nan(value.clear_color.y) &&
+		!math.is_inf(value.clear_color.y) &&
+		!math.is_nan(value.clear_color.z) &&
+		!math.is_inf(value.clear_color.z) &&
+		!math.is_nan(value.clear_color.w) &&
+		!math.is_inf(value.clear_color.w) \
+	)
 }
 
 ui_text_is_valid :: proc "contextless" (value: UI_Text_Component) -> bool {
@@ -961,6 +1001,7 @@ World_Entity :: struct {
 	ui_table_index: int,
 	ui_list_index: int,
 	ui_progress_index: int,
+	ui_viewport_index: int,
 	ui_state_index: int,
 	ui_text_index: int,
 	ui_button_index: int,
@@ -1094,6 +1135,7 @@ World :: struct {
 	ui_tables: [dynamic]UI_Table_Component,
 	ui_lists: [dynamic]UI_List_Component,
 	ui_progresses: [dynamic]UI_Progress_Component,
+	ui_viewports: [dynamic]UI_Viewport_Component,
 	ui_states: [dynamic]UI_State_Component,
 	ui_transient_state_entities: [dynamic]Entity,
 	ui_texts: [dynamic]UI_Text_Component,
@@ -1108,6 +1150,7 @@ World :: struct {
 	free_ui_table_indices: [dynamic]int,
 	free_ui_list_indices: [dynamic]int,
 	free_ui_progress_indices: [dynamic]int,
+	free_ui_viewport_indices: [dynamic]int,
 	free_ui_state_indices: [dynamic]int,
 	free_ui_text_indices: [dynamic]int,
 	free_ui_button_indices: [dynamic]int,

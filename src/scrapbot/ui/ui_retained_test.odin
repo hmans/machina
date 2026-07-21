@@ -154,6 +154,7 @@ test_ui_value_updates_do_not_trigger_structural_synchronization :: proc(t: ^test
 	testing.expect(t, ecs.set_ui_table(&world, entity_index, shared.ui_table_default()))
 	testing.expect(t, ecs.set_ui_list(&world, entity_index, shared.ui_list_default()))
 	testing.expect(t, ecs.set_ui_progress(&world, entity_index, shared.ui_progress_default()))
+	testing.expect(t, ecs.set_ui_viewport(&world, entity_index, shared.ui_viewport_default()))
 	text := shared.ui_text_default()
 	text.text = "Text"
 	testing.expect(t, ecs.set_ui_text(&world, entity_index, text))
@@ -196,6 +197,9 @@ test_ui_value_updates_do_not_trigger_structural_synchronization :: proc(t: ^test
 	progress := world.ui_progresses[world.entities[entity_index].ui_progress_index]
 	progress.value += 0.5
 	testing.expect(t, ecs.set_ui_progress(&world, entity_index, progress))
+	viewport := world.ui_viewports[world.entities[entity_index].ui_viewport_index]
+	viewport.orbit.y += 0.25
+	testing.expect(t, ecs.set_ui_viewport(&world, entity_index, viewport))
 	text = world.ui_texts[world.entities[entity_index].ui_text_index]
 	text.size += 1
 	testing.expect(t, ecs.set_ui_text(&world, entity_index, text))
@@ -216,6 +220,72 @@ test_ui_value_updates_do_not_trigger_structural_synchronization :: proc(t: ^test
 	testing.expect(t, len(world.ui_dirty_entities) == 0)
 	testing.expect(t, reconcile(state, &world, 1280, 720) == "")
 	testing.expect(t, state.ui_structure_sync_count == sync_count)
+}
+
+@(test)
+test_embedded_viewport_is_retained_and_orbits_without_rebuilding_paint :: proc(t: ^testing.T) {
+	world: shared.World
+	defer ecs.destroy_world(&world)
+	entity_index, created := ecs.create_world_entity(&world, "Viewport")
+	testing.expect(t, created)
+	testing.expect(t, ecs.set_ui_layout(&world, entity_index, {size = {320, 180}}))
+	component := shared.ui_viewport_default()
+	testing.expect(t, ecs.set_ui_viewport(&world, entity_index, component))
+	label_index, label_created := ecs.create_world_entity(&world, "Label")
+	testing.expect(t, label_created)
+	testing.expect(
+		t,
+		ecs.set_ui_layout(&world, label_index, {position = {0, 190}, size = {80, 20}}),
+	)
+	label := shared.ui_text_default()
+	label.text = "Outside"
+	testing.expect(t, ecs.set_ui_text(&world, label_index, label))
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	testing.expect(t, reconcile(state, &world, 320, 180) == "")
+	testing.expect(t, state.viewport_node_count == 1)
+	testing.expect(t, state.viewport_surface_count == 1)
+	viewport_paint_count := 0
+	for command in state.paint[:state.paint_count] {
+		if command.kind == .Viewport {
+			viewport_paint_count += 1
+		}
+	}
+	testing.expect(t, viewport_paint_count == 1)
+	press := Pointer_Input {
+		position = {100, 90},
+		primary_down = true,
+		available = true,
+	}
+	testing.expect(t, reconcile(state, &world, 320, 180, press) == "")
+	paint_revision := state.project_paint_output_revision
+	drag := Pointer_Input {
+		position = {140, 110},
+		primary_down = true,
+		available = true,
+	}
+	testing.expect(t, reconcile(state, &world, 320, 180, drag) == "")
+	updated := world.ui_viewports[world.entities[entity_index].ui_viewport_index]
+	testing.expect(t, updated.orbit != component.orbit)
+	testing.expect(t, state.project_paint_output_revision == paint_revision)
+
+	release := Pointer_Input {
+		position = {140, 110},
+		available = true,
+	}
+	testing.expect(t, reconcile(state, &world, 320, 180, release) == "")
+	paint_revision = state.project_paint_output_revision
+	wheel := Pointer_Input {
+		position = {140, 110},
+		wheel_y = 1,
+		available = true,
+	}
+	testing.expect(t, reconcile(state, &world, 320, 180, wheel) == "")
+	zoomed := world.ui_viewports[world.entities[entity_index].ui_viewport_index]
+	testing.expect(t, zoomed.distance < updated.distance)
+	testing.expect(t, state.project_paint_output_revision == paint_revision)
 }
 
 @(test)

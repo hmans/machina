@@ -143,6 +143,19 @@ system_get_ui_component :: proc "c" (
 				corner_radius = value.corner_radius,
 				right_to_left = bool_to_c_int(value.right_to_left),
 			}
+		case "scrapbot.ui_viewport":
+			if world_entity.ui_viewport_index < 0 ||
+			   world_entity.ui_viewport_index >= len(step.world.ui_viewports) { return 0 }
+			value := step.world.ui_viewports[world_entity.ui_viewport_index]
+			payload.viewport = {
+				camera = api_uuid_from_shared(value.camera),
+				root = api_uuid_from_shared(value.root),
+				resource = api_resource_uuid_from_shared(value.resource),
+				orbit = api_vec2_from_shared(value.orbit),
+				distance = value.distance,
+				clear_color = api_vec4_from_shared(value.clear_color),
+				interactive = bool_to_c_int(value.interactive),
+			}
 		case "scrapbot.ui_state":
 			if world_entity.ui_state_index < 0 ||
 			   world_entity.ui_state_index >= len(step.world.ui_states) { return 0 }
@@ -445,6 +458,21 @@ ui_command_from_api_payload :: proc "c" (
 			}
 			command.progress = value
 			return ecs.init_ui_component_command(command, .Progress)
+		case "scrapbot.ui_viewport":
+			value := shared.UI_Viewport_Component {
+				camera = shared_uuid_from_api(payload.viewport.camera),
+				root = shared_uuid_from_api(payload.viewport.root),
+				resource = shared_resource_uuid_from_api(payload.viewport.resource),
+				orbit = shared_vec2_from_api(payload.viewport.orbit),
+				distance = payload.viewport.distance,
+				clear_color = shared_vec4_from_api(payload.viewport.clear_color),
+				interactive = payload.viewport.interactive != 0,
+			}
+			if !shared.ui_viewport_is_valid(value) {
+				return "native ui_viewport payload is invalid"
+			}
+			command.viewport = value
+			return ecs.init_ui_component_command(command, .Viewport)
 		case "scrapbot.ui_text":
 			alignment, alignment_ok := shared_text_alignment_from_api(payload.text.alignment)
 			if !alignment_ok { return "native ui_text alignment is invalid" }
@@ -636,8 +664,20 @@ api_uuid_from_shared :: proc "contextless" (value: shared.Entity_UUID) -> api.UU
 	return result
 }
 
+api_resource_uuid_from_shared :: proc "contextless" (value: shared.Resource_UUID) -> api.UUID {
+	result: api.UUID
+	for byte, index in value { result.bytes[index] = byte }
+	return result
+}
+
 shared_uuid_from_api :: proc "contextless" (value: api.UUID) -> shared.Entity_UUID {
 	result: shared.Entity_UUID
+	for byte, index in value.bytes { result[index] = byte }
+	return result
+}
+
+shared_resource_uuid_from_api :: proc "contextless" (value: api.UUID) -> shared.Resource_UUID {
+	result: shared.Resource_UUID
 	for byte, index in value.bytes { result[index] = byte }
 	return result
 }

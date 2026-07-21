@@ -43,6 +43,7 @@ UI_Panel_Component :: shared.UI_Panel_Component
 UI_Table_Component :: shared.UI_Table_Component
 UI_List_Component :: shared.UI_List_Component
 UI_Progress_Component :: shared.UI_Progress_Component
+UI_Viewport_Component :: shared.UI_Viewport_Component
 UI_State_Component :: shared.UI_State_Component
 UI_Text_Component :: shared.UI_Text_Component
 UI_Button_Component :: shared.UI_Button_Component
@@ -89,6 +90,7 @@ init_world_entity :: proc(
 		ui_table_index = INVALID_COMPONENT_INDEX,
 		ui_list_index = INVALID_COMPONENT_INDEX,
 		ui_progress_index = INVALID_COMPONENT_INDEX,
+		ui_viewport_index = INVALID_COMPONENT_INDEX,
 		ui_state_index = INVALID_COMPONENT_INDEX,
 		ui_text_index = INVALID_COMPONENT_INDEX,
 		ui_button_index = INVALID_COMPONENT_INDEX,
@@ -369,6 +371,7 @@ destroy_world :: proc(world: ^World) {
 	delete(world.ui_tables)
 	delete(world.ui_lists)
 	delete(world.ui_progresses)
+	delete(world.ui_viewports)
 	delete(world.ui_states)
 	delete(world.ui_transient_state_entities)
 	delete(world.ui_texts)
@@ -383,6 +386,7 @@ destroy_world :: proc(world: ^World) {
 	delete(world.free_ui_table_indices)
 	delete(world.free_ui_list_indices)
 	delete(world.free_ui_progress_indices)
+	delete(world.free_ui_viewport_indices)
 	delete(world.free_ui_state_indices)
 	delete(world.free_ui_text_indices)
 	delete(world.free_ui_button_indices)
@@ -455,6 +459,10 @@ build_world :: proc(scene: ^Scene) -> World {
 		if entity.has_ui_progress {
 			world_entity.ui_progress_index = len(world.ui_progresses)
 			append(&world.ui_progresses, entity.ui_progress)
+		}
+		if entity.has_ui_viewport {
+			world_entity.ui_viewport_index = len(world.ui_viewports)
+			append(&world.ui_viewports, entity.ui_viewport)
 		}
 		if entity.has_ui_text { world_entity.ui_text_index = len(world.ui_texts); text := entity.ui_text; text.text = clone_world_string(&world, text.text); text.font = clone_world_string(&world, text.font); append(&world.ui_texts, text) }
 		if entity.has_ui_button { world_entity.ui_button_index = len(world.ui_buttons); button := entity.ui_button; button.text = clone_world_string(&world, button.text); button.font = clone_world_string(&world, button.font); append(&world.ui_buttons, button) }

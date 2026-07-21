@@ -154,6 +154,9 @@ capture_registered_component_snapshot :: proc(
 		case .UI_Progress:
 			value.has_ui_progress = true
 			value.ui_progress = world.ui_progresses[entity.ui_progress_index]
+		case .UI_Viewport:
+			value.has_ui_viewport = true
+			value.ui_viewport = world.ui_viewports[entity.ui_viewport_index]
 		case .UI_Text:
 			value.has_ui_text = true
 			value.ui_text = world.ui_texts[entity.ui_text_index]
@@ -323,6 +326,8 @@ apply_registered_component_snapshot :: proc(
 			_ = set_ui_list(world, entity_index, value.ui_list)
 		case .UI_Progress:
 			_ = set_ui_progress(world, entity_index, value.ui_progress)
+		case .UI_Viewport:
+			_ = set_ui_viewport(world, entity_index, value.ui_viewport)
 		case .UI_Text:
 			_ = set_ui_text(world, entity_index, value.ui_text)
 		case .UI_Button:
@@ -698,6 +703,13 @@ set_registered_component_membership :: proc(
 			} else {
 				_ = remove_ui_component(world, entity_index, definition.name)
 			}
+		case .UI_Viewport:
+			if present {
+				_ = set_ui_viewport(world, entity_index, shared.ui_viewport_default())
+				bump_component_revision(world, entity_index)
+			} else {
+				_ = remove_ui_component(world, entity_index, definition.name)
+			}
 		case .UI_Text:
 			if present {
 				_ = set_ui_text(world, entity_index, shared.ui_text_default())
@@ -855,6 +867,10 @@ capture_ui_components :: proc(world: ^World, source: World_Entity, entity: ^shar
 	if source.ui_progress_index >= 0 && source.ui_progress_index < len(world.ui_progresses) {
 		entity.has_ui_progress = true
 		entity.ui_progress = world.ui_progresses[source.ui_progress_index]
+	}
+	if source.ui_viewport_index >= 0 && source.ui_viewport_index < len(world.ui_viewports) {
+		entity.has_ui_viewport = true
+		entity.ui_viewport = world.ui_viewports[source.ui_viewport_index]
 	}
 	if source.ui_text_index >= 0 && source.ui_text_index < len(world.ui_texts) {
 		entity.has_ui_text = true
@@ -1069,6 +1085,7 @@ apply_ui_snapshot :: proc(world: ^World, entity_index: int, value: ^shared.Scene
 	if value.has_ui_table { _ = set_ui_table(world, entity_index, value.ui_table) } else { remove_ui_component(world, entity_index, "scrapbot.ui_table") }
 	if value.has_ui_list { _ = set_ui_list(world, entity_index, value.ui_list) } else { remove_ui_component(world, entity_index, "scrapbot.ui_list") }
 	if value.has_ui_progress { _ = set_ui_progress(world, entity_index, value.ui_progress) } else { remove_ui_component(world, entity_index, "scrapbot.ui_progress") }
+	if value.has_ui_viewport { _ = set_ui_viewport(world, entity_index, value.ui_viewport) } else { remove_ui_component(world, entity_index, "scrapbot.ui_viewport") }
 	if value.has_ui_text { _ = set_ui_text(world, entity_index, value.ui_text) } else { remove_ui_component(world, entity_index, "scrapbot.ui_text") }
 	if value.has_ui_button { _ = set_ui_button(world, entity_index, value.ui_button) } else { remove_ui_component(world, entity_index, "scrapbot.ui_button") }
 	if value.has_ui_input { _ = set_ui_input(world, entity_index, value.ui_input) } else { remove_ui_component(world, entity_index, "scrapbot.ui_input") }

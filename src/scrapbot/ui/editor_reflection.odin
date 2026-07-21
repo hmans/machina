@@ -117,6 +117,11 @@ editor_reflected_component_value :: proc(
 				return any{rawptr(&entity.ui_progress), typeid_of(shared.UI_Progress_Component)},
 					true
 			}
+		case "scrapbot.ui_viewport":
+			if entity.has_ui_viewport {
+				return any{rawptr(&entity.ui_viewport), typeid_of(shared.UI_Viewport_Component)},
+					true
+			}
 		case "scrapbot.ui_text":
 			if entity.has_ui_text {
 				return any{rawptr(&entity.ui_text), typeid_of(shared.UI_Text_Component)}, true
@@ -589,6 +594,8 @@ editor_reflected_component_valid :: proc(
 			return shared.ui_list_is_valid(entity.ui_list)
 		case "scrapbot.ui_progress":
 			return shared.ui_progress_is_valid(entity.ui_progress)
+		case "scrapbot.ui_viewport":
+			return shared.ui_viewport_is_valid(entity.ui_viewport)
 		case "scrapbot.ui_text":
 			return shared.ui_text_is_valid(entity.ui_text)
 		case "scrapbot.ui_button":

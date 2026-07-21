@@ -4165,107 +4165,41 @@ editor_ui_inspector_model_preview :: proc(
 	if builder == nil || registry == nil || model == nil {
 		return
 	}
-	colors: [EDITOR_ASSET_PREVIEW_GRID_SIZE * EDITOR_ASSET_PREVIEW_GRID_SIZE]shared.Vec4
-	for &color in colors {
-		color = {0.018, 0.024, 0.032, 1}
-	}
-	min_point := shared.Vec2{3.402823e38, 3.402823e38}
-	max_point := shared.Vec2{-3.402823e38, -3.402823e38}
-	for mesh in model.meshes {
-		for primitive in mesh.primitives {
-			geometry, alive := resources.get_geometry(registry, primitive.geometry)
-			if !alive {
-				continue
-			}
-			for vertex in geometry.vertices {
-				point := editor_model_preview_project(vertex.position)
-				min_point.x = min(min_point.x, point.x)
-				min_point.y = min(min_point.y, point.y)
-				max_point.x = max(max_point.x, point.x)
-				max_point.y = max(max_point.y, point.y)
-			}
-		}
-	}
-	extent := shared.Vec2 {
-		max(max_point.x - min_point.x, 0.001),
-		max(max_point.y - min_point.y, 0.001),
-	}
-	for mesh in model.meshes {
-		for primitive in mesh.primitives {
-			geometry, alive := resources.get_geometry(registry, primitive.geometry)
-			if !alive {
-				continue
-			}
-			color := shared.Vec4{0.28, 0.78, 0.72, 1}
-			if material, material_alive := resources.get_material(registry, primitive.material);
-			   material_alive {
-				color = {
-					material.desc.base_color.x,
-					material.desc.base_color.y,
-					material.desc.base_color.z,
-					max(material.desc.base_color.w, 0.25),
-				}
-			}
-			for triangle := 0; triangle + 2 < len(geometry.indices); triangle += 3 {
-				indices := [3]int {
-					int(geometry.indices[triangle]),
-					int(geometry.indices[triangle + 1]),
-					int(geometry.indices[triangle + 2]),
-				}
-				if indices[0] < 0 ||
-				   indices[0] >= len(geometry.vertices) ||
-				   indices[1] < 0 ||
-				   indices[1] >= len(geometry.vertices) ||
-				   indices[2] < 0 ||
-				   indices[2] >= len(geometry.vertices) {
-					continue
-				}
-				points: [3]shared.Vec2
-				for index in 0 ..< 3 {
-					projected := editor_model_preview_project(
-						geometry.vertices[indices[index]].position,
-					)
-					points[index] = {
-						0.1 + (projected.x - min_point.x) / extent.x * 0.8,
-						0.9 - (projected.y - min_point.y) / extent.y * 0.8,
-					}
-				}
-				for row in 0 ..< EDITOR_ASSET_PREVIEW_GRID_SIZE {
-					for column in 0 ..< EDITOR_ASSET_PREVIEW_GRID_SIZE {
-						point := shared.Vec2 {
-							(f32(column) + 0.5) / EDITOR_ASSET_PREVIEW_GRID_SIZE,
-							(f32(row) + 0.5) / EDITOR_ASSET_PREVIEW_GRID_SIZE,
-						}
-						if editor_point_in_preview_triangle(
-							point,
-							points[0],
-							points[1],
-							points[2],
-						) {
-							colors[row * EDITOR_ASSET_PREVIEW_GRID_SIZE + column] = color
-						}
-					}
-				}
-			}
-		}
-	}
-	editor_ui_inspector_preview_grid(builder, colors[:])
+	editor_ui_inspector_preview_surface(builder, model.id)
 }
 
-editor_model_preview_project :: proc(value: shared.Vec3) -> shared.Vec2 {
-	return {value.x - value.z * 0.45, value.y + value.z * 0.28}
-}
-
-editor_point_in_preview_triangle :: proc(point, a, b, c: shared.Vec2) -> bool {
-	sign := proc(p1, p2, p3: shared.Vec2) -> f32 {
-		return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y)
+editor_ui_inspector_preview_surface :: proc(
+	builder: ^Inspector_ECS_Builder,
+	resource: shared.Resource_UUID,
+) {
+	editor_ui_begin_inspector_component(builder, "PREVIEW")
+	editor_ui_set_hidden(builder.world, builder.table_entity, true)
+	panel_slot := builder.panel_count - 1
+	panel_name := builder.world.entities[builder.panel_entity].name
+	viewport, found := editor_ui_entity(builder.world, .Inspector_Preview_Grid, panel_slot)
+	if !found {
+		viewport = editor_ui_create_box(
+			builder.world,
+			fmt.tprintf("__scrapbot_editor_asset_preview_%d", panel_slot),
+			panel_name,
+			.Inspector_Preview_Grid,
+			{
+				size = {2000, 220},
+				margin = {8, 12, 12, 12},
+				border_color = EDITOR_SECTION_BORDER,
+				border_width = 1,
+				corner_radius = 4,
+				fill_width = true,
+			},
+			panel_slot,
+		)
+	} else {
+		editor_ui_set_parent(builder.world, viewport, panel_name)
+		editor_ui_set_hidden(builder.world, viewport, false)
 	}
-	d1 := sign(point, a, b)
-	d2 := sign(point, b, c)
-	d3 := sign(point, c, a)
-	has_negative := d1 < 0 || d2 < 0 || d3 < 0
-	has_positive := d1 > 0 || d2 > 0 || d3 > 0
-	return !(has_negative && has_positive)
+	value := shared.ui_viewport_default()
+	value.resource = resource
+	_ = ecs.set_ui_viewport(builder.world, viewport, value)
 }
 
 editor_ui_inspector_preview_grid :: proc(builder: ^Inspector_ECS_Builder, colors: []shared.Vec4) {
@@ -4288,6 +4222,7 @@ editor_ui_inspector_preview_grid :: proc(builder: ^Inspector_ECS_Builder, colors
 		editor_ui_set_parent(builder.world, grid, panel_name)
 		editor_ui_set_hidden(builder.world, grid, false)
 	}
+	_ = ecs.remove_ui_component(builder.world, grid, "scrapbot.ui_viewport")
 	for row_index in 0 ..< EDITOR_ASSET_PREVIEW_GRID_SIZE {
 		row_slot := panel_slot * EDITOR_ASSET_PREVIEW_GRID_SIZE + row_index
 		row, row_found := editor_ui_entity(builder.world, .Inspector_Preview_Row, row_slot)

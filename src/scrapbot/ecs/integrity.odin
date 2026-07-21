@@ -48,6 +48,7 @@ World_Component_Kind :: enum {
 	UI_Table,
 	UI_List,
 	UI_Progress,
+	UI_Viewport,
 	UI_State,
 	UI_Text,
 	UI_Button,
@@ -119,7 +120,7 @@ format_world_integrity_failure :: proc(failure: World_Integrity_Failure) -> stri
 world_entity_component_slots :: proc(
 	world: ^World,
 	entity: World_Entity,
-) -> [24]World_Component_Slot {
+) -> [25]World_Component_Slot {
 	return {
 		{.Transform, entity.transform_index, len(world.transforms)},
 		{.Camera, entity.camera_index, len(world.cameras)},
@@ -138,6 +139,7 @@ world_entity_component_slots :: proc(
 		{.UI_Table, entity.ui_table_index, len(world.ui_tables)},
 		{.UI_List, entity.ui_list_index, len(world.ui_lists)},
 		{.UI_Progress, entity.ui_progress_index, len(world.ui_progresses)},
+		{.UI_Viewport, entity.ui_viewport_index, len(world.ui_viewports)},
 		{.UI_State, entity.ui_state_index, len(world.ui_states)},
 		{.UI_Text, entity.ui_text_index, len(world.ui_texts)},
 		{.UI_Button, entity.ui_button_index, len(world.ui_buttons)},
@@ -714,6 +716,7 @@ validate_world_integrity :: proc(
 		{world.free_ui_table_indices[:], len(world.ui_tables), .UI_Table},
 		{world.free_ui_list_indices[:], len(world.ui_lists), .UI_List},
 		{world.free_ui_progress_indices[:], len(world.ui_progresses), .UI_Progress},
+		{world.free_ui_viewport_indices[:], len(world.ui_viewports), .UI_Viewport},
 		{world.free_ui_state_indices[:], len(world.ui_states), .UI_State},
 		{world.free_ui_text_indices[:], len(world.ui_texts), .UI_Text},
 		{world.free_ui_button_indices[:], len(world.ui_buttons), .UI_Button},

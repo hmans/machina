@@ -112,6 +112,8 @@ register_scrapbot_api :: proc(L: Lua_State) {
 	lua_setfield(L, -2, "ui_list")
 	push_registered_component_handle_by_name(L, "scrapbot.ui_progress")
 	lua_setfield(L, -2, "ui_progress")
+	push_registered_component_handle_by_name(L, "scrapbot.ui_viewport")
+	lua_setfield(L, -2, "ui_viewport")
 	push_registered_component_handle_by_name(L, "scrapbot.ui_state")
 	lua_setfield(L, -2, "ui_state")
 	push_registered_component_handle_by_name(L, "scrapbot.ui_text"); lua_setfield(L, -2, "ui_text")

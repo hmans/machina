@@ -252,6 +252,16 @@ UI_Progress_Payload :: struct {
 	right_to_left: c.int,
 }
 
+UI_Viewport_Payload :: struct {
+	camera: UUID,
+	root: UUID,
+	resource: UUID,
+	orbit: Vec2,
+	distance: f32,
+	clear_color: Vec4,
+	interactive: c.int,
+}
+
 UI_Text_Payload :: struct {
 	color: Vec4,
 	size: f32,
@@ -346,6 +356,7 @@ UI_Component_Payload :: struct {
 	table: UI_Table_Payload,
 	list: UI_List_Payload,
 	progress: UI_Progress_Payload,
+	viewport: UI_Viewport_Payload,
 	text: UI_Text_Payload,
 	button: UI_Button_Payload,
 	input: UI_Input_Payload,

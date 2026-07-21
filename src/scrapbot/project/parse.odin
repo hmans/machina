@@ -529,6 +529,7 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 		   line == "[entities.ui_table]" ||
 		   line == "[entities.ui_list]" ||
 		   line == "[entities.ui_progress]" ||
+		   line == "[entities.ui_viewport]" ||
 		   line == "[entities.ui_text]" ||
 		   line == "[entities.ui_button]" ||
 		   line == "[entities.ui_input]" ||
@@ -564,6 +565,10 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			if section == "ui_progress" {
 				current.has_ui_progress = true
 				current.ui_progress = shared.ui_progress_default()
+			}
+			if section == "ui_viewport" {
+				current.has_ui_viewport = true
+				current.ui_viewport = shared.ui_viewport_default()
 			}
 			if section == "ui_text" {
 				current.has_ui_text = true
@@ -1012,6 +1017,44 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 				if !found {
 					return scene, fail(.Invalid_Field, fmt.tprintf("invalid ui_progress.%s", key))
 				}
+			case "ui_viewport":
+				current.has_ui_viewport = true
+				switch key {
+					case "camera":
+						raw: string
+						raw, found = parse_basic_string(value)
+						if found {
+							current.ui_viewport.camera, found = shared.entity_uuid_parse(raw)
+						}
+					case "root":
+						raw: string
+						raw, found = parse_basic_string(value)
+						if found {
+							current.ui_viewport.root, found = shared.entity_uuid_parse(raw)
+						}
+					case "resource":
+						raw: string
+						raw, found = parse_basic_string(value)
+						if found {
+							current.ui_viewport.resource, found = shared.resource_uuid_parse(raw)
+						}
+					case "orbit":
+						current.ui_viewport.orbit, found = parse_vec2(value)
+					case "distance":
+						current.ui_viewport.distance, found = parse_f32(value)
+					case "clear_color":
+						current.ui_viewport.clear_color, found = parse_vec4(value)
+					case "interactive":
+						current.ui_viewport.interactive, found = parse_bool(value)
+					case:
+						return scene, fail(
+							.Invalid_Field,
+							fmt.tprintf("unknown ui_viewport field '%s'", key),
+						)
+				}
+				if !found {
+					return scene, fail(.Invalid_Field, fmt.tprintf("invalid ui_viewport.%s", key))
+				}
 			case "ui_text":
 				current.has_ui_text = true
 				switch key {case "text":
@@ -1238,6 +1281,7 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			   entity.has_ui_table ||
 			   entity.has_ui_list ||
 			   entity.has_ui_progress ||
+			   entity.has_ui_viewport ||
 			   entity.has_ui_input ||
 			   entity.has_ui_checkbox) &&
 		   !entity.has_ui_layout { return scene, fail(.Invalid_Field, fmt.tprintf("UI component on '%s' requires ui_layout", entity.name)) }
@@ -1319,6 +1363,12 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 					"UI progress '%s' requires a positive maximum and non-negative inset/corner radius",
 					entity.name,
 				),
+			)
+		}
+		if entity.has_ui_viewport && !shared.ui_viewport_is_valid(entity.ui_viewport) {
+			return scene, fail(
+				.Invalid_Field,
+				fmt.tprintf("ui_viewport on '%s' is invalid", entity.name),
 			)
 		}
 		content_count := 0
