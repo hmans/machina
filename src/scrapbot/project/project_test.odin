@@ -130,14 +130,15 @@ name = "Neon"
 [material]
 base_color = [0.1, 0.2, 0.3, 1]
 emissive = [8, 2, 0.5]
-texture = "assets/checker.png"
+texture = "a1000000-0000-4000-8000-000000000000"
 `,
 	)
 	testing.expect(t, result.err == .None)
 	testing.expect_value(t, resource.name, "Neon")
 	testing.expect_value(t, resource.material.base_color, Vec4{0.1, 0.2, 0.3, 1})
 	testing.expect_value(t, resource.material.emissive, Vec3{8, 2, 0.5})
-	testing.expect_value(t, resource.material.texture, "assets/checker.png")
+	texture_id, _ := shared.resource_uuid_parse("a1000000-0000-4000-8000-000000000000")
+	testing.expect_value(t, resource.material.texture, texture_id)
 }
 
 @(test)
@@ -158,7 +159,7 @@ name = "Unsafe"
 texture = "../outside.png"
 `,
 	)
-	testing.expect(t, unsafe_texture.err == .Invalid_Path)
+	testing.expect(t, unsafe_texture.err == .Invalid_Field)
 }
 
 @(test)

@@ -23,6 +23,7 @@ Product :: struct {
 	artifact_path: string,
 	width, height: u32,
 	mip_count: u32,
+	byte_count: int,
 	color_space: shared.Texture_Color_Space,
 }
 
@@ -193,6 +194,7 @@ ensure_texture_import :: proc(
 			width = metadata.width,
 			height = metadata.height,
 			mip_count = metadata.mip_count,
+			byte_count = metadata.byte_count,
 			color_space = metadata.color_space,
 		},
 		imported,

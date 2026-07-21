@@ -686,6 +686,11 @@ init_render_resources :: proc(
 	config: ^shared.Project_Config = nil,
 	project_resources: []shared.Project_Resource = nil,
 ) -> string {
+	imports := asset_import.ensure_project_imports(root, project_resources)
+	defer asset_import.destroy_report(&imports)
+	if imports.err != "" {
+		return imports.err
+	}
 	cube_desc, cube_err := resources.cube(2)
 	if cube_err != "" { return cube_err }
 	defer delete(cube_desc.vertices); defer delete(cube_desc.indices)
@@ -704,6 +709,13 @@ init_render_resources :: proc(
 		}
 	}
 	if err := resources.register_project_lod_geometries(registry, project_resources); err != "" {
+		return err
+	}
+	if err := resources.register_project_textures(
+		registry,
+		project_resources,
+		imports.products[:],
+	); err != "" {
 		return err
 	}
 	if err := resources.register_project_materials(registry, root, project_resources); err != "" {

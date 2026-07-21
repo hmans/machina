@@ -102,21 +102,11 @@ clone_project_resource_strings :: proc(
 	if name_err != nil {
 		return "failed to allocate project resource name"
 	}
-	texture := ""
-	if resource.material.texture != "" {
-		texture_value, texture_err := strings.clone(resource.material.texture)
-		if texture_err != nil {
-			delete(name)
-			return "failed to allocate project resource texture path"
-		}
-		texture = texture_value
-	}
 	texture_source := ""
 	if resource.texture.source != "" {
 		texture_source_value, texture_source_err := strings.clone(resource.texture.source)
 		if texture_source_err != nil {
 			delete(name)
-			delete(texture)
 			return "failed to allocate project texture source path"
 		}
 		texture_source = texture_source_value
@@ -124,12 +114,10 @@ clone_project_resource_strings :: proc(
 	source_value, source_err := strings.clone(source)
 	if source_err != nil {
 		delete(name)
-		delete(texture)
 		delete(texture_source)
 		return "failed to allocate project resource source path"
 	}
 	resource.name = name
-	resource.material.texture = texture
 	resource.texture.source = texture_source
 	resource.source = source_value
 	return ""
@@ -142,7 +130,6 @@ destroy_project_resources :: proc(resources: ^[dynamic]shared.Project_Resource) 
 	for &resource in resources^ {
 		delete(resource.name)
 		delete(resource.source)
-		delete(resource.material.texture)
 		delete(resource.texture.source)
 	}
 	delete(resources^)
@@ -160,11 +147,27 @@ validate_scene_resource_references :: proc(
 	defer delete(known_materials)
 	known_geometries := make(map[shared.Resource_UUID]bool)
 	defer delete(known_geometries)
+	known_textures := make(map[shared.Resource_UUID]bool)
+	defer delete(known_textures)
 	for resource in resources {
 		if resource.kind == .Material {
 			known_materials[resource.id] = true
 		} else if resource.kind == .Geometry_LOD {
 			known_geometries[resource.id] = true
+		} else if resource.kind == .Texture {
+			known_textures[resource.id] = true
+		}
+	}
+	for resource in resources {
+		if resource.kind == .Material &&
+		   resource.material.texture != (shared.Resource_UUID{}) &&
+		   !known_textures[resource.material.texture] {
+			id_buffer: [36]u8
+			return fmt.tprintf(
+				"resource material '%s' references unknown texture resource '%s'",
+				resource.name,
+				shared.resource_uuid_to_string(resource.material.texture, id_buffer[:]),
+			)
 		}
 	}
 	for entity in scene.entities {

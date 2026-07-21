@@ -5,4 +5,4 @@ name = "Coral Checker"
 [material]
 base_color = [1, 1, 1, 1]
 emissive = [0, 0, 0]
-texture = "assets/checker.png"
+texture = "10000000-0000-4000-8000-000000000003"

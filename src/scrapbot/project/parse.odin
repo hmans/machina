@@ -106,12 +106,10 @@ parse_project_resource :: proc(
 				case "emissive":
 					resource.material.emissive, found = parse_vec3(value)
 				case "texture":
-					resource.material.texture, found = parse_basic_string(value)
-					if found && !valid_resource_texture_path(resource.material.texture) {
-						return resource, fail(
-							.Invalid_Path,
-							"material.texture must be a safe .png path under assets/",
-						)
+					raw_texture: string
+					raw_texture, found = parse_basic_string(value)
+					if found {
+						resource.material.texture, found = shared.resource_uuid_parse(raw_texture)
 					}
 				case:
 					return resource, fail(

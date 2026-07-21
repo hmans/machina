@@ -360,10 +360,17 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 		if cached.index_buffer != nil { wgpu.BufferRelease(cached.index_buffer) }
 	}
 	delete(renderer.geometry_cache)
-	for &cached in renderer.material_cache {
-		if cached.bind_group != nil { wgpu.BindGroupRelease(cached.bind_group) }
+	for &cached in renderer.texture_cache {
 		if cached.view != nil { wgpu.TextureViewRelease(cached.view) }
 		if cached.texture != nil { wgpu.TextureRelease(cached.texture) }
+	}
+	delete(renderer.texture_cache)
+	for &cached in renderer.material_cache {
+		if cached.bind_group != nil { wgpu.BindGroupRelease(cached.bind_group) }
+		if cached.owns_texture {
+			if cached.view != nil { wgpu.TextureViewRelease(cached.view) }
+			if cached.texture != nil { wgpu.TextureRelease(cached.texture) }
+		}
 	}
 	delete(renderer.material_cache)
 	if renderer.bind_group != nil {

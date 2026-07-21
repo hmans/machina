@@ -81,7 +81,7 @@ Project_Texture_Resource :: struct {
 Project_Material_Resource :: struct {
 	base_color: Vec4,
 	emissive: Vec3,
-	texture: string,
+	texture: Resource_UUID,
 }
 
 Project_Geometry_LOD_Resource :: struct {
@@ -169,6 +169,9 @@ Component_ID :: int
 INVALID_COMPONENT_ID :: Component_ID(0)
 
 Geometry_Handle :: struct {
+	index, generation: u32,
+}
+Texture_Handle :: struct {
 	index, generation: u32,
 }
 Material_Handle :: struct {

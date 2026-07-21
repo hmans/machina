@@ -22,6 +22,7 @@ Vec4 :: struct {
 }
 
 Geometry_Handle :: shared.Geometry_Handle
+Texture_Handle :: shared.Texture_Handle
 Material_Handle :: shared.Material_Handle
 Font_Handle :: shared.Font_Handle
 
@@ -43,9 +44,17 @@ Geometry_Desc :: struct {
 Material_Desc :: struct {
 	base_color: Vec4,
 	emissive: Vec3,
+	texture: Texture_Handle,
 	texture_pixels: []u8,
 	texture_width: u32,
 	texture_height: u32,
+}
+
+Texture_Desc :: struct {
+	pixels: []u8,
+	width, height: u32,
+	mip_count: u32,
+	color_space: shared.Texture_Color_Space,
 }
 
 Font_Desc :: struct {
@@ -76,8 +85,21 @@ Material :: struct {
 	name: string,
 	source: string,
 	texture_asset: string,
+	texture_id: shared.Resource_UUID,
 	authored: bool,
 	desc: Material_Desc,
+	generation: u32,
+	version: u32,
+	alive: bool,
+}
+
+Texture :: struct {
+	id: shared.Resource_UUID,
+	name: string,
+	source: string,
+	asset_source: string,
+	authored: bool,
+	desc: Texture_Desc,
 	generation: u32,
 	version: u32,
 	alive: bool,
@@ -88,6 +110,7 @@ Project_Material_Snapshot :: struct {
 	name: string,
 	source: string,
 	texture_asset: string,
+	texture_id: shared.Resource_UUID,
 	desc: Material_Desc,
 }
 
@@ -106,9 +129,11 @@ Font :: struct {
 
 Registry :: struct {
 	geometries: [dynamic]Geometry,
+	textures: [dynamic]Texture,
 	materials: [dynamic]Material,
 	fonts: [dynamic]Font,
 	geometry_topology_revision: u64,
+	texture_revision: u64,
 	material_revision: u64,
 	allocator: mem.Allocator,
 }
@@ -140,6 +165,9 @@ ensure_allocator :: proc(registry: ^Registry) {
 	   nil { registry.geometries = make([dynamic]Geometry, registry.allocator) }
 	if registry.materials ==
 	   nil { registry.materials = make([dynamic]Material, registry.allocator) }
+	if registry.textures == nil {
+		registry.textures = make([dynamic]Texture, registry.allocator)
+	}
 	if registry.fonts == nil { registry.fonts = make([dynamic]Font, registry.allocator) }
 }
 init_registry :: proc(registry: ^Registry, allocator := context.allocator) {registry^ = {}
@@ -162,9 +190,16 @@ destroy_registry :: proc(registry: ^Registry) {
 		delete(material.texture_asset, allocator)
 		delete(material.desc.texture_pixels, allocator)
 	}
+	for &texture in registry.textures {
+		delete(texture.name, allocator)
+		delete(texture.source, allocator)
+		delete(texture.asset_source, allocator)
+		delete(texture.desc.pixels, allocator)
+	}
 	for &font in registry.fonts { delete(font.name, allocator); delete(font.desc.pixels, allocator) }
 	delete(registry.geometries)
 	delete(registry.materials)
+	delete(registry.textures)
 	delete(registry.fonts)
 	registry^ = {}
 }
@@ -180,6 +215,7 @@ clone_registry :: proc(source: ^Registry, destination: ^Registry) -> string {
 	init_registry(destination, allocator)
 	destination.geometry_topology_revision = source.geometry_topology_revision
 	destination.material_revision = source.material_revision
+	destination.texture_revision = source.texture_revision
 	for geometry in source.geometries {
 		cloned := geometry
 		name, name_err := strings.clone(geometry.name, allocator)
@@ -224,6 +260,18 @@ clone_registry :: proc(source: ^Registry, destination: ^Registry) -> string {
 		cloned.texture_asset = texture_asset
 		cloned.desc = clone_material_desc(material.desc, allocator)
 		append(&destination.materials, cloned)
+	}
+	for texture in source.textures {
+		cloned := texture
+		cloned.name, _ = strings.clone(texture.name, allocator)
+		cloned.source, _ = strings.clone(texture.source, allocator)
+		cloned.asset_source, _ = strings.clone(texture.asset_source, allocator)
+		cloned.desc.pixels = clone_slice(texture.desc.pixels, allocator)
+		if cloned.name == "" || cloned.source == "" || cloned.asset_source == "" {
+			destroy_registry(destination)
+			return "failed to clone texture metadata"
+		}
+		append(&destination.textures, cloned)
 	}
 	for font in source.fonts {
 		cloned := font
@@ -675,7 +723,7 @@ register_project_material :: proc(
 	id: shared.Resource_UUID,
 	name, source: string,
 	desc: Material_Desc,
-	texture_asset: string = "",
+	texture_id: shared.Resource_UUID = {},
 ) -> (
 	Material_Handle,
 	string,
@@ -704,19 +752,14 @@ register_project_material :: proc(
 			delete(cloned_name, registry.allocator)
 			return {}, "failed to allocate material source"
 		}
-		cloned_texture, texture_err := strings.clone(texture_asset, registry.allocator)
-		if texture_err != nil {
-			delete(cloned_name, registry.allocator)
-			delete(cloned_source, registry.allocator)
-			return {}, "failed to allocate material texture path"
-		}
 		delete(material.name, registry.allocator)
 		delete(material.source, registry.allocator)
 		delete(material.texture_asset, registry.allocator)
 		delete(material.desc.texture_pixels, registry.allocator)
 		material.name = cloned_name
 		material.source = cloned_source
-		material.texture_asset = cloned_texture
+		material.texture_asset = ""
+		material.texture_id = texture_id
 		material.authored = true
 		material.desc = clone_material_desc(desc, registry.allocator)
 		material.alive = true
@@ -735,19 +778,13 @@ register_project_material :: proc(
 		delete(cloned_name, registry.allocator)
 		return {}, "failed to allocate material source"
 	}
-	cloned_texture, texture_err := strings.clone(texture_asset, registry.allocator)
-	if texture_err != nil {
-		delete(cloned_name, registry.allocator)
-		delete(cloned_source, registry.allocator)
-		return {}, "failed to allocate material texture path"
-	}
 	append(
 		&registry.materials,
 		Material {
 			id = id,
 			name = cloned_name,
 			source = cloned_source,
-			texture_asset = cloned_texture,
+			texture_id = texture_id,
 			authored = true,
 			desc = clone_material_desc(desc, registry.allocator),
 			generation = 1,
@@ -779,6 +816,7 @@ capture_project_material :: proc(
 	snapshot.name, _ = strings.clone(material.name)
 	snapshot.source, _ = strings.clone(material.source)
 	snapshot.texture_asset, _ = strings.clone(material.texture_asset)
+	snapshot.texture_id = material.texture_id
 	snapshot.desc = clone_material_desc(material.desc, context.allocator)
 	return snapshot, true
 }
@@ -794,6 +832,7 @@ clone_project_material_snapshot :: proc(
 	result.name, _ = strings.clone(source.name)
 	result.source, _ = strings.clone(source.source)
 	result.texture_asset, _ = strings.clone(source.texture_asset)
+	result.texture_id = source.texture_id
 	result.desc = clone_material_desc(source.desc, context.allocator)
 	return result
 }
@@ -894,7 +933,7 @@ apply_project_material_snapshot :: proc(
 		snapshot.name,
 		snapshot.source,
 		snapshot.desc,
-		snapshot.texture_asset,
+		snapshot.texture_id,
 	)
 	return err
 }
@@ -970,17 +1009,17 @@ register_project_materials :: proc(
 			},
 			emissive = declaration.material.emissive,
 		}
-		if declaration.material.texture != "" {
-			texture_desc, texture_err := load_material_texture(
-				root,
-				declaration.material.texture,
-				desc.base_color,
-				desc.emissive,
-			)
-			if texture_err != "" {
-				return fmt.tprintf("resources/%s: %s", declaration.source, texture_err)
+		if declaration.material.texture != (shared.Resource_UUID{}) {
+			texture_handle, found := texture_handle_by_uuid(registry, declaration.material.texture)
+			if !found {
+				id_buffer: [36]u8
+				return fmt.tprintf(
+					"resources/%s: texture resource %s is not registered",
+					declaration.source,
+					shared.resource_uuid_to_string(declaration.material.texture, id_buffer[:]),
+				)
 			}
-			desc = texture_desc
+			desc.texture = texture_handle
 		}
 		append(
 			&prepared,
@@ -1126,8 +1165,13 @@ emissive = [%.9g, %.9g, %.9g]
 			material.desc.emissive.y,
 			material.desc.emissive.z,
 		)
-		if material.texture_asset != "" {
-			fmt.sbprintf(&builder, "texture = \"%s\"\n", material.texture_asset)
+		if material.texture_id != (shared.Resource_UUID{}) {
+			texture_buffer: [36]u8
+			fmt.sbprintf(
+				&builder,
+				"texture = \"%s\"\n",
+				shared.resource_uuid_to_string(material.texture_id, texture_buffer[:]),
+			)
 		}
 		source, clone_err := strings.clone(strings.to_string(builder))
 		strings.builder_destroy(&builder)
@@ -1149,7 +1193,7 @@ emissive = [%.9g, %.9g, %.9g]
 		   parsed.name != material.name ||
 		   parsed.material.base_color != shared.Vec4(material.desc.base_color) ||
 		   parsed.material.emissive != material.desc.emissive ||
-		   parsed.material.texture != material.texture_asset {
+		   parsed.material.texture != material.texture_id {
 			delete(source)
 			delete(resource_path)
 			return "generated project material changed meaning during serialization"

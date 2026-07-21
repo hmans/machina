@@ -3944,6 +3944,36 @@ editor_ui_build_resource_inspector_panels :: proc(
 		editor_ui_finish_inspector(&builder)
 		return
 	}
+	if texture_handle, texture_found := resources.texture_handle_by_uuid(
+		state.resource_registry,
+		id,
+	); texture_found {
+		texture, alive := resources.get_texture(state.resource_registry, texture_handle)
+		if alive && texture.authored {
+			editor_ui_begin_inspector_component(&builder, "TEXTURE")
+			editor_ui_inspector_field(&builder, "source asset", texture.asset_source)
+			editor_ui_inspector_field(
+				&builder,
+				"dimensions",
+				fmt.tprintf("%d x %d", texture.desc.width, texture.desc.height),
+			)
+			editor_ui_inspector_field(
+				&builder,
+				"mip levels",
+				fmt.tprintf("%d", texture.desc.mip_count),
+			)
+			color_space := "sRGB"
+			if texture.desc.color_space == .Linear {
+				color_space = "Linear"
+			}
+			editor_ui_inspector_field(&builder, "color space", color_space)
+			editor_ui_begin_inspector_component(&builder, "IMPORT")
+			editor_ui_inspector_field(&builder, "status", "Up to date")
+			editor_ui_inspector_field(&builder, "product", "RGBA8 mip chain")
+			editor_ui_finish_inspector(&builder)
+			return
+		}
+	}
 	handle, found := resources.material_by_uuid(state.resource_registry, id)
 	if !found {
 		editor_ui_finish_inspector(&builder)
@@ -3981,7 +4011,10 @@ editor_ui_build_resource_inspector_panels :: proc(
 		material.id,
 	)
 	texture := material.texture_asset
-	if texture == "" {
+	if material.texture_id != (shared.Resource_UUID{}) {
+		texture_buffer: [36]u8
+		texture = shared.resource_uuid_to_string(material.texture_id, texture_buffer[:])
+	} else if texture == "" {
 		texture = "None"
 	}
 	editor_ui_inspector_field(&builder, "texture", texture)
@@ -4232,6 +4265,24 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 			editor_ui_set_text(world, label, material.name)
 			resource_count += 1
 		}
+		for texture in state.resource_registry.textures {
+			if !texture.alive || !texture.authored {
+				continue
+			}
+			row, label := editor_ui_ensure_resource_row(world, resource_count)
+			world.entities[row].alive = true
+			world.entities[label].alive = true
+			editor_ui_set_hidden(world, row, false)
+			editor_ui_set_hidden(world, label, false)
+			world.editor_uis[world.entities[row].editor_ui_index].resource_id = texture.id
+			world.editor_uis[world.entities[label].editor_ui_index].resource_id = texture.id
+			if state.editor_has_resource_selection &&
+			   state.editor_selected_resource == texture.id {
+				selected_resource_row = world.entities[row].uuid
+			}
+			editor_ui_set_text(world, label, texture.name)
+			resource_count += 1
+		}
 	}
 	for component in world.editor_uis {
 		if (component.role == .Project_Resource_Row ||
@@ -4289,6 +4340,14 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 		); found {
 			if material, alive := resources.get_material(state.resource_registry, handle); alive {
 				selected_resource_version = material.version
+			}
+		}
+		if handle, found := resources.texture_handle_by_uuid(
+			state.resource_registry,
+			state.editor_selected_resource,
+		); found {
+			if texture, alive := resources.get_texture(state.resource_registry, handle); alive {
+				selected_resource_version = texture.version
 			}
 		}
 	}
@@ -4388,6 +4447,25 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 					for input_entity, input_index in inputs {
 						input := &world.ui_inputs[world.entities[input_entity].ui_input_index]
 						input.read_only = !state.editor_simulation_stopped
+						if !state.has_focused_input ||
+						   state.focused_input != world.entities[input_entity].id {
+							_ = ecs.set_ui_input_value(world, input_entity, values[input_index])
+						}
+					}
+				} else {
+					state.editor_has_resource_selection = false
+				}
+			} else if texture_handle, texture_found := resources.texture_handle_by_uuid(
+				state.resource_registry,
+				state.editor_selected_resource,
+			); texture_found {
+				texture, alive := resources.get_texture(state.resource_registry, texture_handle)
+				if alive {
+					inputs := [2]int{resource_name, resource_source}
+					values := [2]string{texture.name, texture.source}
+					for input_entity, input_index in inputs {
+						input := &world.ui_inputs[world.entities[input_entity].ui_input_index]
+						input.read_only = true
 						if !state.has_focused_input ||
 						   state.focused_input != world.entities[input_entity].id {
 							_ = ecs.set_ui_input_value(world, input_entity, values[input_index])

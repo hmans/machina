@@ -190,9 +190,20 @@ WGPU_Geometry_Cache :: struct {
 WGPU_Material_Cache :: struct {
 	handle: shared.Material_Handle,
 	version: u32,
+	texture_handle: shared.Texture_Handle,
+	texture_version: u32,
 	texture: wgpu.Texture,
 	view: wgpu.TextureView,
 	bind_group: wgpu.BindGroup,
+	owns_texture: bool,
+	valid: bool,
+}
+
+WGPU_Texture_Cache :: struct {
+	handle: shared.Texture_Handle,
+	version: u32,
+	texture: wgpu.Texture,
+	view: wgpu.TextureView,
 	valid: bool,
 }
 WGPU_UI_Vertex :: struct {
@@ -218,6 +229,18 @@ WGPU_Request_Adapter_State :: struct {
 wgpu_material_cache_slot :: proc(
 	cache: []WGPU_Material_Cache,
 	handle: shared.Material_Handle,
+) -> int {
+	for cached, index in cache {
+		if cached.handle.index == handle.index {
+			return index
+		}
+	}
+	return -1
+}
+
+wgpu_texture_cache_slot :: proc(
+	cache: []WGPU_Texture_Cache,
+	handle: shared.Texture_Handle,
 ) -> int {
 	for cached, index in cache {
 		if cached.handle.index == handle.index {
@@ -416,6 +439,7 @@ WGPU_Renderer :: struct {
 	post_width: u32,
 	post_height: u32,
 	geometry_cache: [dynamic]WGPU_Geometry_Cache,
+	texture_cache: [dynamic]WGPU_Texture_Cache,
 	material_cache: [dynamic]WGPU_Material_Cache,
 	uniform_buffer: wgpu.Buffer,
 	depth_texture: wgpu.Texture,
@@ -804,49 +828,79 @@ wgpu_material_cache :: proc(
 ) {
 	material, ok := resources.get_material(registry, handle)
 	if !ok { return nil, "render material handle is stale" }
+	texture_version: u32
+	if material.desc.texture != (shared.Texture_Handle{}) {
+		texture_resource, texture_ok := resources.get_texture(registry, material.desc.texture)
+		if !texture_ok {
+			return nil, "render material texture handle is stale"
+		}
+		texture_version = texture_resource.version
+	}
 	cache_index := wgpu_material_cache_slot(renderer.material_cache[:], handle)
 	if cache_index < 0 {
 		cache_index = len(renderer.material_cache)
 		append(&renderer.material_cache, WGPU_Material_Cache{})
 	}
 	cached := &renderer.material_cache[cache_index]
-	if cached.valid && cached.handle == handle && cached.version == material.version {
+	if cached.valid &&
+	   cached.handle == handle &&
+	   cached.version == material.version &&
+	   cached.texture_handle == material.desc.texture &&
+	   cached.texture_version == texture_version {
 		return cached, ""
 	}
 	if cached.bind_group != nil { wgpu.BindGroupRelease(cached.bind_group) }
-	if cached.view != nil { wgpu.TextureViewRelease(cached.view) }
-	if cached.texture != nil { wgpu.TextureRelease(cached.texture) }
+	if cached.owns_texture {
+		if cached.view != nil { wgpu.TextureViewRelease(cached.view) }
+		if cached.texture != nil { wgpu.TextureRelease(cached.texture) }
+	}
 	cached^ = {
 		handle = handle,
 		version = material.version,
+		texture_handle = material.desc.texture,
+		texture_version = texture_version,
 	}
-	width, height := material.desc.texture_width, material.desc.texture_height
-	pixels := material.desc.texture_pixels
-	white := [4]u8{255, 255, 255, 255}
-	if len(pixels) == 0 { width = 1; height = 1; pixels = white[:] }
-	cached.texture = wgpu.DeviceCreateTexture(
-		renderer.device,
-		&wgpu.TextureDescriptor {
-			label = "Scrapbot Material Texture",
-			usage = {.TextureBinding, .CopyDst},
-			dimension = ._2D,
-			size = {width = width, height = height, depthOrArrayLayers = 1},
-			format = .RGBA8UnormSrgb,
-			mipLevelCount = 1,
-			sampleCount = 1,
-		},
-	)
-	if cached.texture == nil { return nil, "failed to create material texture" }
-	wgpu.QueueWriteTexture(
-		renderer.queue,
-		&wgpu.TexelCopyTextureInfo{texture = cached.texture, aspect = .All},
-		raw_data(pixels),
-		uint(len(pixels)),
-		&wgpu.TexelCopyBufferLayout{bytesPerRow = width * 4, rowsPerImage = height},
-		&wgpu.Extent3D{width = width, height = height, depthOrArrayLayers = 1},
-	)
-	cached.view = wgpu.TextureCreateView(cached.texture)
-	if cached.view == nil { return nil, "failed to create material texture view" }
+	if material.desc.texture != (shared.Texture_Handle{}) {
+		texture_cached, texture_err := wgpu_texture_cache(
+			renderer,
+			registry,
+			material.desc.texture,
+		)
+		if texture_err != "" {
+			return nil, texture_err
+		}
+		cached.texture = texture_cached.texture
+		cached.view = texture_cached.view
+	} else {
+		width, height := material.desc.texture_width, material.desc.texture_height
+		pixels := material.desc.texture_pixels
+		white := [4]u8{255, 255, 255, 255}
+		if len(pixels) == 0 { width = 1; height = 1; pixels = white[:] }
+		cached.texture = wgpu.DeviceCreateTexture(
+			renderer.device,
+			&wgpu.TextureDescriptor {
+				label = "Scrapbot Material Texture",
+				usage = {.TextureBinding, .CopyDst},
+				dimension = ._2D,
+				size = {width = width, height = height, depthOrArrayLayers = 1},
+				format = .RGBA8UnormSrgb,
+				mipLevelCount = 1,
+				sampleCount = 1,
+			},
+		)
+		if cached.texture == nil { return nil, "failed to create material texture" }
+		cached.owns_texture = true
+		wgpu.QueueWriteTexture(
+			renderer.queue,
+			&wgpu.TexelCopyTextureInfo{texture = cached.texture, aspect = .All},
+			raw_data(pixels),
+			uint(len(pixels)),
+			&wgpu.TexelCopyBufferLayout{bytesPerRow = width * 4, rowsPerImage = height},
+			&wgpu.Extent3D{width = width, height = height, depthOrArrayLayers = 1},
+		)
+		cached.view = wgpu.TextureCreateView(cached.texture)
+		if cached.view == nil { return nil, "failed to create material texture view" }
+	}
 	entries := [?]wgpu.BindGroupEntry {
 		{binding = 0, textureView = cached.view},
 		{binding = 1, sampler = renderer.material_sampler},
@@ -861,6 +915,85 @@ wgpu_material_cache :: proc(
 		},
 	)
 	if cached.bind_group == nil { return nil, "failed to create material bind group" }
+	cached.valid = true
+	return cached, ""
+}
+
+wgpu_texture_cache :: proc(
+	renderer: ^WGPU_Renderer,
+	registry: ^resources.Registry,
+	handle: shared.Texture_Handle,
+) -> (
+	^WGPU_Texture_Cache,
+	string,
+) {
+	texture_resource, ok := resources.get_texture(registry, handle)
+	if !ok {
+		return nil, "render texture handle is stale"
+	}
+	cache_index := wgpu_texture_cache_slot(renderer.texture_cache[:], handle)
+	if cache_index < 0 {
+		cache_index = len(renderer.texture_cache)
+		append(&renderer.texture_cache, WGPU_Texture_Cache{})
+	}
+	cached := &renderer.texture_cache[cache_index]
+	if cached.valid && cached.handle == handle && cached.version == texture_resource.version {
+		return cached, ""
+	}
+	if cached.view != nil {
+		wgpu.TextureViewRelease(cached.view)
+	}
+	if cached.texture != nil {
+		wgpu.TextureRelease(cached.texture)
+	}
+	cached^ = {
+		handle = handle,
+		version = texture_resource.version,
+	}
+	format: wgpu.TextureFormat = .RGBA8UnormSrgb
+	if texture_resource.desc.color_space == .Linear {
+		format = .RGBA8Unorm
+	}
+	cached.texture = wgpu.DeviceCreateTexture(
+		renderer.device,
+		&wgpu.TextureDescriptor {
+			label = "Scrapbot Texture Resource",
+			usage = {.TextureBinding, .CopyDst},
+			dimension = ._2D,
+			size = {
+				width = texture_resource.desc.width,
+				height = texture_resource.desc.height,
+				depthOrArrayLayers = 1,
+			},
+			format = format,
+			mipLevelCount = texture_resource.desc.mip_count,
+			sampleCount = 1,
+		},
+	)
+	if cached.texture == nil {
+		return nil, "failed to create texture resource"
+	}
+	offset := 0
+	width, height := texture_resource.desc.width, texture_resource.desc.height
+	for level in 0 ..< texture_resource.desc.mip_count {
+		byte_count := int(width * height * 4)
+		level_pixels := texture_resource.desc.pixels[offset:offset + byte_count]
+		wgpu.QueueWriteTexture(
+			renderer.queue,
+			&wgpu.TexelCopyTextureInfo{texture = cached.texture, mipLevel = level, aspect = .All},
+			raw_data(level_pixels),
+			uint(len(level_pixels)),
+			&wgpu.TexelCopyBufferLayout{bytesPerRow = width * 4, rowsPerImage = height},
+			&wgpu.Extent3D{width = width, height = height, depthOrArrayLayers = 1},
+		)
+		offset += byte_count
+		width = max(width / 2, 1)
+		height = max(height / 2, 1)
+	}
+	cached.view = wgpu.TextureCreateView(cached.texture)
+	if cached.view == nil {
+		return nil, "failed to create texture resource view"
+	}
 	cached.valid = true
 	return cached, ""
 }
