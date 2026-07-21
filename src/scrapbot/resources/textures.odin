@@ -10,6 +10,7 @@ register_project_textures :: proc(
 	registry: ^Registry,
 	declarations: []shared.Project_Resource,
 	products: []asset_import.Product,
+	retire_missing: bool = true,
 ) -> string {
 	if registry == nil {
 		return "texture registry is not available"
@@ -55,13 +56,17 @@ register_project_textures :: proc(
 			declaration.source,
 			declaration.texture.source,
 			desc,
+			product.byte_count,
 		); register_err != "" {
 			return fmt.tprintf("resources/%s: %s", declaration.source, register_err)
 		}
 		seen[declaration.id] = true
 	}
+	if !retire_missing {
+		return ""
+	}
 	for &texture in registry.textures {
-		if texture.authored && !seen[texture.id] {
+		if texture.authored && texture.alive && !seen[texture.id] {
 			texture.alive = false
 			texture.generation += 1
 			texture.version += 1
@@ -76,6 +81,7 @@ register_project_texture :: proc(
 	id: shared.Resource_UUID,
 	name, source, asset_source: string,
 	desc: Texture_Desc,
+	import_byte_count: int = 0,
 ) -> (
 	Texture_Handle,
 	string,
@@ -113,6 +119,7 @@ register_project_texture :: proc(
 		texture.name = name_value
 		texture.source = source_value
 		texture.asset_source = asset_value
+		texture.import_byte_count = import_byte_count
 		texture.desc = desc
 		texture.desc.pixels = pixels
 		texture.alive = true
@@ -142,6 +149,7 @@ register_project_texture :: proc(
 			source = source_value,
 			asset_source = asset_value,
 			authored = true,
+			import_byte_count = import_byte_count,
 			desc = {
 				pixels = pixels,
 				width = desc.width,

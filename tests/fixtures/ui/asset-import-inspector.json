@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "timeout_frames": 180,
+  "actions": [
+    {"action": "click", "target": {"text": "Checker Texture", "origin": "editor"}},
+    {"action": "wait", "frames": 2},
+    {"action": "expect", "target": {"text": "RGBA8 mip chain", "origin": "editor"}, "expect": "visible"},
+    {"action": "click", "target": {"text": "REIMPORT", "origin": "editor"}},
+    {"action": "wait", "frames": 3},
+    {"action": "expect", "target": {"text": "Reimported", "origin": "editor"}, "expect": "visible"},
+    {"action": "capture", "target": {"name": "__scrapbot_editor_right", "origin": "editor"}, "padding": 8}
+  ]
+}

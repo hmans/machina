@@ -86,6 +86,7 @@ destroy_model_product :: proc(model: ^Model_Product) {
 ensure_model_import :: proc(
 	root, build_dir: string,
 	declaration: shared.Project_Resource,
+	force: bool = false,
 ) -> (
 	product: Product,
 	imported: bool,
@@ -129,6 +130,9 @@ ensure_model_import :: proc(
 	defer delete(artifact_path)
 	defer delete(metadata_path)
 	metadata, cache_hit := read_model_cache(artifact_path, metadata_path, declaration, source_hash)
+	if force {
+		cache_hit = false
+	}
 	if !cache_hit {
 		model, model_err := build_model_product(data)
 		if model_err != "" {

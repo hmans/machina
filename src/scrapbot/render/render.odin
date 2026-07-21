@@ -42,6 +42,12 @@ Runtime_Save_Proc :: #type proc(
 	dirty_entities: []shared.Entity_UUID,
 	dirty_resources: []shared.Resource_UUID,
 ) -> string
+Runtime_Reimport_Proc :: #type proc(
+	data: rawptr,
+	world: ^World,
+	id: shared.Resource_UUID,
+	all: bool,
+) -> string
 Render_Stats :: struct {
 	draw_batches: int,
 	draw_capacity: int,
@@ -163,6 +169,8 @@ Run_Config :: struct {
 	runtime_revert_data: rawptr,
 	runtime_reconcile: Runtime_World_Proc,
 	runtime_reconcile_data: rawptr,
+	runtime_reimport: Runtime_Reimport_Proc,
+	runtime_reimport_data: rawptr,
 	resource_registry: ^resources.Registry,
 	stats: ^Render_Stats,
 	performance_diagnostics: ^Performance_Diagnostics_Accumulator,
@@ -720,6 +728,21 @@ run_frame_system_unmeasured :: proc(
 			keyboard,
 			config.resource_registry,
 		); err != "" { return err }
+		if id, all, requested := ui.consume_resource_reimport_request(config.ui_state); requested {
+			reimport_err := "editor reimport requires a runtime import callback"
+			if config.runtime_reimport != nil {
+				reimport_err = config.runtime_reimport(
+					config.runtime_reimport_data,
+					world,
+					id,
+					all,
+				)
+			}
+			ui.complete_resource_reimport(config.ui_state, reimport_err)
+			if reimport_err != "" {
+				fmt.eprintf("[editor] failed to reimport resource: %s\n", reimport_err)
+			}
+		}
 		if config.runtime_reconcile != nil {
 			if err := config.runtime_reconcile(config.runtime_reconcile_data, world); err != "" {
 				return err

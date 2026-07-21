@@ -93,3 +93,33 @@ test_failed_texture_reimport_preserves_last_good_product :: proc(t: ^testing.T) 
 	testing.expect(t, after_err == nil)
 	testing.expect(t, string(after) == string(before))
 }
+
+@(test)
+test_forced_texture_reimport_can_target_one_resource :: proc(t: ^testing.T) {
+	root := make_texture_test_project(t)
+	defer os.remove_all(root)
+	defer delete(root)
+	first_declaration := texture_test_declaration()
+	second_declaration := texture_test_declaration()
+	second_declaration.id, _ = shared.resource_uuid_parse("a1000000-0000-4000-8000-000000000100")
+	second_declaration.name = "Checker Two"
+	declarations := []shared.Project_Resource{first_declaration, second_declaration}
+	warm := ensure_project_imports(root, declarations)
+	defer destroy_report(&warm)
+	testing.expectf(t, warm.err == "", "texture import failed: %s", warm.err)
+	testing.expect_value(t, warm.imported_count, 2)
+	targeted := ensure_project_imports(
+		root,
+		declarations,
+		force = true,
+		only = second_declaration.id,
+	)
+	defer destroy_report(&targeted)
+	testing.expectf(t, targeted.err == "", "targeted reimport failed: %s", targeted.err)
+	testing.expect_value(t, targeted.imported_count, 1)
+	testing.expect_value(t, targeted.cached_count, 0)
+	testing.expect_value(t, len(targeted.products), 1)
+	if len(targeted.products) == 1 {
+		testing.expect(t, targeted.products[0].id == second_declaration.id)
+	}
+}

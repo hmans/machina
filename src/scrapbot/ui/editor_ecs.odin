@@ -149,6 +149,12 @@ editor_ui_handle_activation :: proc(
 						state.editor_selected_resource,
 					)
 					return
+				case .Project_Resource_Reimport:
+					editor_request_resource_reimport(state, state.editor_selected_resource)
+					return
+				case .Project_Resources_Reimport_All:
+					editor_request_resource_reimport(state, {}, true)
+					return
 				case .Transport_Play:
 					editor_play(state)
 					return
@@ -315,6 +321,9 @@ editor_ui_handle_activation :: proc(
 				     .Inspector_Panel,
 				     .Inspector_Table,
 				     .Inspector_Cell,
+				     .Inspector_Preview_Grid,
+				     .Inspector_Preview_Row,
+				     .Inspector_Preview_Cell,
 				     .Inspector_Input,
 				     .Inspector_Checkbox,
 				     .Inspector_Component_Menu,
@@ -1158,6 +1167,14 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		.Project_Resource_Delete,
 	)
 	world.ui_layouts[world.entities[resource_delete].ui_layout_index].size.x = 42
+	resource_reimport_all := editor_ui_create_transport_button(
+		world,
+		"__scrapbot_editor_resource_reimport_all",
+		EDITOR_UI_RESOURCE_TOOLS_NAME,
+		"REIMPORT ALL",
+		.Project_Resources_Reimport_All,
+	)
+	world.ui_layouts[world.entities[resource_reimport_all].ui_layout_index].size.x = 112
 
 	_ = editor_ui_create_box(
 		world,
@@ -1316,6 +1333,17 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 	find_usage_layout.position = {10, 146}
 	find_usage_layout.size = {110, 28}
 	find_usage_layout.hidden = true
+	reimport_button := editor_ui_create_transport_button(
+		world,
+		"__scrapbot_editor_resource_reimport",
+		EDITOR_UI_INSPECTOR_HEADER_NAME,
+		"REIMPORT",
+		.Project_Resource_Reimport,
+	)
+	reimport_layout := &world.ui_layouts[world.entities[reimport_button].ui_layout_index]
+	reimport_layout.position = {130, 146}
+	reimport_layout.size = {96, 28}
+	reimport_layout.hidden = true
 	inspector_header := editor_ui_create_box(
 		world,
 		"__scrapbot_editor_inspector_identity",
@@ -3381,6 +3409,7 @@ editor_ui_build_inspector_panels :: proc(
 	world: ^shared.World,
 	content_entity, entity_index: int,
 ) {
+	editor_ui_hide_asset_preview(world)
 	builder := Inspector_ECS_Builder {
 		state = state,
 		world = world,
@@ -3939,6 +3968,7 @@ editor_ui_build_resource_inspector_panels :: proc(
 	content_entity: int,
 	id: shared.Resource_UUID,
 ) {
+	editor_ui_hide_asset_preview(world)
 	builder := Inspector_ECS_Builder {
 		state = state,
 		world = world,
@@ -3956,6 +3986,7 @@ editor_ui_build_resource_inspector_panels :: proc(
 	); texture_found {
 		texture, alive := resources.get_texture(state.resource_registry, texture_handle)
 		if alive && texture.authored {
+			editor_ui_inspector_texture_preview(&builder, texture)
 			editor_ui_begin_inspector_component(&builder, "TEXTURE")
 			editor_ui_inspector_field(&builder, "source asset", texture.asset_source)
 			editor_ui_inspector_field(
@@ -3974,8 +4005,23 @@ editor_ui_build_resource_inspector_panels :: proc(
 			}
 			editor_ui_inspector_field(&builder, "color space", color_space)
 			editor_ui_begin_inspector_component(&builder, "IMPORT")
-			editor_ui_inspector_field(&builder, "status", "Up to date")
+			status := editor_resource_import_status(state, id)
+			editor_ui_inspector_field(&builder, "status", status)
+			editor_ui_inspector_field(&builder, "dependency", texture.asset_source)
 			editor_ui_inspector_field(&builder, "product", "RGBA8 mip chain")
+			editor_ui_inspector_field(
+				&builder,
+				"product size",
+				editor_format_byte_count(texture.import_byte_count),
+			)
+			editor_ui_inspector_field(&builder, "warnings", "None")
+			if editor_resource_import_failed(state, id) {
+				editor_ui_inspector_field(
+					&builder,
+					"error",
+					state.editor_resource_reimport_message,
+				)
+			}
 			editor_ui_finish_inspector(&builder)
 			return
 		}
@@ -3984,6 +4030,7 @@ editor_ui_build_resource_inspector_panels :: proc(
 	   model_found {
 		model, alive := resources.get_model(state.resource_registry, model_handle)
 		if alive && model.authored {
+			editor_ui_inspector_model_preview(&builder, state.resource_registry, model)
 			primitive_count := 0
 			for mesh in model.meshes {
 				primitive_count += len(mesh.primitives)
@@ -3999,8 +4046,23 @@ editor_ui_build_resource_inspector_panels :: proc(
 				fmt.tprintf("%d", len(model.material_handles)),
 			)
 			editor_ui_begin_inspector_component(&builder, "IMPORT")
-			editor_ui_inspector_field(&builder, "status", "Up to date")
+			status := editor_resource_import_status(state, id)
+			editor_ui_inspector_field(&builder, "status", status)
+			editor_ui_inspector_field(&builder, "dependency", model.asset_source)
 			editor_ui_inspector_field(&builder, "product", "Static glTF mesh data")
+			editor_ui_inspector_field(
+				&builder,
+				"product size",
+				editor_format_byte_count(model.import_byte_count),
+			)
+			editor_ui_inspector_field(&builder, "warnings", "None")
+			if editor_resource_import_failed(state, id) {
+				editor_ui_inspector_field(
+					&builder,
+					"error",
+					state.editor_resource_reimport_message,
+				)
+			}
 			editor_ui_finish_inspector(&builder)
 			return
 		}
@@ -4058,6 +4120,281 @@ editor_ui_build_resource_inspector_panels :: proc(
 	}
 	editor_ui_inspector_field(&builder, "delete", delete_status)
 	editor_ui_finish_inspector(&builder)
+}
+
+editor_ui_hide_asset_preview :: proc(world: ^shared.World) {
+	if world == nil {
+		return
+	}
+	for binding in world.editor_uis {
+		if binding.role == .Inspector_Preview_Grid ||
+		   binding.role == .Inspector_Preview_Row ||
+		   binding.role == .Inspector_Preview_Cell {
+			editor_ui_set_hidden(world, binding.entity_index, true)
+		}
+	}
+}
+
+EDITOR_ASSET_PREVIEW_GRID_SIZE :: 12
+
+editor_ui_inspector_texture_preview :: proc(
+	builder: ^Inspector_ECS_Builder,
+	texture: ^resources.Texture,
+) {
+	if builder == nil || texture == nil {
+		return
+	}
+	colors: [EDITOR_ASSET_PREVIEW_GRID_SIZE * EDITOR_ASSET_PREVIEW_GRID_SIZE]shared.Vec4
+	for row in 0 ..< EDITOR_ASSET_PREVIEW_GRID_SIZE {
+		for column in 0 ..< EDITOR_ASSET_PREVIEW_GRID_SIZE {
+			colors[row * EDITOR_ASSET_PREVIEW_GRID_SIZE + column] = editor_texture_preview_color(
+				texture,
+				column,
+				row,
+			)
+		}
+	}
+	editor_ui_inspector_preview_grid(builder, colors[:])
+}
+
+editor_ui_inspector_model_preview :: proc(
+	builder: ^Inspector_ECS_Builder,
+	registry: ^resources.Registry,
+	model: ^resources.Model,
+) {
+	if builder == nil || registry == nil || model == nil {
+		return
+	}
+	colors: [EDITOR_ASSET_PREVIEW_GRID_SIZE * EDITOR_ASSET_PREVIEW_GRID_SIZE]shared.Vec4
+	for &color in colors {
+		color = {0.018, 0.024, 0.032, 1}
+	}
+	min_point := shared.Vec2{3.402823e38, 3.402823e38}
+	max_point := shared.Vec2{-3.402823e38, -3.402823e38}
+	for mesh in model.meshes {
+		for primitive in mesh.primitives {
+			geometry, alive := resources.get_geometry(registry, primitive.geometry)
+			if !alive {
+				continue
+			}
+			for vertex in geometry.vertices {
+				point := editor_model_preview_project(vertex.position)
+				min_point.x = min(min_point.x, point.x)
+				min_point.y = min(min_point.y, point.y)
+				max_point.x = max(max_point.x, point.x)
+				max_point.y = max(max_point.y, point.y)
+			}
+		}
+	}
+	extent := shared.Vec2 {
+		max(max_point.x - min_point.x, 0.001),
+		max(max_point.y - min_point.y, 0.001),
+	}
+	for mesh in model.meshes {
+		for primitive in mesh.primitives {
+			geometry, alive := resources.get_geometry(registry, primitive.geometry)
+			if !alive {
+				continue
+			}
+			color := shared.Vec4{0.28, 0.78, 0.72, 1}
+			if material, material_alive := resources.get_material(registry, primitive.material);
+			   material_alive {
+				color = {
+					material.desc.base_color.x,
+					material.desc.base_color.y,
+					material.desc.base_color.z,
+					max(material.desc.base_color.w, 0.25),
+				}
+			}
+			for triangle := 0; triangle + 2 < len(geometry.indices); triangle += 3 {
+				indices := [3]int {
+					int(geometry.indices[triangle]),
+					int(geometry.indices[triangle + 1]),
+					int(geometry.indices[triangle + 2]),
+				}
+				if indices[0] < 0 ||
+				   indices[0] >= len(geometry.vertices) ||
+				   indices[1] < 0 ||
+				   indices[1] >= len(geometry.vertices) ||
+				   indices[2] < 0 ||
+				   indices[2] >= len(geometry.vertices) {
+					continue
+				}
+				points: [3]shared.Vec2
+				for index in 0 ..< 3 {
+					projected := editor_model_preview_project(
+						geometry.vertices[indices[index]].position,
+					)
+					points[index] = {
+						0.1 + (projected.x - min_point.x) / extent.x * 0.8,
+						0.9 - (projected.y - min_point.y) / extent.y * 0.8,
+					}
+				}
+				for row in 0 ..< EDITOR_ASSET_PREVIEW_GRID_SIZE {
+					for column in 0 ..< EDITOR_ASSET_PREVIEW_GRID_SIZE {
+						point := shared.Vec2 {
+							(f32(column) + 0.5) / EDITOR_ASSET_PREVIEW_GRID_SIZE,
+							(f32(row) + 0.5) / EDITOR_ASSET_PREVIEW_GRID_SIZE,
+						}
+						if editor_point_in_preview_triangle(
+							point,
+							points[0],
+							points[1],
+							points[2],
+						) {
+							colors[row * EDITOR_ASSET_PREVIEW_GRID_SIZE + column] = color
+						}
+					}
+				}
+			}
+		}
+	}
+	editor_ui_inspector_preview_grid(builder, colors[:])
+}
+
+editor_model_preview_project :: proc(value: shared.Vec3) -> shared.Vec2 {
+	return {value.x - value.z * 0.45, value.y + value.z * 0.28}
+}
+
+editor_point_in_preview_triangle :: proc(point, a, b, c: shared.Vec2) -> bool {
+	sign := proc(p1, p2, p3: shared.Vec2) -> f32 {
+		return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y)
+	}
+	d1 := sign(point, a, b)
+	d2 := sign(point, b, c)
+	d3 := sign(point, c, a)
+	has_negative := d1 < 0 || d2 < 0 || d3 < 0
+	has_positive := d1 > 0 || d2 > 0 || d3 > 0
+	return !(has_negative && has_positive)
+}
+
+editor_ui_inspector_preview_grid :: proc(builder: ^Inspector_ECS_Builder, colors: []shared.Vec4) {
+	editor_ui_begin_inspector_component(builder, "PREVIEW")
+	editor_ui_set_hidden(builder.world, builder.table_entity, true)
+	panel_slot := builder.panel_count - 1
+	panel_name := builder.world.entities[builder.panel_entity].name
+	grid, found := editor_ui_entity(builder.world, .Inspector_Preview_Grid, panel_slot)
+	if !found {
+		grid = editor_ui_create_box(
+			builder.world,
+			fmt.tprintf("__scrapbot_editor_asset_preview_%d", panel_slot),
+			panel_name,
+			.Inspector_Preview_Grid,
+			{size = {2000, 176}, margin = {8, 12, 12, 12}, fill_width = true, corner_radius = 4},
+			panel_slot,
+		)
+		editor_ui_add_vstack(builder.world, grid, {fill = true})
+	} else {
+		editor_ui_set_parent(builder.world, grid, panel_name)
+		editor_ui_set_hidden(builder.world, grid, false)
+	}
+	for row_index in 0 ..< EDITOR_ASSET_PREVIEW_GRID_SIZE {
+		row_slot := panel_slot * EDITOR_ASSET_PREVIEW_GRID_SIZE + row_index
+		row, row_found := editor_ui_entity(builder.world, .Inspector_Preview_Row, row_slot)
+		if !row_found {
+			row = editor_ui_create_box(
+				builder.world,
+				fmt.tprintf("__scrapbot_editor_asset_preview_%d_row_%d", panel_slot, row_index),
+				builder.world.entities[grid].name,
+				.Inspector_Preview_Row,
+				{size = {2000, 1}, fill_width = true, fill_height = true},
+				row_slot,
+			)
+			editor_ui_add_hstack(builder.world, row, {fill = true})
+		} else {
+			editor_ui_set_parent(builder.world, row, builder.world.entities[grid].name)
+			editor_ui_set_hidden(builder.world, row, false)
+		}
+		for column_index in 0 ..< EDITOR_ASSET_PREVIEW_GRID_SIZE {
+			cell_slot := row_slot * EDITOR_ASSET_PREVIEW_GRID_SIZE + column_index
+			cell, cell_found := editor_ui_entity(builder.world, .Inspector_Preview_Cell, cell_slot)
+			if !cell_found {
+				cell = editor_ui_create_box(
+					builder.world,
+					fmt.tprintf(
+						"__scrapbot_editor_asset_preview_%d_cell_%d_%d",
+						panel_slot,
+						row_index,
+						column_index,
+					),
+					builder.world.entities[row].name,
+					.Inspector_Preview_Cell,
+					{size = {1, 1}, fill_width = true, fill_height = true},
+					cell_slot,
+				)
+			} else {
+				editor_ui_set_parent(builder.world, cell, builder.world.entities[row].name)
+				editor_ui_set_hidden(builder.world, cell, false)
+			}
+			layout := &builder.world.ui_layouts[builder.world.entities[cell].ui_layout_index]
+			color_index := row_index * EDITOR_ASSET_PREVIEW_GRID_SIZE + column_index
+			layout.background = {0.018, 0.024, 0.032, 1}
+			if color_index >= 0 && color_index < len(colors) {
+				layout.background = colors[color_index]
+			}
+		}
+	}
+}
+
+editor_texture_preview_color :: proc(
+	texture: ^resources.Texture,
+	column, row: int,
+) -> shared.Vec4 {
+	if texture == nil || texture.desc.width == 0 || texture.desc.height == 0 {
+		return {0.08, 0.09, 0.11, 1}
+	}
+	x := min(
+		int(texture.desc.width) - 1,
+		(column * int(texture.desc.width) + int(texture.desc.width) / 2) /
+		EDITOR_ASSET_PREVIEW_GRID_SIZE,
+	)
+	y := min(
+		int(texture.desc.height) - 1,
+		(row * int(texture.desc.height) + int(texture.desc.height) / 2) /
+		EDITOR_ASSET_PREVIEW_GRID_SIZE,
+	)
+	offset := (y * int(texture.desc.width) + x) * 4
+	if offset < 0 || offset + 3 >= len(texture.desc.pixels) {
+		return {0.08, 0.09, 0.11, 1}
+	}
+	return {
+		f32(texture.desc.pixels[offset]) / 255.0,
+		f32(texture.desc.pixels[offset + 1]) / 255.0,
+		f32(texture.desc.pixels[offset + 2]) / 255.0,
+		f32(texture.desc.pixels[offset + 3]) / 255.0,
+	}
+}
+
+editor_resource_import_failed :: proc(state: ^State, id: shared.Resource_UUID) -> bool {
+	return(
+		state != nil &&
+		state.editor_resource_reimport_failed &&
+		(state.editor_resource_reimport_result_id == id ||
+				state.editor_resource_reimport_all_requested) \
+	)
+}
+
+editor_resource_import_status :: proc(state: ^State, id: shared.Resource_UUID) -> string {
+	if editor_resource_import_failed(state, id) {
+		return "Error"
+	}
+	if state != nil &&
+	   (state.editor_resource_reimport_result_id == id ||
+			   (state.editor_resource_reimport_all_requested &&
+					   state.editor_resource_reimport_result_id == (shared.Resource_UUID{}))) {
+		return "Reimported"
+	}
+	return "Up to date"
+}
+
+editor_format_byte_count :: proc(value: int) -> string {
+	if value < 1024 {
+		return fmt.tprintf("%d B", value)
+	}
+	if value < 1024 * 1024 {
+		return fmt.tprintf("%.1f KiB", f64(value) / 1024.0)
+	}
+	return fmt.tprintf("%.1f MiB", f64(value) / (1024.0 * 1024.0))
 }
 
 editor_hierarchy_append_visible :: proc(
@@ -4471,6 +4808,7 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 			.Inspector_Resource_Source,
 		)
 		find_usage, find_usage_found := editor_ui_entity(world, .Project_Resource_Find_Usage)
+		reimport, reimport_found := editor_ui_entity(world, .Project_Resource_Reimport)
 		resource_selected :=
 			state.editor_has_resource_selection &&
 			state.resource_registry != nil &&
@@ -4489,6 +4827,21 @@ refresh_editor_ecs_snapshot :: proc(state: ^State, world: ^shared.World) {
 				!resource_selected ||
 				editor_resource_usage_count(world, state.editor_selected_resource) == 0,
 			)
+		}
+		if reimport_found {
+			importable := false
+			if resource_selected {
+				_, texture_found := resources.texture_handle_by_uuid(
+					state.resource_registry,
+					state.editor_selected_resource,
+				)
+				_, model_found := resources.model_handle_by_uuid(
+					state.resource_registry,
+					state.editor_selected_resource,
+				)
+				importable = texture_found || model_found
+			}
+			editor_ui_set_hidden(world, reimport, !importable)
 		}
 		if resource_selected {
 			handle, resource_found := resources.material_by_uuid(

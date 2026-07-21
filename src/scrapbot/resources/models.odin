@@ -28,6 +28,7 @@ Model :: struct {
 	name: string,
 	source: string,
 	asset_source: string,
+	import_byte_count: int,
 	authored: bool,
 	meshes: [dynamic]Model_Mesh,
 	nodes: [dynamic]Model_Node,
@@ -41,6 +42,7 @@ register_project_models :: proc(
 	registry: ^Registry,
 	declarations: []shared.Project_Resource,
 	products: []asset_import.Product,
+	retire_missing: bool = true,
 ) -> string {
 	if registry == nil {
 		return "model registry is not available"
@@ -62,16 +64,24 @@ register_project_models :: proc(
 		if read_err != "" {
 			return fmt.tprintf("resources/%s: %s", declaration.source, read_err)
 		}
-		if _, register_err := register_project_model(registry, declaration, &imported);
-		   register_err != "" {
+		if _, register_err := register_project_model(
+			registry,
+			declaration,
+			&imported,
+			product.byte_count,
+		); register_err != "" {
 			asset_import.destroy_model_product(&imported)
 			return fmt.tprintf("resources/%s: %s", declaration.source, register_err)
 		}
 		asset_import.destroy_model_product(&imported)
 		seen[declaration.id] = true
 	}
+	if !retire_missing {
+		return ""
+	}
 	for &model in registry.models {
-		if model.authored && !seen[model.id] {
+		if model.authored && model.alive && !seen[model.id] {
+			retire_model_products(registry, &model)
 			model.alive = false
 			model.generation += 1
 			model.version += 1
@@ -85,6 +95,7 @@ register_project_model :: proc(
 	registry: ^Registry,
 	declaration: shared.Project_Resource,
 	imported: ^asset_import.Model_Product,
+	import_byte_count: int = 0,
 ) -> (
 	Model_Handle,
 	string,
@@ -109,6 +120,7 @@ register_project_model :: proc(
 	model.name, _ = strings.clone(declaration.name, registry.allocator)
 	model.source, _ = strings.clone(declaration.source, registry.allocator)
 	model.asset_source, _ = strings.clone(declaration.model.source, registry.allocator)
+	model.import_byte_count = import_byte_count
 	if model.name == "" || model.source == "" || model.asset_source == "" {
 		destroy_model(&model, registry.allocator)
 		return {}, "failed to allocate project model metadata"
@@ -188,6 +200,7 @@ register_project_model :: proc(
 	}
 	if index, found := model_index_by_uuid_any(registry, declaration.id); found {
 		current := &registry.models[index]
+		retire_replaced_model_products(registry, current, &model)
 		model.generation = current.generation
 		model.version = current.version + 1
 		destroy_model(current, registry.allocator)
@@ -204,6 +217,86 @@ register_project_model :: proc(
 	append(&registry.models, model)
 	bump_model_revision(registry)
 	return {u32(len(registry.models) - 1), 1}, ""
+}
+
+retire_model_products :: proc(registry: ^Registry, model: ^Model) {
+	if registry == nil || model == nil {
+		return
+	}
+	for mesh in model.meshes {
+		for primitive in mesh.primitives {
+			retire_generated_geometry(registry, primitive.geometry)
+		}
+	}
+	for handle in model.material_handles {
+		retire_generated_material(registry, handle)
+	}
+}
+
+retire_replaced_model_products :: proc(registry: ^Registry, old, replacement: ^Model) {
+	if registry == nil || old == nil || replacement == nil {
+		return
+	}
+	for mesh in old.meshes {
+		for primitive in mesh.primitives {
+			if !model_contains_geometry(replacement, primitive.geometry) {
+				retire_generated_geometry(registry, primitive.geometry)
+			}
+		}
+	}
+	for handle in old.material_handles {
+		if !model_contains_material(replacement, handle) {
+			retire_generated_material(registry, handle)
+		}
+	}
+}
+
+model_contains_geometry :: proc(model: ^Model, handle: Geometry_Handle) -> bool {
+	if model == nil {
+		return false
+	}
+	for mesh in model.meshes {
+		for primitive in mesh.primitives {
+			if primitive.geometry == handle {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+model_contains_material :: proc(model: ^Model, handle: Material_Handle) -> bool {
+	if model == nil {
+		return false
+	}
+	for current in model.material_handles {
+		if current == handle {
+			return true
+		}
+	}
+	return false
+}
+
+retire_generated_geometry :: proc(registry: ^Registry, handle: Geometry_Handle) {
+	geometry, alive := get_geometry(registry, handle)
+	if !alive || geometry.authored {
+		return
+	}
+	geometry.alive = false
+	geometry.generation += 1
+	geometry.version += 1
+	registry.geometry_topology_revision += 1
+}
+
+retire_generated_material :: proc(registry: ^Registry, handle: Material_Handle) {
+	material, alive := get_material(registry, handle)
+	if !alive || material.authored {
+		return
+	}
+	material.alive = false
+	material.generation += 1
+	material.version += 1
+	bump_material_revision(registry)
 }
 
 get_model :: proc(registry: ^Registry, handle: Model_Handle) -> (^Model, bool) {

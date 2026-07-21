@@ -6,8 +6,9 @@ This file tracks current actionable engineering work. The broad product roadmap 
 
 - [ ] Add glTF image/material texture import, richer PBR fields, animation, skins, morph targets, and compressed geometry.
 - [ ] Replace index-derived imported model subresource keys with durable semantic keys across glTF reordering.
-- [ ] Import only nodes and resources reachable from the selected glTF scene, and retire generated geometry/material products when a model shrinks or disappears.
-- [ ] Add explicit editor Reimport actions and texture previews to the asset resource inspector.
+- [ ] Import only nodes and resources reachable from the selected glTF scene.
+- [ ] Replace the bounded ECS-box asset previews with renderer-backed cached thumbnails when richer material/lighting previews become necessary.
+- [ ] Replace aggregate asset polling with dependency-aware platform file watching that enqueues exact resource UUID reimports.
 - [ ] Add imported mesh LODs and evaluate meshlets and richer submission against representative scenes.
 - [ ] Expose camera exposure and bloom threshold, intensity, and scatter as project settings.
 - [ ] Add clustered or otherwise scalable lighting beyond the initial fixed light limits.

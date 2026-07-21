@@ -254,6 +254,7 @@ const requiredLifecycleBoundaries = [
   "Revert",
   "Script-only hot reload",
   "Project/world hot reload",
+  "Editor resource reimport",
   "Shutdown",
 ];
 const lifecycleRows = allTableRows(

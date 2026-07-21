@@ -69,10 +69,18 @@ clone_error :: proc(message: string) -> string {
 	return cloned
 }
 
-ensure_project_imports :: proc(root: string, declarations: []shared.Project_Resource) -> Report {
+ensure_project_imports :: proc(
+	root: string,
+	declarations: []shared.Project_Resource,
+	force: bool = false,
+	only: shared.Resource_UUID = {},
+) -> Report {
 	report: Report
 	has_imports := false
 	for declaration in declarations {
+		if only != (shared.Resource_UUID{}) && declaration.id != only {
+			continue
+		}
 		if declaration.kind == .Texture || declaration.kind == .Model {
 			has_imports = true
 			break
@@ -94,14 +102,27 @@ ensure_project_imports :: proc(root: string, declarations: []shared.Project_Reso
 		}
 	}
 	for declaration in declarations {
+		if only != (shared.Resource_UUID{}) && declaration.id != only {
+			continue
+		}
 		product: Product
 		imported: bool
 		import_err: string
 		#partial switch declaration.kind {
 			case .Texture:
-				product, imported, import_err = ensure_texture_import(root, build_dir, declaration)
+				product, imported, import_err = ensure_texture_import(
+					root,
+					build_dir,
+					declaration,
+					force,
+				)
 			case .Model:
-				product, imported, import_err = ensure_model_import(root, build_dir, declaration)
+				product, imported, import_err = ensure_model_import(
+					root,
+					build_dir,
+					declaration,
+					force,
+				)
 			case:
 				continue
 		}
@@ -122,6 +143,7 @@ ensure_project_imports :: proc(root: string, declarations: []shared.Project_Reso
 ensure_texture_import :: proc(
 	root, build_dir: string,
 	declaration: shared.Project_Resource,
+	force: bool = false,
 ) -> (
 	product: Product,
 	imported: bool,
@@ -152,6 +174,9 @@ ensure_texture_import :: proc(
 		declaration,
 		source_hash,
 	)
+	if force {
+		cache_hit = false
+	}
 	if !cache_hit {
 		pixels, width, height, mip_count, decode_err := decode_texture_product(
 			source,

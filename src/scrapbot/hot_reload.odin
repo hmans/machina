@@ -229,6 +229,24 @@ hot_reload_playback_stop :: proc(data: rawptr, world: ^shared.World) -> string {
 	return reconcile_model_instances(world, &state.resources)
 }
 
+hot_reload_reimport_resources :: proc(
+	data: rawptr,
+	world: ^shared.World,
+	id: shared.Resource_UUID,
+	all: bool,
+) -> string {
+	state := cast(^Hot_Reload_State)data
+	if state == nil || world == nil {
+		return "cannot reimport resources for an unavailable hot-reload runtime"
+	}
+	if err := reimport_project_resources(state.root, &state.resources, id, all); err != "" {
+		return err
+	}
+	state.assets_stamp = asset_stamp(state.assets_path)
+	state.resources_stamp = asset_stamp(state.resources_path)
+	return reconcile_model_instances(world, &state.resources)
+}
+
 hot_reload_scene_save :: proc(
 	data: rawptr,
 	world: ^shared.World,

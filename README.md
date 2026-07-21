@@ -145,6 +145,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] Incremental static glTF 2.0/GLB model imports
   - [x] PNG texture assets
   - [x] UUID-backed texture and model resources
+  - [x] Targeted live Reimport, import diagnostics, texture thumbnails, and stale model-product retirement
   - [x] UUID-backed material resources
   - [x] UUID-backed generated geometry LOD resources
 - Tooling

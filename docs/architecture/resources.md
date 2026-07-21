@@ -69,6 +69,9 @@ The recursive project loader rejects duplicate UUIDs. Scene validation resolves 
 - `asset_import.ensure_project_imports` fingerprints source/dependency bytes plus an importer schema and writes products atomically under `.scrapbot/imported/`.
 - Texture products contain validated RGBA8 mip chains. Model products contain static triangle vertices/indices, TRS nodes, and material factors decoded through pinned `cgltf`.
 - Texture and Model declarations retain UUID-backed registry handles and entry versions. Imported model registration publishes ordinary Geometry and Material handles for every primitive.
+- Editor Reimport addresses one authored UUID, forces only that importer, updates the existing registry slot, and then reconciles model instances. Reimport All uses the same path for every imported declaration; neither action reloads Luau or native Odin.
+- A replaced or removed Model retires generated Geometry and Material outputs absent from the replacement by marking their slots dead and incrementing generation/version. Stable/reused products retain their handles.
+- Texture inspection derives a bounded sampled thumbnail from registry pixels; Model inspection rasterizes a bounded isometric mesh silhouette from generated Geometry. Both previews use ordinary ECS UI layout/stack boxes. Import state, dependency path, product type/size, and the last explicit failure are editor presentation over registry/import state rather than new resource authority.
 - `scrapbot.model` roots reconcile a derived runtime hierarchy during resource/bootstrap reload work and after an explicit model-root structural revision. Stable ordinary frames only compare revision counters and consume the resulting standard Transform/Geometry/Material entities without model scans.
 - Source/tests: `asset_import/imports.odin`, `asset_import/models.odin`, `resources/textures.odin`, `resources/models.odin`, `scrapbot.odin`; importer, registry, and model-instance tests.
 
@@ -109,6 +112,7 @@ resources.Registry slot ── {index, generation} ──> ECS component
 - **Revert** reloads project resource declarations from disk, updates/deactivates runtime entries, then rebuilds the scene world and rebinds the existing script runtime.
 - **Play** captures authored Material base color and emissive values in the in-memory playback baseline alongside authored scene entities.
 - **Stop** restores those captured base color/emissive values by UUID and increments a material version only when restored content differs. It does not reread resource files or reload Luau/native code.
-- **Hot reload** ensures imports and re-registers fonts, textures, models, materials, and LOD geometry before replacing the world/runtime. Failed project/world reload keeps or restores the last-good runtime path.
+- **Explicit Reimport** forces one UUID (or all imported resources), mutates live registry entries, retires stale generated model outputs, and reconciles Model roots without reloading the world, Luau, or native extensions.
+- **Hot reload** ensures imports and re-registers fonts, textures, models, materials, and LOD geometry before replacing the world/runtime. Failed project/world reload keeps or restores the last-good runtime path. Its current aggregate asset stamp remains intentionally coarser than explicit Reimport until platform file watching lands.
 
 See [Lifecycle matrix](lifecycle.md), [State ownership](state-ownership.md), [FDR-009](../fdr/FDR-009-project-resources.md), and [ADR-030](../adr/ADR-030-identify-project-resources-by-uuid-outside-the-ecs.md).

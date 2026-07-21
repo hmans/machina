@@ -299,6 +299,12 @@ State :: struct {
 	editor_playback_stop_requested: bool,
 	editor_scene_save_requested: bool,
 	editor_scene_revert_requested: bool,
+	editor_resource_reimport_requested: bool,
+	editor_resource_reimport_all_requested: bool,
+	editor_resource_reimport_id: shared.Resource_UUID,
+	editor_resource_reimport_result_id: shared.Resource_UUID,
+	editor_resource_reimport_failed: bool,
+	editor_resource_reimport_message: string,
 	editor_scene_dirty: bool,
 	editor_scene_save_failed: bool,
 	editor_scene_revert_failed: bool,
@@ -625,6 +631,49 @@ consume_scene_revert_request :: proc(state: ^State) -> bool {
 	return true
 }
 
+editor_request_resource_reimport :: proc(
+	state: ^State,
+	id: shared.Resource_UUID,
+	all: bool = false,
+) {
+	if state == nil || (!all && id == (shared.Resource_UUID{})) {
+		return
+	}
+	state.editor_resource_reimport_requested = true
+	state.editor_resource_reimport_all_requested = all
+	state.editor_resource_reimport_id = id
+	state.editor_resource_reimport_result_id = id
+	state.editor_resource_reimport_failed = false
+	delete(state.editor_resource_reimport_message)
+	state.editor_resource_reimport_message = ""
+}
+
+consume_resource_reimport_request :: proc(
+	state: ^State,
+) -> (
+	id: shared.Resource_UUID,
+	all: bool,
+	requested: bool,
+) {
+	if state == nil || !state.editor_resource_reimport_requested {
+		return
+	}
+	state.editor_resource_reimport_requested = false
+	return state.editor_resource_reimport_id, state.editor_resource_reimport_all_requested, true
+}
+
+complete_resource_reimport :: proc(state: ^State, message: string) {
+	if state == nil {
+		return
+	}
+	state.editor_resource_reimport_failed = message != ""
+	delete(state.editor_resource_reimport_message)
+	state.editor_resource_reimport_message, _ = strings.clone(message)
+	state.editor_inspector_snapshot_valid = false
+	state.editor_browser_snapshot_valid = false
+	state.editor_snapshot_valid = false
+}
+
 editor_recompute_scene_dirty :: proc(state: ^State) {
 	if state == nil || !state.editor_simulation_stopped {
 		return
@@ -699,6 +748,7 @@ destroy :: proc(state: ^State) {
 	delete(state.editor_dirty_resources)
 	delete(state.editor_dirty_resource_lookup)
 	delete(state.editor_collapsed_entities)
+	delete(state.editor_resource_reimport_message)
 	state^ = {}
 }
 

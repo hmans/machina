@@ -575,6 +575,8 @@ run_project_internal_untracked :: proc(
 		run_config.runtime_revert_data = hot_reload
 		run_config.runtime_reconcile = hot_reload_reconcile_models
 		run_config.runtime_reconcile_data = hot_reload
+		run_config.runtime_reimport = hot_reload_reimport_resources
+		run_config.runtime_reimport_data = hot_reload
 		run_config.resource_registry = &hot_reload.resources
 		result.frame, result.err = render.run_renderer(run_config, &world)
 		if run_config.runtime_stats != nil {
@@ -668,6 +670,8 @@ run_project_internal_untracked :: proc(
 	run_config.runtime_revert_data = frame_runtime
 	run_config.runtime_reconcile = frame_runtime_reconcile_models
 	run_config.runtime_reconcile_data = frame_runtime
+	run_config.runtime_reimport = frame_runtime_reimport_resources
+	run_config.runtime_reimport_data = frame_runtime
 
 	result.frame, result.err = render.run_renderer(run_config, &world)
 	if run_config.runtime_stats != nil {
@@ -1003,6 +1007,100 @@ frame_runtime_reconcile_models :: proc(data: rawptr, world: ^shared.World) -> st
 		return ""
 	}
 	return reconcile_model_instances(world, &runtime.resources)
+}
+
+frame_runtime_reimport_resources :: proc(
+	data: rawptr,
+	world: ^shared.World,
+	id: shared.Resource_UUID,
+	all: bool,
+) -> string {
+	runtime := cast(^Frame_Runtime)data
+	if runtime == nil || world == nil {
+		return "cannot reimport resources for an unavailable project runtime"
+	}
+	if err := reimport_project_resources(runtime.root, &runtime.resources, id, all); err != "" {
+		return err
+	}
+	return reconcile_model_instances(world, &runtime.resources)
+}
+
+reimport_project_resources :: proc(
+	root: string,
+	registry: ^resources.Registry,
+	id: shared.Resource_UUID,
+	all: bool,
+) -> string {
+	if registry == nil {
+		return "resource registry is not available"
+	}
+	loaded := project.load_project(root)
+	defer project.destroy_project_load_result(&loaded)
+	if loaded.err != "" {
+		return loaded.err
+	}
+	only := id
+	if all {
+		only = {}
+	}
+	imports := asset_import.ensure_project_imports(
+		root,
+		loaded.resources[:],
+		force = true,
+		only = only,
+	)
+	defer asset_import.destroy_report(&imports)
+	if imports.err != "" {
+		return imports.err
+	}
+	if !all && len(imports.products) == 0 {
+		return "selected resource is not importable"
+	}
+	if all {
+		if err := resources.register_project_textures(
+			registry,
+			loaded.resources[:],
+			imports.products[:],
+		); err != "" {
+			return err
+		}
+		return resources.register_project_models(
+			registry,
+			loaded.resources[:],
+			imports.products[:],
+		)
+	}
+	declaration: shared.Project_Resource
+	found := false
+	for candidate in loaded.resources {
+		if candidate.id == id {
+			declaration = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "selected resource declaration no longer exists"
+	}
+	declarations := []shared.Project_Resource{declaration}
+	#partial switch declaration.kind {
+		case .Texture:
+			return resources.register_project_textures(
+				registry,
+				declarations,
+				imports.products[:],
+				false,
+			)
+		case .Model:
+			return resources.register_project_models(
+				registry,
+				declarations,
+				imports.products[:],
+				false,
+			)
+		case:
+			return "selected resource is not importable"
+	}
 }
 
 load_validated_scene_world :: proc(

@@ -2944,6 +2944,31 @@ test_editor_command_shortcuts_toggle_shell_and_drive_transport :: proc(t: ^testi
 }
 
 @(test)
+test_editor_resource_reimport_requests_are_consumed_once :: proc(t: ^testing.T) {
+	state := new(State)
+	defer free(state)
+	testing.expect(t, init(state) == "")
+	defer destroy(state)
+	id, valid := shared.resource_uuid_parse("a1000000-0000-4000-8000-000000000088")
+	testing.expect(t, valid)
+	editor_request_resource_reimport(state, id)
+	requested_id, all, requested := consume_resource_reimport_request(state)
+	testing.expect(t, requested)
+	testing.expect(t, !all)
+	testing.expect(t, requested_id == id)
+	_, _, requested = consume_resource_reimport_request(state)
+	testing.expect(t, !requested)
+	complete_resource_reimport(state, "import failed")
+	testing.expect(t, state.editor_resource_reimport_failed)
+	testing.expect_value(t, state.editor_resource_reimport_message, "import failed")
+	editor_request_resource_reimport(state, {}, true)
+	requested_id, all, requested = consume_resource_reimport_request(state)
+	testing.expect(t, requested)
+	testing.expect(t, all)
+	testing.expect(t, requested_id == (shared.Resource_UUID{}))
+}
+
+@(test)
 test_editor_toggle_resumes_playback_when_the_editor_closes :: proc(t: ^testing.T) {
 	scene := shared.Scene{}
 	defer delete(scene.entities)

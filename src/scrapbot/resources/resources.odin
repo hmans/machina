@@ -99,6 +99,7 @@ Texture :: struct {
 	name: string,
 	source: string,
 	asset_source: string,
+	import_byte_count: int,
 	authored: bool,
 	desc: Texture_Desc,
 	generation: u32,

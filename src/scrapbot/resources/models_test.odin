@@ -79,4 +79,14 @@ test_project_model_products_register_generated_meshes_and_materials :: proc(t: ^
 	if cloned_alive {
 		testing.expect_value(t, cloned_model.meshes[0].name, "Triangle Mesh")
 	}
+	geometry_handle := model.meshes[0].primitives[0].geometry
+	material_handle := model.meshes[0].primitives[0].material
+	retire_err := register_project_models(&registry, nil, nil)
+	testing.expectf(t, retire_err == "", "model retirement failed: %s", retire_err)
+	_, model_still_alive := get_model(&registry, handle)
+	_, geometry_still_alive := get_geometry(&registry, geometry_handle)
+	_, material_still_alive := get_material(&registry, material_handle)
+	testing.expect(t, !model_still_alive)
+	testing.expect(t, !geometry_still_alive)
+	testing.expect(t, !material_still_alive)
 }
