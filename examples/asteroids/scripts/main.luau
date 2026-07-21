@@ -19,7 +19,14 @@ local Player = scrapbot.query(scrapbot.transform, Ship, Velocity)
 scrapbot.system(Player, {
 	name = "control",
 	reads = { scrapbot.keyboard_input },
-	writes = { scrapbot.transform, Ship, Velocity },
+	writes = {
+		scrapbot.transform,
+		scrapbot.geometry_component,
+		scrapbot.material_component,
+		Ship,
+		Velocity,
+		Bullet,
+	},
 }, function(time: ScrapbotTime, _entity: ScrapbotEntity, transform: ScrapbotTransform, ship: Ship, velocity: Velocity)
 	local x = 0
 	local y = 0

@@ -91,6 +91,79 @@ end)
 }
 
 @(test)
+test_luau_input_system_can_spawn_entity_with_declared_component_writes :: proc(t: ^testing.T) {
+	world: ecs.World
+	defer ecs.destroy_world(&world)
+	frame: shared.Input_Frame
+	frame.keyboard.available = true
+	shared.input_button_set(&frame.keyboard.buttons.pressed, int(shared.Input_Key.Space))
+	testing.expect(t, ecs.update_input(&world, frame))
+	registry: component.Registry
+	component.init_registry(&registry)
+	resource_registry: resources.Registry
+	resources.init_registry(&resource_registry)
+	defer resources.destroy_registry(&resource_registry)
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source_with_registry(
+		&runtime,
+		`
+local Velocity = scrapbot.component("velocity", { value = scrapbot.vec3 })
+local Bullet = scrapbot.component("bullet", { age = scrapbot.number })
+local geometry = scrapbot.geometry.cylinder("test-bullet", 0.1, 0.5, 8)
+local material = scrapbot.material.emissive("test-bullet", 0.1, 0.8, 1.0, 2.0)
+
+scrapbot.system({
+	name = "fire",
+	reads = { scrapbot.keyboard_input },
+	writes = {
+		scrapbot.transform,
+		scrapbot.geometry_component,
+		scrapbot.material_component,
+		Velocity,
+		Bullet,
+	},
+}, function()
+	if not scrapbot.input.key_pressed("space") then return end
+	scrapbot.spawn({
+		name = "Test Bullet",
+		components = {
+			["scrapbot.transform"] = { position = { x = 0, y = 1, z = 0 }, scale = { x = 1, y = 1, z = 1 } },
+			["scrapbot.geometry"] = geometry,
+			["scrapbot.material"] = material,
+			velocity = { value = { x = 0, y = 10, z = 0 } },
+			bullet = { age = 0 },
+		},
+	})
+end)
+`,
+		"=input-spawn-test",
+		&world,
+		&registry,
+		Source_Options{resource_registry = &resource_registry},
+	)
+	testing.expectf(t, result.err == "", "script failed: %s", result.err)
+	if result.err != "" {
+		return
+	}
+	testing.expectf(
+		t,
+		step_runtime(&runtime, &world, 1.0 / 60.0) == "",
+		"input spawn system failed",
+	)
+	testing.expect_value(t, ecs.alive_entity_count(&world), 1)
+	if len(world.entities) == 0 {
+		return
+	}
+	entity := world.entities[0]
+	testing.expect(t, entity.alive)
+	testing.expect(t, entity.transform_index >= 0)
+	testing.expect(t, entity.geometry_index >= 0)
+	testing.expect(t, entity.material_index >= 0)
+	testing.expect_value(t, len(entity.custom_component_storage_indices), 2)
+}
+
+@(test)
 test_luau_rejects_write_access_to_input_singletons :: proc(t: ^testing.T) {
 	world: ecs.World
 	defer ecs.destroy_world(&world)
