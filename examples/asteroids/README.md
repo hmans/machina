@@ -6,4 +6,4 @@ A compact spaceship-versus-asteroids game that dogfoods runtime input singleton 
 bin/scrapbot run examples/asteroids
 ```
 
-Use WASD or the arrow keys to move and hold Space to fire. Open the editor with Cmd/Ctrl-E to inspect and tune the game while it runs.
+Use WASD or the arrow keys to move and hold Space to fire. Large asteroids split into two or three eased, spinning icosahedral fragments; destroying them drives an ECS camera-shake impulse system. Open the editor with Cmd/Ctrl-E to inspect and tune the game while it runs.

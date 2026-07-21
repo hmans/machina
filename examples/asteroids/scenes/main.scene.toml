@@ -9,6 +9,10 @@ scale = [1, 1, 1]
 fov = 52
 near = 0.1
 far = 100
+[entities.components.camera_shake]
+base_position = [0, 0, 14]
+base_rotation = [0, 0, 0]
+trauma = 0
 
 [[entities]]
 id = "a5700000-0000-4000-8000-000000000011"
@@ -31,7 +35,7 @@ name = "Player Ship"
 [entities.transform]
 position = [0, -3.6, 0]
 rotation = [0, 0, 0]
-scale = [0.65, 0.9, 0.65]
+scale = [0.42, 0.58, 0.42]
 [entities.geometry]
 resource = "scraproids.ship"
 [entities.material]
@@ -39,6 +43,8 @@ resource = "a5700000-0000-4000-8000-000000000001"
 [entities.shadow_caster]
 [entities.components.ship]
 speed = 6.5
+response = 12.0
+lean = 0.32
 fire_interval = 0.16
 cooldown = 0.0
 [entities.components.velocity]
@@ -50,14 +56,14 @@ name = "Asteroid Alpha"
 [entities.transform]
 position = [-4.2, 2.7, 0]
 rotation = [0.2, 0.3, 0.1]
-scale = [0.8, 0.8, 0.8]
+scale = [0.56, 0.56, 0.56]
 [entities.geometry]
 resource = "scraproids.asteroid"
 [entities.material]
 resource = "a5700000-0000-4000-8000-000000000002"
 [entities.shadow_caster]
 [entities.components.asteroid]
-radius = 0.8
+radius = 0.56
 [entities.components.velocity]
 value = [0.45, -0.32, 0]
 [entities.components.spin]
@@ -69,14 +75,14 @@ name = "Asteroid Beta"
 [entities.transform]
 position = [-1.6, 0.9, 0]
 rotation = [0.4, 0.1, 0.6]
-scale = [0.55, 0.55, 0.55]
+scale = [0.42, 0.42, 0.42]
 [entities.geometry]
-resource = "scraproids.asteroid"
+resource = "scraproids.asteroid.chunky"
 [entities.material]
 resource = "a5700000-0000-4000-8000-000000000002"
 [entities.shadow_caster]
 [entities.components.asteroid]
-radius = 0.55
+radius = 0.42
 [entities.components.velocity]
 value = [-0.25, -0.42, 0]
 [entities.components.spin]
@@ -88,14 +94,14 @@ name = "Asteroid Gamma"
 [entities.transform]
 position = [1.4, 3.4, 0]
 rotation = [0.1, 0.7, 0.2]
-scale = [1.0, 1.0, 1.0]
+scale = [0.65, 0.65, 0.65]
 [entities.geometry]
 resource = "scraproids.asteroid"
 [entities.material]
 resource = "a5700000-0000-4000-8000-000000000002"
 [entities.shadow_caster]
 [entities.components.asteroid]
-radius = 1.0
+radius = 0.65
 [entities.components.velocity]
 value = [0.2, -0.26, 0]
 [entities.components.spin]
@@ -107,14 +113,14 @@ name = "Asteroid Delta"
 [entities.transform]
 position = [4.5, 1.4, 0]
 rotation = [0.5, 0.2, 0.8]
-scale = [0.7, 0.7, 0.7]
+scale = [0.48, 0.48, 0.48]
 [entities.geometry]
-resource = "scraproids.asteroid"
+resource = "scraproids.asteroid.chunky"
 [entities.material]
 resource = "a5700000-0000-4000-8000-000000000002"
 [entities.shadow_caster]
 [entities.components.asteroid]
-radius = 0.7
+radius = 0.48
 [entities.components.velocity]
 value = [-0.4, -0.35, 0]
 [entities.components.spin]
