@@ -2041,6 +2041,81 @@ add_custom_component :: proc(
 			},
 		)
 	}
+	store_custom_component(world, entity_index, component_id, name, world_component)
+}
+
+add_queued_custom_component :: proc(
+	world: ^World,
+	entity_index: int,
+	buffer: ^Command_Buffer,
+	component_index: int,
+) {
+	if !entity_is_alive(world, entity_index) ||
+	   buffer == nil ||
+	   component_index < 0 ||
+	   component_index >= len(buffer.components) {
+		return
+	}
+
+	component := &buffer.components[component_index]
+	name := queued_command_component_name(component)
+	component_id := component.component_id
+	remove_custom_component(world, entity_index, component_id, name)
+	world_component := Custom_Component {
+		entity_index = entity_index,
+		component_id = component_id,
+		name = clone_world_string(world, name),
+	}
+	for index in 0 ..< component.number_field_count {
+		field := &buffer.number_fields[component.number_field_start + index]
+		append(
+			&world_component.number_fields,
+			Named_Number {
+				name = clone_world_string(world, command_number_field_name(field)),
+				value = field.value,
+			},
+		)
+	}
+	for index in 0 ..< component.vec2_field_count {
+		field := &buffer.vec2_fields[component.vec2_field_start + index]
+		append(
+			&world_component.vec2_fields,
+			Named_Vec2 {
+				name = clone_world_string(world, command_vec2_field_name(field)),
+				value = field.value,
+			},
+		)
+	}
+	for index in 0 ..< component.vec3_field_count {
+		field := &buffer.vec3_fields[component.vec3_field_start + index]
+		append(
+			&world_component.vec3_fields,
+			Named_Vec3 {
+				name = clone_world_string(world, command_field_name(field)),
+				value = field.value,
+			},
+		)
+	}
+	for index in 0 ..< component.vec4_field_count {
+		field := &buffer.vec4_fields[component.vec4_field_start + index]
+		append(
+			&world_component.vec4_fields,
+			Named_Vec4 {
+				name = clone_world_string(world, command_vec4_field_name(field)),
+				value = field.value,
+			},
+		)
+	}
+	store_custom_component(world, entity_index, component_id, name, world_component)
+}
+
+store_custom_component :: proc(
+	world: ^World,
+	entity_index: int,
+	component_id: Component_ID,
+	name: string,
+	world_component: Custom_Component,
+) {
 	storage := ensure_custom_component_storage(world, component_id, name)
 	ensure_custom_component_entity_capacity(storage, entity_index + 1)
 	for &component, component_index in storage.components {

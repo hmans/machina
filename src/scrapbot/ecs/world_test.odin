@@ -908,13 +908,18 @@ test_deferred_command_buffers_store_only_the_queued_payload_kind :: proc(t: ^tes
 	testing.expect(t, len(commands.commands) == command_count)
 	testing.expect(t, len(commands.despawns) == command_count)
 	testing.expect(t, len(commands.spawns) == 0)
-	testing.expect(t, len(commands.spawn_components) == 0)
-	testing.expect(t, len(commands.spawn_ui_components) == 0)
+	testing.expect(t, len(commands.components) == 0)
+	testing.expect(t, len(commands.number_fields) == 0)
+	testing.expect(t, len(commands.vec2_fields) == 0)
+	testing.expect(t, len(commands.vec3_fields) == 0)
+	testing.expect(t, len(commands.vec4_fields) == 0)
+	testing.expect(t, len(commands.ui_components) == 0)
 	testing.expect(t, len(commands.add_components) == 0)
 	testing.expect(t, len(commands.remove_components) == 0)
 	testing.expect(t, size_of(Command_Header) <= 16)
 	testing.expect(t, size_of(Despawn_Command) <= 16)
 	testing.expect(t, size_of(Queued_Spawn_Command) < size_of(Spawn_Command))
+	testing.expect(t, size_of(Queued_Command_Component) < size_of(Command_Component))
 }
 
 @(test)
@@ -926,6 +931,10 @@ test_deferred_spawn_storage_pools_only_present_components :: proc(t: ^testing.T)
 	first_component, second_component: Command_Component
 	testing.expect(t, init_command_component(&first_component, 1, "first") == "")
 	testing.expect(t, init_command_component(&second_component, 2, "second") == "")
+	testing.expect(t, command_component_add_number(&first_component, "amount", 2) == "")
+	testing.expect(t, command_component_add_vec3(&first_component, "velocity", {1, 2, 3}) == "")
+	testing.expect(t, command_component_add_vec2(&second_component, "size", {4, 5}) == "")
+	testing.expect(t, command_component_add_vec4(&second_component, "color", {6, 7, 8, 9}) == "")
 	spawn: Spawn_Command
 	testing.expect(t, init_spawn_command(&spawn, "Pooled") == "")
 	testing.expect(t, spawn_add_custom_component(&spawn, first_component) == "")
@@ -933,12 +942,24 @@ test_deferred_spawn_storage_pools_only_present_components :: proc(t: ^testing.T)
 	testing.expect(t, queue_spawn_command(&commands, spawn) == "")
 
 	testing.expect(t, len(commands.spawns) == 1)
-	testing.expect(t, len(commands.spawn_components) == 2)
-	testing.expect(t, len(commands.spawn_ui_components) == 0)
+	testing.expect(t, len(commands.components) == 2)
+	testing.expect(t, len(commands.number_fields) == 1)
+	testing.expect(t, len(commands.vec2_fields) == 1)
+	testing.expect(t, len(commands.vec3_fields) == 1)
+	testing.expect(t, len(commands.vec4_fields) == 1)
+	testing.expect(t, len(commands.ui_components) == 0)
 	testing.expect(t, commands.spawns[0].custom_component_start == 0)
 	testing.expect(t, commands.spawns[0].custom_component_count == 2)
-	testing.expect(t, command_component_name(&commands.spawn_components[0]) == "first")
-	testing.expect(t, command_component_name(&commands.spawn_components[1]) == "second")
+	testing.expect(t, queued_command_component_name(&commands.components[0]) == "first")
+	testing.expect(t, queued_command_component_name(&commands.components[1]) == "second")
+	testing.expect(t, commands.components[0].number_field_start == 0)
+	testing.expect(t, commands.components[0].number_field_count == 1)
+	testing.expect(t, commands.components[0].vec3_field_start == 0)
+	testing.expect(t, commands.components[0].vec3_field_count == 1)
+	testing.expect(t, commands.components[1].vec2_field_start == 0)
+	testing.expect(t, commands.components[1].vec2_field_count == 1)
+	testing.expect(t, commands.components[1].vec4_field_start == 0)
+	testing.expect(t, commands.components[1].vec4_field_count == 1)
 }
 
 @(test)
@@ -977,6 +998,9 @@ test_deferred_command_merge_remaps_spawn_component_ranges :: proc(t: ^testing.T)
 	testing.expect(t, init_command_component(&first, 1, "first") == "")
 	testing.expect(t, init_command_component(&second, 2, "second") == "")
 	testing.expect(t, init_command_component(&third, 3, "third") == "")
+	testing.expect(t, command_component_add_number(&first, "value", 1) == "")
+	testing.expect(t, command_component_add_number(&second, "value", 2) == "")
+	testing.expect(t, command_component_add_number(&third, "value", 3) == "")
 	destination_spawn, source_spawn: Spawn_Command
 	testing.expect(t, init_spawn_command(&destination_spawn, "Destination") == "")
 	testing.expect(t, spawn_add_custom_component(&destination_spawn, first) == "")
@@ -987,12 +1011,56 @@ test_deferred_command_merge_remaps_spawn_component_ranges :: proc(t: ^testing.T)
 	testing.expect(t, queue_spawn_command(&source, source_spawn) == "")
 
 	testing.expect(t, append_commands(&destination, &source) == "")
-	testing.expect(t, len(destination.spawn_components) == 3)
+	testing.expect(t, len(destination.components) == 3)
+	testing.expect(t, len(destination.number_fields) == 3)
 	merged_spawn := &destination.spawns[1]
 	testing.expect(t, merged_spawn.custom_component_start == 1)
 	testing.expect(t, merged_spawn.custom_component_count == 2)
-	testing.expect(t, command_component_name(&destination.spawn_components[1]) == "second")
-	testing.expect(t, command_component_name(&destination.spawn_components[2]) == "third")
+	testing.expect(t, destination.components[1].number_field_start == 1)
+	testing.expect(t, destination.components[2].number_field_start == 2)
+	testing.expect(t, destination.number_fields[1].value == 2)
+	testing.expect(t, destination.number_fields[2].value == 3)
+	testing.expect(t, queued_command_component_name(&destination.components[1]) == "second")
+	testing.expect(t, queued_command_component_name(&destination.components[2]) == "third")
+}
+
+@(test)
+test_deferred_command_merge_remaps_add_component_payloads :: proc(t: ^testing.T) {
+	destination, source: Command_Buffer
+	init_command_buffer_capacity(&destination, 1)
+	defer destroy_command_buffer(&destination)
+	init_command_buffer_capacity(&source, 1)
+	defer destroy_command_buffer(&source)
+
+	destination_component, source_component: Command_Component
+	testing.expect(t, init_command_component(&destination_component, 1, "destination") == "")
+	testing.expect(t, init_command_component(&source_component, 2, "source") == "")
+	testing.expect(t, command_component_add_number(&destination_component, "value", 1) == "")
+	testing.expect(t, command_component_add_number(&source_component, "value", 2) == "")
+	testing.expect(t, queue_add_custom_component(&destination, 0, 1, destination_component) == "")
+	testing.expect(t, queue_add_custom_component(&source, 1, 1, source_component) == "")
+
+	ui_component := UI_Component_Command {
+			kind = .Checkbox,
+			checkbox = {checked = true},
+		}
+	testing.expect(t, queue_add_ui_component(&source, 1, 1, ui_component) == "")
+	testing.expect(t, append_commands(&destination, &source) == "")
+
+	testing.expect(t, len(destination.add_components) == 3)
+	testing.expect(t, len(destination.components) == 2)
+	testing.expect(t, len(destination.number_fields) == 2)
+	merged_custom := destination.add_components[1]
+	testing.expect(t, merged_custom.kind == .Custom)
+	testing.expect(t, merged_custom.payload_index == 1)
+	testing.expect(t, queued_command_component_name(&destination.components[1]) == "source")
+	testing.expect(t, destination.components[1].number_field_start == 1)
+	testing.expect(t, destination.number_fields[1].value == 2)
+	merged_ui := destination.add_components[2]
+	testing.expect(t, merged_ui.kind == .UI)
+	testing.expect(t, merged_ui.payload_index == 0)
+	testing.expect(t, destination.ui_components[merged_ui.payload_index].kind == .Checkbox)
+	testing.expect(t, destination.ui_components[merged_ui.payload_index].checkbox.checked)
 }
 
 @(test)

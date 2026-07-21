@@ -118,21 +118,26 @@ Spawn_Command :: struct {
 	ui_component_count: int,
 }
 
-Add_Component_Command :: struct {
+Add_Component_Command_Kind :: enum {
+	Transform,
+	Mesh,
+	Geometry,
+	Material,
+	Shadow_Caster,
+	Shadow_Receiver,
+	Custom,
+	UI,
+}
+
+Queued_Add_Component_Command :: struct {
 	entity_index: int,
 	generation: u32,
-	has_transform: bool,
+	kind: Add_Component_Command_Kind,
 	transform: Transform_Component,
-	has_mesh: bool,
 	mesh: Command_Mesh,
-	has_geometry: bool,
 	geometry: Geometry_Handle,
-	has_material: bool,
 	material: Material_Handle,
-	has_shadow_caster: bool,
-	has_shadow_receiver: bool,
-	component: Command_Component,
-	ui_component: UI_Component_Command,
+	payload_index: int,
 }
 
 Remove_Component_Command :: struct {
@@ -151,6 +156,20 @@ Command_Header :: struct {
 Despawn_Command :: struct {
 	entity_index: int,
 	generation: u32,
+}
+
+Queued_Command_Component :: struct {
+	component_id: Component_ID,
+	name: [MAX_COMMAND_NAME_BYTES]u8,
+	name_len: int,
+	number_field_start: int,
+	number_field_count: int,
+	vec2_field_start: int,
+	vec2_field_count: int,
+	vec3_field_start: int,
+	vec3_field_count: int,
+	vec4_field_start: int,
+	vec4_field_count: int,
 }
 
 Queued_Spawn_Command :: struct {
@@ -176,10 +195,14 @@ Queued_Spawn_Command :: struct {
 Command_Buffer :: struct {
 	commands: [dynamic]Command_Header,
 	spawns: [dynamic]Queued_Spawn_Command,
-	spawn_components: [dynamic]Command_Component,
-	spawn_ui_components: [dynamic]UI_Component_Command,
+	components: [dynamic]Queued_Command_Component,
+	number_fields: [dynamic]Command_Number_Field,
+	vec2_fields: [dynamic]Command_Vec2_Field,
+	vec3_fields: [dynamic]Command_Vec3_Field,
+	vec4_fields: [dynamic]Command_Vec4_Field,
+	ui_components: [dynamic]UI_Component_Command,
 	despawns: [dynamic]Despawn_Command,
-	add_components: [dynamic]Add_Component_Command,
+	add_components: [dynamic]Queued_Add_Component_Command,
 	remove_components: [dynamic]Remove_Component_Command,
 	command_count: int,
 }
@@ -193,18 +216,26 @@ init_command_buffer_capacity :: proc(buffer: ^Command_Buffer, capacity: int) {
 	allocator := context.allocator
 	buffer.commands = make([dynamic]Command_Header, 0, max(capacity, 1), allocator)
 	buffer.spawns = make([dynamic]Queued_Spawn_Command, allocator)
-	buffer.spawn_components = make([dynamic]Command_Component, allocator)
-	buffer.spawn_ui_components = make([dynamic]UI_Component_Command, allocator)
+	buffer.components = make([dynamic]Queued_Command_Component, allocator)
+	buffer.number_fields = make([dynamic]Command_Number_Field, allocator)
+	buffer.vec2_fields = make([dynamic]Command_Vec2_Field, allocator)
+	buffer.vec3_fields = make([dynamic]Command_Vec3_Field, allocator)
+	buffer.vec4_fields = make([dynamic]Command_Vec4_Field, allocator)
+	buffer.ui_components = make([dynamic]UI_Component_Command, allocator)
 	buffer.despawns = make([dynamic]Despawn_Command, allocator)
-	buffer.add_components = make([dynamic]Add_Component_Command, allocator)
+	buffer.add_components = make([dynamic]Queued_Add_Component_Command, allocator)
 	buffer.remove_components = make([dynamic]Remove_Component_Command, allocator)
 }
 
 destroy_command_buffer :: proc(buffer: ^Command_Buffer) {
 	delete(buffer.commands)
 	delete(buffer.spawns)
-	delete(buffer.spawn_components)
-	delete(buffer.spawn_ui_components)
+	delete(buffer.components)
+	delete(buffer.number_fields)
+	delete(buffer.vec2_fields)
+	delete(buffer.vec3_fields)
+	delete(buffer.vec4_fields)
+	delete(buffer.ui_components)
 	delete(buffer.despawns)
 	delete(buffer.add_components)
 	delete(buffer.remove_components)
@@ -390,10 +421,11 @@ queued_ui_component :: proc(
 		command := &buffer.add_components[header.payload_index]
 		if command.entity_index != entity_index ||
 		   command.generation != generation ||
-		   command.ui_component.kind != kind {
+		   command.kind != .UI ||
+		   buffer.ui_components[command.payload_index].kind != kind {
 			continue
 		}
-		return &command.ui_component
+		return &buffer.ui_components[command.payload_index]
 	}
 	return nil
 }
@@ -519,6 +551,41 @@ command_component_add_vec4 :: proc "c" (
 	return ""
 }
 
+queue_component_payload :: proc "contextless" (
+	buffer: ^Command_Buffer,
+	component: Command_Component,
+) -> int {
+	context = base_runtime.default_context()
+	queued := Queued_Command_Component {
+		component_id = component.component_id,
+		name = component.name,
+		name_len = component.name_len,
+		number_field_start = len(buffer.number_fields),
+		number_field_count = component.number_field_count,
+		vec2_field_start = len(buffer.vec2_fields),
+		vec2_field_count = component.vec2_field_count,
+		vec3_field_start = len(buffer.vec3_fields),
+		vec3_field_count = component.vec3_field_count,
+		vec4_field_start = len(buffer.vec4_fields),
+		vec4_field_count = component.vec4_field_count,
+	}
+	for index in 0 ..< component.number_field_count {
+		append(&buffer.number_fields, component.number_fields[index])
+	}
+	for index in 0 ..< component.vec2_field_count {
+		append(&buffer.vec2_fields, component.vec2_fields[index])
+	}
+	for index in 0 ..< component.vec3_field_count {
+		append(&buffer.vec3_fields, component.vec3_fields[index])
+	}
+	for index in 0 ..< component.vec4_field_count {
+		append(&buffer.vec4_fields, component.vec4_fields[index])
+	}
+	payload_index := len(buffer.components)
+	append(&buffer.components, queued)
+	return payload_index
+}
+
 queue_spawn_command :: proc "c" (buffer: ^Command_Buffer, spawn: Spawn_Command) -> string {
 	context = base_runtime.default_context()
 	if buffer == nil {
@@ -541,16 +608,16 @@ queue_spawn_command :: proc "c" (buffer: ^Command_Buffer, spawn: Spawn_Command) 
 		material = spawn.material,
 		has_shadow_caster = spawn.has_shadow_caster,
 		has_shadow_receiver = spawn.has_shadow_receiver,
-		custom_component_start = len(buffer.spawn_components),
+		custom_component_start = len(buffer.components),
 		custom_component_count = spawn.custom_component_count,
-		ui_component_start = len(buffer.spawn_ui_components),
+		ui_component_start = len(buffer.ui_components),
 		ui_component_count = spawn.ui_component_count,
 	}
 	for index in 0 ..< spawn.custom_component_count {
-		append(&buffer.spawn_components, spawn.custom_components[index])
+		queue_component_payload(buffer, spawn.custom_components[index])
 	}
 	for index in 0 ..< spawn.ui_component_count {
-		append(&buffer.spawn_ui_components, spawn.ui_components[index])
+		append(&buffer.ui_components, spawn.ui_components[index])
 	}
 	payload_index := len(buffer.spawns)
 	append(&buffer.spawns, queued)
@@ -574,7 +641,7 @@ queue_despawn :: proc "c" (buffer: ^Command_Buffer, entity_index: int, generatio
 
 queue_add_component_command :: proc "contextless" (
 	buffer: ^Command_Buffer,
-	command: Add_Component_Command,
+	command: Queued_Add_Component_Command,
 ) -> string {
 	context = base_runtime.default_context()
 	if buffer == nil || buffer.commands == nil {
@@ -600,10 +667,10 @@ queue_add_transform :: proc "c" (
 	}
 	return queue_add_component_command(
 		buffer,
-		Add_Component_Command {
+		Queued_Add_Component_Command {
 			entity_index = entity_index,
 			generation = generation,
-			has_transform = true,
+			kind = .Transform,
 			transform = transform,
 		},
 	)
@@ -620,10 +687,10 @@ queue_add_geometry :: proc "c" (
 	}
 	return queue_add_component_command(
 		buffer,
-		Add_Component_Command {
+		Queued_Add_Component_Command {
 			entity_index = entity_index,
 			generation = generation,
-			has_geometry = true,
+			kind = .Geometry,
 			geometry = handle,
 		},
 	)
@@ -640,10 +707,10 @@ queue_add_material :: proc "c" (
 	}
 	return queue_add_component_command(
 		buffer,
-		Add_Component_Command {
+		Queued_Add_Component_Command {
 			entity_index = entity_index,
 			generation = generation,
-			has_material = true,
+			kind = .Material,
 			material = handle,
 		},
 	)
@@ -658,15 +725,15 @@ queue_add_marker :: proc "c" (
 	if buffer == nil || buffer.commands == nil {
 		return "command buffer is not initialized"
 	}
-	add := Add_Component_Command {
+	add := Queued_Add_Component_Command {
 		entity_index = entity_index,
 		generation = generation,
 	}
 	switch name {
 		case "scrapbot.shadow_caster":
-			add.has_shadow_caster = true
+			add.kind = .Shadow_Caster
 		case "scrapbot.shadow_receiver":
-			add.has_shadow_receiver = true
+			add.kind = .Shadow_Receiver
 		case:
 			return "unsupported marker component"
 	}
@@ -685,10 +752,11 @@ queue_add_mesh :: proc "c" (
 	if buffer.commands == nil {
 		return "command buffer is not initialized"
 	}
-	add: Add_Component_Command
-	add.entity_index = entity_index
-	add.generation = generation
-	add.has_mesh = true
+	add := Queued_Add_Component_Command {
+		entity_index = entity_index,
+		generation = generation,
+		kind = .Mesh,
+	}
 	if err := copy_command_string(
 		add.mesh.primitive[:],
 		&add.mesh.primitive_len,
@@ -713,12 +781,14 @@ queue_add_custom_component :: proc "c" (
 	if buffer.commands == nil {
 		return "command buffer is not initialized"
 	}
+	payload_index := queue_component_payload(buffer, command_component)
 	return queue_add_component_command(
 		buffer,
-		Add_Component_Command {
+		Queued_Add_Component_Command {
 			entity_index = entity_index,
 			generation = generation,
-			component = command_component,
+			kind = .Custom,
+			payload_index = payload_index,
 		},
 	)
 }
@@ -732,12 +802,16 @@ queue_add_ui_component :: proc "contextless" (
 	if buffer == nil || buffer.commands == nil {
 		return "command buffer is not initialized"
 	}
+	context = base_runtime.default_context()
+	payload_index := len(buffer.ui_components)
+	append(&buffer.ui_components, component)
 	return queue_add_component_command(
 		buffer,
-		Add_Component_Command {
+		Queued_Add_Component_Command {
 			entity_index = entity_index,
 			generation = generation,
-			ui_component = component,
+			kind = .UI,
+			payload_index = payload_index,
 		},
 	)
 }
@@ -788,7 +862,7 @@ apply_commands :: proc(world: ^World, buffer: ^Command_Buffer) -> string {
 				command := &buffer.despawns[header.payload_index]
 				despawn_entity(world, command.entity_index, command.generation)
 			case .Add_Component:
-				apply_add_component(world, &buffer.add_components[header.payload_index])
+				apply_add_component(world, buffer, &buffer.add_components[header.payload_index])
 			case .Remove_Component:
 				apply_remove_component(world, &buffer.remove_components[header.payload_index])
 		}
@@ -806,13 +880,52 @@ clear_commands :: proc "c" (buffer: ^Command_Buffer) {
 	if buffer != nil {
 		clear(&buffer.commands)
 		clear(&buffer.spawns)
-		clear(&buffer.spawn_components)
-		clear(&buffer.spawn_ui_components)
+		clear(&buffer.components)
+		clear(&buffer.number_fields)
+		clear(&buffer.vec2_fields)
+		clear(&buffer.vec3_fields)
+		clear(&buffer.vec4_fields)
+		clear(&buffer.ui_components)
 		clear(&buffer.despawns)
 		clear(&buffer.add_components)
 		clear(&buffer.remove_components)
 		buffer.command_count = 0
 	}
+}
+
+append_queued_component :: proc "contextless" (
+	destination, source: ^Command_Buffer,
+	source_index: int,
+) -> int {
+	context = base_runtime.default_context()
+	component := source.components[source_index]
+	number_end := component.number_field_start + component.number_field_count
+	vec2_end := component.vec2_field_start + component.vec2_field_count
+	vec3_end := component.vec3_field_start + component.vec3_field_count
+	vec4_end := component.vec4_field_start + component.vec4_field_count
+	number_start := len(destination.number_fields)
+	vec2_start := len(destination.vec2_fields)
+	vec3_start := len(destination.vec3_fields)
+	vec4_start := len(destination.vec4_fields)
+	for index in component.number_field_start ..< number_end {
+		append(&destination.number_fields, source.number_fields[index])
+	}
+	for index in component.vec2_field_start ..< vec2_end {
+		append(&destination.vec2_fields, source.vec2_fields[index])
+	}
+	for index in component.vec3_field_start ..< vec3_end {
+		append(&destination.vec3_fields, source.vec3_fields[index])
+	}
+	for index in component.vec4_field_start ..< vec4_end {
+		append(&destination.vec4_fields, source.vec4_fields[index])
+	}
+	component.number_field_start = number_start
+	component.vec2_field_start = vec2_start
+	component.vec3_field_start = vec3_start
+	component.vec4_field_start = vec4_start
+	payload_index := len(destination.components)
+	append(&destination.components, component)
+	return payload_index
 }
 
 append_commands :: proc(destination, source: ^Command_Buffer) -> string {
@@ -830,15 +943,15 @@ append_commands :: proc(destination, source: ^Command_Buffer) -> string {
 		switch header.kind {
 			case .Spawn:
 				spawn := source.spawns[header.payload_index]
-				component_start := len(destination.spawn_components)
-				ui_component_start := len(destination.spawn_ui_components)
+				component_start := len(destination.components)
+				ui_component_start := len(destination.ui_components)
 				component_end := spawn.custom_component_start + spawn.custom_component_count
 				ui_component_end := spawn.ui_component_start + spawn.ui_component_count
 				for index in spawn.custom_component_start ..< component_end {
-					append(&destination.spawn_components, source.spawn_components[index])
+					append_queued_component(destination, source, index)
 				}
 				for index in spawn.ui_component_start ..< ui_component_end {
-					append(&destination.spawn_ui_components, source.spawn_ui_components[index])
+					append(&destination.ui_components, source.ui_components[index])
 				}
 				spawn.custom_component_start = component_start
 				spawn.ui_component_start = ui_component_start
@@ -850,8 +963,24 @@ append_commands :: proc(destination, source: ^Command_Buffer) -> string {
 				append(&destination.despawns, source.despawns[header.payload_index])
 				append_command_header(destination, .Despawn, payload_index)
 			case .Add_Component:
+				command := source.add_components[header.payload_index]
+				source_payload_index := command.payload_index
+				#partial switch command.kind {
+					case .Custom:
+						command.payload_index = append_queued_component(
+							destination,
+							source,
+							source_payload_index,
+						)
+					case .UI:
+						command.payload_index = len(destination.ui_components)
+						append(
+							&destination.ui_components,
+							source.ui_components[source_payload_index],
+						)
+				}
 				payload_index := len(destination.add_components)
-				append(&destination.add_components, source.add_components[header.payload_index])
+				append(&destination.add_components, command)
 				append_command_header(destination, .Add_Component, payload_index)
 			case .Remove_Component:
 				payload_index := len(destination.remove_components)
@@ -917,11 +1046,11 @@ spawn_queued_entity :: proc(
 	if spawn.has_material { add_material(world, entity_index, spawn.material) }
 
 	for i in 0 ..< spawn.custom_component_count {
-		component := &buffer.spawn_components[spawn.custom_component_start + i]
-		add_custom_component(world, entity_index, component)
+		component_index := spawn.custom_component_start + i
+		add_queued_custom_component(world, entity_index, buffer, component_index)
 	}
 	for i in 0 ..< spawn.ui_component_count {
-		component := &buffer.spawn_ui_components[spawn.ui_component_start + i]
+		component := &buffer.ui_components[spawn.ui_component_start + i]
 		apply_ui_component(world, entity_index, component)
 	}
 	mark_render_entity_dirty(world, entity_index)
@@ -1033,41 +1162,44 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 	append(&world.free_entity_indices, entity_index)
 }
 
-apply_add_component :: proc(world: ^World, command: ^Add_Component_Command) {
+apply_add_component :: proc(
+	world: ^World,
+	buffer: ^Command_Buffer,
+	command: ^Queued_Add_Component_Command,
+) {
 	if !entity_is_current(world, command.entity_index, command.generation) {
 		return
 	}
-	if command.has_transform {
-		add_transform(world, command.entity_index, command.transform)
-		return
+	switch command.kind {
+		case .Transform:
+			add_transform(world, command.entity_index, command.transform)
+		case .Mesh:
+			add_mesh(world, command.entity_index, command_mesh_primitive(&command.mesh))
+		case .Geometry:
+			add_geometry(world, command.entity_index, command.geometry)
+		case .Material:
+			add_material(world, command.entity_index, command.material)
+		case .Shadow_Caster:
+			if !world.entities[command.entity_index].has_shadow_caster {
+				world.entities[command.entity_index].has_shadow_caster = true
+				bump_component_revision(world, command.entity_index)
+				mark_render_entity_dirty(world, command.entity_index)
+			}
+		case .Shadow_Receiver:
+			if !world.entities[command.entity_index].has_shadow_receiver {
+				world.entities[command.entity_index].has_shadow_receiver = true
+				bump_component_revision(world, command.entity_index)
+				mark_render_entity_dirty(world, command.entity_index)
+			}
+		case .Custom:
+			add_queued_custom_component(world, command.entity_index, buffer, command.payload_index)
+		case .UI:
+			apply_ui_component(
+				world,
+				command.entity_index,
+				&buffer.ui_components[command.payload_index],
+			)
 	}
-	if command.has_mesh {
-		add_mesh(world, command.entity_index, command_mesh_primitive(&command.mesh))
-		return
-	}
-	if command.has_geometry { add_geometry(world, command.entity_index, command.geometry); return }
-	if command.has_material { add_material(world, command.entity_index, command.material); return }
-	if command.has_shadow_caster {
-		if !world.entities[command.entity_index].has_shadow_caster {
-			world.entities[command.entity_index].has_shadow_caster = true
-			bump_component_revision(world, command.entity_index)
-			mark_render_entity_dirty(world, command.entity_index)
-		}
-		return
-	}
-	if command.has_shadow_receiver {
-		if !world.entities[command.entity_index].has_shadow_receiver {
-			world.entities[command.entity_index].has_shadow_receiver = true
-			bump_component_revision(world, command.entity_index)
-			mark_render_entity_dirty(world, command.entity_index)
-		}
-		return
-	}
-	if command.ui_component.kind != .None {
-		apply_ui_component(world, command.entity_index, &command.ui_component)
-		return
-	}
-	add_custom_component(world, command.entity_index, &command.component)
 }
 
 apply_ui_component :: proc(world: ^World, entity_index: int, command: ^UI_Component_Command) {
@@ -1167,6 +1299,10 @@ queued_spawn_command_name :: proc(spawn: ^Queued_Spawn_Command) -> string {
 
 command_component_name :: proc(command_component: ^Command_Component) -> string {
 	return string(command_component.name[:command_component.name_len])
+}
+
+queued_command_component_name :: proc(component: ^Queued_Command_Component) -> string {
+	return string(component.name[:component.name_len])
 }
 
 command_field_name :: proc(field: ^Command_Vec3_Field) -> string {

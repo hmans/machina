@@ -110,9 +110,9 @@ Declared systems now enforce their declared component access at the Luau API bou
 
 ### 12. Store deferred commands by payload kind
 
-**Decision:** Preserve command issue order in a compact header stream whose indices address separate spawn, despawn, add-component, and remove-component arrays. Copy only components actually present on a queued spawn into side arrays and remap those ranges when worker buffers merge.
-**Why:** A single worst-case command record made every despawn reserve storage for a complete spawn, custom component arrays, and all UI payload variants. High-churn projects therefore paid the largest payload's memory and copy cost for their smallest lifecycle operation.
-**Tradeoff:** Queue application and deterministic merging must resolve and remap payload indices correctly. Public Luau/native operations and their fixed-layout ABI staging values remain unchanged.
+**Decision:** Preserve command issue order in a compact header stream whose indices address separate spawn, despawn, add-component, and remove-component arrays. Pool only components actually present on queued spawns/additions, and represent each schema-backed component as a compact header over separate Number, Vec2, Vec3, and Vec4 field arrays. Remap component and field ranges when worker buffers merge.
+**Why:** A single worst-case command record made every despawn reserve storage for a complete spawn, custom component arrays, and all UI payload variants. Even after splitting command kinds, retaining fixed-capacity component staging structs made sparse high-churn spawns pay for every absent schema field.
+**Tradeoff:** Queue application and deterministic merging must resolve and remap payload indices and field ranges correctly. Public Luau/native operations and their fixed-layout ABI staging values remain unchanged.
 
 ## Related
 
