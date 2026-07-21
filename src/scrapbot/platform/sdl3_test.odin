@@ -12,6 +12,18 @@ test_runtime_pointer_cursor_maps_resize_directions_to_sdl :: proc(t: ^testing.T)
 }
 
 @(test)
+test_runtime_input_scancodes_map_to_backend_neutral_keys :: proc(t: ^testing.T) {
+	key, ok := input_key_from_scancode(.W)
+	testing.expect(t, ok && key == .W)
+	key, ok = input_key_from_scancode(._7)
+	testing.expect(t, ok && key == .Digit_7)
+	key, ok = input_key_from_scancode(.LCTRL)
+	testing.expect(t, ok && key == .Left_Control)
+	_, ok = input_key_from_scancode(.UNKNOWN)
+	testing.expect(t, !ok)
+}
+
+@(test)
 test_runtime_window_size_preserves_requested_aspect_and_fits_usable_display :: proc(
 	t: ^testing.T,
 ) {

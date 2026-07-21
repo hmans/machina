@@ -6,6 +6,7 @@ import project "../project"
 import resources "../resources"
 import shared "../shared"
 import "core:os"
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -50,6 +51,66 @@ end)
 	)
 	testing.expectf(t, result.err == "", "script failed: %s", result.err)
 	testing.expectf(t, step_runtime(&runtime, &world, 0.125) == "", "time system failed")
+}
+
+@(test)
+test_luau_reads_injected_ecs_input_snapshot :: proc(t: ^testing.T) {
+	world: ecs.World
+	defer ecs.destroy_world(&world)
+	frame: shared.Input_Frame
+	frame.keyboard.available = true
+	shared.input_button_set(&frame.keyboard.buttons.down, int(shared.Input_Key.W))
+	shared.input_button_set(&frame.keyboard.buttons.pressed, int(shared.Input_Key.Space))
+	frame.pointer.available = true
+	frame.pointer.position = {640, 360}
+	shared.input_button_set(&frame.pointer.buttons.down, int(shared.Input_Pointer_Button.Primary))
+	testing.expect(t, ecs.update_input(&world, frame))
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(
+		&runtime,
+		`
+scrapbot.system({
+	name = "input",
+	reads = { scrapbot.keyboard_input, scrapbot.pointer_input },
+}, function()
+	assert(scrapbot.input.key_down("w"))
+	assert(scrapbot.input.key_pressed("space"))
+	assert(not scrapbot.input.key_released("space"))
+	local pointer = scrapbot.input.pointer()
+	assert(pointer.available and pointer.position.x == 640 and pointer.position.y == 360)
+	local down, pressed, released = scrapbot.input.pointer_button("primary")
+	assert(down and not pressed and not released)
+end)
+`,
+		"=input-test",
+		&world,
+	)
+	testing.expectf(t, result.err == "", "script failed: %s", result.err)
+	testing.expectf(t, step_runtime(&runtime, &world, 1.0 / 60.0) == "", "input system failed")
+}
+
+@(test)
+test_luau_rejects_write_access_to_input_singletons :: proc(t: ^testing.T) {
+	world: ecs.World
+	defer ecs.destroy_world(&world)
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(
+		&runtime,
+		`scrapbot.system({ name = "invalid-input-writer", writes = { scrapbot.keyboard_input } }, function() end)`,
+		"=input-write-test",
+		&world,
+	)
+	testing.expectf(
+		t,
+		strings.contains(
+			result.err,
+			"system write access cannot target an engine-derived component",
+		),
+		"unexpected registration error: %s",
+		result.err,
+	)
 }
 
 @(test)

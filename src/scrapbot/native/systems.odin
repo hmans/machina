@@ -149,12 +149,16 @@ extension_register_system :: proc "c" (
 			return "native system access component is required"
 		}
 		component_name := string(access.component)
-		if _, found := component.find_definition(set.registry, component_name); !found {
+		component_definition, found := component.find_definition(set.registry, component_name)
+		if !found {
 			return "native system access references unregistered component"
 		}
 		mode, mode_ok := extension_access_mode(access.mode)
 		if !mode_ok {
 			return "native system access mode is not supported"
+		}
+		if mode == .Write && component_definition.lifecycle == .Derived {
+			return "native system write access cannot target an engine-derived component"
 		}
 		system.declaration.accesses[system.declaration.access_count] = schedule.Access {
 			component = component_name,
@@ -243,12 +247,78 @@ step_system :: proc(
 		add_mesh = system_add_mesh,
 		add_component = system_add_component,
 		remove_component = system_remove_component,
+		input_key_state = system_input_key_state,
+		input_pointer = system_input_pointer,
 	}
 
 	if err := system.callback(&ctx); err != nil {
 		return fmt.tprintf("native system %s: %s", system.name, string(err))
 	}
 	return ""
+}
+
+system_input_key_state :: proc "c" (
+	ctx: ^api.System_Context,
+	key_name: cstring,
+	out_state: ^api.Input_Key_State,
+) -> c.int {
+	step, ok := system_step_context(ctx)
+	if !ok || key_name == nil || out_state == nil {
+		return 0
+	}
+	if !system_allows_component_access(step.system.declaration, "scrapbot.keyboard_input", .Read) {
+		return 0
+	}
+	key, found := shared.input_key_from_name(string(key_name))
+	if !found {
+		return 0
+	}
+	input, available := ecs.keyboard_input(step.world)
+	if !available {
+		return 0
+	}
+	down, pressed, released := shared.input_key_state(input, key)
+	out_state^ = {
+		down = c.int(1) if down else 0,
+		pressed = c.int(1) if pressed else 0,
+		released = c.int(1) if released else 0,
+	}
+	return 1
+}
+
+system_input_pointer :: proc "c" (
+	ctx: ^api.System_Context,
+	out_input: ^api.Pointer_Input,
+) -> c.int {
+	step, ok := system_step_context(ctx)
+	if !ok || out_input == nil {
+		return 0
+	}
+	if !system_allows_component_access(step.system.declaration, "scrapbot.pointer_input", .Read) {
+		return 0
+	}
+	input, available := ecs.pointer_input(step.world)
+	if !available {
+		return 0
+	}
+	out_input^ = {
+		available = c.int(1) if input.available else 0,
+		captured = c.int(1) if input.captured else 0,
+		position = {input.position.x, input.position.y},
+		delta = {input.delta.x, input.delta.y},
+		wheel = {input.wheel.x, input.wheel.y},
+	}
+	buttons := [?]shared.Input_Pointer_Button{.Primary, .Secondary, .Middle}
+	states := [?]^api.Input_Key_State{&out_input.primary, &out_input.secondary, &out_input.middle}
+	for button, index in buttons {
+		down, pressed, released := shared.input_pointer_button_state(input, button)
+		states[index]^ = {
+			down = c.int(1) if down else 0,
+			pressed = c.int(1) if pressed else 0,
+			released = c.int(1) if released else 0,
+		}
+	}
+	return 1
 }
 
 system_query_count :: proc "c" (

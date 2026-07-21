@@ -11,6 +11,8 @@ DIRECTIONAL_LIGHT :: "scrapbot.directional_light"
 POINT_LIGHT :: "scrapbot.point_light"
 SHADOW_CASTER :: "scrapbot.shadow_caster"
 SHADOW_RECEIVER :: "scrapbot.shadow_receiver"
+KEYBOARD_INPUT :: "scrapbot.keyboard_input"
+POINTER_INPUT :: "scrapbot.pointer_input"
 
 Context :: struct {
 	api: ^raw.API,
@@ -77,6 +79,8 @@ Access_Mode :: raw.Access_Mode
 Entity :: raw.Entity
 Query_Term :: raw.Query_Term
 System_Context :: raw.System_Context
+Input_Key_State :: raw.Input_Key_State
+Pointer_Input :: raw.Pointer_Input
 System_Proc :: #type proc "contextless" (ctx: ^System_Context) -> cstring
 Transform :: raw.Transform
 Time :: raw.Time
@@ -115,6 +119,12 @@ Shadow_Caster_Component :: Component {
 }
 Shadow_Receiver_Component :: Component {
 	name = SHADOW_RECEIVER,
+}
+Keyboard_Input_Component :: Component {
+	name = KEYBOARD_INPUT,
+}
+Pointer_Input_Component :: Component {
+	name = POINTER_INPUT,
 }
 MAX_QUERY_TERMS :: raw.MAX_QUERY_TERMS
 MAX_QUERY_CHUNK_ENTITIES :: raw.MAX_QUERY_CHUNK_ENTITIES
@@ -1423,4 +1433,26 @@ remove_by_descriptor :: proc "contextless" (
 remove :: proc {
 	remove_by_name,
 	remove_by_descriptor,
+}
+
+input_key_state :: proc "contextless" (
+	ctx: ^System_Context,
+	key: cstring,
+) -> (
+	Input_Key_State,
+	bool,
+) {
+	state: Input_Key_State
+	if ctx == nil || ctx.input_key_state == nil {
+		return state, false
+	}
+	return state, ctx.input_key_state(ctx, key, &state) != 0
+}
+
+input_pointer :: proc "contextless" (ctx: ^System_Context) -> (Pointer_Input, bool) {
+	input: Pointer_Input
+	if ctx == nil || ctx.input_pointer == nil {
+		return input, false
+	}
+	return input, ctx.input_pointer(ctx, &input) != 0
 }

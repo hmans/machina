@@ -16,6 +16,8 @@ Lifecycle meanings:
 <!-- inventory:engine-components:start -->
 | Component | Area | Lifecycle | User-facing | Architectural role |
 | --- | --- | --- | --- | --- |
+| `scrapbot.keyboard_input` | Runtime input | Derived | Read-only | Singleton per-frame keyboard held/pressed/released snapshot; scheduler-visible and not entity-attached. |
+| `scrapbot.pointer_input` | Runtime input | Derived | Read-only | Singleton per-frame pointer position/delta/wheel/button snapshot; scheduler-visible and not entity-attached. |
 | `scrapbot.transform` | Spatial | Authored | Yes | UUID-parented local position, rotation, and scale; source for resolved world transforms. |
 | `scrapbot.camera` | Spatial/render | Authored | Yes | Selects camera projection data; project camera is distinct from the editor fly camera. |
 | `scrapbot.ambient_light` | Lighting | Authored | Yes | Compact scene-wide ambient light input. |
@@ -47,6 +49,26 @@ Lifecycle meanings:
 These entries deliberately omit exhaustive field/default documentation. Follow the public-reference link for authoring syntax and field behavior.
 
 <!-- inventory:engine-component-details:start -->
+### `scrapbot.keyboard_input`
+
+- **Contract:** One immutable World-wide physical-key snapshot containing availability, focus, held state, and press/release edges.
+- **Storage/lifecycle:** Dedicated ECS singleton resource; derived and platform-owned, with no entity slot or authored membership.
+- **Producers:** Platform sampling once at the runtime frame boundary; deterministic renderer test injection.
+- **Consumers:** Access-declared Luau and native gameplay systems through public input helpers.
+- **Invalidation:** Replaced exactly once per runtime frame before project scheduling; no structural reconciliation or complete-world scan.
+- **Surfaces:** Read-only Luau/native APIs and system access declarations; not scene TOML or entity queries.
+- **Source/tests:** `shared/input.odin`, `platform/sdl3.odin`, `ecs/input.odin`, `render/render.odin`; `ecs/input_test.odin`, `platform/sdl3_test.odin`, `script/script_test.odin`.
+
+### `scrapbot.pointer_input`
+
+- **Contract:** One immutable World-wide pointer snapshot containing availability/capture, pixel position/delta, wheel delta, and button held/pressed/released state.
+- **Storage/lifecycle:** Dedicated ECS singleton resource; derived and platform-owned, with no entity slot or authored membership.
+- **Producers:** Platform sampling once at the runtime frame boundary; deterministic renderer test injection.
+- **Consumers:** Access-declared Luau and native gameplay systems; UI/editor retain specialized downstream interaction interpretation.
+- **Invalidation:** Replaced exactly once per runtime frame before project scheduling; no structural reconciliation or complete-world scan.
+- **Surfaces:** Read-only Luau/native APIs and system access declarations; not scene TOML or entity queries.
+- **Source/tests:** `shared/input.odin`, `platform/sdl3.odin`, `ecs/input.odin`, `render/render.odin`; `ecs/input_test.odin`, `platform/sdl3_test.odin`, `script/script_test.odin`.
+
 ### `scrapbot.transform`
 
 - **Contract:** UUID-parented local position, Euler rotation, and scale; roots use local values as world values.

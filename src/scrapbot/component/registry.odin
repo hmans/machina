@@ -60,6 +60,8 @@ Storage_Kind :: enum {
 	UI_Input,
 	UI_Checkbox,
 	UI_State,
+	Keyboard_Input,
+	Pointer_Input,
 	Derived,
 }
 
@@ -96,6 +98,25 @@ Registry :: struct {
 init_registry :: proc(registry: ^Registry) {
 	registry^ = {}
 
+	register_engine_component(
+		registry,
+		"scrapbot.keyboard_input",
+		{
+			Field_Definition{name = "available", field_type = .Bool},
+			Field_Definition{name = "focused", field_type = .Bool},
+		},
+	)
+	register_engine_component(
+		registry,
+		"scrapbot.pointer_input",
+		{
+			Field_Definition{name = "available", field_type = .Bool},
+			Field_Definition{name = "captured", field_type = .Bool},
+			Field_Definition{name = "position", field_type = .Vec2},
+			Field_Definition{name = "delta", field_type = .Vec2},
+			Field_Definition{name = "wheel", field_type = .Vec2},
+		},
+	)
 	register_engine_component(
 		registry,
 		"scrapbot.transform",
@@ -417,6 +438,10 @@ definition_is_authorable :: proc "contextless" (definition: Definition) -> bool 
 
 engine_component_storage :: proc "contextless" (name: string) -> (Storage_Kind, Lifecycle) {
 	switch name {
+		case "scrapbot.keyboard_input":
+			return .Keyboard_Input, .Derived
+		case "scrapbot.pointer_input":
+			return .Pointer_Input, .Derived
 		case "scrapbot.transform":
 			return .Transform, .Authored
 		case "scrapbot.camera":

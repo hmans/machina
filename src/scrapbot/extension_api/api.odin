@@ -400,6 +400,31 @@ Query_Chunk :: struct {
 	binding_count: c.int,
 }
 
+Input_Key_State :: struct {
+	down: c.int,
+	pressed: c.int,
+	released: c.int,
+}
+
+Pointer_Input :: struct {
+	available: c.int,
+	captured: c.int,
+	position: Vec2,
+	delta: Vec2,
+	wheel: Vec2,
+	primary: Input_Key_State,
+	secondary: Input_Key_State,
+	middle: Input_Key_State,
+}
+
+Input_Key_State_Proc :: #type proc "c" (
+	ctx: ^System_Context,
+	key: cstring,
+	out_state: ^Input_Key_State,
+) -> c.int
+
+Input_Pointer_Proc :: #type proc "c" (ctx: ^System_Context, out_input: ^Pointer_Input) -> c.int
+
 System_Context :: struct {
 	userdata: rawptr,
 	host: rawptr,
@@ -427,6 +452,8 @@ System_Context :: struct {
 	add_mesh: Add_Mesh_Proc,
 	add_component: Add_Component_Proc,
 	remove_component: Remove_Component_Proc,
+	input_key_state: Input_Key_State_Proc,
+	input_pointer: Input_Pointer_Proc,
 }
 
 System_Proc :: #type proc "c" (ctx: ^System_Context) -> cstring

@@ -18,6 +18,7 @@ This file tracks current actionable engineering work. The broad product roadmap 
 
 ## Project Runtime And Scripting
 
+- [ ] Layer persistent action maps, rebinding, focus/consumption, and controller devices over the ECS input singleton snapshots.
 - [ ] Replace the narrow TOML reader or formally specify its supported project-file subset.
 - [ ] Replace polling hot reload with platform file watching when runtime services exist.
 - [ ] Add target-native Luau, SDL3, and WGPU toolchains for cross-platform exports.

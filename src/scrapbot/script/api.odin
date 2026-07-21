@@ -3,6 +3,7 @@ package script
 
 import ecs "../ecs"
 import resources "../resources"
+import shared "../shared"
 import base_runtime "base:runtime"
 import c "core:c"
 import libc "core:c/libc"
@@ -43,6 +44,23 @@ register_scrapbot_api :: proc(L: Lua_State) {
 
 	push_registered_component_handle_by_name(L, "scrapbot.transform")
 	lua_setfield(L, -2, "transform")
+	push_registered_component_handle_by_name(L, "scrapbot.keyboard_input")
+	lua_setfield(L, -2, "keyboard_input")
+	push_registered_component_handle_by_name(L, "scrapbot.pointer_input")
+	lua_setfield(L, -2, "pointer_input")
+
+	lua_createtable(L, 0, 5)
+	lua_pushcclosurek(L, scrapbot_input_key_down, "scrapbot.input.key_down", 0, nil)
+	lua_setfield(L, -2, "key_down")
+	lua_pushcclosurek(L, scrapbot_input_key_pressed, "scrapbot.input.key_pressed", 0, nil)
+	lua_setfield(L, -2, "key_pressed")
+	lua_pushcclosurek(L, scrapbot_input_key_released, "scrapbot.input.key_released", 0, nil)
+	lua_setfield(L, -2, "key_released")
+	lua_pushcclosurek(L, scrapbot_input_pointer, "scrapbot.input.pointer", 0, nil)
+	lua_setfield(L, -2, "pointer")
+	lua_pushcclosurek(L, scrapbot_input_pointer_button, "scrapbot.input.pointer_button", 0, nil)
+	lua_setfield(L, -2, "pointer_button")
+	lua_setfield(L, -2, "input")
 
 	push_registered_component_handle_by_name(L, "scrapbot.camera")
 	lua_setfield(L, -2, "camera")
@@ -566,4 +584,138 @@ scrapbot_renderable_count :: proc "c" (L: Lua_State) -> c.int {
 	}
 	lua_pushinteger(L, c.ptrdiff_t(count))
 	return 1
+}
+
+scrapbot_input_key_state :: proc "c" (L: Lua_State) -> (bool, bool, bool, bool) {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	if runtime == nil || runtime.world == nil {
+		return false, false, false, false
+	}
+	if runtime.has_active_system {
+		if require_system_access(runtime, "scrapbot.keyboard_input", .Read) != "" {
+			return false, false, false, false
+		}
+	}
+	name, ok := luau_required_string(L, 1)
+	if !ok {
+		return false, false, false, false
+	}
+	key, found := shared.input_key_from_name(name)
+	if !found {
+		return false, false, false, false
+	}
+	input, available := ecs.keyboard_input(runtime.world)
+	if !available {
+		return false, false, false, true
+	}
+	down, pressed, released := shared.input_key_state(input, key)
+	return down, pressed, released, true
+}
+
+scrapbot_input_key_down :: proc "c" (L: Lua_State) -> c.int {
+	down, _, _, ok := scrapbot_input_key_state(L)
+	if !ok {
+		return luau_push_error(
+			L,
+			"input key query requires a supported key and keyboard_input read access",
+		)
+	}
+	lua_pushboolean(L, 1 if down else 0)
+	return 1
+}
+
+scrapbot_input_key_pressed :: proc "c" (L: Lua_State) -> c.int {
+	_, pressed, _, ok := scrapbot_input_key_state(L)
+	if !ok {
+		return luau_push_error(
+			L,
+			"input key query requires a supported key and keyboard_input read access",
+		)
+	}
+	lua_pushboolean(L, 1 if pressed else 0)
+	return 1
+}
+
+scrapbot_input_key_released :: proc "c" (L: Lua_State) -> c.int {
+	_, _, released, ok := scrapbot_input_key_state(L)
+	if !ok {
+		return luau_push_error(
+			L,
+			"input key query requires a supported key and keyboard_input read access",
+		)
+	}
+	lua_pushboolean(L, 1 if released else 0)
+	return 1
+}
+
+scrapbot_input_pointer :: proc "c" (L: Lua_State) -> c.int {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	input: shared.Pointer_Input_Component
+	access_allowed :=
+		runtime != nil &&
+		(!runtime.has_active_system ||
+				require_system_access(runtime, "scrapbot.pointer_input", .Read) == "")
+	if runtime != nil && runtime.has_active_system && !access_allowed {
+		return luau_push_error(L, "pointer query requires pointer_input read access")
+	}
+	if runtime != nil && runtime.world != nil && access_allowed {
+		input, _ = ecs.pointer_input(runtime.world)
+	}
+	lua_createtable(L, 0, 5)
+	lua_pushboolean(L, 1 if input.available else 0)
+	lua_setfield(L, -2, "available")
+	lua_pushboolean(L, 1 if input.captured else 0)
+	lua_setfield(L, -2, "captured")
+	push_vec2_table(L, input.position)
+	lua_setfield(L, -2, "position")
+	push_vec2_table(L, input.delta)
+	lua_setfield(L, -2, "delta")
+	push_vec2_table(L, input.wheel)
+	lua_setfield(L, -2, "wheel")
+	return 1
+}
+
+scrapbot_input_pointer_button :: proc "c" (L: Lua_State) -> c.int {
+	runtime := cast(^Runtime)lua_getthreaddata(L)
+	name, ok := luau_required_string(L, 1)
+	if !ok {
+		lua_pushboolean(L, 0)
+		lua_pushboolean(L, 0)
+		lua_pushboolean(L, 0)
+		return 3
+	}
+	button: shared.Input_Pointer_Button
+	switch name {
+		case "primary":
+			button = .Primary
+		case "secondary":
+			button = .Secondary
+		case "middle":
+			button = .Middle
+		case "back":
+			button = .Back
+		case "forward":
+			button = .Forward
+		case:
+			lua_pushboolean(L, 0)
+			lua_pushboolean(L, 0)
+			lua_pushboolean(L, 0)
+			return 3
+	}
+	input: shared.Pointer_Input_Component
+	access_allowed :=
+		runtime != nil &&
+		(!runtime.has_active_system ||
+				require_system_access(runtime, "scrapbot.pointer_input", .Read) == "")
+	if runtime != nil && runtime.has_active_system && !access_allowed {
+		return luau_push_error(L, "pointer query requires pointer_input read access")
+	}
+	if runtime != nil && runtime.world != nil && access_allowed {
+		input, _ = ecs.pointer_input(runtime.world)
+	}
+	down, pressed, released := shared.input_pointer_button_state(input, button)
+	lua_pushboolean(L, 1 if down else 0)
+	lua_pushboolean(L, 1 if pressed else 0)
+	lua_pushboolean(L, 1 if released else 0)
+	return 3
 }

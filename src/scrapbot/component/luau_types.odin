@@ -20,6 +20,15 @@ export type Scrapbot = {
 	vec4: ScrapbotComponentField<Vec4, ReadonlyVec4>,
 	color: ScrapbotComponentField<Vec4, ReadonlyVec4>,
 	transform: ScrapbotTransformComponent,
+	keyboard_input: ScrapbotKeyboardInputComponent,
+	pointer_input: ScrapbotPointerInputComponent,
+	input: {
+		key_down: (key: string) -> boolean,
+		key_pressed: (key: string) -> boolean,
+		key_released: (key: string) -> boolean,
+		pointer: () -> ScrapbotPointerSnapshot,
+		pointer_button: (button: string) -> (boolean, boolean, boolean),
+	},
 	camera: ScrapbotCameraComponent,
 	ambient_light: ScrapbotAmbientLightComponent,
 	directional_light: ScrapbotDirectionalLightComponent,
@@ -80,6 +89,14 @@ export type ScrapbotTime = {
 	read smooth_delta_time: number,
 	read elapsed_time: number,
 	read frame_index: number,
+}
+
+export type ScrapbotPointerSnapshot = {
+	available: boolean,
+	captured: boolean,
+	position: ReadonlyVec2,
+	delta: ReadonlyVec2,
+	wheel: ReadonlyVec2,
 }
 
 export type ScrapbotGeometryResource = {kind: "geometry", index: number, generation: number}
@@ -290,7 +307,7 @@ write_luau_component_type :: proc(builder: ^strings.Builder, definition: Definit
 }
 
 luau_component_write_type :: proc(definition: Definition, type_name: string) -> string {
-	if definition.name == "scrapbot.ui_state" {
+	if definition.lifecycle == .Derived {
 		return "never"
 	}
 	return type_name

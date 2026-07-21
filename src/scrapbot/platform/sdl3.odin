@@ -13,6 +13,14 @@ runtime_window_hidden: bool
 runtime_editor_gizmo_mode_requested: bool
 runtime_editor_gizmo_mode: shared.Editor_Gizmo_Mode
 runtime_wheel_y: f32
+runtime_wheel_x: f32
+runtime_pointer_delta: shared.Vec2
+runtime_key_pressed: [2]u64
+runtime_key_released: [2]u64
+runtime_pointer_pressed: [2]u64
+runtime_pointer_released: [2]u64
+runtime_input_generation: u64
+runtime_input_sampled_generation: u64
 runtime_scene_camera_look_active: bool
 runtime_scene_camera_capture_warmup: int
 runtime_pointer_cursor: Runtime_Pointer_Cursor
@@ -237,6 +245,15 @@ close_runtime_window :: proc() {
 	runtime_scene_camera_look_active = false
 	runtime_scene_camera_capture_warmup = 0
 	runtime_pointer_cursor = .Default
+	runtime_wheel_x = 0
+	runtime_wheel_y = 0
+	runtime_pointer_delta = {}
+	runtime_key_pressed = {}
+	runtime_key_released = {}
+	runtime_pointer_pressed = {}
+	runtime_pointer_released = {}
+	runtime_input_generation = 0
+	runtime_input_sampled_generation = 0
 	runtime_text_length = 0
 	runtime_text_navigation = {}
 }
@@ -309,6 +326,231 @@ runtime_pointer_state_in_pixels :: proc() -> Pointer_State {
 	pointer.x *= f32(pixel_width) / f32(window_width)
 	pointer.y *= f32(pixel_height) / f32(window_height)
 	return pointer
+}
+
+input_key_from_scancode :: proc "contextless" (
+	scancode: sdl.Scancode,
+) -> (
+	shared.Input_Key,
+	bool,
+) {
+	#partial switch scancode {
+		case .A:
+			return .A, true
+		case .B:
+			return .B, true
+		case .C:
+			return .C, true
+		case .D:
+			return .D, true
+		case .E:
+			return .E, true
+		case .F:
+			return .F, true
+		case .G:
+			return .G, true
+		case .H:
+			return .H, true
+		case .I:
+			return .I, true
+		case .J:
+			return .J, true
+		case .K:
+			return .K, true
+		case .L:
+			return .L, true
+		case .M:
+			return .M, true
+		case .N:
+			return .N, true
+		case .O:
+			return .O, true
+		case .P:
+			return .P, true
+		case .Q:
+			return .Q, true
+		case .R:
+			return .R, true
+		case .S:
+			return .S, true
+		case .T:
+			return .T, true
+		case .U:
+			return .U, true
+		case .V:
+			return .V, true
+		case .W:
+			return .W, true
+		case .X:
+			return .X, true
+		case .Y:
+			return .Y, true
+		case .Z:
+			return .Z, true
+		case ._0:
+			return .Digit_0, true
+		case ._1:
+			return .Digit_1, true
+		case ._2:
+			return .Digit_2, true
+		case ._3:
+			return .Digit_3, true
+		case ._4:
+			return .Digit_4, true
+		case ._5:
+			return .Digit_5, true
+		case ._6:
+			return .Digit_6, true
+		case ._7:
+			return .Digit_7, true
+		case ._8:
+			return .Digit_8, true
+		case ._9:
+			return .Digit_9, true
+		case .LEFT:
+			return .Left, true
+		case .RIGHT:
+			return .Right, true
+		case .UP:
+			return .Up, true
+		case .DOWN:
+			return .Down, true
+		case .SPACE:
+			return .Space, true
+		case .RETURN, .KP_ENTER:
+			return .Enter, true
+		case .ESCAPE:
+			return .Escape, true
+		case .TAB:
+			return .Tab, true
+		case .BACKSPACE:
+			return .Backspace, true
+		case .DELETE:
+			return .Delete, true
+		case .HOME:
+			return .Home, true
+		case .END:
+			return .End, true
+		case .PAGEUP:
+			return .Page_Up, true
+		case .PAGEDOWN:
+			return .Page_Down, true
+		case .LSHIFT:
+			return .Left_Shift, true
+		case .RSHIFT:
+			return .Right_Shift, true
+		case .LCTRL:
+			return .Left_Control, true
+		case .RCTRL:
+			return .Right_Control, true
+		case .LALT:
+			return .Left_Alt, true
+		case .RALT:
+			return .Right_Alt, true
+		case .LGUI:
+			return .Left_Meta, true
+		case .RGUI:
+			return .Right_Meta, true
+		case .F1:
+			return .F1, true
+		case .F2:
+			return .F2, true
+		case .F3:
+			return .F3, true
+		case .F4:
+			return .F4, true
+		case .F5:
+			return .F5, true
+		case .F6:
+			return .F6, true
+		case .F7:
+			return .F7, true
+		case .F8:
+			return .F8, true
+		case .F9:
+			return .F9, true
+		case .F10:
+			return .F10, true
+		case .F11:
+			return .F11, true
+		case .F12:
+			return .F12, true
+		case:
+			return .Unknown, false
+	}
+}
+
+input_pointer_button_from_sdl :: proc "contextless" (
+	button: u8,
+) -> (
+	shared.Input_Pointer_Button,
+	bool,
+) {
+	switch button {
+		case sdl.BUTTON_LEFT:
+			return .Primary, true
+		case sdl.BUTTON_RIGHT:
+			return .Secondary, true
+		case sdl.BUTTON_MIDDLE:
+			return .Middle, true
+		case sdl.BUTTON_X1:
+			return .Back, true
+		case sdl.BUTTON_X2:
+			return .Forward, true
+	}
+	return .Primary, false
+}
+
+runtime_input_frame :: proc() -> shared.Input_Frame {
+	if runtime_window == nil || runtime_window_hidden {
+		return {}
+	}
+	result: shared.Input_Frame
+	result.keyboard.available = true
+	result.keyboard.focused = .INPUT_FOCUS in sdl.GetWindowFlags(runtime_window)
+	key_count: c.int
+	keyboard := sdl.GetKeyboardState(&key_count)
+	for scancode_index in 0 ..< int(key_count) {
+		if !keyboard_state_has(keyboard, int(key_count), sdl.Scancode(scancode_index)) {
+			continue
+		}
+		if key, ok := input_key_from_scancode(sdl.Scancode(scancode_index)); ok {
+			shared.input_button_set(&result.keyboard.buttons.down, int(key))
+		}
+	}
+	result.keyboard.buttons.pressed = runtime_key_pressed
+	result.keyboard.buttons.released = runtime_key_released
+	pointer := runtime_pointer_state_in_pixels()
+	result.pointer.available = pointer.available
+	result.pointer.captured = runtime_scene_camera_look_active
+	result.pointer.position = {pointer.x, pointer.y}
+	density := runtime_window_pixel_density()
+	result.pointer.delta = {runtime_pointer_delta.x * density, runtime_pointer_delta.y * density}
+	result.pointer.wheel = {runtime_wheel_x, runtime_wheel_y}
+	buttons := sdl.GetMouseState(nil, nil)
+	if .LEFT in
+	   buttons { shared.input_button_set(&result.pointer.buttons.down, int(shared.Input_Pointer_Button.Primary)) }
+	if .RIGHT in
+	   buttons { shared.input_button_set(&result.pointer.buttons.down, int(shared.Input_Pointer_Button.Secondary)) }
+	if .MIDDLE in
+	   buttons { shared.input_button_set(&result.pointer.buttons.down, int(shared.Input_Pointer_Button.Middle)) }
+	if .X1 in
+	   buttons { shared.input_button_set(&result.pointer.buttons.down, int(shared.Input_Pointer_Button.Back)) }
+	if .X2 in
+	   buttons { shared.input_button_set(&result.pointer.buttons.down, int(shared.Input_Pointer_Button.Forward)) }
+	result.pointer.buttons.pressed = runtime_pointer_pressed
+	result.pointer.buttons.released = runtime_pointer_released
+	if runtime_input_sampled_generation == runtime_input_generation {
+		result.keyboard.buttons.pressed = {}
+		result.keyboard.buttons.released = {}
+		result.pointer.delta = {}
+		result.pointer.wheel = {}
+		result.pointer.buttons.pressed = {}
+		result.pointer.buttons.released = {}
+	} else {
+		runtime_input_sampled_generation = runtime_input_generation
+	}
+	return result
 }
 
 runtime_text_input :: proc() -> Runtime_Text_Input {
@@ -519,8 +761,18 @@ runtime_text_key :: proc(
 }
 
 pump_runtime_window_events :: proc() -> bool {
+	runtime_input_generation += 1
+	if runtime_input_generation == 0 {
+		runtime_input_generation = 1
+	}
 	should_quit := false
 	runtime_wheel_y = 0
+	runtime_wheel_x = 0
+	runtime_pointer_delta = {}
+	runtime_key_pressed = {}
+	runtime_key_released = {}
+	runtime_pointer_pressed = {}
+	runtime_pointer_released = {}
 	runtime_text_length = 0
 	runtime_text_navigation = {}
 	modifiers := sdl.GetModState()
@@ -533,12 +785,22 @@ pump_runtime_window_events :: proc() -> bool {
 			should_quit = true
 		}
 		if event.type == .KEY_DOWN {
+			if !event.key.repeat {
+				if key, ok := input_key_from_scancode(event.key.scancode); ok {
+					shared.input_button_set(&runtime_key_pressed, int(key))
+				}
+			}
 			if mode, requested := editor_gizmo_mode_shortcut(
 				event.key.scancode,
 				event.key.mod,
 				event.key.repeat,
 			);
 			requested { runtime_editor_gizmo_mode = mode; runtime_editor_gizmo_mode_requested = true }
+		}
+		if event.type == .KEY_UP {
+			if key, ok := input_key_from_scancode(event.key.scancode); ok {
+				shared.input_button_set(&runtime_key_released, int(key))
+			}
 		}
 		if event.type == .KEY_DOWN {
 			runtime_text_key(
@@ -559,7 +821,23 @@ pump_runtime_window_events :: proc() -> bool {
 				delete(text)
 			}
 		}
-		if event.type == .MOUSE_WHEEL { runtime_wheel_y += event.wheel.y }
+		if event.type == .MOUSE_MOTION {
+			runtime_pointer_delta.x += event.motion.xrel
+			runtime_pointer_delta.y += event.motion.yrel
+		}
+		if event.type == .MOUSE_BUTTON_DOWN || event.type == .MOUSE_BUTTON_UP {
+			if button, ok := input_pointer_button_from_sdl(event.button.button); ok {
+				if event.type == .MOUSE_BUTTON_DOWN {
+					shared.input_button_set(&runtime_pointer_pressed, int(button))
+				} else {
+					shared.input_button_set(&runtime_pointer_released, int(button))
+				}
+			}
+		}
+		if event.type == .MOUSE_WHEEL {
+			runtime_wheel_x += event.wheel.x
+			runtime_wheel_y += event.wheel.y
+		}
 	}
 	return should_quit
 }

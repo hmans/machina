@@ -172,6 +172,7 @@ Run_Config :: struct {
 	log_enabled: bool,
 	ui_state: ^ui.State,
 	ui_driver: ^ui.Diagnostic_Driver,
+	input_override: ^shared.Input_Frame,
 	last_drawable_width: f32,
 	last_drawable_height: f32,
 }
@@ -541,6 +542,13 @@ run_frame_system_unmeasured :: proc(
 	drawable_width: f32 = 1280,
 	drawable_height: f32 = 720,
 ) -> string {
+	input_frame := platform.runtime_input_frame()
+	if config.input_override != nil {
+		input_frame = config.input_override^
+	}
+	if !ecs.update_input(world, input_frame) {
+		return "runtime input singleton is unavailable"
+	}
 	if ui.consume_playback_begin_request(config.ui_state) {
 		if config.runtime_playback_begin == nil {
 			return "editor playback requires an authoring snapshot callback"

@@ -122,6 +122,10 @@ The context includes:
 
 Return `nil` on success or a static error string on failure. The host enforces declared access through the callback context.
 
+## Runtime input
+
+`System_Context` exposes read-only `input_key_state` and `input_pointer` callbacks. The Odin wrapper provides `scrapbot.input_key_state(ctx, "space")` and `scrapbot.input_pointer(ctx)`. Declare read access to `scrapbot.keyboard_input` or `scrapbot.pointer_input` when registering the system. Key state contains held, pressed-this-frame, and released-this-frame flags; pointer state contains availability/capture, pixel position/delta, wheel delta, and primary/secondary/middle button states. These are ECS singleton component resources rather than queryable entity components.
+
 ## Query chunks
 
 `Query_Chunk` amortizes host calls for dense native systems without exposing pointers into Scrapbot's ECS. A chunk owns fixed query-term, entity, and binding descriptors; the extension supplies arrays for each bound Transform or Number/Vec2/Vec3/Vec4 field. The descriptor's `plan_slot` and `plan_generation` fields are opaque host-owned cache state: initialize them to zero and never modify them. The host uses them to retain candidate-storage and typed-field resolution. `query_chunk_next` fills at most 64 lanes. Writable bindings are inert until the caller supplies a 64-bit `write_mask` and invokes `query_chunk_commit`; only marked lanes are written and invalidated.

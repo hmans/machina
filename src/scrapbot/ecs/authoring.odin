@@ -170,7 +170,7 @@ capture_registered_component_snapshot :: proc(
 		case .UI_Checkbox:
 			value.has_ui_checkbox = true
 			value.ui_checkbox = world.ui_checkboxes[entity.ui_checkbox_index]
-		case .UI_State, .Derived:
+		case .UI_State, .Keyboard_Input, .Pointer_Input, .Derived:
 			destroy_registered_component_snapshot(&snapshot)
 			return {}, false
 	}
@@ -326,7 +326,7 @@ apply_registered_component_snapshot :: proc(
 			_ = set_ui_input(world, entity_index, value.ui_input)
 		case .UI_Checkbox:
 			_ = set_ui_checkbox(world, entity_index, value.ui_checkbox)
-		case .UI_State, .Derived:
+		case .UI_State, .Keyboard_Input, .Pointer_Input, .Derived:
 			return false
 	}
 	return registered_component_is_present(world, entity_index, &definition)
@@ -711,7 +711,7 @@ set_registered_component_membership :: proc(
 			} else {
 				_ = remove_ui_component(world, entity_index, definition.name)
 			}
-		case .UI_State, .Derived:
+		case .UI_State, .Keyboard_Input, .Pointer_Input, .Derived:
 			return false
 	}
 	return registered_component_is_present(world, entity_index, definition) == present

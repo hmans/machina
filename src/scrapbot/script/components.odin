@@ -468,6 +468,12 @@ read_system_access_list :: proc "c" (
 			}
 			return err
 		}
+		if mode == .Write {
+			definition, found := component.find_definition(&runtime.registry, component_ref.name)
+			if found && definition.lifecycle == .Derived {
+				return "system write access cannot target an engine-derived component"
+			}
+		}
 		if err := add_system_access(declaration, component_ref.name, mode); err != "" {
 			return err
 		}

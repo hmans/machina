@@ -252,6 +252,22 @@ test_null_renderer_steps_frame_system_for_max_frames :: proc(t: ^testing.T) {
 	testing.expect(t, world.time.delta_time == f32(1.0 / 60.0))
 }
 
+@(test)
+test_runtime_commits_injected_input_before_project_systems :: proc(t: ^testing.T) {
+	world: World
+	input: shared.Input_Frame
+	input.keyboard.available = true
+	shared.input_button_set(&input.keyboard.buttons.pressed, int(shared.Input_Key.Space))
+	observed := false
+	config := Run_Config {
+		input_override = &input,
+		frame_system = test_observe_input_frame_system,
+		frame_system_data = &observed,
+	}
+	testing.expect(t, run_frame_system_unmeasured(&config, &world, 1.0 / 60.0) == "")
+	testing.expect(t, observed)
+}
+
 Test_System_Profile_Events :: struct {
 	begin_count: int,
 	commit_count: int,
@@ -865,6 +881,14 @@ test_count_frame_system :: proc(data: rawptr, world: ^World, delta_seconds: f32)
 	ecs.advance_time(&world.time, delta_seconds)
 	count := cast(^int)data
 	count^ += 1
+	return ""
+}
+
+test_observe_input_frame_system :: proc(data: rawptr, world: ^World, _: f32) -> string {
+	input, ok := ecs.keyboard_input(world)
+	_, pressed, _ := shared.input_key_state(input, .Space)
+	observed := cast(^bool)data
+	observed^ = ok && pressed
 	return ""
 }
 

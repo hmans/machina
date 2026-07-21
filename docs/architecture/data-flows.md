@@ -24,6 +24,8 @@ Native components register before Luau executes, allowing scripts to retrieve na
 ## Simulation and scheduled mutation
 
 ```text
+SDL/headless source → keyboard + pointer singleton snapshots
+                                      │
 playback transport → simulation delta → cached schedule plan
                                          │
                       non-conflicting native batches (parallel)
@@ -42,6 +44,8 @@ playback transport → simulation delta → cached schedule plan
 ```
 
 Native chunk descriptors compile into retained per-system plans that resolve the candidate storage and typed field-array indices once. Ordinary chunks then traverse the retained active set and address fields directly; a world replacement, schema revision, or newly appearing storage family invalidates the plan. Chunks still copy supported fields into extension-owned scratch arrays and commit only explicitly marked writable lanes, so ABI amortization and SIMD do not expose ECS storage or broaden dirty propagation. Systems declare reads/writes; structural changes are deferred until iteration finishes.
+
+Input singletons are committed once before the schedule runs. Luau and native systems read the same immutable held/pressed/released snapshot and declare `scrapbot.keyboard_input` or `scrapbot.pointer_input` access without allocating synthetic entities or scanning entity storage.
 
 Each native worker and the Luau runtime retain a private deferred-command buffer. A compact header stream preserves issue order while spawn, despawn, add-component, and remove-component payloads grow in separate typed arrays. Queued spawns and component additions pool only the custom/UI components actually present; schema-backed custom-component headers then reference separate Number, Vec2, Vec3, and Vec4 arrays containing only fields that were supplied. This keeps the fixed-capacity ABI staging structs at the extension boundary without retaining their unused capacity in the engine queue. Buffers start small, grow geometrically without an arbitrary command-count ceiling, merge with payload-index and field-range remapping in deterministic schedule order, and retain their per-array high-water capacities for reuse. Fixed limits apply to caller-owned ABI staging payloads, not to how many lifecycle commands a frame may produce or how much unused payload capacity each queued command reserves.
 

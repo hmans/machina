@@ -39,6 +39,8 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type referen
 | `scrapbot.material` | Resource reference | UUID-backed shared project material reference. |
 | `scrapbot.shadow_caster` | Marker | Opts renderable geometry into directional shadow casting. |
 | `scrapbot.shadow_receiver` | Marker | Opts renderable geometry into directional shadow sampling. |
+| `scrapbot.keyboard_input` | Derived singleton | Read-only keyboard held/pressed/released frame snapshot. |
+| `scrapbot.pointer_input` | Derived singleton | Read-only pointer position/delta/wheel/button frame snapshot. |
 | `scrapbot.ui_layout` | UI box | Required geometry, hierarchy, sizing, and SDF box style. |
 | `scrapbot.ui_hstack` | UI flow | Horizontal child layout. |
 | `scrapbot.ui_vstack` | UI flow | Vertical child layout. |
@@ -55,6 +57,17 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type referen
 <!-- inventory:public-engine-components:end -->
 
 `scrapbot.internal.render_instance` is the only engine-registered internal component. Render reconciliation adds or removes it when an entity's Transform, geometry, and material references become renderable. It is intentionally unavailable to scene files, project Luau, native extensions, and editor authoring.
+
+## Runtime input singletons
+
+`scrapbot.keyboard_input` and `scrapbot.pointer_input` are registry-known, derived component resources stored once per World. Systems use them in `reads` declarations, but they are not attached to entities and therefore cannot be queried, authored in TOML, added, removed, persisted, or mutated.
+
+The keyboard snapshot provides availability/focus plus held, pressed-this-frame, and released-this-frame state through the Luau and native input helpers. Supported names are lowercase letters and digits; arrows; Space, Enter, Escape, Tab, Backspace, Delete, Home, End, Page Up/Down; left/right Shift, Control, Alt, Meta; and F1–F12. The pointer snapshot provides availability, editor capture, pixel position/delta, wheel delta, and held/pressed/released primary, secondary, middle, back, and forward buttons. See [Luau API: Runtime input](/reference/luau-api/#runtime-input).
+
+| Singleton | Public snapshot fields |
+| --- | --- |
+| `scrapbot.keyboard_input` | `available`, `focused`; key held/pressed/released state is accessed through input helpers. |
+| `scrapbot.pointer_input` | `available`, `captured`, `position`, `delta`, `wheel`; button held/pressed/released state is accessed through input helpers. |
 
 ## Transform, camera, and rendering
 

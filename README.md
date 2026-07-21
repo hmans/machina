@@ -153,8 +153,8 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
 ### Input And UI
 
 - Input
-  - [ ] ECS platform input
-  - [ ] Runtime input resources
+  - [x] ECS keyboard and pointer input singletons
+  - [x] Luau/native runtime input snapshots with held and edge state
   - [x] UI pointer position and primary-button input
   - [ ] Controller input
 - Retained UI

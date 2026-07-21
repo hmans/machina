@@ -38,6 +38,12 @@ test_registry_contains_engine_components :: proc(t: ^testing.T) {
 	testing.expect(t, !definition_is_authorable(ui_state))
 	testing.expect(t, render_instance.storage_kind == .Derived)
 	testing.expect(t, !definition_is_authorable(render_instance))
+	keyboard, keyboard_ok := find_definition(&registry, "scrapbot.keyboard_input")
+	pointer, pointer_ok := find_definition(&registry, "scrapbot.pointer_input")
+	testing.expect(t, keyboard_ok && pointer_ok)
+	testing.expect(t, keyboard.storage_kind == .Keyboard_Input)
+	testing.expect(t, pointer.storage_kind == .Pointer_Input)
+	testing.expect(t, !definition_is_authorable(keyboard) && !definition_is_authorable(pointer))
 }
 
 @(test)
