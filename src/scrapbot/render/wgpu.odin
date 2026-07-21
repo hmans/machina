@@ -54,6 +54,7 @@ WGPU_GPU_Visibility_Counters :: struct {
 	visible_instances: u32,
 	shadow_visible_instances: u32,
 	frustum_candidates: u32,
+	frustum_culled_instances: u32,
 	occlusion_culled_instances: u32,
 	lod_visible_instances: [shared.MAX_GEOMETRY_LODS]u32,
 }

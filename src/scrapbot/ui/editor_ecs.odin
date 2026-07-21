@@ -968,11 +968,11 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		EDITOR_UI_DIAGNOSTICS_NAME,
 		EDITOR_UI_LEFT_CONTENT_NAME,
 		.Diagnostics_Panel,
-		editor_ui_section_layout({EDITOR_LEFT_SIDEBAR_WIDTH, 232}),
+		editor_ui_section_layout({EDITOR_LEFT_SIDEBAR_WIDTH, 258}),
 	)
 	diagnostics_layout := &world.ui_layouts[world.entities[diagnostics].ui_layout_index]
 	diagnostics_layout.padding = {0, 8, 8, 8}
-	diagnostics_layout.min_size.y = 232
+	diagnostics_layout.min_size.y = 258
 	diagnostics_layout.fixed_in_fill = true
 	diagnostics_layout.fit_content_height = true
 	editor_ui_add_section_panel(world, diagnostics, "PERFORMANCE")
@@ -982,7 +982,7 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		"__scrapbot_editor_diagnostics_table",
 		EDITOR_UI_DIAGNOSTICS_NAME,
 		.None,
-		{size = {100, 156}, fill_width = true, fit_content_height = true},
+		{size = {100, 182}, fill_width = true, fit_content_height = true},
 	)
 	editor_ui_add_table(
 		world,
@@ -995,6 +995,7 @@ editor_ui_create_shell :: proc(world: ^shared.World) {
 		"GPU FRAME",
 		"ENTITIES",
 		"DRAW BATCHES",
+		"FRUSTUM CULLED",
 		"OCCLUSION CULLED",
 	}
 	for label_text, slot in diagnostic_labels {
@@ -1544,12 +1545,13 @@ editor_ui_refresh_performance_diagnostics :: proc(state: ^State, world: ^shared.
 		return
 	}
 	diagnostics := state.performance_diagnostics
-	values := [6]string {
+	values := [7]string {
 		fmt.tprintf("%.1f", diagnostics.fps),
 		fmt.tprintf("%.2f ms", diagnostics.frame_ms),
 		"--",
 		fmt.tprintf("%d", diagnostics.entity_count),
 		fmt.tprintf("%d", diagnostics.draw_batches),
+		fmt.tprintf("%d", diagnostics.frustum_culled_instances),
 		fmt.tprintf("%d", diagnostics.occlusion_culled_instances),
 	}
 	if diagnostics.gpu_timestamps_valid {

@@ -66,6 +66,7 @@ Render_Stats :: struct {
 	visible_instances: u32,
 	shadow_visible_instances: u32,
 	frustum_candidates: u32,
+	frustum_culled_instances: u32,
 	occlusion_culled_instances: u32,
 	lod0_visible_instances: u32,
 	lod1_visible_instances: u32,
@@ -222,6 +223,7 @@ performance_diagnostics_commit_frame :: proc(
 	snapshot.draw_batches = stats.draw_batches
 	snapshot.instance_count = stats.instance_slots
 	snapshot.frustum_candidates = stats.frustum_candidates
+	snapshot.frustum_culled_instances = stats.frustum_culled_instances
 	snapshot.visible_instances = stats.visible_instances
 	snapshot.occlusion_culled_instances = stats.occlusion_culled_instances
 	snapshot.sample_frames = accumulator.sample_count

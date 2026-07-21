@@ -240,7 +240,7 @@ for (const [label, raw, expectedCompute] of [["compute", process.argv[1], true],
       stats.draw_database_rebuilds < 1 || stats.instance_slots <= 64 ||
       stats.instance_uploads < 1 ||
       stats.instance_uploads - stats.instance_transform_uploads >= 10 ||
-      stats.instance_upload_bytes <= 0) {
+      stats.instance_upload_bytes <= 0 || stats.frustum_culled_instances < 1) {
     console.error(`unexpected ${label} GPU renderer diagnostics`);
     process.exit(1);
   }

@@ -189,6 +189,7 @@ test_performance_diagnostics_publish_retained_rolling_snapshot :: proc(t: ^testi
 		gpu_frame_ms = 2.25,
 		instance_slots = 12,
 		frustum_candidates = 11,
+		frustum_culled_instances = 4,
 		visible_instances = 8,
 		occlusion_culled_instances = 3,
 	}
@@ -210,6 +211,7 @@ test_performance_diagnostics_publish_retained_rolling_snapshot :: proc(t: ^testi
 	testing.expect(t, snapshot.draw_batches == 7)
 	testing.expect(t, snapshot.instance_count == 12)
 	testing.expect(t, snapshot.frustum_candidates == 11)
+	testing.expect(t, snapshot.frustum_culled_instances == 4)
 	testing.expect(t, snapshot.visible_instances == 8)
 	testing.expect(t, snapshot.occlusion_culled_instances == 3)
 	ecs.despawn_entity(&world, runtime_index, world.entities[runtime_index].id.generation)

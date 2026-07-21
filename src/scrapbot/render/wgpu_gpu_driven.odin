@@ -1946,7 +1946,6 @@ wgpu_prepare_cpu_culling :: proc(
 	renderer.gpu_visibility_counters = {}
 	for count in camera_counts {
 		renderer.gpu_visibility_counters.visible_instances += count
-		renderer.gpu_visibility_counters.frustum_candidates += count
 	}
 	for count in shadow_counts {
 		renderer.gpu_visibility_counters.shadow_visible_instances += count
@@ -1963,9 +1962,12 @@ wgpu_prepare_cpu_culling :: proc(
 		}
 		batch := renderer.draw_batch_cache.batches[batch_index]
 		if wgpu_sphere_visible(instance.bounds, camera_planes) {
+			renderer.gpu_visibility_counters.frustum_candidates += 1
 			visible[batch.visible_offset + camera_cursors[batch_index]] = u32(slot)
 			camera_cursors[batch_index] += 1
 			renderer.gpu_visibility_counters.lod_visible_instances[lod_level] += 1
+		} else {
+			renderer.gpu_visibility_counters.frustum_culled_instances += 1
 		}
 		if instance.shadow_flags[0] > 0.5 && wgpu_sphere_visible(instance.bounds, shadow_planes) {
 			shadow_visible[batch.visible_offset + shadow_cursors[batch_index]] = u32(slot)

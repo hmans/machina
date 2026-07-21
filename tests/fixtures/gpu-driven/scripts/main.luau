@@ -44,6 +44,17 @@ scrapbot.system({
 				["scrapbot.material"] = occluder_material,
 			},
 		})
+		scrapbot.spawn({
+			name = "Frustum Culled GPU Instance",
+			components = {
+				["scrapbot.transform"] = {
+					position = { x = 100, y = 0, z = 0 },
+					scale = { x = 1, y = 1, z = 1 },
+				},
+				["scrapbot.geometry"] = cube,
+				["scrapbot.material"] = hidden_material,
+			},
+		})
 	end
 	local last_hidden = math.min(hidden_index + 39, 299)
 	for index = hidden_index, last_hidden do

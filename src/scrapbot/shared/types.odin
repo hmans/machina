@@ -735,6 +735,7 @@ Performance_Diagnostics :: struct {
 	draw_batches: int,
 	instance_count: int,
 	frustum_candidates: u32,
+	frustum_culled_instances: u32,
 	visible_instances: u32,
 	occlusion_culled_instances: u32,
 	sample_frames: int,

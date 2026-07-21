@@ -265,6 +265,7 @@ struct Visibility_Counters {
 	visible_instances: atomic<u32>,
 	shadow_visible_instances: atomic<u32>,
 	frustum_candidates: atomic<u32>,
+	frustum_culled_instances: atomic<u32>,
 	occlusion_culled_instances: atomic<u32>,
 	lod_visible_instances: array<atomic<u32>, 4>,
 };
@@ -379,6 +380,8 @@ fn cull_instances(@builtin(global_invocation_id) invocation: vec3<u32>) {
 				atomicAdd(&counters.lod_visible_instances[lod_level], 1u);
 			}
 		}
+	} else {
+		atomicAdd(&counters.frustum_culled_instances, 1u);
 	}
 	if (instance.shadow_flags.x > 0.5 && shadow_sphere_visible(instance.bounds)) {
 		let local_index = atomicAdd(&shadow_indirect[batch_index].instance_count, 1u);

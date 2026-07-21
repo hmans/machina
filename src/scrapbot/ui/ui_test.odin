@@ -4339,6 +4339,11 @@ test_editor_reparents_transformless_entities_and_uses_transformless_parents :: p
 	parent_node := find_node_by_entity_index(state, parent_row)
 	child_node := find_node_by_entity_index(state, child_row)
 	testing.expect(t, parent_node >= 0 && child_node >= 0)
+	if diagnostic_reveal_target(state, &world, child_node) {
+		testing.expect(t, reconcile(state, &world, 1280, 720) == "")
+		parent_node = find_node_by_entity_index(state, parent_row)
+		child_node = find_node_by_entity_index(state, child_row)
+	}
 	start := shared.Vec2 {
 		state.nodes[child_node].rect.x + 40,
 		state.nodes[child_node].rect.y + state.nodes[child_node].rect.height * 0.5,
@@ -5806,6 +5811,7 @@ test_editor_performance_panel_uses_public_panel_table_and_text_components :: pro
 		gpu_timestamps_valid = true,
 		entity_count = 42,
 		draw_batches = 7,
+		frustum_culled_instances = 9,
 		occlusion_culled_instances = 13,
 		sample_frames = 50,
 		revision = 1,
@@ -5825,7 +5831,7 @@ test_editor_performance_panel_uses_public_panel_table_and_text_components :: pro
 		testing.expect(t, entity.ui_vstack_index >= 0)
 		testing.expect(t, world.ui_panels[entity.ui_panel_index].title == "PERFORMANCE")
 	}
-	expected_values := [6]string{"59.9", "16.69 ms", "2.25 ms", "42", "7", "13"}
+	expected_values := [7]string{"59.9", "16.69 ms", "2.25 ms", "42", "7", "9", "13"}
 	for expected, slot in expected_values {
 		cell, found := editor_ui_entity(&world, .Diagnostics_Value, slot)
 		testing.expect(t, found)
