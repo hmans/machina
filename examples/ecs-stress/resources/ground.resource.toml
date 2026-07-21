@@ -1,0 +1,7 @@
+id = "50000000-0000-4000-8000-000000000100"
+type = "scrapbot.material"
+name = "Stress Ground"
+
+[material]
+base_color = [0.015, 0.025, 0.045, 1]
+emissive = [0, 0, 0]

@@ -20,20 +20,20 @@ if (!Number.isInteger(frames) || frames < 120 || !Number.isFinite(spawnRate) || 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "scrapbot-native-query-"));
 const project = path.join(temporaryRoot, "ecs-showcase-stress");
 try {
-	fs.cpSync(path.join(root, "examples", "ecs-showcase"), project, {
+	fs.cpSync(path.join(root, "examples", "ecs-stress"), project, {
 		recursive: true,
 		filter(source) {
-			const relative = path.relative(path.join(root, "examples", "ecs-showcase"), source);
+			const relative = path.relative(path.join(root, "examples", "ecs-stress"), source);
 			return relative !== "build" && !relative.startsWith(`build${path.sep}`) &&
 				relative !== ".scrapbot" && !relative.startsWith(`.scrapbot${path.sep}`);
 		},
 	});
 	const scenePath = path.join(project, "scenes", "main.scene.toml");
 	const scene = fs.readFileSync(scenePath, "utf8");
-	const stressed = scene.replace(/spawn_rate = [0-9.]+/, `spawn_rate = ${spawnRate}`);
-	if (stressed === scene) {
-		fail("could not locate showcase emitter spawn_rate");
+	if (!/spawn_rate = [0-9.]+/.test(scene)) {
+		fail("could not locate stress emitter spawn_rate");
 	}
+	const stressed = scene.replace(/spawn_rate = [0-9.]+/, `spawn_rate = ${spawnRate}`);
 	fs.writeFileSync(scenePath, stressed);
 
 	const result = spawnSync(

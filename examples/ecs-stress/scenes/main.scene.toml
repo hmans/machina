@@ -1,0 +1,68 @@
+[[entities]]
+id = "50000000-0000-4000-8000-000000000001"
+name = "Main Camera"
+
+[entities.transform]
+position = [0, 3.8, 12]
+rotation = [-0.27, 0, 0]
+scale = [1, 1, 1]
+
+[entities.camera]
+fov = 62
+near = 0.1
+far = 100
+
+[[entities]]
+id = "50000000-0000-4000-8000-000000000002"
+name = "Ambient Light"
+
+[entities.ambient_light]
+color = [0.08, 0.12, 0.2]
+intensity = 0.2
+
+[[entities]]
+id = "50000000-0000-4000-8000-000000000003"
+name = "Sun"
+
+[entities.directional_light]
+direction = [-0.4, -1, -0.3]
+color = [0.65, 0.72, 1]
+intensity = 0.7
+
+[[entities]]
+id = "50000000-0000-4000-8000-000000000004"
+name = "Stress Emitter"
+
+[entities.transform]
+position = [0, -1.8, 0]
+rotation = [0, 0, 0]
+scale = [0.7, 0.12, 0.7]
+
+[entities.mesh]
+primitive = "cube"
+
+[entities.components.stress.emitter]
+elapsed = 0
+sequence = 0
+
+[entities.components.stress.settings]
+spawn_rate = 500
+lifetime = 6
+launch_speed = 5.2
+
+[[entities]]
+id = "50000000-0000-4000-8000-000000000005"
+name = "Ground"
+
+[entities.transform]
+position = [0, -2.05, 0]
+rotation = [0, 0, 0]
+scale = [6, 0.1, 6]
+
+[entities.mesh]
+primitive = "cube"
+
+[entities.material]
+resource = "50000000-0000-4000-8000-000000000100"
+
+[entities.shadow_receiver]

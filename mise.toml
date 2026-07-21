@@ -135,8 +135,22 @@ odin test src/scrapbot -all-packages -extra-linker-flags:"$LUAU_LINK_FLAGS"
 bin/scrapbot --version
 bin/scrapbot check examples/minimal
 bin/scrapbot check examples/ui-showcase
+bin/scrapbot check examples/ecs-stress
 bin/scrapbot run examples/minimal --backend null --headless --no-hot-reload --frames 1
 bin/scrapbot run examples/ui-showcase --backend null --headless --no-hot-reload --frames 1
+STRESS_JSON="$(bin/scrapbot run examples/ecs-stress --backend null --headless --no-hot-reload --frames 180 --runtime-stats --json)"
+node -e '
+const result = JSON.parse(process.argv[1]);
+const stats = result.result?.runtime_stats;
+const query = stats?.native_queries;
+if (result.schema_version !== 1 || result.command !== "run" || result.ok !== true ||
+    result.result.entities < 1000 || result.result.draw_batches < 4 ||
+    query?.plan_builds < 1 || query.plan_hits <= query.plan_builds ||
+    query.entities < query.chunks) {
+  console.error("unexpected ECS stress example diagnostics");
+  process.exit(1);
+}
+' "$STRESS_JSON"
 CHECK_JSON="$(bin/scrapbot check examples/minimal --json)"
 case "$CHECK_JSON" in
   '{"schema_version":1,"command":"check","ok":true,'*) ;;

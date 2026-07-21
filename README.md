@@ -33,7 +33,7 @@ Authored project resources live outside ECS and scenes as UUID-identified `resou
 
 World geometry now renders into a floating-point HDR target. Shared emissive materials feed a five-level compute bloom pyramid before one ACES-style composite pass, while project UI, gizmos, and editor chrome stay crisp in the later overlay pass.
 
-Example projects live in [`examples/`](examples/). The minimal example demonstrates Luau-defined and Odin-defined components and systems, and can be verified with `mise scrapbot run examples/minimal`. The ECS showcase runs a native object fountain with visible spawned cube renderables, velocity, lifetime, spin, despawn, animated point lights, editor-movable static point lights, emissive bloom, and Luau typed queries.
+Example projects live in [`examples/`](examples/). The minimal example demonstrates Luau-defined and Odin-defined components and systems, and can be verified with `mise scrapbot run examples/minimal`. The ECS showcase runs a native object fountain with visible spawned cube renderables, velocity, lifetime, spin, despawn, animated point lights, editor-movable static point lights, emissive bloom, and Luau typed queries. The ECS stress test sustains roughly 3,000 glowing renderables through retained native query plans, 64-entity chunks, SIMD integration, and bounded runtime lifecycle churn.
 
 Run the full local test suite with `mise test`; it includes a 2,000-frame lifecycle CPU/RAM growth gate. Use `mise test-soak` for the extended 10,000-frame check and `mise test-sanitize` for the Linux AddressSanitizer lane. Linux CI runs both the normal suite and AddressSanitizer.
 

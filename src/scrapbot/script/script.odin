@@ -161,6 +161,17 @@ run_project_script_with_options :: proc(
 	defer delete(script_path)
 
 	if !os.exists(script_path) {
+		destroy_runtime(runtime)
+		init_runtime(runtime)
+		runtime.world = world
+		runtime.log_enabled = options.log_enabled
+		runtime.resource_registry = options.resource_registry
+		runtime.project_root = root
+		if options.registry != nil {
+			runtime.registry = options.registry^
+		} else {
+			component.init_registry(&runtime.registry)
+		}
 		return result
 	}
 

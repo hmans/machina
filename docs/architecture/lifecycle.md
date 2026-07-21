@@ -1,6 +1,6 @@
 # Runtime and Authoring Lifecycle
 
-**Last verified:** 2026-07-20
+**Last verified:** 2026-07-21
 
 This matrix records which authority changes at each major boundary. “World replacement” means a validated next world is built before the active world is destroyed and rebound. “Targeted mutation” means stable slots and retained consumers update from dirty queues/revisions.
 
@@ -9,7 +9,7 @@ This matrix records which authority changes at each major boundary. “World rep
 <!-- inventory:lifecycle-boundaries:start -->
 | Boundary | Trigger | ECS world | Resource registry | Luau/native runtime | Derived UI/render state | Failure/rollback contract |
 | --- | --- | --- | --- | --- | --- | --- |
-| Project load | `scrapbot run`, check/build paths needing a full project | Parse/validate scene, build scene-origin entities with stable UUIDs, bootstrap structural/render/UI dirtiness | Register built-in geometry/material, project fonts, authored materials and LOD geometry; resolve ECS handles | Build native extensions when needed, register engine/native/project components, load native extensions, execute Luau, validate world | UI/render consumers bootstrap from explicit initial dirtiness | Abort before renderer loop; destroy partial owned state |
+| Project load | `scrapbot run`, check/build paths needing a full project | Parse/validate scene, build scene-origin entities with stable UUIDs, bootstrap structural/render/UI dirtiness | Register built-in geometry/material, project fonts, authored materials and LOD geometry; resolve ECS handles | Build native extensions when needed, register engine/native/project components, initialize shared deferred-command storage even when Luau is absent, execute Luau when present, validate world | UI/render consumers bootstrap from explicit initial dirtiness | Abort before renderer loop; destroy partial owned state |
 | Scene entity creation | Editor `+`, duplicate, structural Undo/Redo | Create scene-origin entity with a new/stored UUID and scene order; add authored components through authoring snapshots | Existing resource handles are resolved into reference components | No runtime/code reload | Exact UI/render membership and editor browsers become dirty | Failed operation leaves history/source baseline unchanged |
 | Runtime spawn | Deferred Luau/native command | Apply after system iteration; create runtime-origin UUID/entity, attach payload components, publish structural dirtiness | Payload may contain already-resolved generational handles | Command buffer preserves query safety and deterministic application order | Exact render/UI membership reconciles after command application | Invalid/stale commands are rejected or ignored without corrupting active indexes |
 | Component add/remove/value mutation | Editor, Luau/native writeback, deferred command | Typed storage mutation bumps component revision and exact structural/render/UI signals | Resource-reference changes validate/replace handles; resource content itself remains registry-owned | Writes require declared access; structural changes remain deferred during scheduled iteration | Targeted retained slots/hierarchy/layout/paint/cache records update | Validation failure rejects mutation or authoring transaction |
@@ -40,6 +40,7 @@ This matrix records which authority changes at each major boundary. “World rep
 
 - **Stable identity:** Persistent entity/resource references are UUIDs. Runtime entity/resource handles are generational and never serialized as authority.
 - **Deferred structure:** Scheduled systems do not mutate structural storage while queries are iterating; command buffers apply afterward in deterministic order.
+- **Optional scripting:** A project may run only native systems. The runtime still owns initialized shared command storage because native batches merge deferred mutations through the same application boundary as Luau.
 - **Change-driven derivation:** Ordinary frames consume dirty queues, active sets, and revisions. Full rebuilds belong to explicit world/bootstrap/reload boundaries.
 - **Stopped authoring:** Undo/Redo and dirty candidates describe in-memory authored state. Only explicit Save changes project files.
 - **Disposable playback:** Running/paused simulation changes are temporary. Stop restores the Play baseline without loading code or disk state.
@@ -54,6 +55,7 @@ This matrix records which authority changes at each major boundary. “World rep
 | Project parse/load and resource-reference validation | `project/project.odin`, `project/parse.odin`, `project/resources.odin` | `project/project_test.odin`, `check_project_test.odin` |
 | World bootstrap and structural dirtiness | `ecs/world.odin` | `ecs/world_test.odin`, `ecs/integrity_test.odin` |
 | Deferred spawn/despawn/component mutation | `ecs/commands.odin`, `script/commands.odin` | `script/commands_test.odin`, `ecs/world_test.odin` |
+| Native-only project runtime | `script/script.odin`, `hot_reload.odin`, `scrapbot.odin` | `script/script_test.odin`, `examples/ecs-stress` bounded run |
 | Editor authoring/history | `ui/editor_authoring.odin`, `ecs/authoring.odin` | `ui/ui_test.odin`, `ecs/editor_test.odin` |
 | Play/Stop baseline | `playback.odin`, `render/render.odin` | `playback_test.odin`, `render/render_test.odin` |
 | Save/Revert | `project_save.odin`, `scene_serialize.odin`, `scene_structural_save.odin`, `project/save_transaction.odin` | `project_save_test.odin`, `scene_save_test.odin`, `scene_persistence_test.odin`, `project/save_transaction_test.odin` |

@@ -485,6 +485,7 @@ load_script_from_path :: proc(
 		result.err = extension_load.err
 		return result
 	}
+	script.init_runtime(&result.runtime)
 	result.runtime.registry = registry
 	result.runtime.world = world
 	result.runtime.resource_registry = resource_registry

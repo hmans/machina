@@ -5,7 +5,29 @@ import ecs "../ecs"
 import project "../project"
 import resources "../resources"
 import shared "../shared"
+import "core:os"
 import "core:testing"
+
+@(test)
+test_project_without_luau_initializes_native_command_storage :: proc(t: ^testing.T) {
+	root, root_err := os.make_directory_temp("", "scrapbot-native-only-*", context.allocator)
+	if !testing.expect(t, root_err == nil) {
+		return
+	}
+	defer delete(root)
+	defer os.remove_all(root)
+	world: ecs.World
+	defer ecs.destroy_world(&world)
+	registry: component.Registry
+	component.init_registry(&registry)
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+
+	result := run_project_script_with_registry(&runtime, root, &world, &registry, {})
+	testing.expect(t, !result.ran)
+	testing.expect(t, result.err == "")
+	testing.expect(t, runtime.commands.commands != nil)
+}
 
 @(test)
 test_luau_system_receives_time_resource :: proc(t: ^testing.T) {

@@ -15,3 +15,9 @@ mise scrapbot check examples/minimal
 ```
 
 `check` also refreshes `.scrapbot/types/scrapbot.d.luau` from the project's Luau component schemas.
+
+For a visual high-churn workload driven by retained native query chunks and SIMD systems:
+
+```sh
+mise scrapbot run examples/ecs-stress --editor
+```
