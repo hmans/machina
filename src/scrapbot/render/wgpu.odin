@@ -469,26 +469,26 @@ wgpu_append_ui_vertices :: proc(
 	viewport: ui.Rect,
 	drawable_width, drawable_height: f32,
 ) {
+	project_scale := ui.project_canvas_scale(drawable_width, drawable_height)
 	for command, command_index in commands {
 		rect := command.rect
 		radius := command.corner_radius
 		clip := [4]f32{0, 0, drawable_width, drawable_height}
 		project_command := command_index < editor_paint_start
 		if project_command {
-			scale_x, scale_y := viewport.width / 1280, viewport.height / 720
 			rect = {
-				viewport.x + rect.x * scale_x,
-				viewport.y + rect.y * scale_y,
-				rect.width * scale_x,
-				rect.height * scale_y,
+				viewport.x + rect.x * project_scale,
+				viewport.y + rect.y * project_scale,
+				rect.width * project_scale,
+				rect.height * project_scale,
 			}
-			radius *= min(scale_x, scale_y)
+			radius *= project_scale
 			if command.has_clip {
 				clip = {
-					viewport.x + command.clip.x * scale_x,
-					viewport.y + command.clip.y * scale_y,
-					viewport.x + (command.clip.x + command.clip.width) * scale_x,
-					viewport.y + (command.clip.y + command.clip.height) * scale_y,
+					viewport.x + command.clip.x * project_scale,
+					viewport.y + command.clip.y * project_scale,
+					viewport.x + (command.clip.x + command.clip.width) * project_scale,
+					viewport.y + (command.clip.y + command.clip.height) * project_scale,
 				}
 			}
 		} else if command.has_clip {
@@ -502,20 +502,33 @@ wgpu_append_ui_vertices :: proc(
 		positions: [4][2]f32
 		shape_width, shape_height := rect.width, rect.height
 		if command.kind == .Line {
-			dx := command.line_end.x - command.line_start.x
-			dy := command.line_end.y - command.line_start.y
+			line_start, line_end := command.line_start, command.line_end
+			line_thickness := command.line_thickness
+			if project_command {
+				line_start = {
+					viewport.x + line_start.x * project_scale,
+					viewport.y + line_start.y * project_scale,
+				}
+				line_end = {
+					viewport.x + line_end.x * project_scale,
+					viewport.y + line_end.y * project_scale,
+				}
+				line_thickness *= project_scale
+			}
+			dx := line_end.x - line_start.x
+			dy := line_end.y - line_start.y
 			line_length := math.sqrt(dx * dx + dy * dy)
 			if line_length <= 0.0001 {
 				line_length = 0.0001
 			}
-			half := command.line_thickness * 0.5
+			half := line_thickness * 0.5
 			px := -dy / line_length * half
 			py := dx / line_length * half
 			points := [4]shared.Vec2 {
-				{command.line_start.x - px, command.line_start.y - py},
-				{command.line_end.x - px, command.line_end.y - py},
-				{command.line_end.x + px, command.line_end.y + py},
-				{command.line_start.x + px, command.line_start.y + py},
+				{line_start.x - px, line_start.y - py},
+				{line_end.x - px, line_end.y - py},
+				{line_end.x + px, line_end.y + py},
+				{line_start.x + px, line_start.y + py},
 			}
 			for point, index in points {
 				positions[index] = {
@@ -524,7 +537,7 @@ wgpu_append_ui_vertices :: proc(
 				}
 			}
 			shape_width = line_length
-			shape_height = command.line_thickness
+			shape_height = line_thickness
 		} else if command.kind == .Triangle {
 			for point, index in command.triangle {
 				positions[index] = {
@@ -600,7 +613,7 @@ wgpu_append_ui_vertices :: proc(
 		}
 		border_width := command.border_width
 		if project_command {
-			border_width *= min(viewport.width / 1280, viewport.height / 720)
+			border_width *= project_scale
 		}
 		params := [3]f32{shape_width, shape_height, radius}
 		append(

@@ -1325,6 +1325,37 @@ editor_viewport :: proc(
 	return editor_viewport_for_scale(state, drawable_width, drawable_height, scale)
 }
 
+Project_Canvas_Transform :: struct {
+	viewport: Rect,
+	scale: f32,
+}
+
+project_canvas_scale :: proc(
+	drawable_width, drawable_height: f32,
+	project_width: f32 = 1280,
+	project_height: f32 = 720,
+) -> f32 {
+	scale := f32(1)
+	if project_width > 0 && project_height > 0 {
+		scale = min(drawable_width / project_width, drawable_height / project_height)
+	}
+	if scale <= 0 {
+		return 1
+	}
+	return scale
+}
+
+project_canvas_transform :: proc(
+	state: ^State,
+	drawable_width, drawable_height: f32,
+	project_width: f32 = 1280,
+	project_height: f32 = 720,
+) -> Project_Canvas_Transform {
+	viewport := editor_viewport(state, drawable_width, drawable_height)
+	scale := project_canvas_scale(drawable_width, drawable_height, project_width, project_height)
+	return {viewport = viewport, scale = scale}
+}
+
 editor_viewport_for_scale :: proc(
 	state: ^State,
 	drawable_width, drawable_height, scale: f32,
@@ -1361,12 +1392,13 @@ project_pointer_input :: proc(
 	if state == nil || !pointer.available { return pointer }
 	surface_width := drawable_width; if surface_width <= 0 { surface_width = width }
 	surface_height := drawable_height; if surface_height <= 0 { surface_height = height }
-	viewport := editor_viewport(state, surface_width, surface_height, width, height)
+	transform := project_canvas_transform(state, surface_width, surface_height, width, height)
+	viewport := transform.viewport
 	if !rect_contains(viewport, pointer.position) { return {} }
 	return {
 		position = {
-			(pointer.position.x - viewport.x) / viewport.width * width,
-			(pointer.position.y - viewport.y) / viewport.height * height,
+			(pointer.position.x - viewport.x) / transform.scale,
+			(pointer.position.y - viewport.y) / transform.scale,
 		},
 		wheel_y = pointer.wheel_y,
 		primary_down = pointer.primary_down,

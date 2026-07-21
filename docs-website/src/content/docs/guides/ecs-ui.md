@@ -100,6 +100,8 @@ Use layout policy instead of repairing rectangles after layout:
 
 Use `ui_scroll_area` when content can exceed its viewport. Its content moves by continuous pixel offsets, including fractional trackpad deltas, and nested scroll areas consume wheel input from the deepest hovered viewport.
 
+Project UI uses one uniform canvas scale when Scrapbot embeds it in the editor's free-aspect game viewport. The engine translates and clips the result rather than stretching horizontal and vertical dimensions independently, so text and rounded controls preserve their proportions. Pointer hit testing uses the inverse of the same transform.
+
 ## Style controls per entity
 
 Layout backgrounds, borders, and corner radii are SDF shapes. Controls expose their own internal chrome as component fields:

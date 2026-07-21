@@ -96,10 +96,12 @@ scene TOML / Luau / native Odin / editor composition
                          │
      retained hierarchy → layout → interaction → paint
                          │
+ uniform project-canvas/editor-viewport mapping
+                         │
  read-only ui_state + independent GPU vertex streams
 ```
 
-The editor adds transient editor-origin entities but uses the same components and mechanics as project UI. Editor-only code binds selection, history, project meaning, and commands to generic UI interaction.
+The editor adds transient editor-origin entities but uses the same components and mechanics as project UI. Editor-only code binds selection, history, project meaning, and commands to generic UI interaction. The project canvas keeps a uniform window-density scale inside the free-aspect game viewport; rendering, pointer inversion, and semantic diagnostic rectangles share that transform so embedded UI cannot be distorted or become spatially detached from interaction.
 
 ## Authoring persistence
 

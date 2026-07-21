@@ -923,6 +923,29 @@ test_wgpu_ui_stream_keys_track_revision_target_and_project_viewport :: proc(t: ^
 }
 
 @(test)
+test_project_ui_vertices_preserve_pixel_aspect_inside_editor_viewport :: proc(t: ^testing.T) {
+	vertices: [dynamic]WGPU_UI_Vertex
+	defer delete(vertices)
+	viewport := ui.Rect{250, 50, 628, 638}
+	command := ui.Paint_Command {
+		kind = .Panel,
+		rect = {20, 20, 430, 90},
+		corner_radius = 12,
+		border_width = 2,
+	}
+	wgpu_append_ui_vertices(&vertices, []ui.Paint_Command{command}, 1, viewport, 1280, 720)
+	testing.expect_value(t, len(vertices), 6)
+	testing.expect(t, math.abs(vertices[0].size_radius[0] - 430) < 0.001)
+	testing.expect(t, math.abs(vertices[0].size_radius[1] - 90) < 0.001)
+	testing.expect(t, math.abs(vertices[0].size_radius[2] - 12) < 0.001)
+	testing.expect(t, math.abs(vertices[0].border_width - 2) < 0.001)
+	expected_x := (viewport.x + 20) / 1280 * 2 - 1
+	expected_y := 1 - (viewport.y + 20) / 720 * 2
+	testing.expect(t, math.abs(vertices[0].position[0] - expected_x) < 0.001)
+	testing.expect(t, math.abs(vertices[0].position[1] - expected_y) < 0.001)
+}
+
+@(test)
 test_wgpu_empty_ui_vertex_upload_is_a_successful_no_op :: proc(t: ^testing.T) {
 	testing.expect(t, wgpu_upload_ui_vertices(nil, nil, nil, nil, "empty UI"))
 }

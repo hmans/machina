@@ -2487,11 +2487,12 @@ test_editor_shell_is_an_editor_origin_ecs_ui_tree :: proc(t: ^testing.T) {
 		1280,
 		720,
 	)
+	project_transform := project_canvas_transform(state, 1280, 720)
 	testing.expect(
 		t,
 		pointer.available &&
-		math.abs(pointer.position.x - 640) < 0.01 &&
-		math.abs(pointer.position.y - 360) < 0.01,
+		math.abs(pointer.position.x - viewport.width * 0.5 / project_transform.scale) < 0.01 &&
+		math.abs(pointer.position.y - viewport.height * 0.5 / project_transform.scale) < 0.01,
 	)
 	testing.expect(
 		t,
@@ -2516,11 +2517,12 @@ test_editor_shell_is_an_editor_origin_ecs_ui_tree :: proc(t: ^testing.T) {
 		2048,
 		1096,
 	)
+	project_transform = project_canvas_transform(state, 2048, 1096)
 	testing.expect(
 		t,
 		pointer.available &&
-		math.abs(pointer.position.x - 640) < 0.01 &&
-		math.abs(pointer.position.y - 360) < 0.01,
+		math.abs(pointer.position.x - viewport.width * 0.5 / project_transform.scale) < 0.01 &&
+		math.abs(pointer.position.y - viewport.height * 0.5 / project_transform.scale) < 0.01,
 	)
 	testing.expect(
 		t,
@@ -3947,7 +3949,13 @@ test_resized_play_view_maps_pointer_back_to_project_canvas :: proc(t: ^testing.T
 		2048,
 		1096,
 	)
-	testing.expect(t, pointer.available && pointer.position == shared.Vec2{640, 360})
+	transform := project_canvas_transform(state, 2048, 1096)
+	testing.expect(
+		t,
+		pointer.available &&
+		math.abs(pointer.position.x - 1024 / transform.scale) < 0.001 &&
+		math.abs(pointer.position.y - 548 / transform.scale) < 0.001,
+	)
 }
 
 @(test)

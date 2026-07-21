@@ -577,14 +577,12 @@ diagnostic_rect_to_screen :: proc(
 		scale := max(state.editor_pixel_density, 1)
 		return {rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale}
 	}
-	viewport := editor_viewport(state, drawable_width, drawable_height)
-	scale_x := viewport.width / 1280
-	scale_y := viewport.height / 720
+	transform := project_canvas_transform(state, drawable_width, drawable_height)
 	return {
-		viewport.x + rect.x * scale_x,
-		viewport.y + rect.y * scale_y,
-		rect.width * scale_x,
-		rect.height * scale_y,
+		transform.viewport.x + rect.x * transform.scale,
+		transform.viewport.y + rect.y * transform.scale,
+		rect.width * transform.scale,
+		rect.height * transform.scale,
 	}
 }
 
