@@ -110,8 +110,18 @@ test_luau_input_system_can_spawn_entity_with_declared_component_writes :: proc(t
 		`
 local Velocity = scrapbot.component("velocity", { value = scrapbot.vec3 })
 local Bullet = scrapbot.component("bullet", { age = scrapbot.number })
+local Asteroid = scrapbot.component("asteroid", { radius = scrapbot.number })
 local geometry = scrapbot.geometry.cylinder("test-bullet", 0.1, 0.5, 8)
 local material = scrapbot.material.emissive("test-bullet", 0.1, 0.8, 1.0, 2.0)
+local fired = false
+
+scrapbot.spawn({
+	name = "Target",
+	components = {
+		["scrapbot.transform"] = { position = { x = 0, y = 1, z = 0 }, scale = { x = 1, y = 1, z = 1 } },
+		asteroid = { radius = 0.5 },
+	},
+})
 
 scrapbot.system({
 	name = "fire",
@@ -124,7 +134,8 @@ scrapbot.system({
 		Bullet,
 	},
 }, function()
-	if not scrapbot.input.key_pressed("space") then return end
+	if fired or not scrapbot.input.key_pressed("space") then return end
+	fired = true
 	scrapbot.spawn({
 		name = "Test Bullet",
 		components = {
@@ -135,6 +146,25 @@ scrapbot.system({
 			bullet = { age = 0 },
 		},
 	})
+end)
+
+local Asteroids = scrapbot.query(scrapbot.transform, Asteroid)
+local Bullets = scrapbot.query(scrapbot.transform, Bullet)
+scrapbot.system(Bullets, {
+	name = "collide",
+	writes = { Bullet },
+	reads = { scrapbot.transform, Asteroid },
+}, function(_time, bullet_entity, bullet_transform, _bullet)
+	for _, item in scrapbot.view(Asteroids) do
+		local asteroid_transform = item.components[1]
+		local asteroid = item.components[2]
+		local dx = bullet_transform.position.x - asteroid_transform.position.x
+		local dy = bullet_transform.position.y - asteroid_transform.position.y
+		if dx * dx + dy * dy <= asteroid.radius * asteroid.radius then
+			scrapbot.despawn(bullet_entity)
+			scrapbot.despawn(item.entity)
+		end
+	end
 end)
 `,
 		"=input-spawn-test",
@@ -151,16 +181,18 @@ end)
 		step_runtime(&runtime, &world, 1.0 / 60.0) == "",
 		"input spawn system failed",
 	)
-	testing.expect_value(t, ecs.alive_entity_count(&world), 1)
+	testing.expect_value(t, ecs.alive_entity_count(&world), 2)
 	if len(world.entities) == 0 {
 		return
 	}
-	entity := world.entities[0]
+	entity := world.entities[1]
 	testing.expect(t, entity.alive)
 	testing.expect(t, entity.transform_index >= 0)
 	testing.expect(t, entity.geometry_index >= 0)
 	testing.expect(t, entity.material_index >= 0)
 	testing.expect_value(t, len(entity.custom_component_storage_indices), 2)
+	testing.expectf(t, step_runtime(&runtime, &world, 1.0 / 60.0) == "", "collision system failed")
+	testing.expect_value(t, ecs.alive_entity_count(&world), 0)
 }
 
 @(test)

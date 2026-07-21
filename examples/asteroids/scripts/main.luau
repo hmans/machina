@@ -85,6 +85,7 @@ scrapbot.system(Spinning, {
 	transform.rotation.z += spin.value.z * time.delta_time
 end)
 
+local Asteroids = scrapbot.query(scrapbot.transform, Asteroid)
 local Bullets = scrapbot.query(scrapbot.transform, Bullet)
 scrapbot.system(Bullets, {
 	name = "collide",
@@ -96,10 +97,12 @@ scrapbot.system(Bullets, {
 		scrapbot.despawn(bullet_entity)
 		return
 	end
-	for _, item in scrapbot.view(scrapbot.query(scrapbot.transform, Asteroid)) do
-		local dx = bullet_transform.position.x - item[1].position.x
-		local dy = bullet_transform.position.y - item[1].position.y
-		local radius = bullet.radius + item[2].radius
+	for _, item in scrapbot.view(Asteroids) do
+		local asteroid_transform = item.components[1]
+		local asteroid = item.components[2]
+		local dx = bullet_transform.position.x - asteroid_transform.position.x
+		local dy = bullet_transform.position.y - asteroid_transform.position.y
+		local radius = bullet.radius + asteroid.radius
 		if dx * dx + dy * dy <= radius * radius then
 			scrapbot.despawn(bullet_entity)
 			scrapbot.despawn(item.entity)
