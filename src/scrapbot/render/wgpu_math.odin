@@ -6,6 +6,11 @@ import "core:math"
 
 F32x4 :: #simd[4]f32
 
+WGPU_Shadow_Cascades :: struct {
+	matrices: [WGPU_SHADOW_CASCADE_COUNT]Mat4,
+	splits: [WGPU_SHADOW_CASCADE_COUNT]f32,
+}
+
 f32x4_from_array :: proc "contextless" (value: [4]f32) -> F32x4 {
 	return transmute(F32x4)value
 }
@@ -35,6 +40,18 @@ wgpu_build_view_projection :: proc(
 	has_camera: bool,
 	width, height: u32,
 ) -> Mat4 {
+	view, projection := wgpu_build_camera_matrices(camera, has_camera, width, height)
+	return mat4_mul(projection, view)
+}
+
+wgpu_build_camera_matrices :: proc(
+	camera: Camera_Instance,
+	has_camera: bool,
+	width, height: u32,
+) -> (
+	Mat4,
+	Mat4,
+) {
 	aspect := f32(16.0 / 9.0)
 	if width > 0 && height > 0 {
 		aspect = f32(width) / f32(height)
@@ -65,7 +82,7 @@ wgpu_build_view_projection :: proc(
 	}
 	view := mat4_look_at(eye, target, up)
 	projection := mat4_perspective(math.to_radians(fov), aspect, near, far)
-	return mat4_mul(projection, view)
+	return view, projection
 }
 
 wgpu_extract_frustum_planes :: proc(value: Mat4) -> [6][4]f32 {
@@ -162,6 +179,123 @@ wgpu_build_directional_light_view_projection :: proc(direction: Vec3) -> Mat4 {
 	up := Vec3{0, 1, 0}
 	if math.abs(vec3_dot(normalized, up)) > 0.99 { up = Vec3{0, 0, 1} }
 	return mat4_mul(mat4_orthographic(-16, 16, -16, 16, 0.1, 50), mat4_look_at(eye, Vec3{}, up))
+}
+
+wgpu_build_directional_shadow_cascades :: proc(
+	camera: Camera_Instance,
+	has_camera: bool,
+	width, height: u32,
+	direction: Vec3,
+) -> WGPU_Shadow_Cascades {
+	eye := Vec3{0, 2, 6}
+	rotation := Vec3{}
+	fov := f32(60)
+	near := f32(0.1)
+	far := f32(100)
+	if has_camera {
+		eye = camera.transform.position
+		rotation = camera.transform.rotation
+		if camera.camera.fov > 0 {
+			fov = camera.camera.fov
+		}
+		if camera.camera.near > 0 {
+			near = camera.camera.near
+		}
+		if camera.camera.far > near {
+			far = camera.camera.far
+		}
+	}
+	far = min(far, WGPU_SHADOW_MAX_DISTANCE)
+	far = max(far, near + 0.001)
+	aspect := f32(16.0 / 9.0)
+	if width > 0 && height > 0 {
+		aspect = f32(width) / f32(height)
+	}
+	forward := shared.camera_forward(rotation)
+	right := shared.camera_right(rotation)
+	up := shared.camera_up(rotation)
+	tan_half_fov := math.tan(math.to_radians(fov) * 0.5)
+	light_direction := vec3_normalize(direction)
+	if vec3_dot(light_direction, light_direction) <= 0 {
+		light_direction = {0, -1, 0}
+	}
+	light_up := Vec3{0, 1, 0}
+	if math.abs(vec3_dot(light_direction, light_up)) > 0.99 {
+		light_up = {0, 0, 1}
+	}
+	light_right := vec3_normalize(vec3_cross(light_direction, light_up))
+	light_up = vec3_normalize(vec3_cross(light_right, light_direction))
+
+	result: WGPU_Shadow_Cascades
+	previous_split := near
+	for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+		fraction := f32(cascade_index + 1) / f32(WGPU_SHADOW_CASCADE_COUNT)
+		logarithmic := near * math.pow(far / near, fraction)
+		uniform := near + (far - near) * fraction
+		split := uniform * (1 - WGPU_SHADOW_SPLIT_LAMBDA) + logarithmic * WGPU_SHADOW_SPLIT_LAMBDA
+		if cascade_index == WGPU_SHADOW_CASCADE_COUNT - 1 {
+			split = far
+		}
+		result.splits[cascade_index] = split
+
+		corners: [8]Vec3
+		corner_count := 0
+		distances := [2]f32{previous_split, split}
+		coordinates := [2]f32{-1, 1}
+		for distance in distances {
+			half_height := distance * tan_half_fov
+			half_width := half_height * aspect
+			center := wgpu_vec3_add(eye, wgpu_vec3_mul(forward, distance))
+			for y in coordinates {
+				for x in coordinates {
+					corners[corner_count] = wgpu_vec3_add(
+						center,
+						wgpu_vec3_add(
+							wgpu_vec3_mul(right, x * half_width),
+							wgpu_vec3_mul(up, y * half_height),
+						),
+					)
+					corner_count += 1
+				}
+			}
+		}
+		center: Vec3
+		for corner in corners {
+			center = wgpu_vec3_add(center, corner)
+		}
+		center = wgpu_vec3_mul(center, 1.0 / f32(len(corners)))
+		radius := f32(0)
+		for corner in corners {
+			radius = max(radius, wgpu_vec3_length(vec3_sub(corner, center)))
+		}
+		radius = max(math.ceil(radius * 16) / 16, 0.25)
+		texel_size := 2 * radius / f32(WGPU_SHADOW_MAP_SIZE)
+		right_coordinate := vec3_dot(center, light_right)
+		up_coordinate := vec3_dot(center, light_up)
+		snapped_right := math.floor(right_coordinate / texel_size + 0.5) * texel_size
+		snapped_up := math.floor(up_coordinate / texel_size + 0.5) * texel_size
+		center = wgpu_vec3_add(
+			center,
+			wgpu_vec3_add(
+				wgpu_vec3_mul(light_right, snapped_right - right_coordinate),
+				wgpu_vec3_mul(light_up, snapped_up - up_coordinate),
+			),
+		)
+		eye_distance := radius * 3
+		light_eye := vec3_sub(center, wgpu_vec3_mul(light_direction, eye_distance))
+		view := mat4_look_at(light_eye, center, light_up)
+		projection := mat4_orthographic(
+			-radius,
+			radius,
+			-radius,
+			radius,
+			0.1,
+			eye_distance + radius * 3,
+		)
+		result.matrices[cascade_index] = mat4_mul(projection, view)
+		previous_split = split
+	}
+	return result
 }
 
 mat4_identity :: proc() -> Mat4 {
@@ -269,6 +403,18 @@ mat4_look_at :: proc(eye, target, up: Vec3) -> Mat4 {
 
 vec3_sub :: proc(a, b: Vec3) -> Vec3 {
 	return Vec3{a.x - b.x, a.y - b.y, a.z - b.z}
+}
+
+wgpu_vec3_add :: proc(a, b: Vec3) -> Vec3 {
+	return Vec3{a.x + b.x, a.y + b.y, a.z + b.z}
+}
+
+wgpu_vec3_mul :: proc(value: Vec3, scalar: f32) -> Vec3 {
+	return Vec3{value.x * scalar, value.y * scalar, value.z * scalar}
+}
+
+wgpu_vec3_length :: proc(value: Vec3) -> f32 {
+	return math.sqrt(vec3_dot(value, value))
 }
 
 vec3_cross :: proc(a, b: Vec3) -> Vec3 {

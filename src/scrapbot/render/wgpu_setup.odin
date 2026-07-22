@@ -392,6 +392,21 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	if renderer.gpu_driven_shader != nil {
 		wgpu.ShaderModuleRelease(renderer.gpu_driven_shader)
 	}
+	if renderer.gpu_cluster_bind_group != nil {
+		wgpu.BindGroupRelease(renderer.gpu_cluster_bind_group)
+	}
+	if renderer.gpu_cluster_pipeline != nil {
+		wgpu.ComputePipelineRelease(renderer.gpu_cluster_pipeline)
+	}
+	if renderer.gpu_cluster_pipeline_layout != nil {
+		wgpu.PipelineLayoutRelease(renderer.gpu_cluster_pipeline_layout)
+	}
+	if renderer.gpu_cluster_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.gpu_cluster_bind_group_layout)
+	}
+	if renderer.gpu_cluster_shader != nil {
+		wgpu.ShaderModuleRelease(renderer.gpu_cluster_shader)
+	}
 	wgpu_release_hiz(renderer)
 	gpu_buffers := [?]wgpu.Buffer {
 		renderer.gpu_instance_buffer,
@@ -404,7 +419,16 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 		renderer.gpu_shadow_indirect_buffer,
 		renderer.gpu_cull_uniform_buffer,
 		renderer.gpu_render_uniform_buffer,
+		renderer.gpu_point_light_buffer,
+		renderer.gpu_cluster_count_buffer,
+		renderer.gpu_cluster_index_buffer,
+		renderer.gpu_cluster_uniform_buffer,
 		renderer.gpu_visibility_counter_buffer,
+	}
+	for buffer in renderer.gpu_shadow_cascade_uniform_buffers {
+		if buffer != nil {
+			wgpu.BufferRelease(buffer)
+		}
 	}
 	for buffer in gpu_buffers {
 		if buffer != nil {
@@ -467,6 +491,14 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	   nil { wgpu.BindGroupLayoutRelease(renderer.material_bind_group_layout) }
 	if renderer.shadow_sampler != nil { wgpu.SamplerRelease(renderer.shadow_sampler) }
 	if renderer.shadow_view != nil { wgpu.TextureViewRelease(renderer.shadow_view) }
+	if renderer.shadow_array_view != nil {
+		wgpu.TextureViewRelease(renderer.shadow_array_view)
+	}
+	for view in renderer.shadow_layer_views {
+		if view != nil {
+			wgpu.TextureViewRelease(view)
+		}
+	}
 	if renderer.shadow_texture != nil { wgpu.TextureRelease(renderer.shadow_texture) }
 	if renderer.depth_view != nil {
 		wgpu.TextureViewRelease(renderer.depth_view)
@@ -666,7 +698,7 @@ wgpu_create_render_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 			size = {
 				width = WGPU_SHADOW_MAP_SIZE,
 				height = WGPU_SHADOW_MAP_SIZE,
-				depthOrArrayLayers = 1,
+				depthOrArrayLayers = WGPU_SHADOW_CASCADE_COUNT,
 			},
 			format = .Depth32Float,
 			mipLevelCount = 1,
@@ -674,8 +706,54 @@ wgpu_create_render_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 		},
 	)
 	if renderer.shadow_texture == nil { return "failed to create wgpu shadow texture" }
-	renderer.shadow_view = wgpu.TextureCreateView(renderer.shadow_texture)
+	renderer.shadow_view = wgpu.TextureCreateView(
+		renderer.shadow_texture,
+		&wgpu.TextureViewDescriptor {
+			format = .Depth32Float,
+			dimension = ._2D,
+			baseMipLevel = 0,
+			mipLevelCount = 1,
+			baseArrayLayer = 0,
+			arrayLayerCount = 1,
+			aspect = .DepthOnly,
+			usage = {.TextureBinding, .RenderAttachment},
+		},
+	)
 	if renderer.shadow_view == nil { return "failed to create wgpu shadow texture view" }
+	renderer.shadow_array_view = wgpu.TextureCreateView(
+		renderer.shadow_texture,
+		&wgpu.TextureViewDescriptor {
+			format = .Depth32Float,
+			dimension = ._2DArray,
+			baseMipLevel = 0,
+			mipLevelCount = 1,
+			baseArrayLayer = 0,
+			arrayLayerCount = WGPU_SHADOW_CASCADE_COUNT,
+			aspect = .DepthOnly,
+			usage = {.TextureBinding},
+		},
+	)
+	if renderer.shadow_array_view == nil {
+		return "failed to create wgpu shadow array view"
+	}
+	for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+		renderer.shadow_layer_views[cascade_index] = wgpu.TextureCreateView(
+			renderer.shadow_texture,
+			&wgpu.TextureViewDescriptor {
+				format = .Depth32Float,
+				dimension = ._2D,
+				baseMipLevel = 0,
+				mipLevelCount = 1,
+				baseArrayLayer = u32(cascade_index),
+				arrayLayerCount = 1,
+				aspect = .DepthOnly,
+				usage = {.RenderAttachment},
+			},
+		)
+		if renderer.shadow_layer_views[cascade_index] == nil {
+			return "failed to create wgpu shadow cascade view"
+		}
+	}
 	renderer.shadow_sampler = wgpu.DeviceCreateSampler(
 		renderer.device,
 		&wgpu.SamplerDescriptor {

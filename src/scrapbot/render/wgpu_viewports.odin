@@ -779,7 +779,8 @@ wgpu_encode_world_viewport :: proc(
 			1,
 		}
 	}
-	for light, index in render_list.point_lights[:render_list.point_light_count] {
+	point_light_count := min(render_list.point_light_count, WGPU_LEGACY_MAX_POINT_LIGHTS)
+	for light, index in render_list.point_lights[:point_light_count] {
 		uniform.point_position_range[index] = {
 			light.position.x,
 			light.position.y,
@@ -793,12 +794,7 @@ wgpu_encode_world_viewport :: proc(
 			light.light.intensity,
 		}
 	}
-	uniform.light_counts = {
-		u32(render_list.directional_light_count),
-		u32(render_list.point_light_count),
-		0,
-		0,
-	}
+	uniform.light_counts = {u32(render_list.directional_light_count), u32(point_light_count), 0, 0}
 	for draw, index in draws[:draw_count] {
 		material, alive := resources.get_material(registry, draw.material)
 		if !alive {

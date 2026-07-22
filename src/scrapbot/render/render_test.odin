@@ -713,6 +713,39 @@ test_directional_shadow_matrix_is_finite_and_non_identity :: proc(t: ^testing.T)
 }
 
 @(test)
+test_directional_shadow_cascades_cover_camera_depth_monotonically :: proc(t: ^testing.T) {
+	camera := Camera_Instance {
+		transform = {position = {0, 2, 8}},
+		camera = {fov = 60, near = 0.1, far = 100},
+	}
+	cascades := wgpu_build_directional_shadow_cascades(camera, true, 1280, 720, {-0.5, -1, -0.25})
+	previous := camera.camera.near
+	for split, index in cascades.splits {
+		testing.expect(t, split > previous)
+		testing.expect(t, split <= WGPU_SHADOW_MAX_DISTANCE)
+		testing.expect(t, cascades.matrices[index] != mat4_identity())
+		for value in cascades.matrices[index] {
+			testing.expect(t, value == value)
+		}
+		previous = split
+	}
+	testing.expect_value(
+		t,
+		cascades.splits[WGPU_SHADOW_CASCADE_COUNT - 1],
+		WGPU_SHADOW_MAX_DISTANCE,
+	)
+}
+
+@(test)
+test_directional_shadow_cascade_splits_respect_short_camera_far_plane :: proc(t: ^testing.T) {
+	camera := Camera_Instance {
+		camera = {fov = 60, near = 0.5, far = 20},
+	}
+	cascades := wgpu_build_directional_shadow_cascades(camera, true, 800, 600, {0, -1, 0})
+	testing.expect_value(t, cascades.splits[WGPU_SHADOW_CASCADE_COUNT - 1], f32(20))
+}
+
+@(test)
 test_wgpu_draw_batch_topology_is_retained_across_transform_only_frames :: proc(t: ^testing.T) {
 	renderer: WGPU_Renderer
 	defer delete(renderer.draw_batch_cache.source_indices)
@@ -1045,6 +1078,29 @@ test_wgpu_gpu_timing_marks_only_encoded_passes_for_the_sample :: proc(t: ^testin
 	readback := renderer.gpu_timestamp_readbacks[2]
 	testing.expect(t, readback.phase_mask & (u32(1) << u32(WGPU_GPU_Timestamp_Phase.World)) != 0)
 	testing.expect(t, readback.phase_mask & (u32(1) << u32(WGPU_GPU_Timestamp_Phase.UI)) == 0)
+}
+
+@(test)
+test_wgpu_gpu_shadow_timing_uses_distinct_queries_for_every_cascade :: proc(t: ^testing.T) {
+	renderer: WGPU_Renderer
+	renderer.gpu_timestamp_active_slot = 1
+	first, first_enabled := wgpu_gpu_shadow_pass_timestamps(&renderer, 0)
+	second, second_enabled := wgpu_gpu_shadow_pass_timestamps(&renderer, 1)
+	last, last_enabled := wgpu_gpu_shadow_pass_timestamps(&renderer, WGPU_SHADOW_CASCADE_COUNT - 1)
+	testing.expect(t, first_enabled)
+	testing.expect(t, second_enabled)
+	testing.expect(t, last_enabled)
+	testing.expect_value(
+		t,
+		first.beginningOfPassWriteIndex,
+		u32(WGPU_GPU_Timestamp_Phase.Shadow) * 2,
+	)
+	testing.expect_value(
+		t,
+		second.beginningOfPassWriteIndex,
+		u32(WGPU_GPU_SHADOW_EXTRA_QUERY_BASE),
+	)
+	testing.expect_value(t, last.endOfPassWriteIndex, u32(WGPU_GPU_TIMESTAMP_QUERY_COUNT - 1))
 }
 
 @(test)

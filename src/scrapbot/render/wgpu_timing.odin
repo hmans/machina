@@ -130,6 +130,20 @@ wgpu_gpu_timing_consume_readbacks :: proc(renderer: ^WGPU_Renderer) {
 				frame_ms += duration_ms
 			}
 		}
+		if readback.phase_mask & (u32(1) << u32(WGPU_GPU_Timestamp_Phase.Shadow)) != 0 {
+			for cascade_index in 1 ..< WGPU_SHADOW_CASCADE_COUNT {
+				query_index := WGPU_GPU_SHADOW_EXTRA_QUERY_BASE + (cascade_index - 1) * 2
+				begin := values[query_index]
+				end := values[query_index + 1]
+				if end >= begin {
+					duration_ms :=
+						f64(end - begin) * renderer.gpu_timestamp_period_ns / 1_000_000.0
+					renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Shadow)] +=
+						duration_ms
+					frame_ms += duration_ms
+				}
+			}
+		}
 		renderer.gpu_timestamp_frame_ms = frame_ms
 		renderer.gpu_timestamp_valid = true
 		wgpu.BufferUnmap(readback.buffer)
@@ -167,6 +181,31 @@ wgpu_gpu_pass_timestamps :: proc(
 	readback := &renderer.gpu_timestamp_readbacks[renderer.gpu_timestamp_active_slot]
 	readback.phase_mask |= u32(1) << u32(phase)
 	query_index := u32(phase) * 2
+	return wgpu.PassTimestampWrites {
+			querySet = renderer.gpu_timestamp_query_set,
+			beginningOfPassWriteIndex = query_index,
+			endOfPassWriteIndex = query_index + 1,
+		},
+		true
+}
+
+wgpu_gpu_shadow_pass_timestamps :: proc(
+	renderer: ^WGPU_Renderer,
+	cascade_index: int,
+) -> (
+	wgpu.PassTimestampWrites,
+	bool,
+) {
+	if cascade_index == 0 {
+		return wgpu_gpu_pass_timestamps(renderer, .Shadow)
+	}
+	if renderer == nil ||
+	   renderer.gpu_timestamp_active_slot < 0 ||
+	   cascade_index < 0 ||
+	   cascade_index >= WGPU_SHADOW_CASCADE_COUNT {
+		return {}, false
+	}
+	query_index := u32(WGPU_GPU_SHADOW_EXTRA_QUERY_BASE + (cascade_index - 1) * 2)
 	return wgpu.PassTimestampWrites {
 			querySet = renderer.gpu_timestamp_query_set,
 			beginningOfPassWriteIndex = query_index,

@@ -1232,7 +1232,7 @@ Point_Light_Instance :: struct {
 }
 
 MAX_DIRECTIONAL_LIGHTS :: 4
-MAX_POINT_LIGHTS :: 16
+MAX_POINT_LIGHTS :: 256
 
 Render_List :: struct {
 	world_uuid: Entity_UUID,

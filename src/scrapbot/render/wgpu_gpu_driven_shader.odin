@@ -110,14 +110,34 @@ fn expand_transforms(@builtin(global_invocation_id) invocation: vec3<u32>) {
 WGPU_GPU_DRIVEN_SHADER :: `
 struct Render_Uniform {
 	view_projection: mat4x4<f32>,
-	shadow_view_projection: mat4x4<f32>,
+	view: mat4x4<f32>,
+	shadow_view_projections: array<mat4x4<f32>, 4>,
 	ambient: vec4<f32>,
 	directional_direction_intensity: array<vec4<f32>, 4>,
 	directional_color: array<vec4<f32>, 4>,
-	point_position_range: array<vec4<f32>, 16>,
-	point_color_intensity: array<vec4<f32>, 16>,
 	light_counts: vec4<u32>,
 	camera_position: vec4<f32>,
+	shadow_cascade_splits: vec4<f32>,
+};
+
+struct Point_Light {
+	position_range: vec4<f32>,
+	color_intensity: vec4<f32>,
+};
+
+struct Cluster_Uniform {
+	view: mat4x4<f32>,
+	projection: mat4x4<f32>,
+	viewport: vec4<f32>,
+	z_parameters: vec4<f32>,
+	counts: vec4<u32>,
+};
+
+struct Shadow_Cascade_Uniform {
+	index: u32,
+	padding_0: u32,
+	padding_1: u32,
+	padding_2: u32,
 };
 
 struct Material_Uniform {
@@ -162,10 +182,15 @@ struct GPU_Instance {
 };
 
 @group(0) @binding(0) var<uniform> render: Render_Uniform;
-@group(0) @binding(1) var shadow_map: texture_depth_2d;
+@group(0) @binding(1) var shadow_map: texture_depth_2d_array;
 @group(0) @binding(2) var shadow_sampler: sampler_comparison;
 @group(0) @binding(3) var<storage, read> instances: array<GPU_Instance>;
 @group(0) @binding(4) var<storage, read> visible_instances: array<u32>;
+@group(0) @binding(5) var<storage, read> point_lights: array<Point_Light>;
+@group(0) @binding(6) var<storage, read> cluster_light_counts: array<u32>;
+@group(0) @binding(7) var<storage, read> cluster_light_indices: array<u32>;
+@group(0) @binding(8) var<uniform> cluster: Cluster_Uniform;
+@group(0) @binding(9) var<uniform> shadow_cascade: Shadow_Cascade_Uniform;
 @group(1) @binding(0) var base_color_texture: texture_2d<f32>;
 @group(1) @binding(1) var base_color_sampler: sampler;
 @group(1) @binding(2) var metallic_roughness_texture: texture_2d<f32>;
@@ -193,7 +218,7 @@ struct Vertex_Output {
 	@location(0) color: vec4<f32>,
 	@location(1) world_position: vec3<f32>,
 	@location(2) world_normal: vec3<f32>,
-	@location(3) shadow_position: vec4<f32>,
+	@location(3) view_depth: f32,
 	@location(4) shadow_receiver: f32,
 	@location(5) uv: vec2<f32>,
 	@location(6) emissive: vec3<f32>,
@@ -209,7 +234,7 @@ fn vs_main(input: Vertex_Input, @builtin(instance_index) visible_index: u32) -> 
 	output.world_normal = normalize((instance.normal_model * vec4<f32>(input.normal, 0.0)).xyz);
 	output.color = instance.color;
 	output.emissive = instance.emissive.rgb;
-	output.shadow_position = render.shadow_view_projection * instance.model * local_position;
+	output.view_depth = -(render.view * instance.model * local_position).z;
 	output.shadow_receiver = instance.shadow_flags.y;
 	output.uv = input.uv;
 	return output;
@@ -309,8 +334,65 @@ fn procedural_daylight() -> f32 {
 	return smoothstep(-0.12, 0.05, direction.y - horizon_elevation);
 }
 
+fn shadow_cascade_index(view_depth: f32) -> u32 {
+	if (view_depth <= render.shadow_cascade_splits.x) {
+		return 0u;
+	}
+	if (view_depth <= render.shadow_cascade_splits.y) {
+		return 1u;
+	}
+	if (view_depth <= render.shadow_cascade_splits.z) {
+		return 2u;
+	}
+	return 3u;
+}
+
+fn directional_shadow(world_position: vec3<f32>, view_depth: f32) -> f32 {
+	let cascade_index = shadow_cascade_index(view_depth);
+	let shadow_position = render.shadow_view_projections[cascade_index] * vec4<f32>(world_position, 1.0);
+	if (shadow_position.w <= 0.0) {
+		return 1.0;
+	}
+	let projected = shadow_position.xyz / shadow_position.w;
+	let uv = vec2<f32>(projected.x * 0.5 + 0.5, 0.5 - projected.y * 0.5);
+	if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || projected.z < 0.0 || projected.z > 1.0) {
+		return 1.0;
+	}
+	let dimensions = vec2<f32>(textureDimensions(shadow_map).xy);
+	let texel = 1.0 / dimensions;
+	var visibility = 0.0;
+	for (var y: i32 = -1; y <= 1; y = y + 1) {
+		for (var x: i32 = -1; x <= 1; x = x + 1) {
+			visibility += textureSampleCompare(
+				shadow_map,
+				shadow_sampler,
+				uv + vec2<f32>(f32(x), f32(y)) * texel,
+				i32(cascade_index),
+				projected.z - 0.0015,
+			);
+		}
+	}
+	return visibility / 9.0;
+}
+
+fn cluster_index(position: vec2<f32>, view_depth: f32) -> u32 {
+	let tile_size = cluster.viewport.xy / vec2<f32>(cluster.counts.xy);
+	let tile = min(vec2<u32>(position / tile_size), cluster.counts.xy - vec2<u32>(1u));
+	let near_plane = cluster.z_parameters.x;
+	let far_plane = cluster.z_parameters.y;
+	let depth = clamp(view_depth, near_plane, far_plane);
+	let slice = min(
+		u32(floor(log2(depth / near_plane) / cluster.z_parameters.z * f32(cluster.counts.z))),
+		cluster.counts.z - 1u,
+	);
+	return tile.x + tile.y * cluster.counts.x + slice * cluster.counts.x * cluster.counts.y;
+}
+
 @fragment
-fn fs_main(input: Vertex_Output, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+fn fs_main(
+	input: Vertex_Output,
+	@builtin(front_facing) front_facing: bool,
+) -> @location(0) vec4<f32> {
 	let base_color_sample = textureSample(base_color_texture, base_color_sampler, input.uv);
 	if (material.flags.z > 0.5 && base_color_sample.a * input.color.a < material.alpha.x) {
 		discard;
@@ -329,28 +411,29 @@ fn fs_main(input: Vertex_Output, @builtin(front_facing) front_facing: bool) -> @
 	let f0 = mix(vec3<f32>(0.04), base_color, metallic);
 	var color = vec3<f32>(0.0);
 	var shadow = 1.0;
-	if (input.shadow_receiver > 0.5 && render.light_counts.x > 0u && input.shadow_position.w > 0.0) {
-		let projected = input.shadow_position.xyz / input.shadow_position.w;
-		let uv = vec2<f32>(projected.x * 0.5 + 0.5, 0.5 - projected.y * 0.5);
-		if (all(uv >= vec2<f32>(0.0)) && all(uv <= vec2<f32>(1.0)) && projected.z >= 0.0 && projected.z <= 1.0) {
-			shadow = textureSampleCompare(shadow_map, shadow_sampler, uv, projected.z - 0.002);
-		}
+	if (input.shadow_receiver > 0.5 && render.light_counts.x > 0u) {
+		shadow = directional_shadow(input.world_position, input.view_depth);
 	}
 	for (var i: u32 = 0u; i < render.light_counts.x; i = i + 1u) {
 		let directional = render.directional_direction_intensity[i];
 		let light = -normalize(directional.xyz);
-		let radiance = render.directional_color[i].rgb * directional.w * shadow;
+		let directional_shadow_factor = select(1.0, shadow, i == 0u);
+		let radiance = render.directional_color[i].rgb * directional.w * directional_shadow_factor;
 		color += evaluate_light(normal, view, light, radiance, base_color, metallic, roughness, f0);
 	}
-	for (var i: u32 = 0u; i < render.light_counts.y; i = i + 1u) {
-		let point = render.point_position_range[i];
+	let fragment_cluster = cluster_index(input.position.xy, input.view_depth);
+	let clustered_light_count = min(cluster_light_counts[fragment_cluster], u32(cluster.z_parameters.w));
+	for (var i: u32 = 0u; i < clustered_light_count; i = i + 1u) {
+		let light_index = cluster_light_indices[fragment_cluster * u32(cluster.z_parameters.w) + i];
+		let point_light = point_lights[light_index];
+		let point = point_light.position_range;
 		let offset = point.xyz - input.world_position;
 		let distance = length(offset);
 		if (distance < point.w && distance > 0.0001) {
 			let light = offset / distance;
 			let range_fade = max(1.0 - distance / point.w, 0.0);
 			let attenuation = range_fade * range_fade / (1.0 + distance * distance);
-			let point_color = render.point_color_intensity[i];
+			let point_color = point_light.color_intensity;
 			let radiance = point_color.rgb * point_color.w * attenuation;
 			color += evaluate_light(normal, view, light, radiance, base_color, metallic, roughness, f0);
 		}
@@ -405,7 +488,7 @@ struct Mask_Output {
 fn shadow_vs(input: Vertex_Input, @builtin(instance_index) visible_index: u32) -> Mask_Output {
 	let instance = instances[visible_instances[visible_index]];
 	var output: Mask_Output;
-	output.position = render.shadow_view_projection * instance.model * vec4<f32>(input.position, 1.0);
+	output.position = render.shadow_view_projections[shadow_cascade.index] * instance.model * vec4<f32>(input.position, 1.0);
 	output.uv = input.uv;
 	output.alpha = instance.color.a;
 	return output;
@@ -461,7 +544,7 @@ struct Draw_Indexed_Indirect {
 
 struct Cull_Uniform {
 	camera_planes: array<vec4<f32>, 6>,
-	shadow_planes: array<vec4<f32>, 6>,
+	shadow_planes: array<array<vec4<f32>, 6>, 4>,
 	view_projection: mat4x4<f32>,
 	viewport: vec4<f32>,
 	camera_position: vec4<f32>,
@@ -469,6 +552,10 @@ struct Cull_Uniform {
 	batch_count: u32,
 	hiz_mip_count: u32,
 	hiz_enabled: u32,
+	shadow_visible_stride: u32,
+	padding_0: u32,
+	padding_1: u32,
+	padding_2: u32,
 };
 
 struct Visibility_Counters {
@@ -500,9 +587,9 @@ fn camera_sphere_visible(bounds: vec4<f32>) -> bool {
 	return true;
 }
 
-fn shadow_sphere_visible(bounds: vec4<f32>) -> bool {
+fn shadow_sphere_visible(bounds: vec4<f32>, cascade_index: u32) -> bool {
 	for (var plane_index: u32 = 0u; plane_index < 6u; plane_index = plane_index + 1u) {
-		let plane = cull.shadow_planes[plane_index];
+		let plane = cull.shadow_planes[cascade_index][plane_index];
 		if (dot(plane.xyz, bounds.xyz) + plane.w < -bounds.w) {
 			return false;
 		}
@@ -568,7 +655,8 @@ fn select_lod(instance: GPU_Instance) -> u32 {
 @compute @workgroup_size(64)
 fn cull_instances(@builtin(global_invocation_id) invocation: vec3<u32>) {
 	let slot = invocation.x;
-	if (slot >= cull.slot_count) {
+	let cascade_index = invocation.y;
+	if (slot >= cull.slot_count || cascade_index >= 4u) {
 		return;
 	}
 	let instance = instances[slot];
@@ -578,7 +666,7 @@ fn cull_instances(@builtin(global_invocation_id) invocation: vec3<u32>) {
 		return;
 	}
 	let batch = batches[batch_index];
-	if (camera_sphere_visible(instance.bounds)) {
+	if (cascade_index == 0u && camera_sphere_visible(instance.bounds)) {
 		atomicAdd(&counters.frustum_candidates, 1u);
 		if (camera_sphere_occluded(instance.bounds)) {
 			atomicAdd(&counters.occlusion_culled_instances, 1u);
@@ -590,13 +678,16 @@ fn cull_instances(@builtin(global_invocation_id) invocation: vec3<u32>) {
 				atomicAdd(&counters.lod_visible_instances[lod_level], 1u);
 			}
 		}
-	} else {
+	} else if (cascade_index == 0u) {
 		atomicAdd(&counters.frustum_culled_instances, 1u);
 	}
-	if (instance.shadow_flags.x > 0.5 && shadow_sphere_visible(instance.bounds)) {
-		let local_index = atomicAdd(&shadow_indirect[batch_index].instance_count, 1u);
+	if (instance.shadow_flags.x > 0.5 && shadow_sphere_visible(instance.bounds, cascade_index)) {
+		let indirect_index = cascade_index * cull.batch_count + batch_index;
+		let local_index = atomicAdd(&shadow_indirect[indirect_index].instance_count, 1u);
 		if (local_index < batch.visible_capacity) {
-			shadow_visible_instances[batch.visible_offset + local_index] = slot;
+			shadow_visible_instances[
+				cascade_index * cull.shadow_visible_stride + batch.visible_offset + local_index
+			] = slot;
 			atomicAdd(&counters.shadow_visible_instances, 1u);
 		}
 	}

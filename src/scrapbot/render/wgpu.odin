@@ -29,6 +29,15 @@ WGPU_BLOOM_LEVELS :: 5
 WGPU_GPU_TIMESTAMP_FRAMES :: 4
 WGPU_MAX_HIZ_LEVELS :: 16
 WGPU_HIZ_MIN_INSTANCES :: 256
+WGPU_LEGACY_MAX_POINT_LIGHTS :: 16
+WGPU_SHADOW_CASCADE_COUNT :: 4
+WGPU_SHADOW_MAX_DISTANCE :: f32(80)
+WGPU_SHADOW_SPLIT_LAMBDA :: f32(0.65)
+WGPU_CLUSTER_COUNT_X :: 16
+WGPU_CLUSTER_COUNT_Y :: 9
+WGPU_CLUSTER_COUNT_Z :: 24
+WGPU_CLUSTER_COUNT :: WGPU_CLUSTER_COUNT_X * WGPU_CLUSTER_COUNT_Y * WGPU_CLUSTER_COUNT_Z
+WGPU_CLUSTER_MAX_LIGHTS :: 64
 
 WGPU_GPU_Timestamp_Phase :: enum u32 {
 	Cull,
@@ -43,7 +52,9 @@ WGPU_GPU_Timestamp_Phase :: enum u32 {
 
 WGPU_GPU_TIMESTAMP_PHASE_COUNT :: int(WGPU_GPU_Timestamp_Phase.UI) + 1
 WGPU_GPU_HIZ_EXTRA_QUERY_BASE :: WGPU_GPU_TIMESTAMP_PHASE_COUNT * 2
-WGPU_GPU_TIMESTAMP_QUERY_COUNT :: WGPU_GPU_HIZ_EXTRA_QUERY_BASE + (WGPU_MAX_HIZ_LEVELS - 1) * 2
+WGPU_GPU_SHADOW_EXTRA_QUERY_BASE :: WGPU_GPU_HIZ_EXTRA_QUERY_BASE + (WGPU_MAX_HIZ_LEVELS - 1) * 2
+WGPU_GPU_TIMESTAMP_QUERY_COUNT ::
+	WGPU_GPU_SHADOW_EXTRA_QUERY_BASE + (WGPU_SHADOW_CASCADE_COUNT - 1) * 2
 
 WGPU_GPU_Timestamp_Readback :: struct {
 	buffer: wgpu.Buffer,
@@ -79,24 +90,45 @@ WGPU_Render_Uniform :: struct {
 	ambient: [4]f32,
 	directional_direction_intensity: [shared.MAX_DIRECTIONAL_LIGHTS][4]f32,
 	directional_color: [shared.MAX_DIRECTIONAL_LIGHTS][4]f32,
-	point_position_range: [shared.MAX_POINT_LIGHTS][4]f32,
-	point_color_intensity: [shared.MAX_POINT_LIGHTS][4]f32,
+	point_position_range: [WGPU_LEGACY_MAX_POINT_LIGHTS][4]f32,
+	point_color_intensity: [WGPU_LEGACY_MAX_POINT_LIGHTS][4]f32,
 	light_counts: [4]u32,
 	camera_position: [4]f32,
 }
 
 WGPU_GPU_Render_Uniform :: struct {
 	view_projection: Mat4,
-	shadow_view_projection: Mat4,
+	view: Mat4,
+	shadow_view_projections: [WGPU_SHADOW_CASCADE_COUNT]Mat4,
 	ambient: [4]f32,
 	directional_direction_intensity: [shared.MAX_DIRECTIONAL_LIGHTS][4]f32,
 	directional_color: [shared.MAX_DIRECTIONAL_LIGHTS][4]f32,
-	point_position_range: [shared.MAX_POINT_LIGHTS][4]f32,
-	point_color_intensity: [shared.MAX_POINT_LIGHTS][4]f32,
 	light_counts: [4]u32,
 	camera_position: [4]f32,
+	shadow_cascade_splits: [4]f32,
 }
-#assert(size_of(WGPU_GPU_Render_Uniform) == 816)
+#assert(size_of(WGPU_GPU_Render_Uniform) == 576)
+
+WGPU_GPU_Point_Light :: struct {
+	position_range: [4]f32,
+	color_intensity: [4]f32,
+}
+#assert(size_of(WGPU_GPU_Point_Light) == 32)
+
+WGPU_Cluster_Uniform :: struct {
+	view: Mat4,
+	projection: Mat4,
+	viewport: [4]f32,
+	z_parameters: [4]f32,
+	counts: [4]u32,
+}
+#assert(size_of(WGPU_Cluster_Uniform) == 176)
+
+WGPU_Shadow_Cascade_Uniform :: struct {
+	index: u32,
+	_padding: [3]u32,
+}
+#assert(size_of(WGPU_Shadow_Cascade_Uniform) == 16)
 
 WGPU_Material_Uniform :: struct {
 	pbr_factors: [4]f32,
@@ -143,7 +175,7 @@ WGPU_Draw_Batch :: struct {
 	visible_offset: u32,
 	visible_capacity: u32,
 	world_bind_group: wgpu.BindGroup,
-	shadow_bind_group: wgpu.BindGroup,
+	shadow_bind_groups: [WGPU_SHADOW_CASCADE_COUNT]wgpu.BindGroup,
 }
 
 WGPU_Draw_Batch_Cache :: struct {
@@ -183,7 +215,7 @@ WGPU_GPU_Instance_Transform :: struct {
 
 WGPU_GPU_Cull_Uniform :: struct {
 	camera_planes: [6][4]f32,
-	shadow_planes: [6][4]f32,
+	shadow_planes: [WGPU_SHADOW_CASCADE_COUNT][6][4]f32,
 	view_projection: Mat4,
 	viewport: [4]f32,
 	camera_position: [4]f32,
@@ -191,6 +223,8 @@ WGPU_GPU_Cull_Uniform :: struct {
 	batch_count: u32,
 	hiz_mip_count: u32,
 	hiz_enabled: u32,
+	shadow_visible_stride: u32,
+	_padding: [3]u32,
 }
 
 WGPU_Draw_Indexed_Indirect :: struct {
@@ -479,6 +513,23 @@ WGPU_Renderer :: struct {
 	gpu_shadow_indirect_buffer: wgpu.Buffer,
 	gpu_cull_uniform_buffer: wgpu.Buffer,
 	gpu_render_uniform_buffer: wgpu.Buffer,
+	gpu_point_light_buffer: wgpu.Buffer,
+	gpu_cluster_count_buffer: wgpu.Buffer,
+	gpu_cluster_index_buffer: wgpu.Buffer,
+	gpu_cluster_uniform_buffer: wgpu.Buffer,
+	gpu_cluster_shader: wgpu.ShaderModule,
+	gpu_cluster_pipeline: wgpu.ComputePipeline,
+	gpu_cluster_pipeline_layout: wgpu.PipelineLayout,
+	gpu_cluster_bind_group_layout: wgpu.BindGroupLayout,
+	gpu_cluster_bind_group: wgpu.BindGroup,
+	gpu_cluster_dispatch_count: u64,
+	gpu_clustered_light_count: int,
+	gpu_point_lights: [shared.MAX_POINT_LIGHTS]WGPU_GPU_Point_Light,
+	gpu_point_lights_valid: bool,
+	gpu_cluster_uniform: WGPU_Cluster_Uniform,
+	gpu_cluster_uniform_valid: bool,
+	gpu_cluster_dirty: bool,
+	gpu_shadow_cascade_uniform_buffers: [WGPU_SHADOW_CASCADE_COUNT]wgpu.Buffer,
 	gpu_visibility_counter_buffer: wgpu.Buffer,
 	gpu_visibility_readbacks: [WGPU_GPU_TIMESTAMP_FRAMES]WGPU_GPU_Visibility_Readback,
 	gpu_visibility_next_slot: int,
@@ -557,6 +608,8 @@ WGPU_Renderer :: struct {
 	depth_view: wgpu.TextureView,
 	shadow_texture: wgpu.Texture,
 	shadow_view: wgpu.TextureView,
+	shadow_array_view: wgpu.TextureView,
+	shadow_layer_views: [WGPU_SHADOW_CASCADE_COUNT]wgpu.TextureView,
 	shadow_sampler: wgpu.Sampler,
 	format: wgpu.TextureFormat,
 	present_mode: wgpu.PresentMode,
@@ -1980,15 +2033,39 @@ wgpu_encode_shadow_pass :: proc(
 	batches: []WGPU_Draw_Batch,
 	registry: ^resources.Registry,
 ) -> string {
+	for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+		if err := wgpu_encode_shadow_cascade_pass(
+			renderer,
+			encoder,
+			batches,
+			registry,
+			cascade_index,
+		); err != "" {
+			return err
+		}
+	}
+	return ""
+}
+
+wgpu_encode_shadow_cascade_pass :: proc(
+	renderer: ^WGPU_Renderer,
+	encoder: wgpu.CommandEncoder,
+	batches: []WGPU_Draw_Batch,
+	registry: ^resources.Registry,
+	cascade_index: int,
+) -> string {
 	depth_attachment := wgpu.RenderPassDepthStencilAttachment {
-		view = renderer.shadow_view,
+		view = renderer.shadow_layer_views[cascade_index],
 		depthLoadOp = .Clear,
 		depthStoreOp = .Store,
 		depthClearValue = 1,
 		stencilLoadOp = .Undefined,
 		stencilStoreOp = .Undefined,
 	}
-	shadow_timestamps, shadow_timestamps_enabled := wgpu_gpu_pass_timestamps(renderer, .Shadow)
+	shadow_timestamps, shadow_timestamps_enabled := wgpu_gpu_shadow_pass_timestamps(
+		renderer,
+		cascade_index,
+	)
 	shadow_timestamps_ptr: ^wgpu.PassTimestampWrites
 	if shadow_timestamps_enabled {
 		shadow_timestamps_ptr = &shadow_timestamps
@@ -2023,7 +2100,7 @@ wgpu_encode_shadow_pass :: proc(
 				}
 			}
 			wgpu.RenderPassEncoderSetPipeline(pass, pipeline)
-			wgpu.RenderPassEncoderSetBindGroup(pass, 0, batch.shadow_bind_group)
+			wgpu.RenderPassEncoderSetBindGroup(pass, 0, batch.shadow_bind_groups[cascade_index])
 			if masked {
 				material_cached, material_err := wgpu_material_cache(
 					renderer,
@@ -2052,7 +2129,10 @@ wgpu_encode_shadow_pass :: proc(
 			wgpu.RenderPassEncoderDrawIndexedIndirect(
 				pass,
 				renderer.gpu_shadow_indirect_buffer,
-				u64(batch_index * size_of(WGPU_Draw_Indexed_Indirect)),
+				u64(
+					(cascade_index * renderer.draw_batch_cache.batch_count + batch_index) *
+					size_of(WGPU_Draw_Indexed_Indirect),
+				),
 			)
 		}
 	}
@@ -2159,6 +2239,12 @@ wgpu_draw_frame :: proc(
 		config.stats.draw_database_rebuilds = renderer.gpu_draw_database_rebuild_count
 		config.stats.gpu_driven = true
 		config.stats.compute_culling = !config.cpu_culling
+		config.stats.clustered_lighting = true
+		config.stats.shadow_cascades = WGPU_SHADOW_CASCADE_COUNT
+		config.stats.cluster_count = WGPU_CLUSTER_COUNT
+		config.stats.cluster_max_lights = WGPU_CLUSTER_MAX_LIGHTS
+		config.stats.clustered_point_lights = renderer.gpu_clustered_light_count
+		config.stats.cluster_dispatches = renderer.gpu_cluster_dispatch_count
 		config.stats.instance_capacity = WGPU_MAX_GPU_INSTANCES
 		config.stats.instance_slots = renderer.gpu_slot_count
 		config.stats.visible_capacity = renderer.gpu_visible_capacity
@@ -2193,6 +2279,9 @@ wgpu_draw_frame :: proc(
 		if err = wgpu_encode_gpu_culling(renderer, encoder, batch_count); err != "" {
 			return false, false, err
 		}
+	}
+	if err = wgpu_encode_clustered_lighting(renderer, encoder); err != "" {
+		return false, false, err
 	}
 	record_system_profile_phase(config, .Render_Cull, cull_start)
 	shadow_start := time.tick_now()
@@ -2341,6 +2430,12 @@ wgpu_render_offscreen_frame :: proc(
 		config.stats.draw_database_rebuilds = renderer.gpu_draw_database_rebuild_count
 		config.stats.gpu_driven = true
 		config.stats.compute_culling = !config.cpu_culling
+		config.stats.clustered_lighting = true
+		config.stats.shadow_cascades = WGPU_SHADOW_CASCADE_COUNT
+		config.stats.cluster_count = WGPU_CLUSTER_COUNT
+		config.stats.cluster_max_lights = WGPU_CLUSTER_MAX_LIGHTS
+		config.stats.clustered_point_lights = renderer.gpu_clustered_light_count
+		config.stats.cluster_dispatches = renderer.gpu_cluster_dispatch_count
 		config.stats.instance_capacity = WGPU_MAX_GPU_INSTANCES
 		config.stats.instance_slots = renderer.gpu_slot_count
 		config.stats.visible_capacity = renderer.gpu_visible_capacity
@@ -2375,6 +2470,9 @@ wgpu_render_offscreen_frame :: proc(
 		if err := wgpu_encode_gpu_culling(renderer, encoder, batch_count); err != "" {
 			return err
 		}
+	}
+	if err := wgpu_encode_clustered_lighting(renderer, encoder); err != "" {
+		return err
 	}
 	record_system_profile_phase(config, .Render_Cull, cull_start)
 	shadow_start := time.tick_now()

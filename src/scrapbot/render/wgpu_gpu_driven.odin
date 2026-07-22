@@ -155,6 +155,9 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 	if renderer.gpu_driven_shader == nil {
 		return "failed to create GPU-driven render shader"
 	}
+	if cluster_err := wgpu_create_clustered_lighting(renderer); cluster_err != "" {
+		return cluster_err
+	}
 
 	world_entries := [?]wgpu.BindGroupLayoutEntry {
 		{
@@ -165,7 +168,7 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		{
 			binding = 1,
 			visibility = {.Fragment},
-			texture = {sampleType = .Depth, viewDimension = ._2D},
+			texture = {sampleType = .Depth, viewDimension = ._2DArray},
 		},
 		{binding = 2, visibility = {.Fragment}, sampler = {type = .Comparison}},
 		{
@@ -177,6 +180,14 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 			binding = 4,
 			visibility = {.Vertex},
 			buffer = {type = .ReadOnlyStorage, minBindingSize = 4},
+		},
+		{binding = 5, visibility = {.Fragment}, buffer = {type = .ReadOnlyStorage}},
+		{binding = 6, visibility = {.Fragment}, buffer = {type = .ReadOnlyStorage}},
+		{binding = 7, visibility = {.Fragment}, buffer = {type = .ReadOnlyStorage}},
+		{
+			binding = 8,
+			visibility = {.Fragment},
+			buffer = {type = .Uniform, minBindingSize = u64(size_of(WGPU_Cluster_Uniform))},
 		},
 	}
 	renderer.gpu_driven_world_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
@@ -205,6 +216,11 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 			binding = 4,
 			visibility = {.Vertex},
 			buffer = {type = .ReadOnlyStorage, minBindingSize = 4},
+		},
+		{
+			binding = 9,
+			visibility = {.Vertex},
+			buffer = {type = .Uniform, minBindingSize = u64(size_of(WGPU_Shadow_Cascade_Uniform))},
 		},
 	}
 	renderer.gpu_driven_shadow_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
@@ -519,6 +535,7 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		u64(WGPU_MAX_GPU_INSTANCES + 1) * u64(size_of(WGPU_GPU_Instance_Transform))
 	visible_entries := WGPU_MAX_GPU_INSTANCES + WGPU_INITIAL_DRAW_CAPACITY * WGPU_VISIBLE_ALIGNMENT
 	visible_bytes := u64(visible_entries) * u64(size_of(u32))
+	shadow_visible_bytes := visible_bytes * WGPU_SHADOW_CASCADE_COUNT
 	batch_bytes := u64(WGPU_INITIAL_DRAW_CAPACITY) * u64(size_of(WGPU_GPU_Batch_Info))
 	indirect_bytes := u64(WGPU_INITIAL_DRAW_CAPACITY) * u64(size_of(WGPU_Draw_Indexed_Indirect))
 	renderer.gpu_instance_buffer = wgpu_create_gpu_buffer(
@@ -549,7 +566,7 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		renderer,
 		"Scrapbot GPU Shadow Visible Instances",
 		{.Storage, .CopyDst},
-		visible_bytes,
+		shadow_visible_bytes,
 	)
 	renderer.gpu_indirect_template_buffer = wgpu_create_gpu_buffer(
 		renderer,
@@ -567,7 +584,7 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		renderer,
 		"Scrapbot GPU Shadow Indirect Draws",
 		{.Storage, .Indirect, .CopyDst},
-		indirect_bytes,
+		indirect_bytes * WGPU_SHADOW_CASCADE_COUNT,
 	)
 	renderer.gpu_cull_uniform_buffer = wgpu_create_gpu_buffer(
 		renderer,
@@ -581,6 +598,27 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		{.Uniform, .CopyDst},
 		u64(size_of(WGPU_GPU_Render_Uniform)),
 	)
+	for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+		renderer.gpu_shadow_cascade_uniform_buffers[cascade_index] = wgpu_create_gpu_buffer(
+			renderer,
+			"Scrapbot Shadow Cascade Uniform",
+			{.Uniform, .CopyDst},
+			u64(size_of(WGPU_Shadow_Cascade_Uniform)),
+		)
+		if renderer.gpu_shadow_cascade_uniform_buffers[cascade_index] == nil {
+			return "failed to allocate shadow cascade uniform buffer"
+		}
+		cascade_uniform := WGPU_Shadow_Cascade_Uniform {
+			index = u32(cascade_index),
+		}
+		wgpu.QueueWriteBuffer(
+			renderer.queue,
+			renderer.gpu_shadow_cascade_uniform_buffers[cascade_index],
+			0,
+			&cascade_uniform,
+			uint(size_of(cascade_uniform)),
+		)
+	}
 	renderer.gpu_visibility_counter_buffer = wgpu_create_gpu_buffer(
 		renderer,
 		"Scrapbot GPU Visibility Counters",
@@ -625,9 +663,13 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		{binding = 0, buffer = renderer.gpu_instance_buffer, size = instance_bytes},
 		{binding = 1, buffer = renderer.gpu_batch_info_buffer, size = batch_bytes},
 		{binding = 2, buffer = renderer.gpu_visible_buffer, size = visible_bytes},
-		{binding = 3, buffer = renderer.gpu_shadow_visible_buffer, size = visible_bytes},
+		{binding = 3, buffer = renderer.gpu_shadow_visible_buffer, size = shadow_visible_bytes},
 		{binding = 4, buffer = renderer.gpu_indirect_buffer, size = indirect_bytes},
-		{binding = 5, buffer = renderer.gpu_shadow_indirect_buffer, size = indirect_bytes},
+		{
+			binding = 5,
+			buffer = renderer.gpu_shadow_indirect_buffer,
+			size = indirect_bytes * WGPU_SHADOW_CASCADE_COUNT,
+		},
 		{
 			binding = 6,
 			buffer = renderer.gpu_cull_uniform_buffer,
@@ -678,14 +720,19 @@ wgpu_rebuild_cull_bind_group :: proc(renderer: ^WGPU_Renderer) -> string {
 	instance_bytes := u64(WGPU_MAX_GPU_INSTANCES) * u64(size_of(WGPU_GPU_Instance))
 	batch_bytes := u64(renderer.gpu_draw_capacity) * u64(size_of(WGPU_GPU_Batch_Info))
 	visible_bytes := u64(renderer.gpu_visible_buffer_capacity) * u64(size_of(u32))
+	shadow_visible_bytes := visible_bytes * WGPU_SHADOW_CASCADE_COUNT
 	indirect_bytes := u64(renderer.gpu_draw_capacity) * u64(size_of(WGPU_Draw_Indexed_Indirect))
 	entries := [?]wgpu.BindGroupEntry {
 		{binding = 0, buffer = renderer.gpu_instance_buffer, size = instance_bytes},
 		{binding = 1, buffer = renderer.gpu_batch_info_buffer, size = batch_bytes},
 		{binding = 2, buffer = renderer.gpu_visible_buffer, size = visible_bytes},
-		{binding = 3, buffer = renderer.gpu_shadow_visible_buffer, size = visible_bytes},
+		{binding = 3, buffer = renderer.gpu_shadow_visible_buffer, size = shadow_visible_bytes},
 		{binding = 4, buffer = renderer.gpu_indirect_buffer, size = indirect_bytes},
-		{binding = 5, buffer = renderer.gpu_shadow_indirect_buffer, size = indirect_bytes},
+		{
+			binding = 5,
+			buffer = renderer.gpu_shadow_indirect_buffer,
+			size = indirect_bytes * WGPU_SHADOW_CASCADE_COUNT,
+		},
 		{
 			binding = 6,
 			buffer = renderer.gpu_cull_uniform_buffer,
@@ -729,7 +776,9 @@ wgpu_ensure_gpu_draw_buffers :: proc(
 	visible_capacity := wgpu_grow_capacity(renderer.gpu_visible_buffer_capacity, required_visible)
 	batch_bytes := u64(draw_capacity) * u64(size_of(WGPU_GPU_Batch_Info))
 	visible_bytes := u64(visible_capacity) * u64(size_of(u32))
+	shadow_visible_bytes := visible_bytes * WGPU_SHADOW_CASCADE_COUNT
 	indirect_bytes := u64(draw_capacity) * u64(size_of(WGPU_Draw_Indexed_Indirect))
+	shadow_indirect_bytes := indirect_bytes * WGPU_SHADOW_CASCADE_COUNT
 	batch_buffer := wgpu_create_gpu_buffer(
 		renderer,
 		"Scrapbot GPU Batch Table",
@@ -746,7 +795,7 @@ wgpu_ensure_gpu_draw_buffers :: proc(
 		renderer,
 		"Scrapbot GPU Shadow Visible Instances",
 		{.Storage, .CopyDst},
-		visible_bytes,
+		shadow_visible_bytes,
 	)
 	indirect_template_buffer := wgpu_create_gpu_buffer(
 		renderer,
@@ -764,7 +813,7 @@ wgpu_ensure_gpu_draw_buffers :: proc(
 		renderer,
 		"Scrapbot GPU Shadow Indirect Draws",
 		{.Storage, .Indirect, .CopyDst},
-		indirect_bytes,
+		shadow_indirect_bytes,
 	)
 	new_buffers := [?]wgpu.Buffer {
 		batch_buffer,
@@ -789,9 +838,9 @@ wgpu_ensure_gpu_draw_buffers :: proc(
 		{binding = 0, buffer = renderer.gpu_instance_buffer, size = instance_bytes},
 		{binding = 1, buffer = batch_buffer, size = batch_bytes},
 		{binding = 2, buffer = visible_buffer, size = visible_bytes},
-		{binding = 3, buffer = shadow_visible_buffer, size = visible_bytes},
+		{binding = 3, buffer = shadow_visible_buffer, size = shadow_visible_bytes},
 		{binding = 4, buffer = indirect_buffer, size = indirect_bytes},
-		{binding = 5, buffer = shadow_indirect_buffer, size = indirect_bytes},
+		{binding = 5, buffer = shadow_indirect_buffer, size = shadow_indirect_bytes},
 		{
 			binding = 6,
 			buffer = renderer.gpu_cull_uniform_buffer,
@@ -858,11 +907,13 @@ wgpu_release_batch_bind_groups :: proc(cache: ^WGPU_Draw_Batch_Cache) {
 		if batch.world_bind_group != nil {
 			wgpu.BindGroupRelease(batch.world_bind_group)
 		}
-		if batch.shadow_bind_group != nil {
-			wgpu.BindGroupRelease(batch.shadow_bind_group)
+		for shadow_bind_group in batch.shadow_bind_groups {
+			if shadow_bind_group != nil {
+				wgpu.BindGroupRelease(shadow_bind_group)
+			}
 		}
 		batch.world_bind_group = nil
-		batch.shadow_bind_group = nil
+		batch.shadow_bind_groups = {}
 	}
 }
 
@@ -872,6 +923,7 @@ wgpu_make_batch_bind_group :: proc(
 	visible_offset, visible_capacity: u32,
 	label: string,
 	shadow: bool = false,
+	shadow_cascade_index: int = 0,
 ) -> wgpu.BindGroup {
 	if shadow {
 		entries := [?]wgpu.BindGroupEntry {
@@ -888,8 +940,17 @@ wgpu_make_batch_bind_group :: proc(
 			{
 				binding = 4,
 				buffer = visible_buffer,
-				offset = u64(visible_offset) * u64(size_of(u32)),
+				offset = u64(
+					shadow_cascade_index * renderer.gpu_visible_buffer_capacity +
+					int(visible_offset),
+				) *
+				u64(size_of(u32)),
 				size = u64(visible_capacity) * u64(size_of(u32)),
+			},
+			{
+				binding = 9,
+				buffer = renderer.gpu_shadow_cascade_uniform_buffers[shadow_cascade_index],
+				size = u64(size_of(WGPU_Shadow_Cascade_Uniform)),
 			},
 		}
 		return wgpu.DeviceCreateBindGroup(
@@ -908,7 +969,7 @@ wgpu_make_batch_bind_group :: proc(
 			buffer = renderer.gpu_render_uniform_buffer,
 			size = u64(size_of(WGPU_GPU_Render_Uniform)),
 		},
-		{binding = 1, textureView = renderer.shadow_view},
+		{binding = 1, textureView = renderer.shadow_array_view},
 		{binding = 2, sampler = renderer.shadow_sampler},
 		{
 			binding = 3,
@@ -920,6 +981,26 @@ wgpu_make_batch_bind_group :: proc(
 			buffer = visible_buffer,
 			offset = u64(visible_offset) * u64(size_of(u32)),
 			size = u64(visible_capacity) * u64(size_of(u32)),
+		},
+		{
+			binding = 5,
+			buffer = renderer.gpu_point_light_buffer,
+			size = u64(shared.MAX_POINT_LIGHTS) * u64(size_of(WGPU_GPU_Point_Light)),
+		},
+		{
+			binding = 6,
+			buffer = renderer.gpu_cluster_count_buffer,
+			size = u64(WGPU_CLUSTER_COUNT) * u64(size_of(u32)),
+		},
+		{
+			binding = 7,
+			buffer = renderer.gpu_cluster_index_buffer,
+			size = u64(WGPU_CLUSTER_COUNT * WGPU_CLUSTER_MAX_LIGHTS) * u64(size_of(u32)),
+		},
+		{
+			binding = 8,
+			buffer = renderer.gpu_cluster_uniform_buffer,
+			size = u64(size_of(WGPU_Cluster_Uniform)),
 		},
 	}
 	return wgpu.DeviceCreateBindGroup(
@@ -1002,16 +1083,24 @@ wgpu_refresh_gpu_batch_layout :: proc(
 			batch.visible_capacity,
 			"Scrapbot GPU-Driven Batch Bind Group",
 		)
-		batch.shadow_bind_group = wgpu_make_batch_bind_group(
-			renderer,
-			renderer.gpu_shadow_visible_buffer,
-			batch.visible_offset,
-			batch.visible_capacity,
-			"Scrapbot GPU-Driven Shadow Batch Bind Group",
-			true,
-		)
-		if batch.world_bind_group == nil || batch.shadow_bind_group == nil {
+		for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+			batch.shadow_bind_groups[cascade_index] = wgpu_make_batch_bind_group(
+				renderer,
+				renderer.gpu_shadow_visible_buffer,
+				batch.visible_offset,
+				batch.visible_capacity,
+				"Scrapbot GPU-Driven Shadow Batch Bind Group",
+				true,
+				cascade_index,
+			)
+		}
+		if batch.world_bind_group == nil {
 			return "failed to create GPU-driven batch bind groups"
+		}
+		for shadow_bind_group in batch.shadow_bind_groups {
+			if shadow_bind_group == nil {
+				return "failed to create GPU-driven shadow batch bind groups"
+			}
 		}
 	}
 	renderer.gpu_visible_capacity = int(visible_offset)
@@ -1770,23 +1859,33 @@ wgpu_prepare_gpu_draw_batches :: proc(
 		return nil, 0, indirect_err
 	}
 	uniform: WGPU_GPU_Render_Uniform
-	view_projection := wgpu_build_view_projection(
+	view, projection := wgpu_build_camera_matrices(
 		render_list.camera,
 		render_list.has_camera,
 		u32(viewport.width),
 		u32(viewport.height),
 	)
+	view_projection := mat4_mul(projection, view)
 	if hiz_err := wgpu_ensure_hiz_targets(renderer, target_width, target_height); hiz_err != "" {
 		return nil, 0, hiz_err
 	}
-	light_view_projection := mat4_identity()
+	shadow_cascades: WGPU_Shadow_Cascades
+	for &cascade_matrix in shadow_cascades.matrices {
+		cascade_matrix = mat4_identity()
+	}
 	if render_list.directional_light_count > 0 {
-		light_view_projection = wgpu_build_directional_light_view_projection(
+		shadow_cascades = wgpu_build_directional_shadow_cascades(
+			render_list.camera,
+			render_list.has_camera,
+			u32(viewport.width),
+			u32(viewport.height),
 			render_list.directional_lights[0].light.direction,
 		)
 	}
 	uniform.view_projection = view_projection
-	uniform.shadow_view_projection = light_view_projection
+	uniform.view = view
+	uniform.shadow_view_projections = shadow_cascades.matrices
+	uniform.shadow_cascade_splits = shadow_cascades.splits
 	camera_position := Vec3{0, 2, 6}
 	if render_list.has_camera {
 		camera_position = render_list.camera.transform.position
@@ -1813,20 +1912,14 @@ wgpu_prepare_gpu_draw_batches :: proc(
 			1,
 		}
 	}
-	for light, index in render_list.point_lights[:render_list.point_light_count] {
-		uniform.point_position_range[index] = {
-			light.position.x,
-			light.position.y,
-			light.position.z,
-			light.light.range,
-		}
-		uniform.point_color_intensity[index] = {
-			light.light.color.x,
-			light.light.color.y,
-			light.light.color.z,
-			light.light.intensity,
-		}
-	}
+	wgpu_prepare_clustered_lighting(
+		renderer,
+		render_list,
+		view,
+		projection,
+		u32(viewport.width),
+		u32(viewport.height),
+	)
 	if wgpu_retain_render_uniform(renderer, uniform) {
 		wgpu.QueueWriteBuffer(
 			renderer.queue,
@@ -2025,7 +2118,6 @@ wgpu_prepare_gpu_draw_batches :: proc(
 	renderer.gpu_hiz_occlusion_enabled = hiz_reusable
 	cull_uniform := WGPU_GPU_Cull_Uniform {
 		camera_planes = wgpu_extract_frustum_planes(view_projection),
-		shadow_planes = wgpu_extract_frustum_planes(light_view_projection),
 		view_projection = view_projection,
 		viewport = {viewport.x, viewport.y, viewport.width, viewport.height},
 		camera_position = {camera_position.x, camera_position.y, camera_position.z, 1},
@@ -2033,6 +2125,12 @@ wgpu_prepare_gpu_draw_batches :: proc(
 		batch_count = u32(cache.batch_count),
 		hiz_mip_count = u32(renderer.gpu_hiz_mip_count),
 		hiz_enabled = 1 if hiz_reusable else 0,
+		shadow_visible_stride = u32(renderer.gpu_visible_buffer_capacity),
+	}
+	for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+		cull_uniform.shadow_planes[cascade_index] = wgpu_extract_frustum_planes(
+			shadow_cascades.matrices[cascade_index],
+		)
 	}
 	if wgpu_retain_cull_uniform(renderer, cull_uniform) {
 		wgpu.QueueWriteBuffer(
@@ -2099,6 +2197,16 @@ wgpu_encode_gpu_culling :: proc(
 		0,
 		copy_size,
 	)
+	for cascade_index in 1 ..< WGPU_SHADOW_CASCADE_COUNT {
+		wgpu.CommandEncoderCopyBufferToBuffer(
+			encoder,
+			renderer.gpu_indirect_template_buffer,
+			0,
+			renderer.gpu_shadow_indirect_buffer,
+			u64(cascade_index) * copy_size,
+			copy_size,
+		)
+	}
 	cull_timestamps, cull_timestamps_enabled := wgpu_gpu_pass_timestamps(renderer, .Cull)
 	cull_timestamps_ptr: ^wgpu.PassTimestampWrites
 	if cull_timestamps_enabled {
@@ -2118,7 +2226,7 @@ wgpu_encode_gpu_culling :: proc(
 	wgpu.ComputePassEncoderSetPipeline(pass, renderer.gpu_cull_pipeline)
 	wgpu.ComputePassEncoderSetBindGroup(pass, 0, renderer.gpu_cull_bind_group)
 	workgroups := u32((renderer.gpu_slot_count + 63) / 64)
-	wgpu.ComputePassEncoderDispatchWorkgroups(pass, workgroups, 1, 1)
+	wgpu.ComputePassEncoderDispatchWorkgroups(pass, workgroups, WGPU_SHADOW_CASCADE_COUNT, 1)
 	wgpu.ComputePassEncoderEnd(pass)
 	return ""
 }
@@ -2137,20 +2245,29 @@ wgpu_prepare_cpu_culling :: proc(
 		width,
 		height,
 	)
-	light_view_projection := mat4_identity()
+	shadow_cascades: WGPU_Shadow_Cascades
+	for &cascade_matrix in shadow_cascades.matrices {
+		cascade_matrix = mat4_identity()
+	}
 	if render_list.directional_light_count > 0 {
-		light_view_projection = wgpu_build_directional_light_view_projection(
+		shadow_cascades = wgpu_build_directional_shadow_cascades(
+			render_list.camera,
+			render_list.has_camera,
+			width,
+			height,
 			render_list.directional_lights[0].light.direction,
 		)
 	}
 	camera_planes := wgpu_extract_frustum_planes(view_projection)
-	shadow_planes := wgpu_extract_frustum_planes(light_view_projection)
 	if len(renderer.gpu_cpu_visible) < renderer.gpu_visible_capacity {
 		resize(&renderer.gpu_cpu_visible, renderer.gpu_visible_capacity)
-		resize(&renderer.gpu_cpu_shadow_visible, renderer.gpu_visible_capacity)
+	}
+	shadow_visible_capacity := renderer.gpu_visible_capacity * WGPU_SHADOW_CASCADE_COUNT
+	if len(renderer.gpu_cpu_shadow_visible) < shadow_visible_capacity {
+		resize(&renderer.gpu_cpu_shadow_visible, shadow_visible_capacity)
 	}
 	visible := renderer.gpu_cpu_visible[:renderer.gpu_visible_capacity]
-	shadow_visible := renderer.gpu_cpu_shadow_visible[:renderer.gpu_visible_capacity]
+	shadow_visible := renderer.gpu_cpu_shadow_visible[:shadow_visible_capacity]
 	camera_counts := wgpu_cpu_cull_counts(
 		renderer.gpu_instance_records[:renderer.gpu_slot_count],
 		camera_planes,
@@ -2159,25 +2276,45 @@ wgpu_prepare_cpu_culling :: proc(
 		view_projection,
 	)
 	defer delete(camera_counts)
-	shadow_counts := wgpu_cpu_cull_counts(
-		renderer.gpu_instance_records[:renderer.gpu_slot_count],
-		shadow_planes,
-		renderer.draw_batch_cache.batch_count,
-		true,
-		view_projection,
-	)
-	defer delete(shadow_counts)
+	shadow_counts: [WGPU_SHADOW_CASCADE_COUNT][dynamic]u32
+	shadow_planes: [WGPU_SHADOW_CASCADE_COUNT][6][4]f32
+	for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+		shadow_planes[cascade_index] = wgpu_extract_frustum_planes(
+			shadow_cascades.matrices[cascade_index],
+		)
+		shadow_counts[cascade_index] = wgpu_cpu_cull_counts(
+			renderer.gpu_instance_records[:renderer.gpu_slot_count],
+			shadow_planes[cascade_index],
+			renderer.draw_batch_cache.batch_count,
+			true,
+			view_projection,
+		)
+	}
+	defer {
+		for counts in shadow_counts {
+			delete(counts)
+		}
+	}
 	renderer.gpu_visibility_counters = {}
 	for count in camera_counts {
 		renderer.gpu_visibility_counters.visible_instances += count
 	}
-	for count in shadow_counts {
-		renderer.gpu_visibility_counters.shadow_visible_instances += count
+	for counts in shadow_counts {
+		for count in counts {
+			renderer.gpu_visibility_counters.shadow_visible_instances += count
+		}
 	}
 	camera_cursors := make([]u32, renderer.draw_batch_cache.batch_count)
 	defer delete(camera_cursors)
-	shadow_cursors := make([]u32, renderer.draw_batch_cache.batch_count)
-	defer delete(shadow_cursors)
+	shadow_cursors: [WGPU_SHADOW_CASCADE_COUNT][]u32
+	for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+		shadow_cursors[cascade_index] = make([]u32, renderer.draw_batch_cache.batch_count)
+	}
+	defer {
+		for cursors in shadow_cursors {
+			delete(cursors)
+		}
+	}
 	for instance, slot in renderer.gpu_instance_records[:renderer.gpu_slot_count] {
 		lod_level := wgpu_cpu_instance_lod_level(instance, view_projection)
 		batch_index := instance.batch_indices[lod_level]
@@ -2193,20 +2330,40 @@ wgpu_prepare_cpu_culling :: proc(
 		} else {
 			renderer.gpu_visibility_counters.frustum_culled_instances += 1
 		}
-		if instance.shadow_flags[0] > 0.5 && wgpu_sphere_visible(instance.bounds, shadow_planes) {
-			shadow_visible[batch.visible_offset + shadow_cursors[batch_index]] = u32(slot)
-			shadow_cursors[batch_index] += 1
+		for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+			if instance.shadow_flags[0] > 0.5 &&
+			   wgpu_sphere_visible(instance.bounds, shadow_planes[cascade_index]) {
+				shadow_visible_index :=
+					cascade_index * renderer.gpu_visible_capacity +
+					int(batch.visible_offset + shadow_cursors[cascade_index][batch_index])
+				shadow_visible[shadow_visible_index] = u32(slot)
+				shadow_cursors[cascade_index][batch_index] += 1
+			}
 		}
 	}
 	indirect := make([]WGPU_Draw_Indexed_Indirect, len(renderer.gpu_indirect_templates))
 	defer delete(indirect)
 	copy(indirect, renderer.gpu_indirect_templates[:])
-	shadow_indirect := make([]WGPU_Draw_Indexed_Indirect, len(renderer.gpu_indirect_templates))
+	shadow_indirect := make(
+		[]WGPU_Draw_Indexed_Indirect,
+		len(renderer.gpu_indirect_templates) * WGPU_SHADOW_CASCADE_COUNT,
+	)
 	defer delete(shadow_indirect)
-	copy(shadow_indirect, renderer.gpu_indirect_templates[:])
+	for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+		start := cascade_index * len(renderer.gpu_indirect_templates)
+		copy(
+			shadow_indirect[start:start + len(renderer.gpu_indirect_templates)],
+			renderer.gpu_indirect_templates[:],
+		)
+	}
 	for batch_index in 0 ..< renderer.draw_batch_cache.batch_count {
 		indirect[batch_index].instance_count = camera_counts[batch_index]
-		shadow_indirect[batch_index].instance_count = shadow_counts[batch_index]
+		for cascade_index in 0 ..< WGPU_SHADOW_CASCADE_COUNT {
+			shadow_indirect_index :=
+				cascade_index * renderer.draw_batch_cache.batch_count + batch_index
+			shadow_indirect[shadow_indirect_index].instance_count =
+				shadow_counts[cascade_index][batch_index]
+		}
 	}
 	wgpu.QueueWriteBuffer(
 		renderer.queue,
