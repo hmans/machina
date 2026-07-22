@@ -27,6 +27,8 @@ struct Environment_Uniform {
 	background_enabled: f32,
 	background_max_specular_lod: f32,
 	_padding: f32,
+	sun_direction_intensity: vec4<f32>,
+	sun_color: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> sky: Sky_Uniform;
@@ -73,14 +75,35 @@ fn fs_main(input: Output) -> @location(0) vec4<f32> {
 		s * direction.x + c * direction.z,
 	);
 	if (environment.background_max_specular_lod < 0.0) {
-		let horizon = vec3<f32>(0.72, 0.78, 0.82);
-		let zenith = vec3<f32>(0.18, 0.36, 0.62);
-		let ground = vec3<f32>(0.20, 0.22, 0.24);
-		let sky_amount = smoothstep(-0.08, 0.48, rotated.y);
-		let ground_amount = smoothstep(-0.35, -0.02, rotated.y);
-		let upper = mix(horizon, zenith, sky_amount);
-		let haze = exp(-abs(rotated.y) * 8.0) * 0.12;
-		let color = mix(ground, upper, ground_amount) + vec3<f32>(haze);
+		let elevation = clamp(direction.y, -1.0, 1.0);
+		let sky_height = pow(clamp(elevation, 0.0, 1.0), 0.35);
+		let ground_depth = pow(clamp(-elevation, 0.0, 1.0), 0.45);
+		let sky_horizon = vec3<f32>(0.30, 0.58, 0.88);
+		let sky_zenith = vec3<f32>(0.018, 0.095, 0.34);
+		var sky_color = mix(sky_horizon, sky_zenith, sky_height);
+		let aerial_haze = exp(-abs(elevation) * 13.0);
+		sky_color = mix(sky_color, vec3<f32>(0.68, 0.82, 0.94), aerial_haze * 0.58);
+		let ground_horizon = vec3<f32>(0.24, 0.235, 0.225);
+		let ground_nadir = vec3<f32>(0.055, 0.050, 0.046);
+		let ground_color = mix(ground_horizon, ground_nadir, ground_depth);
+		let sky_mask = smoothstep(-0.012, 0.022, elevation);
+		var color = mix(ground_color, sky_color, sky_mask);
+		let horizon_glow = exp(-abs(elevation) * 48.0);
+		color += vec3<f32>(0.18, 0.33, 0.42) * horizon_glow;
+		let sun_direction_length = length(environment.sun_direction_intensity.xyz);
+		if (environment.sun_direction_intensity.w > 0.0 && sun_direction_length > 0.0001) {
+			let sun_direction = environment.sun_direction_intensity.xyz / sun_direction_length;
+			let sun_alignment = max(dot(direction, sun_direction), 0.0);
+			let sun_disc = smoothstep(0.99955, 0.99986, sun_alignment);
+			let inner_glow = pow(sun_alignment, 192.0);
+			let outer_glow = pow(sun_alignment, 18.0);
+			let sun_strength = min(environment.sun_direction_intensity.w, 8.0);
+			color += environment.sun_color.rgb * (
+				sun_disc * (3.5 + sun_strength) +
+				inner_glow * (0.35 + sun_strength * 0.12) +
+				outer_glow * 0.035
+			);
+		}
 		return vec4<f32>(
 			color * environment.background_intensity * environment.background_exposure * environment.exposure,
 			1.0,
@@ -416,13 +439,27 @@ wgpu_sync_environment :: proc(
 	if math.is_nan(camera_exposure) || math.is_inf(camera_exposure) || camera_exposure <= 0 {
 		camera_exposure = 1
 	}
+	sun_direction_intensity := [4]f32{}
+	sun_color := [4]f32{1, 0.94, 0.82, 1}
+	if render_list != nil && render_list.directional_light_count > 0 {
+		light := render_list.directional_lights[0].light
+		sun_direction_intensity = {
+			-light.direction.x,
+			-light.direction.y,
+			-light.direction.z,
+			light.intensity,
+		}
+		sun_color = {light.color.x, light.color.y, light.color.z, 1}
+	}
 	if renderer.environment_cache_valid &&
 	   renderer.environment_cached_handle == handle &&
 	   renderer.environment_cached_version == version &&
 	   renderer.environment_cached_background_handle == background_handle &&
 	   renderer.environment_cached_background_version == background_version &&
 	   renderer.environment_cached_revision == revision &&
-	   renderer.environment_cached_camera_exposure == camera_exposure {
+	   renderer.environment_cached_camera_exposure == camera_exposure &&
+	   renderer.environment_cached_sun_direction_intensity == sun_direction_intensity &&
+	   renderer.environment_cached_sun_color == sun_color {
 		return ""
 	}
 	textures_changed :=
@@ -440,6 +477,8 @@ wgpu_sync_environment :: proc(
 	uniform := WGPU_Environment_Uniform {
 		exposure = 1,
 		background_max_specular_lod = -1,
+		sun_direction_intensity = sun_direction_intensity,
+		sun_color = sun_color,
 	}
 	if registry != nil {
 		uniform.intensity = registry.environment_intensity
@@ -475,6 +514,8 @@ wgpu_sync_environment :: proc(
 	renderer.environment_cached_background_version = background_version
 	renderer.environment_cached_revision = revision
 	renderer.environment_cached_camera_exposure = camera_exposure
+	renderer.environment_cached_sun_direction_intensity = sun_direction_intensity
+	renderer.environment_cached_sun_color = sun_color
 	renderer.environment_cache_valid = true
 	return ""
 }

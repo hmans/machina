@@ -118,8 +118,10 @@ WGPU_Environment_Uniform :: struct {
 	background_enabled: f32,
 	background_max_specular_lod: f32,
 	_padding: f32,
+	sun_direction_intensity: [4]f32,
+	sun_color: [4]f32,
 }
-#assert(size_of(WGPU_Environment_Uniform) == 48)
+#assert(size_of(WGPU_Environment_Uniform) == 80)
 
 WGPU_Sky_Uniform :: struct {
 	right: [4]f32,
@@ -345,6 +347,8 @@ WGPU_Renderer :: struct {
 	environment_cached_background_version: u32,
 	environment_cached_revision: u64,
 	environment_cached_camera_exposure: f32,
+	environment_cached_sun_direction_intensity: [4]f32,
+	environment_cached_sun_color: [4]f32,
 	environment_cache_valid: bool,
 	sky_bind_group_layout: wgpu.BindGroupLayout,
 	sky_bind_group: wgpu.BindGroup,

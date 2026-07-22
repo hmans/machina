@@ -116,6 +116,8 @@ A scene may contain at most one World Environment component. It belongs on an or
 
 The fixed `scrapbot.environment` engine phase retains the selected entity and component revision. Stable frames do not scan all entities or resources. Structural membership changes rediscover the singleton, and value changes resolve only the referenced UUIDs before advancing the renderer environment revision.
 
+The procedural sky uses the scene's first directional light as its visible sun, so the sky disc, glow, direct lighting, and shadows share one direction and color. Without a directional light it still renders atmospheric sky and ground gradients, but no sun disc.
+
 ### `scrapbot.mesh`
 
 | Scene field | Type | Meaning |
