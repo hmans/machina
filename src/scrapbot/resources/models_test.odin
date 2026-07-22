@@ -4,6 +4,7 @@ import asset_import "../asset_import"
 import shared "../shared"
 import "core:os"
 import "core:path/filepath"
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -156,4 +157,91 @@ test_project_model_registers_embedded_base_color_image_on_generated_material :: 
 		testing.expect_value(t, material.desc.texture_mip_count, u32(4))
 		testing.expect_value(t, len(material.desc.texture_pixels), (8 * 8 + 4 * 4 + 2 * 2 + 1) * 4)
 	}
+}
+
+make_semantic_reimport_product :: proc(reverse: bool) -> asset_import.Model_Product {
+	product: asset_import.Model_Product
+	material_keys := [?]string{"material:Red", "material:Blue"}
+	mesh_keys := [?]string{"mesh:Body", "mesh:Trim"}
+	for offset in 0 ..< 2 {
+		index := offset
+		if reverse {
+			index = 1 - offset
+		}
+		key, _ := strings.clone(material_keys[index])
+		name, _ := strings.clone(material_keys[index])
+		append(
+			&product.materials,
+			asset_import.Model_Material {
+				key = key,
+				name = name,
+				base_color = {1, 1, 1, 1},
+				metallic_factor = 1,
+				roughness_factor = 1,
+				normal_scale = 1,
+				occlusion_strength = 1,
+			},
+		)
+	}
+	for offset in 0 ..< 2 {
+		index := offset
+		if reverse {
+			index = 1 - offset
+		}
+		mesh := asset_import.Model_Mesh{}
+		mesh.key, _ = strings.clone(mesh_keys[index])
+		mesh.name, _ = strings.clone(mesh_keys[index])
+		primitive := asset_import.Model_Primitive {
+			material_index = i32(offset),
+		}
+		primitive.key, _ = strings.clone(mesh_keys[index])
+		append(&primitive.vertices, asset_import.Model_Vertex{position = {-1, -1, 0}})
+		append(&primitive.vertices, asset_import.Model_Vertex{position = {1, -1, 0}})
+		append(&primitive.vertices, asset_import.Model_Vertex{position = {0, 1, 0}})
+		append(&primitive.indices, 0, 1, 2)
+		append(&mesh.primitives, primitive)
+		append(&product.meshes, mesh)
+	}
+	return product
+}
+
+@(test)
+test_model_reimport_preserves_generated_handles_across_source_reordering :: proc(t: ^testing.T) {
+	id, valid := shared.resource_uuid_parse("a1000000-0000-4000-8000-000000000095")
+	testing.expect(t, valid)
+	declaration := shared.Project_Resource {
+		id = id,
+		kind = .Model,
+		name = "Semantic Model",
+		source = "semantic.resource.toml",
+		model = {source = "assets/semantic.gltf"},
+	}
+	registry: Registry
+	defer destroy_registry(&registry)
+	first := make_semantic_reimport_product(false)
+	defer asset_import.destroy_model_product(&first)
+	handle, first_err := register_project_model(&registry, declaration, &first)
+	testing.expectf(t, first_err == "", "first model registration failed: %s", first_err)
+	first_model, first_alive := get_model(&registry, handle)
+	testing.expect(t, first_alive)
+	if !first_alive {
+		return
+	}
+	red_material := first_model.material_handles[0]
+	body_geometry := first_model.meshes[0].primitives[0].geometry
+	second := make_semantic_reimport_product(true)
+	defer asset_import.destroy_model_product(&second)
+	second_handle, second_err := register_project_model(&registry, declaration, &second)
+	testing.expectf(t, second_err == "", "reordered model registration failed: %s", second_err)
+	testing.expect_value(t, second_handle, handle)
+	second_model, second_alive := get_model(&registry, second_handle)
+	testing.expect(t, second_alive)
+	if second_alive {
+		testing.expect_value(t, second_model.material_handles[1], red_material)
+		testing.expect_value(t, second_model.meshes[1].primitives[0].geometry, body_geometry)
+	}
+	_, red_alive := get_material(&registry, red_material)
+	_, body_alive := get_geometry(&registry, body_geometry)
+	testing.expect(t, red_alive)
+	testing.expect(t, body_alive)
 }

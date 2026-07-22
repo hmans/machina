@@ -3,6 +3,7 @@ package resources
 import asset_import "../asset_import"
 import shared "../shared"
 import "core:fmt"
+import "core:hash"
 import "core:mem"
 import "core:strings"
 
@@ -13,11 +14,13 @@ Model_Primitive :: struct {
 }
 
 Model_Mesh :: struct {
+	key: string,
 	name: string,
 	primitives: [dynamic]Model_Primitive,
 }
 
 Model_Node :: struct {
+	key: string,
 	name: string,
 	parent_index, mesh_index: i32,
 	transform: shared.Transform_Component,
@@ -131,8 +134,12 @@ register_project_model :: proc(
 	}
 	id_buffer: [36]u8
 	id_text := shared.resource_uuid_to_string(declaration.id, id_buffer[:])
-	for material, material_index in imported.materials {
-		resource_name := fmt.tprintf("__model_%s_material_%d", id_text, material_index)
+	for material in imported.materials {
+		resource_name := fmt.tprintf(
+			"__model_%s_material_%016x",
+			id_text,
+			hash.fnv64a(transmute([]byte)material.key),
+		)
 		handle, material_err := register_material(
 			registry,
 			resource_name,
@@ -151,6 +158,7 @@ register_project_model :: proc(
 				texture_width = material.base_color_image.width,
 				texture_height = material.base_color_image.height,
 				texture_mip_count = material.base_color_image.mip_count,
+				texture_sampler = material.base_color_image.sampler,
 				metallic_roughness_image = model_material_image(
 					material.metallic_roughness_image,
 					.Linear,
@@ -166,15 +174,16 @@ register_project_model :: proc(
 		}
 		append(&model.material_handles, handle)
 	}
-	for mesh, mesh_index in imported.meshes {
+	for mesh in imported.meshes {
 		model_mesh := Model_Mesh{}
 		model_mesh.primitives = make([dynamic]Model_Primitive, registry.allocator)
+		model_mesh.key, _ = strings.clone(mesh.key, registry.allocator)
 		model_mesh.name, _ = strings.clone(mesh.name, registry.allocator)
-		if model_mesh.name == "" {
+		if model_mesh.key == "" || model_mesh.name == "" {
 			destroy_model(&model, registry.allocator)
 			return {}, "failed to allocate imported model mesh name"
 		}
-		for primitive, primitive_index in mesh.primitives {
+		for primitive in mesh.primitives {
 			vertices := make([]Vertex, len(primitive.vertices))
 			for vertex, vertex_index in primitive.vertices {
 				vertices[vertex_index] = {
@@ -184,10 +193,9 @@ register_project_model :: proc(
 				}
 			}
 			geometry_name := fmt.tprintf(
-				"__model_%s_mesh_%d_primitive_%d",
+				"__model_%s_geometry_%016x",
 				id_text,
-				mesh_index,
-				primitive_index,
+				hash.fnv64a(transmute([]byte)primitive.key),
 			)
 			geometry, geometry_err := register_geometry(
 				registry,
@@ -217,8 +225,9 @@ register_project_model :: proc(
 			mesh_index = node.mesh_index,
 			transform = node.transform,
 		}
+		model_node.key, _ = strings.clone(node.key, registry.allocator)
 		model_node.name, _ = strings.clone(node.name, registry.allocator)
-		if model_node.name == "" {
+		if model_node.key == "" || model_node.name == "" {
 			destroy_model(&model, registry.allocator)
 			return {}, "failed to allocate imported model node name"
 		}
@@ -255,6 +264,7 @@ model_material_image :: proc(
 		height = image.height,
 		mip_count = image.mip_count,
 		color_space = color_space,
+		sampler = image.sampler,
 	}
 }
 
@@ -404,6 +414,7 @@ destroy_model :: proc(model: ^Model, allocator: mem.Allocator) {
 	delete(model.source, allocator)
 	delete(model.asset_source, allocator)
 	for &mesh in model.meshes {
+		delete(mesh.key, allocator)
 		delete(mesh.name, allocator)
 		for &primitive in mesh.primitives {
 			delete(primitive.key, allocator)
@@ -411,6 +422,7 @@ destroy_model :: proc(model: ^Model, allocator: mem.Allocator) {
 		delete(mesh.primitives)
 	}
 	for &node in model.nodes {
+		delete(node.key, allocator)
 		delete(node.name, allocator)
 	}
 	delete(model.meshes)
@@ -434,6 +446,7 @@ clone_model :: proc(source: Model, allocator: mem.Allocator) -> (model: Model, e
 	for mesh in source.meshes {
 		cloned_mesh := Model_Mesh{}
 		cloned_mesh.primitives = make([dynamic]Model_Primitive, allocator)
+		cloned_mesh.key, _ = strings.clone(mesh.key, allocator)
 		cloned_mesh.name, _ = strings.clone(mesh.name, allocator)
 		for primitive in mesh.primitives {
 			cloned_primitive := primitive
@@ -444,6 +457,7 @@ clone_model :: proc(source: Model, allocator: mem.Allocator) -> (model: Model, e
 	}
 	for node in source.nodes {
 		cloned_node := node
+		cloned_node.key, _ = strings.clone(node.key, allocator)
 		cloned_node.name, _ = strings.clone(node.name, allocator)
 		append(&model.nodes, cloned_node)
 	}

@@ -12,8 +12,8 @@ import "core:path/filepath"
 import "core:strings"
 import cgltf "vendor:cgltf"
 
-MODEL_IMPORTER_SCHEMA :: "scrapbot.model.v5.alpha-materials"
-MODEL_PRODUCT_MAGIC :: [8]u8{'S', 'B', 'M', 'O', 'D', 'E', 'L', '5'}
+MODEL_IMPORTER_SCHEMA :: "scrapbot.model.v6.semantic-scene"
+MODEL_PRODUCT_MAGIC :: [8]u8{'S', 'B', 'M', 'O', 'D', 'E', 'L', '6'}
 
 Model_Vertex :: struct {
 	position, normal: shared.Vec3,
@@ -23,9 +23,11 @@ Model_Vertex :: struct {
 Model_Image :: struct {
 	pixels: []u8,
 	width, height, mip_count: u32,
+	sampler: shared.Texture_Sampler,
 }
 
 Model_Material :: struct {
+	key: string,
 	name: string,
 	base_color: shared.Vec4,
 	emissive: shared.Vec3,
@@ -50,11 +52,13 @@ Model_Primitive :: struct {
 }
 
 Model_Mesh :: struct {
+	key: string,
 	name: string,
 	primitives: [dynamic]Model_Primitive,
 }
 
 Model_Node :: struct {
+	key: string,
 	name: string,
 	parent_index, mesh_index: i32,
 	transform: shared.Transform_Component,
@@ -81,6 +85,7 @@ destroy_model_product :: proc(model: ^Model_Product) {
 		return
 	}
 	for &material in model.materials {
+		delete(material.key)
 		delete(material.name)
 		destroy_model_image(&material.base_color_image)
 		destroy_model_image(&material.metallic_roughness_image)
@@ -89,6 +94,7 @@ destroy_model_product :: proc(model: ^Model_Product) {
 		destroy_model_image(&material.emissive_image)
 	}
 	for &mesh in model.meshes {
+		delete(mesh.key)
 		delete(mesh.name)
 		for &primitive in mesh.primitives {
 			delete(primitive.key)
@@ -98,6 +104,7 @@ destroy_model_product :: proc(model: ^Model_Product) {
 		delete(mesh.primitives)
 	}
 	for &node in model.nodes {
+		delete(node.key)
 		delete(node.name)
 	}
 	delete(model.materials)
@@ -283,7 +290,12 @@ validate_supported_static_gltf :: proc(data: ^cgltf.data) -> string {
 	if len(data.skins) > 0 {
 		return "skins are not supported yet"
 	}
-	for mesh in data.meshes {
+	selection := model_scene_selection(data)
+	defer destroy_model_scene_selection(&selection)
+	for mesh, mesh_index in data.meshes {
+		if !selection.meshes[mesh_index] {
+			continue
+		}
 		for primitive in mesh.primitives {
 			if primitive.type != .triangles {
 				return "only triangle primitives are supported"
@@ -296,14 +308,20 @@ validate_supported_static_gltf :: proc(data: ^cgltf.data) -> string {
 			}
 		}
 	}
-	for node in data.nodes {
+	for node, node_index in data.nodes {
+		if !selection.nodes[node_index] {
+			continue
+		}
 		if node.has_matrix {
 			return(
 				"matrix-authored node transforms are not supported yet; export node transforms as TRS" \
 			)
 		}
 	}
-	for material in data.materials {
+	for &material, material_index in data.materials {
+		if !selection.materials[material_index] {
+			continue
+		}
 		if material.alpha_mode == .blend {
 			return(
 				"BLEND alpha materials require sorted transparent rendering and are not supported yet" \
@@ -334,6 +352,79 @@ validate_supported_static_gltf :: proc(data: ^cgltf.data) -> string {
 		}
 	}
 	return ""
+}
+
+Model_Scene_Selection :: struct {
+	nodes, meshes, materials: []bool,
+}
+
+destroy_model_scene_selection :: proc(selection: ^Model_Scene_Selection) {
+	if selection == nil {
+		return
+	}
+	delete(selection.nodes)
+	delete(selection.meshes)
+	delete(selection.materials)
+	selection^ = {}
+}
+
+model_scene_selection :: proc(data: ^cgltf.data) -> Model_Scene_Selection {
+	selection := Model_Scene_Selection {
+		nodes = make([]bool, len(data.nodes)),
+		meshes = make([]bool, len(data.meshes)),
+		materials = make([]bool, len(data.materials)),
+	}
+	pending: [dynamic]int
+	defer delete(pending)
+	scene := data.scene
+	if scene == nil && len(data.scenes) > 0 {
+		scene = &data.scenes[0]
+	}
+	if scene != nil {
+		for node in scene.nodes {
+			append(&pending, int(cgltf.node_index(data, node)))
+		}
+	} else {
+		for &node, node_index in data.nodes {
+			if node.parent == nil {
+				append(&pending, node_index)
+			}
+		}
+	}
+	for len(pending) > 0 {
+		pending_index := len(pending) - 1
+		node_index := pending[pending_index]
+		resize(&pending, pending_index)
+		if node_index < 0 || node_index >= len(data.nodes) || selection.nodes[node_index] {
+			continue
+		}
+		selection.nodes[node_index] = true
+		node := &data.nodes[node_index]
+		if node.mesh != nil {
+			mesh_index := int(cgltf.mesh_index(data, node.mesh))
+			if mesh_index >= 0 && mesh_index < len(selection.meshes) {
+				selection.meshes[mesh_index] = true
+			}
+		}
+		for child in node.children {
+			append(&pending, int(cgltf.node_index(data, child)))
+		}
+	}
+	for mesh, mesh_index in data.meshes {
+		if !selection.meshes[mesh_index] {
+			continue
+		}
+		for primitive in mesh.primitives {
+			if primitive.material == nil {
+				continue
+			}
+			material_index := int(cgltf.material_index(data, primitive.material))
+			if material_index >= 0 && material_index < len(selection.materials) {
+				selection.materials[material_index] = true
+			}
+		}
+	}
+	return selection
 }
 
 validate_model_texture_view :: proc(view: cgltf.texture_view, kind: string) -> string {
@@ -372,7 +463,24 @@ build_model_product :: proc(
 	model: Model_Product,
 	err: string,
 ) {
-	for material, material_index in data.materials {
+	selection := model_scene_selection(data)
+	defer destroy_model_scene_selection(&selection)
+	material_remap := make([]i32, len(data.materials), context.temp_allocator)
+	mesh_remap := make([]i32, len(data.meshes), context.temp_allocator)
+	node_remap := make([]i32, len(data.nodes), context.temp_allocator)
+	for &index in material_remap {
+		index = -1
+	}
+	for &index in mesh_remap {
+		index = -1
+	}
+	for &index in node_remap {
+		index = -1
+	}
+	for &material, material_index in data.materials {
+		if !selection.materials[material_index] {
+			continue
+		}
 		name := model_item_name(material.name, "material", material_index)
 		base_color := shared.Vec4{1, 1, 1, 1}
 		if material.has_pbr_metallic_roughness {
@@ -391,6 +499,7 @@ build_model_product :: proc(
 			emissive.z *= strength
 		}
 		imported_material := Model_Material {
+			key = model_semantic_key("material", material.name, material_index),
 			name = name,
 			base_color = base_color,
 			emissive = emissive,
@@ -452,40 +561,92 @@ build_model_product :: proc(
 				return {}, fmt.tprintf("material %d %s texture: %s", material_index, labels[index], image_err)
 			}
 		}
+		delete(imported_material.key)
+		imported_material.key = model_material_semantic_key(
+			data,
+			&material,
+			material_index,
+			&imported_material,
+		)
+		material_remap[material_index] = i32(len(model.materials))
 		append(&model.materials, imported_material)
 	}
 	for &mesh, mesh_index in data.meshes {
+		if !selection.meshes[mesh_index] {
+			continue
+		}
 		imported_mesh := Model_Mesh {
+			key = model_semantic_key("mesh", mesh.name, mesh_index),
 			name = model_item_name(mesh.name, "mesh", mesh_index),
 		}
-		for &primitive, primitive_index in mesh.primitives {
-			imported_primitive, primitive_err := build_model_primitive(
-				data,
-				&primitive,
-				mesh_index,
-				primitive_index,
-			)
+		for &primitive in mesh.primitives {
+			imported_primitive, primitive_err := build_model_primitive(data, &primitive)
 			if primitive_err != "" {
 				destroy_model_product(&model)
 				destroy_model_mesh(&imported_mesh)
 				return {}, primitive_err
 			}
+			if imported_primitive.material_index >= 0 {
+				imported_primitive.material_index =
+					material_remap[imported_primitive.material_index]
+			}
 			append(&imported_mesh.primitives, imported_primitive)
 		}
+		delete(imported_mesh.key)
+		imported_mesh.key = model_mesh_semantic_key(data, &mesh, mesh_index, &imported_mesh)
+		for &primitive in imported_mesh.primitives {
+			material_key := "default"
+			if primitive.material_index >= 0 {
+				material_key = model.materials[primitive.material_index].key
+			}
+			primitive.key = fmt.aprintf("%s/primitive:%s", imported_mesh.key, material_key)
+		}
+		for &primitive in imported_mesh.primitives {
+			duplicate_count := 0
+			for candidate in imported_mesh.primitives {
+				if candidate.material_index == primitive.material_index {
+					duplicate_count += 1
+				}
+			}
+			if duplicate_count > 1 {
+				base_key := primitive.key
+				primitive.key = fmt.aprintf(
+					"%s:geometry:%016x",
+					base_key,
+					model_primitive_fingerprint(&primitive),
+				)
+				delete(base_key)
+			}
+		}
+		mesh_remap[mesh_index] = i32(len(model.meshes))
 		append(&model.meshes, imported_mesh)
 	}
 	for &node, node_index in data.nodes {
+		if !selection.nodes[node_index] {
+			continue
+		}
+		node_remap[node_index] = i32(len(model.nodes))
+		node_key := model_semantic_key("node", node.name, node_index)
+		if node.name == nil || string(node.name) == "" {
+			delete(node_key)
+			mesh_key := "empty"
+			if node.mesh != nil {
+				imported_mesh_index := mesh_remap[cgltf.mesh_index(data, node.mesh)]
+				if imported_mesh_index >= 0 {
+					mesh_key = model.meshes[imported_mesh_index].key
+				}
+			}
+			node_key = fmt.aprintf("node:unnamed:%s", mesh_key)
+		}
 		imported_node := Model_Node {
+			key = node_key,
 			name = model_item_name(node.name, "node", node_index),
 			parent_index = -1,
 			mesh_index = -1,
 			transform = {scale = {1, 1, 1}},
 		}
-		if node.parent != nil {
-			imported_node.parent_index = i32(cgltf.node_index(data, node.parent))
-		}
 		if node.mesh != nil {
-			imported_node.mesh_index = i32(cgltf.mesh_index(data, node.mesh))
+			imported_node.mesh_index = mesh_remap[cgltf.mesh_index(data, node.mesh)]
 		}
 		if node.has_translation {
 			imported_node.transform.position = {
@@ -509,13 +670,110 @@ build_model_product :: proc(
 		}
 		append(&model.nodes, imported_node)
 	}
+	for &node, node_index in data.nodes {
+		if !selection.nodes[node_index] || node.parent == nil {
+			continue
+		}
+		imported_index := node_remap[node_index]
+		parent_source_index := cgltf.node_index(data, node.parent)
+		if imported_index >= 0 && node_remap[parent_source_index] >= 0 {
+			model.nodes[imported_index].parent_index = node_remap[parent_source_index]
+		}
+	}
+	if key_err := model_qualify_node_keys(&model); key_err != "" {
+		destroy_model_product(&model)
+		return {}, key_err
+	}
 	return model, ""
+}
+
+model_qualify_node_keys :: proc(model: ^Model_Product) -> string {
+	for &node in model.nodes {
+		duplicate_count := 0
+		for sibling in model.nodes {
+			if sibling.parent_index != node.parent_index || sibling.name != node.name {
+				continue
+			}
+			duplicate_count += 1
+		}
+		if duplicate_count < 2 {
+			continue
+		}
+		mesh_key := "empty"
+		if node.mesh_index >= 0 && int(node.mesh_index) < len(model.meshes) {
+			mesh_key = model.meshes[node.mesh_index].key
+		}
+		discriminator := fmt.tprintf(
+			"%s:%s:%.9f:%.9f:%.9f:%.9f:%.9f:%.9f:%.9f:%.9f:%.9f",
+			node.key,
+			mesh_key,
+			node.transform.position.x,
+			node.transform.position.y,
+			node.transform.position.z,
+			node.transform.rotation.x,
+			node.transform.rotation.y,
+			node.transform.rotation.z,
+			node.transform.scale.x,
+			node.transform.scale.y,
+			node.transform.scale.z,
+		)
+		previous := node.key
+		node.key = fmt.aprintf("%s:%016x", previous, hash.fnv64a(transmute([]byte)discriminator))
+		delete(previous)
+	}
+	for &node, node_index in model.nodes {
+		occurrence := 0
+		for previous_index in 0 ..< node_index {
+			previous := model.nodes[previous_index]
+			if previous.parent_index == node.parent_index &&
+			   previous.name == node.name &&
+			   previous.mesh_index == node.mesh_index &&
+			   previous.transform == node.transform {
+				occurrence += 1
+			}
+		}
+		if occurrence > 0 {
+			previous := node.key
+			node.key = fmt.aprintf("%s:occurrence:%d", previous, occurrence)
+			delete(previous)
+		}
+	}
+	states := make([]u8, len(model.nodes), context.temp_allocator)
+	for node_index in 0 ..< len(model.nodes) {
+		if err := model_qualify_node_key(model, node_index, states); err != "" {
+			return err
+		}
+	}
+	return ""
+}
+
+model_qualify_node_key :: proc(model: ^Model_Product, node_index: int, states: []u8) -> string {
+	if states[node_index] == 2 {
+		return ""
+	}
+	if states[node_index] == 1 {
+		return "model node hierarchy contains a cycle"
+	}
+	states[node_index] = 1
+	node := &model.nodes[node_index]
+	leaf := node.key
+	if node.parent_index >= 0 {
+		parent_index := int(node.parent_index)
+		if err := model_qualify_node_key(model, parent_index, states); err != "" {
+			return err
+		}
+		node.key = fmt.aprintf("%s/%s", model.nodes[parent_index].key, leaf)
+		delete(leaf)
+	}
+	states[node_index] = 2
+	return ""
 }
 
 destroy_model_material :: proc(material: ^Model_Material) {
 	if material == nil {
 		return
 	}
+	delete(material.key)
 	delete(material.name)
 	destroy_model_image(&material.base_color_image)
 	destroy_model_image(&material.metallic_roughness_image)
@@ -542,8 +800,62 @@ decode_model_material_image :: proc(
 		width = width,
 		height = height,
 		mip_count = mip_count,
+		sampler = model_texture_sampler(view.texture.sampler),
 	}
 	return ""
+}
+
+model_texture_sampler :: proc(sampler: ^cgltf.sampler) -> shared.Texture_Sampler {
+	result := shared.Texture_Sampler {
+		mag_filter = .Linear,
+		min_filter = .Linear,
+		mipmap_filter = .Linear,
+		address_u = .Repeat,
+		address_v = .Repeat,
+	}
+	if sampler == nil {
+		return result
+	}
+	if sampler.mag_filter == .nearest {
+		result.mag_filter = .Nearest
+	}
+	#partial switch sampler.min_filter {
+		case .nearest:
+			result.min_filter = .Nearest
+			result.mipmap_filter = .Base_Only
+		case .linear:
+			result.min_filter = .Linear
+			result.mipmap_filter = .Base_Only
+		case .nearest_mipmap_nearest:
+			result.min_filter = .Nearest
+			result.mipmap_filter = .Nearest
+		case .linear_mipmap_nearest:
+			result.min_filter = .Linear
+			result.mipmap_filter = .Nearest
+		case .nearest_mipmap_linear:
+			result.min_filter = .Nearest
+			result.mipmap_filter = .Linear
+		case .linear_mipmap_linear, .undefined:
+			result.min_filter = .Linear
+			result.mipmap_filter = .Linear
+	}
+	#partial switch sampler.wrap_s {
+		case .clamp_to_edge:
+			result.address_u = .Clamp_To_Edge
+		case .mirrored_repeat:
+			result.address_u = .Mirrored_Repeat
+		case .repeat:
+			result.address_u = .Repeat
+	}
+	#partial switch sampler.wrap_t {
+		case .clamp_to_edge:
+			result.address_v = .Clamp_To_Edge
+		case .mirrored_repeat:
+			result.address_v = .Mirrored_Repeat
+		case .repeat:
+			result.address_v = .Repeat
+	}
+	return result
 }
 
 decode_model_texture :: proc(
@@ -629,7 +941,6 @@ load_model_image_bytes :: proc(image: ^cgltf.image, source_path: string) -> ([]u
 build_model_primitive :: proc(
 	data: ^cgltf.data,
 	primitive: ^cgltf.primitive,
-	mesh_index, primitive_index: int,
 ) -> (
 	result: Model_Primitive,
 	err: string,
@@ -657,8 +968,6 @@ build_model_primitive :: proc(
 	if uv != nil && (uv.type != .vec2 || uv.count != position.count) {
 		return {}, "TEXCOORD_0 must be a VEC2 accessor matching POSITION count"
 	}
-	key := fmt.aprintf("mesh:%d/primitive:%d", mesh_index, primitive_index)
-	result.key = key
 	result.material_index = -1
 	if primitive.material != nil {
 		result.material_index = i32(cgltf.material_index(data, primitive.material))
@@ -742,6 +1051,7 @@ destroy_model_mesh :: proc(mesh: ^Model_Mesh) {
 	if mesh == nil {
 		return
 	}
+	delete(mesh.key)
 	delete(mesh.name)
 	for &primitive in mesh.primitives {
 		destroy_model_primitive(&primitive)
@@ -791,6 +1101,108 @@ model_item_name :: proc(value: cstring, kind: string, index: int) -> string {
 		return result
 	}
 	return fmt.aprintf("%s %d", kind, index)
+}
+
+model_semantic_key :: proc(kind: string, value: cstring, fallback_index: int) -> string {
+	if value != nil && string(value) != "" {
+		return fmt.aprintf("%s:%s", kind, string(value))
+	}
+	return fmt.aprintf("%s:unnamed:%d", kind, fallback_index)
+}
+
+model_material_semantic_key :: proc(
+	data: ^cgltf.data,
+	source: ^cgltf.material,
+	source_index: int,
+	material: ^Model_Material,
+) -> string {
+	name := ""
+	if source.name != nil {
+		name = string(source.name)
+	}
+	duplicate_count := 0
+	if name != "" {
+		for candidate in data.materials {
+			if candidate.name != nil && string(candidate.name) == name {
+				duplicate_count += 1
+			}
+		}
+	}
+	if name != "" && duplicate_count == 1 {
+		return model_semantic_key("material", source.name, source_index)
+	}
+	description := fmt.tprintf(
+		"%.9f:%.9f:%.9f:%.9f:%.9f:%.9f:%.9f:%.9f:%.9f:%d:%d",
+		material.base_color.x,
+		material.base_color.y,
+		material.base_color.z,
+		material.base_color.w,
+		material.emissive.x,
+		material.emissive.y,
+		material.emissive.z,
+		material.metallic_factor,
+		material.roughness_factor,
+		material.alpha_mode,
+		material.double_sided,
+	)
+	value := hash.fnv64a(transmute([]byte)description)
+	images := [?]Model_Image {
+		material.base_color_image,
+		material.metallic_roughness_image,
+		material.normal_image,
+		material.occlusion_image,
+		material.emissive_image,
+	}
+	for image in images {
+		value = hash.fnv64a(image.pixels, value)
+	}
+	if name == "" {
+		return fmt.aprintf("material:unnamed:%016x", value)
+	}
+	return fmt.aprintf("material:%s:%016x", name, value)
+}
+
+model_mesh_semantic_key :: proc(
+	data: ^cgltf.data,
+	source: ^cgltf.mesh,
+	source_index: int,
+	mesh: ^Model_Mesh,
+) -> string {
+	name := ""
+	if source.name != nil {
+		name = string(source.name)
+	}
+	duplicate_count := 0
+	if name != "" {
+		for candidate in data.meshes {
+			if candidate.name != nil && string(candidate.name) == name {
+				duplicate_count += 1
+			}
+		}
+	}
+	if name != "" && duplicate_count == 1 {
+		return model_semantic_key("mesh", source.name, source_index)
+	}
+	value := hash.fnv64a(transmute([]byte)(string("scrapbot:mesh")))
+	for &primitive in mesh.primitives {
+		fingerprint := model_primitive_fingerprint(&primitive)
+		value = hash.fnv64a((cast([^]u8)&fingerprint)[:size_of(fingerprint)], value)
+	}
+	if name == "" {
+		return fmt.aprintf("mesh:unnamed:%016x", value)
+	}
+	return fmt.aprintf("mesh:%s:%016x", name, value)
+}
+
+model_primitive_fingerprint :: proc(primitive: ^Model_Primitive) -> u64 {
+	value := hash.fnv64a(
+		(cast([^]u8)raw_data(primitive.vertices[:]))[:size_of(Model_Vertex) *
+		len(primitive.vertices)],
+	)
+	return hash.fnv64a(
+		(cast([^]u8)raw_data(primitive.indices[:]))[:size_of(u32) * len(primitive.indices)],
+		value,
+	)
 }
 
 model_metadata :: proc(
@@ -899,6 +1311,7 @@ encode_model_product :: proc(model: ^Model_Product) -> []u8 {
 	model_write_u32(&bytes, u32(len(model.meshes)))
 	model_write_u32(&bytes, u32(len(model.nodes)))
 	for material in model.materials {
+		model_write_string(&bytes, material.key)
 		model_write_string(&bytes, material.name)
 		model_write_vec4(&bytes, material.base_color)
 		model_write_vec3(&bytes, material.emissive)
@@ -917,6 +1330,7 @@ encode_model_product :: proc(model: ^Model_Product) -> []u8 {
 		model_write_u32(&bytes, material.ignored_texture_count)
 	}
 	for mesh in model.meshes {
+		model_write_string(&bytes, mesh.key)
 		model_write_string(&bytes, mesh.name)
 		model_write_u32(&bytes, u32(len(mesh.primitives)))
 		for primitive in mesh.primitives {
@@ -935,6 +1349,7 @@ encode_model_product :: proc(model: ^Model_Product) -> []u8 {
 		}
 	}
 	for node in model.nodes {
+		model_write_string(&bytes, node.key)
 		model_write_string(&bytes, node.name)
 		model_write_i32(&bytes, node.parent_index)
 		model_write_i32(&bytes, node.mesh_index)
@@ -979,20 +1394,24 @@ read_model_product :: proc(path: string) -> (model: Model_Product, err: string) 
 	}
 	for _ in 0 ..< material_count {
 		material: Model_Material
-		material.name, ok = model_read_string(&reader)
+		material.key, ok = model_read_string(&reader)
+		if ok {
+			material.name, ok = model_read_string(&reader)
+		}
 		if !ok {
+			delete(material.key)
 			destroy_model_product(&model)
 			return {}, "imported model material is truncated"
 		}
 		material.base_color, ok = model_read_vec4(&reader)
 		if !ok {
-			delete(material.name)
+			destroy_model_material(&material)
 			destroy_model_product(&model)
 			return {}, "imported model material is truncated"
 		}
 		material.emissive, ok = model_read_vec3(&reader)
 		if !ok {
-			delete(material.name)
+			destroy_model_material(&material)
 			destroy_model_product(&model)
 			return {}, "imported model material is truncated"
 		}
@@ -1052,14 +1471,19 @@ read_model_product :: proc(path: string) -> (model: Model_Product, err: string) 
 	}
 	for _ in 0 ..< mesh_count {
 		mesh: Model_Mesh
-		mesh.name, ok = model_read_string(&reader)
+		mesh.key, ok = model_read_string(&reader)
+		if ok {
+			mesh.name, ok = model_read_string(&reader)
+		}
 		if !ok {
+			delete(mesh.key)
 			destroy_model_product(&model)
 			return {}, "imported model mesh is truncated"
 		}
 		primitive_count: u32
 		primitive_count, ok = model_read_u32(&reader)
 		if !ok || primitive_count > 65536 {
+			delete(mesh.key)
 			delete(mesh.name)
 			destroy_model_product(&model)
 			return {}, "imported model primitive count is invalid"
@@ -1140,7 +1564,10 @@ read_model_product :: proc(path: string) -> (model: Model_Product, err: string) 
 	}
 	for _ in 0 ..< node_count {
 		node: Model_Node
-		node.name, ok = model_read_string(&reader)
+		node.key, ok = model_read_string(&reader)
+		if ok {
+			node.name, ok = model_read_string(&reader)
+		}
 		if ok {
 			node.parent_index, ok = model_read_i32(&reader)
 		}
@@ -1157,6 +1584,7 @@ read_model_product :: proc(path: string) -> (model: Model_Product, err: string) 
 			node.transform.scale, ok = model_read_vec3(&reader)
 		}
 		if !ok {
+			delete(node.key)
 			delete(node.name)
 			destroy_model_product(&model)
 			return {}, "imported model nodes are truncated"
@@ -1176,6 +1604,9 @@ read_model_product :: proc(path: string) -> (model: Model_Product, err: string) 
 
 validate_decoded_model :: proc(model: ^Model_Product) -> string {
 	for material in model.materials {
+		if material.key == "" {
+			return "imported model material semantic key is empty"
+		}
 		if math.is_nan(material.alpha_cutoff) ||
 		   math.is_inf(material.alpha_cutoff) ||
 		   material.alpha_cutoff < 0 ||
@@ -1183,7 +1614,23 @@ validate_decoded_model :: proc(model: ^Model_Product) -> string {
 			return "imported model material alpha cutoff is invalid"
 		}
 	}
+	for mesh in model.meshes {
+		if mesh.key == "" {
+			return "imported model mesh semantic key is empty"
+		}
+		for primitive in mesh.primitives {
+			if primitive.key == "" {
+				return "imported model primitive semantic key is empty"
+			}
+		}
+	}
+	node_keys := make(map[string]bool)
+	defer delete(node_keys)
 	for node, node_index in model.nodes {
+		if node.key == "" || node_keys[node.key] {
+			return "imported model node semantic key is empty or duplicated"
+		}
+		node_keys[node.key] = true
 		if node.parent_index < -1 ||
 		   node.parent_index >= i32(len(model.nodes)) ||
 		   node.parent_index == i32(node_index) {
@@ -1274,6 +1721,11 @@ model_write_image :: proc(bytes: ^[dynamic]u8, image: Model_Image) {
 	model_write_u32(bytes, image.width)
 	model_write_u32(bytes, image.height)
 	model_write_u32(bytes, image.mip_count)
+	model_write_u32(bytes, u32(image.sampler.mag_filter))
+	model_write_u32(bytes, u32(image.sampler.min_filter))
+	model_write_u32(bytes, u32(image.sampler.mipmap_filter))
+	model_write_u32(bytes, u32(image.sampler.address_u))
+	model_write_u32(bytes, u32(image.sampler.address_v))
 	model_write_u32(bytes, u32(len(image.pixels)))
 	model_write_bytes(bytes, image.pixels)
 }
@@ -1373,6 +1825,23 @@ model_read_image :: proc(reader: ^Model_Reader, image: ^Model_Image) -> bool {
 	if !mip_count_ok {
 		return false
 	}
+	mag_filter, mag_ok := model_read_u32(reader)
+	min_filter, min_ok := model_read_u32(reader)
+	mipmap_filter, mipmap_ok := model_read_u32(reader)
+	address_u, address_u_ok := model_read_u32(reader)
+	address_v, address_v_ok := model_read_u32(reader)
+	if !mag_ok ||
+	   !min_ok ||
+	   !mipmap_ok ||
+	   !address_u_ok ||
+	   !address_v_ok ||
+	   mag_filter > u32(shared.Texture_Filter.Linear) ||
+	   min_filter > u32(shared.Texture_Filter.Linear) ||
+	   mipmap_filter > u32(shared.Texture_Mipmap_Filter.Linear) ||
+	   address_u > u32(shared.Texture_Address_Mode.Repeat) ||
+	   address_v > u32(shared.Texture_Address_Mode.Repeat) {
+		return false
+	}
 	pixel_count, pixel_count_ok := model_read_u32(reader)
 	if !pixel_count_ok || pixel_count > 16384 * 16384 * 4 {
 		return false
@@ -1407,6 +1876,13 @@ model_read_image :: proc(reader: ^Model_Reader, image: ^Model_Image) -> bool {
 	image.width = width
 	image.height = height
 	image.mip_count = mip_count
+	image.sampler = {
+		mag_filter = shared.Texture_Filter(mag_filter),
+		min_filter = shared.Texture_Filter(min_filter),
+		mipmap_filter = shared.Texture_Mipmap_Filter(mipmap_filter),
+		address_u = shared.Texture_Address_Mode(address_u),
+		address_v = shared.Texture_Address_Mode(address_v),
+	}
 	return true
 }
 

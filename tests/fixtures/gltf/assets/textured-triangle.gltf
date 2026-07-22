@@ -21,7 +21,13 @@
       "baseColorTexture": {"index": 0}
     }
   }],
-  "textures": [{"source": 0}],
+  "samplers": [{
+    "magFilter": 9728,
+    "minFilter": 9985,
+    "wrapS": 33071,
+    "wrapT": 33648
+  }],
+  "textures": [{"source": 0, "sampler": 0}],
   "images": [{
     "name": "Checker",
     "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAAAAAAAAQCEeRdzAAAAP0lEQVR4nGNUf3GRgYHhRvAGIKmxNgDOZmHAAVgw1ULYCB03/s1hWM3AECoC1YFQu5oBohzDjlARiCKi7UADAHKZHpjMc+anAAAAAElFTkSuQmCC"

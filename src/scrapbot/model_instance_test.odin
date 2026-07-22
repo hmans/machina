@@ -30,7 +30,7 @@ test_model_resource_expands_into_stable_derived_ecs_renderables :: proc(t: ^test
 	root_id, _ := shared.entity_uuid_parse("a7100000-0000-4000-8000-000000000003")
 	derived_index := -1
 	for entity, entity_index in world.entities {
-		if entity.alive && entity.model_owner == root_id {
+		if entity.alive && entity.model_owner == root_id && entity.geometry_index >= 0 {
 			derived_index = entity_index
 			break
 		}
@@ -44,7 +44,9 @@ test_model_resource_expands_into_stable_derived_ecs_renderables :: proc(t: ^test
 	testing.expect(t, derived.transform_index >= 0)
 	testing.expect(t, derived.geometry_index >= 0)
 	testing.expect(t, derived.material_index >= 0)
-	testing.expect_value(t, world.transforms[derived.transform_index].parent, root_id)
+	model_id, _ := shared.resource_uuid_parse("a7000000-0000-4000-8000-000000000001")
+	node_id := model_instance_uuid(root_id, model_id, "node:Triangle Node", "")
+	testing.expect_value(t, world.transforms[derived.transform_index].parent, node_id)
 	stable_id := derived.uuid
 	testing.expect(t, reconcile_model_instances(&world, &registry) == "")
 	recreated_index, found := ecs.entity_index_by_uuid(&world, stable_id)
@@ -67,8 +69,12 @@ test_model_resource_expands_into_stable_derived_ecs_renderables :: proc(t: ^test
 			_, applied := ecs.apply_entity_snapshot(&world, &duplicate)
 			testing.expect(t, applied)
 			testing.expect(t, reconcile_model_instances(&world, &registry) == "")
-			model_id, _ := shared.resource_uuid_parse("a7000000-0000-4000-8000-000000000001")
-			duplicate_child := model_instance_uuid(duplicate_id, model_id, 0, -1)
+			duplicate_child := model_instance_uuid(
+				duplicate_id,
+				model_id,
+				"node:Triangle Node",
+				"mesh:Triangle Mesh/primitive:material:Coral",
+			)
 			_, duplicate_child_found := ecs.entity_index_by_uuid(&world, duplicate_child)
 			testing.expect(t, duplicate_child_found)
 		}

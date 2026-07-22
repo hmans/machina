@@ -570,6 +570,10 @@ wgpu_create_render_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 			visibility = {.Fragment},
 			buffer = {type = .Uniform, minBindingSize = u64(size_of(WGPU_Material_Uniform))},
 		},
+		{binding = 7, visibility = {.Fragment}, sampler = {type = .Filtering}},
+		{binding = 8, visibility = {.Fragment}, sampler = {type = .Filtering}},
+		{binding = 9, visibility = {.Fragment}, sampler = {type = .Filtering}},
+		{binding = 10, visibility = {.Fragment}, sampler = {type = .Filtering}},
 	}
 	renderer.material_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
 		renderer.device,

@@ -50,6 +50,10 @@ var<uniform> render: Render_Uniform;
 @group(1) @binding(4) var occlusion_texture: texture_2d<f32>;
 @group(1) @binding(5) var emissive_texture: texture_2d<f32>;
 @group(1) @binding(6) var<uniform> material: Material_Uniform;
+@group(1) @binding(7) var metallic_roughness_sampler: sampler;
+@group(1) @binding(8) var normal_sampler: sampler;
+@group(1) @binding(9) var occlusion_sampler: sampler;
+@group(1) @binding(10) var emissive_sampler: sampler;
 @group(2) @binding(0) var irradiance_cube: texture_cube<f32>;
 @group(2) @binding(1) var specular_cube: texture_cube<f32>;
 @group(2) @binding(2) var environment_sampler: sampler;
@@ -140,7 +144,7 @@ fn geometry_smith(normal: vec3<f32>, view: vec3<f32>, light: vec3<f32>, roughnes
 
 fn mapped_normal(input: Vertex_Output) -> vec3<f32> {
 	let geometric = normalize(input.world_normal);
-	var sampled = textureSample(normal_texture, base_color_sampler, input.uv).xyz * 2.0 - 1.0;
+	var sampled = textureSample(normal_texture, normal_sampler, input.uv).xyz * 2.0 - 1.0;
 	sampled = normalize(vec3<f32>(sampled.xy * material.pbr_factors.z, sampled.z));
 	let position_dx = dpdx(input.world_position);
 	let position_dy = dpdy(input.world_position);
@@ -184,10 +188,10 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 	let legacy_factor = pow(max(input.color, vec3<f32>(0.0)), vec3<f32>(2.2));
 	let color_factor = mix(legacy_factor, input.color, material.flags.y);
 	let base_color = texture_color * color_factor;
-	let packed = textureSample(metallic_roughness_texture, base_color_sampler, input.uv);
+	let packed = textureSample(metallic_roughness_texture, metallic_roughness_sampler, input.uv);
 	let metallic = clamp(packed.b * material.pbr_factors.x, 0.0, 1.0);
 	let roughness = clamp(packed.g * material.pbr_factors.y, 0.045, 1.0);
-	let occlusion_sample = textureSample(occlusion_texture, base_color_sampler, input.uv).r;
+	let occlusion_sample = textureSample(occlusion_texture, occlusion_sampler, input.uv).r;
 	let occlusion = mix(1.0, occlusion_sample, material.pbr_factors.w);
 	let f0 = mix(vec3<f32>(0.04), base_color, metallic);
 	var color = vec3<f32>(0.0);
@@ -238,7 +242,7 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 	} else {
 		color += render.ambient.rgb * (ambient_diffuse + ambient_specular) * occlusion;
 	}
-	let emissive_map = textureSample(emissive_texture, base_color_sampler, input.uv).rgb;
+	let emissive_map = textureSample(emissive_texture, emissive_sampler, input.uv).rgb;
 	let emissive = mix(input.emissive, input.emissive * emissive_map, material.flags.x);
 	return vec4<f32>((color + emissive) * environment.exposure, 1.0);
 }

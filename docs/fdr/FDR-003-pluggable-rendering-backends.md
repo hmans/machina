@@ -59,7 +59,7 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 
 **Decision:** WGPU consumes position/normal/UV vertices with `u32` triangle indices and shared materials. Materials may provide scalar metallic-roughness factors and base-color, metallic-roughness, normal, occlusion, and emissive images; cube and plane helpers generate the same geometry representation.
 **Why:** Procedural, custom, and future imported geometry should follow one rendering path.
-**Tradeoff:** Normal mapping reconstructs a tangent frame from fragment derivatives instead of storing imported tangents. Local reflection probes, sampler preservation, transparency, and advanced material extensions remain follow-up work.
+**Tradeoff:** Normal mapping reconstructs a tangent frame from fragment derivatives instead of storing imported tangents. Local reflection probes, transparency, and advanced material extensions remain follow-up work.
 
 ### 5. Keep headless framegrabs on the same render path
 

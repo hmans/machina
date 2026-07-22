@@ -795,7 +795,7 @@ reconcile_model_instances :: proc(world: ^shared.World, registry: ^resources.Reg
 			index = -1
 		}
 		for node, node_index in model.nodes {
-			uuid := model_instance_uuid(root.uuid, resource_id, node_index, -1)
+			uuid := model_instance_uuid(root.uuid, resource_id, node.key, "")
 			name := fmt.tprintf("%s / %s", root.name, node.name)
 			entity_index, created := ecs.create_world_entity(world, name, uuid, .Runtime, true)
 			if !created {
@@ -822,37 +822,25 @@ reconcile_model_instances :: proc(world: ^shared.World, registry: ^resources.Reg
 				continue
 			}
 			mesh := model.meshes[node.mesh_index]
-			for primitive, primitive_index in mesh.primitives {
-				primitive_entity := entity_index
-				if primitive_index > 0 {
-					uuid := model_instance_uuid(
-						root.uuid,
-						resource_id,
-						node_index,
-						primitive_index,
-					)
-					name := fmt.tprintf("%s / %s / %s", root.name, node.name, primitive.key)
-					created_index, created := ecs.create_world_entity(
-						world,
-						name,
-						uuid,
-						.Runtime,
-						true,
-					)
-					if !created {
-						return fmt.tprintf(
-							"failed to instantiate model primitive '%s'",
-							primitive.key,
-						)
-					}
-					primitive_entity = created_index
-					world.entities[primitive_entity].model_owner = root.uuid
-					ecs.add_transform(
-						world,
-						primitive_entity,
-						{scale = {1, 1, 1}, parent = world.entities[entity_index].uuid},
-					)
+			for primitive in mesh.primitives {
+				uuid := model_instance_uuid(root.uuid, resource_id, node.key, primitive.key)
+				name := fmt.tprintf("%s / %s / %s", root.name, node.name, primitive.key)
+				primitive_entity, created := ecs.create_world_entity(
+					world,
+					name,
+					uuid,
+					.Runtime,
+					true,
+				)
+				if !created {
+					return fmt.tprintf("failed to instantiate model primitive '%s'", primitive.key)
 				}
+				world.entities[primitive_entity].model_owner = root.uuid
+				ecs.add_transform(
+					world,
+					primitive_entity,
+					{scale = {1, 1, 1}, parent = world.entities[entity_index].uuid},
+				)
 				ecs.add_geometry(world, primitive_entity, primitive.geometry)
 				material := primitive.material
 				if material == (shared.Material_Handle{}) {
@@ -869,16 +857,16 @@ reconcile_model_instances :: proc(world: ^shared.World, registry: ^resources.Reg
 model_instance_uuid :: proc(
 	root: shared.Entity_UUID,
 	model: shared.Resource_UUID,
-	node_index, primitive_index: int,
+	node_key, primitive_key: string,
 ) -> shared.Entity_UUID {
 	root_buffer: [36]u8
 	model_buffer: [36]u8
 	key := fmt.tprintf(
-		"scrapbot:model-instance:%s:%s:%d:%d",
+		"scrapbot:model-instance:%s:%s:%s:%s",
 		shared.entity_uuid_to_string(root, root_buffer[:]),
 		shared.resource_uuid_to_string(model, model_buffer[:]),
-		node_index,
-		primitive_index,
+		node_key,
+		primitive_key,
 	)
 	return shared.entity_uuid_from_engine_name(key)
 }

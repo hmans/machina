@@ -230,6 +230,7 @@ WGPU_Material_Cache :: struct {
 	texture_version: u32,
 	textures: [5]wgpu.Texture,
 	views: [5]wgpu.TextureView,
+	samplers: [5]wgpu.Sampler,
 	bind_group: wgpu.BindGroup,
 	uniform_buffer: wgpu.Buffer,
 	owns_texture: [5]bool,
@@ -1004,6 +1005,20 @@ wgpu_material_cache :: proc(
 		material.desc.occlusion_image,
 		material.desc.emissive_image,
 	}
+	samplers := [?]shared.Texture_Sampler {
+		material.desc.texture_sampler,
+		material.desc.metallic_roughness_image.sampler,
+		material.desc.normal_image.sampler,
+		material.desc.occlusion_image.sampler,
+		material.desc.emissive_image.sampler,
+	}
+	for sampler, sampler_index in samplers {
+		cached.samplers[sampler_index] = wgpu_create_material_sampler(renderer, sampler)
+		if cached.samplers[sampler_index] == nil {
+			wgpu_release_material_cache_entry(cached)
+			return nil, "failed to create material texture sampler"
+		}
+	}
 	fallbacks := [?][4]u8 {
 		{255, 255, 255, 255},
 		{128, 128, 255, 255},
@@ -1073,12 +1088,16 @@ wgpu_material_cache :: proc(
 	)
 	entries := [?]wgpu.BindGroupEntry {
 		{binding = 0, textureView = cached.views[0]},
-		{binding = 1, sampler = renderer.material_sampler},
+		{binding = 1, sampler = cached.samplers[0]},
 		{binding = 2, textureView = cached.views[1]},
 		{binding = 3, textureView = cached.views[2]},
 		{binding = 4, textureView = cached.views[3]},
 		{binding = 5, textureView = cached.views[4]},
 		{binding = 6, buffer = cached.uniform_buffer, size = u64(size_of(WGPU_Material_Uniform))},
+		{binding = 7, sampler = cached.samplers[1]},
+		{binding = 8, sampler = cached.samplers[2]},
+		{binding = 9, sampler = cached.samplers[3]},
+		{binding = 10, sampler = cached.samplers[4]},
 	}
 	cached.bind_group = wgpu.DeviceCreateBindGroup(
 		renderer.device,
@@ -1107,6 +1126,11 @@ wgpu_release_material_cache_entry :: proc(cached: ^WGPU_Material_Cache) {
 	if cached.uniform_buffer != nil {
 		wgpu.BufferRelease(cached.uniform_buffer)
 	}
+	for sampler in cached.samplers {
+		if sampler != nil {
+			wgpu.SamplerRelease(sampler)
+		}
+	}
 	for owns, index in cached.owns_texture {
 		if !owns {
 			continue
@@ -1122,7 +1146,62 @@ wgpu_release_material_cache_entry :: proc(cached: ^WGPU_Material_Cache) {
 	cached.uniform_buffer = nil
 	cached.textures = {}
 	cached.views = {}
+	cached.samplers = {}
 	cached.owns_texture = {}
+}
+
+wgpu_create_material_sampler :: proc(
+	renderer: ^WGPU_Renderer,
+	desc: shared.Texture_Sampler,
+) -> wgpu.Sampler {
+	mag_filter: wgpu.FilterMode = .Linear
+	if desc.mag_filter == .Nearest {
+		mag_filter = .Nearest
+	}
+	min_filter: wgpu.FilterMode = .Linear
+	if desc.min_filter == .Nearest {
+		min_filter = .Nearest
+	}
+	mipmap_filter: wgpu.MipmapFilterMode = .Linear
+	if desc.mipmap_filter == .Nearest || desc.mipmap_filter == .Base_Only {
+		mipmap_filter = .Nearest
+	}
+	address_u: wgpu.AddressMode = .Repeat
+	#partial switch desc.address_u {
+		case .Clamp_To_Edge:
+			address_u = .ClampToEdge
+		case .Mirrored_Repeat:
+			address_u = .MirrorRepeat
+		case .Default, .Repeat:
+			address_u = .Repeat
+	}
+	address_v: wgpu.AddressMode = .Repeat
+	#partial switch desc.address_v {
+		case .Clamp_To_Edge:
+			address_v = .ClampToEdge
+		case .Mirrored_Repeat:
+			address_v = .MirrorRepeat
+		case .Default, .Repeat:
+			address_v = .Repeat
+	}
+	max_lod := f32(32)
+	if desc.mipmap_filter == .Base_Only {
+		max_lod = 0
+	}
+	return wgpu.DeviceCreateSampler(
+		renderer.device,
+		&wgpu.SamplerDescriptor {
+			label = "Scrapbot Material Texture Sampler",
+			addressModeU = address_u,
+			addressModeV = address_v,
+			addressModeW = .Repeat,
+			magFilter = mag_filter,
+			minFilter = min_filter,
+			mipmapFilter = mipmap_filter,
+			lodMaxClamp = max_lod,
+			maxAnisotropy = 1,
+		},
+	)
 }
 
 wgpu_create_material_image :: proc(

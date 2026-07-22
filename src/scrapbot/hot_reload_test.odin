@@ -92,7 +92,12 @@ test_scene_revert_reconciles_imported_model_instances :: proc(t: ^testing.T) {
 	defer destroy_hot_reload_state(state)
 	root_id, _ := shared.entity_uuid_parse("a7100000-0000-4000-8000-000000000003")
 	model_id, _ := shared.resource_uuid_parse("a7000000-0000-4000-8000-000000000001")
-	derived_id := model_instance_uuid(root_id, model_id, 0, -1)
+	derived_id := model_instance_uuid(
+		root_id,
+		model_id,
+		"node:Triangle Node",
+		"mesh:Triangle Mesh/primitive:material:Coral",
+	)
 	_, initially_found := ecs.entity_index_by_uuid(&world, derived_id)
 	testing.expect(t, initially_found)
 	ecs.despawn_model_instance_entities(&world, root_id)

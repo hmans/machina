@@ -151,6 +151,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
 - Assets
   - [x] Incremental static glTF 2.0/GLB model imports with embedded, data-URI, and external metallic-roughness PBR images
   - [x] glTF opaque/cutout alpha materials and double-sided rendering across color, depth, and shadows
+  - [x] Selected-scene glTF closure imports with semantic reimport identity and authored texture samplers
   - [x] PNG texture assets
   - [x] UUID-backed texture and model resources
   - [x] UUID-backed Radiance HDR environments with source-resolution skies and importer-built diffuse/specular cubes

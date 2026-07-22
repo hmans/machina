@@ -59,6 +59,7 @@ Material_Desc :: struct {
 	texture_width: u32,
 	texture_height: u32,
 	texture_mip_count: u32,
+	texture_sampler: shared.Texture_Sampler,
 	metallic_roughness_image: Material_Image,
 	normal_image: Material_Image,
 	occlusion_image: Material_Image,
@@ -69,6 +70,7 @@ Material_Image :: struct {
 	pixels: []u8,
 	width, height, mip_count: u32,
 	color_space: shared.Texture_Color_Space,
+	sampler: shared.Texture_Sampler,
 }
 
 Texture_Desc :: struct {

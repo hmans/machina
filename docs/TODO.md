@@ -5,10 +5,8 @@ This file tracks current actionable engineering work. The broad product roadmap 
 ## Rendering
 
 - [ ] Design baked/captured local reflection-probe resources, ECS volume components, probe selection/blending, and an editor bake workflow on top of global imported IBL.
-- [ ] Preserve glTF sampler settings and add GPU-native compressed texture products.
+- [ ] Add GPU-native compressed texture products for imported images.
 - [ ] Add sorted glTF `BLEND` transparency, richer PBR extensions, animation, skins, morph targets, and compressed geometry. (`OPAQUE`, `MASK`, alpha cutoffs, and double-sided materials are supported.)
-- [ ] Replace index-derived imported model subresource keys with durable semantic keys across glTF reordering.
-- [ ] Import only nodes and resources reachable from the selected glTF scene.
 - [ ] Add optional per-target post-processing, grids, axes, wireframe, and transparent presentation to embedded ECS viewports.
 - [ ] Generalize retained-World viewport targets into explicitly addressable concurrent ECS worlds when multi-world runtime ownership exists.
 - [ ] Replace aggregate asset polling with dependency-aware platform file watching that enqueues exact resource UUID reimports.

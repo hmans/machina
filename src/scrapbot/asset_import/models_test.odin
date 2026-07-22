@@ -65,14 +65,37 @@ test_gltf_import_decodes_embedded_base_color_image :: proc(t: ^testing.T) {
 	testing.expect_value(t, material.base_color_image.width, u32(8))
 	testing.expect_value(t, material.base_color_image.height, u32(8))
 	testing.expect_value(t, material.base_color_image.mip_count, u32(4))
+	testing.expect_value(
+		t,
+		material.base_color_image.sampler.mag_filter,
+		shared.Texture_Filter.Nearest,
+	)
+	testing.expect_value(
+		t,
+		material.base_color_image.sampler.min_filter,
+		shared.Texture_Filter.Linear,
+	)
+	testing.expect_value(
+		t,
+		material.base_color_image.sampler.mipmap_filter,
+		shared.Texture_Mipmap_Filter.Nearest,
+	)
+	testing.expect_value(
+		t,
+		material.base_color_image.sampler.address_u,
+		shared.Texture_Address_Mode.Clamp_To_Edge,
+	)
+	testing.expect_value(
+		t,
+		material.base_color_image.sampler.address_v,
+		shared.Texture_Address_Mode.Mirrored_Repeat,
+	)
 	testing.expect_value(t, len(material.base_color_image.pixels), (8 * 8 + 4 * 4 + 2 * 2 + 1) * 4)
 	testing.expect_value(t, material.base_color.x, f32(0.5))
 }
 
 @(test)
-test_gltf_import_rejects_blended_materials_until_transparent_draws_are_sorted :: proc(
-	t: ^testing.T,
-) {
+test_gltf_import_ignores_unsupported_materials_outside_selected_scene :: proc(t: ^testing.T) {
 	declaration := model_test_declaration()
 	root := make_named_model_test_project(
 		t,
@@ -94,7 +117,60 @@ test_gltf_import_rejects_blended_materials_until_transparent_draws_are_sorted ::
 	)
 	report := ensure_project_imports(root, []shared.Project_Resource{declaration})
 	defer destroy_report(&report)
-	testing.expect(t, report.err != "")
+	testing.expectf(t, report.err == "", "unreferenced material should be ignored: %s", report.err)
+}
+
+@(test)
+test_gltf_import_only_contains_selected_scene_reachable_resources :: proc(t: ^testing.T) {
+	declaration := model_test_declaration()
+	root := make_model_test_project(t)
+	defer os.remove_all(root)
+	defer delete(root)
+	path, join_err := filepath.join({root, "assets/triangle.gltf"})
+	testing.expect(t, join_err == nil)
+	defer delete(path)
+	fixture := `{
+  "asset":{"version":"2.0"},
+  "scene":1,
+  "scenes":[{"nodes":[0]},{"nodes":[1]}],
+  "nodes":[{"name":"Unused Node","mesh":0},{"name":"Selected Node","mesh":1}],
+  "meshes":[
+    {"name":"Unused Mesh","primitives":[{"attributes":{"POSITION":0},"indices":1,"material":0}]},
+    {"name":"Selected Mesh","primitives":[{"attributes":{"POSITION":0},"indices":1,"material":1}]}
+  ],
+  "materials":[
+    {"name":"Unused Material","alphaMode":"BLEND"},
+    {"name":"Selected Material"}
+  ],
+  "buffers":[{"byteLength":42,"uri":"data:application/octet-stream;base64,AAAAAAAAgD8AAAAAAACAvwAAgL8AAAAAAACAPwAAgL8AAAAAAAABAAIA"}],
+  "bufferViews":[
+    {"buffer":0,"byteOffset":0,"byteLength":36,"target":34962},
+    {"buffer":0,"byteOffset":36,"byteLength":6,"target":34963}
+  ],
+  "accessors":[
+    {"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},
+    {"bufferView":1,"componentType":5123,"count":3,"type":"SCALAR"}
+  ]
+}`
+	testing.expect(t, os.write_entire_file(path, fixture) == nil)
+	report := ensure_project_imports(root, []shared.Project_Resource{declaration})
+	defer destroy_report(&report)
+	testing.expectf(t, report.err == "", "selected-scene import failed: %s", report.err)
+	if report.err != "" || len(report.products) != 1 {
+		return
+	}
+	testing.expect_value(t, report.products[0].node_count, 1)
+	testing.expect_value(t, report.products[0].mesh_count, 1)
+	testing.expect_value(t, report.products[0].material_count, 1)
+	model, read_err := read_model_product(report.products[0].artifact_path)
+	defer destroy_model_product(&model)
+	testing.expectf(t, read_err == "", "selected-scene product read failed: %s", read_err)
+	if read_err == "" {
+		testing.expect_value(t, model.nodes[0].key, "node:Selected Node")
+		testing.expect_value(t, model.meshes[0].key, "mesh:Selected Mesh")
+		testing.expect_value(t, model.materials[0].key, "material:Selected Material")
+		testing.expect_value(t, model.meshes[0].primitives[0].material_index, i32(0))
+	}
 }
 
 @(test)

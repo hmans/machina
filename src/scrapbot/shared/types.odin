@@ -88,6 +88,32 @@ Texture_Color_Space :: enum {
 	Linear,
 }
 
+Texture_Filter :: enum {
+	Default,
+	Nearest,
+	Linear,
+}
+
+Texture_Mipmap_Filter :: enum {
+	Default,
+	Base_Only,
+	Nearest,
+	Linear,
+}
+
+Texture_Address_Mode :: enum {
+	Default,
+	Clamp_To_Edge,
+	Mirrored_Repeat,
+	Repeat,
+}
+
+Texture_Sampler :: struct {
+	mag_filter, min_filter: Texture_Filter,
+	mipmap_filter: Texture_Mipmap_Filter,
+	address_u, address_v: Texture_Address_Mode,
+}
+
 Material_Alpha_Mode :: enum {
 	Opaque,
 	Mask,
