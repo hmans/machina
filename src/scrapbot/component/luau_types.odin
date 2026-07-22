@@ -70,7 +70,7 @@ export type Scrapbot = {
 	},
 	system: (...any) -> (),
 	query: (<A, RA>(first: ScrapbotComponent<A, RA>) -> ScrapbotQuery1<A, RA>) & (<A, RA, B, RB>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>) -> ScrapbotQuery2<A, RA, B, RB>) & (<A, RA, B, RB, C, RC>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>, third: ScrapbotComponent<C, RC>) -> ScrapbotQuery3<A, RA, B, RB, C, RC>),
-	view: (<T, R>(component: ScrapbotComponent<T, R>) -> {ScrapbotQueryItem<R>}) & ((components: {ScrapbotComponent<any, any>}) -> {ScrapbotQueryComponentsItem}) & ((query: ScrapbotAnyQuery) -> {ScrapbotQueryComponentsItem}),
+	view: (<T, R>(component: ScrapbotComponent<T, R>) -> {ScrapbotQueryItem<R>}) & (<A, RA>(query: ScrapbotQuery1<A, RA>) -> {ScrapbotQueryItem<RA>}) & (<A, RA, B, RB>(query: ScrapbotQuery2<A, RA, B, RB>) -> {ScrapbotQueryComponentsItem}) & (<A, RA, B, RB, C, RC>(query: ScrapbotQuery3<A, RA, B, RB, C, RC>) -> {ScrapbotQueryComponentsItem}) & ((components: {ScrapbotComponent<any, any>}) -> {ScrapbotQueryComponentsItem}),
 	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
 	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
 	spawn: (options: ScrapbotSpawnOptions?) -> string,

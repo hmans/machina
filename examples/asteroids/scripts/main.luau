@@ -78,27 +78,27 @@ local Ship = scrapbot.component("ship", {
 	drag = scrapbot.field(scrapbot.number, { draggable = true, minimum = 0, maximum = 5, step = 0.05 }),
 	fire_interval = scrapbot.field(scrapbot.number, { draggable = true, minimum = 0.04, maximum = 1, step = 0.01 }),
 	cooldown = scrapbot.number,
-})
-local Asteroid = scrapbot.component("asteroid", { radius = scrapbot.number })
-local Velocity = scrapbot.component("velocity", { value = scrapbot.vec3 })
+}) :: ShipComponent
+local Asteroid = scrapbot.component("asteroid", { radius = scrapbot.number }) :: AsteroidComponent
+local Velocity = scrapbot.component("velocity", { value = scrapbot.vec3 }) :: VelocityComponent
 local Body = scrapbot.component("body", {
 	radius = scrapbot.field(scrapbot.number, { draggable = true, minimum = 0, maximum = 5, step = 0.05 }),
 	restitution = scrapbot.field(scrapbot.number, { draggable = true, minimum = 0, maximum = 1.2, step = 0.05 }),
-})
-local Bullet = scrapbot.component("bullet", { age = scrapbot.number, radius = scrapbot.number }, { advanced = true })
-local Spin = scrapbot.component("spin", { value = scrapbot.vec3 })
+}) :: BodyComponent
+local Bullet = scrapbot.component("bullet", { age = scrapbot.number, radius = scrapbot.number }, { advanced = true }) :: BulletComponent
+local Spin = scrapbot.component("spin", { value = scrapbot.vec3 }) :: SpinComponent
 local SpawnPop = scrapbot.component("spawn_pop", {
 	age = scrapbot.number,
 	duration = scrapbot.number,
 	target_scale = scrapbot.vec3,
-}, { advanced = true })
+}, { advanced = true }) :: SpawnPopComponent
 local CameraShake = scrapbot.component("camera_shake", {
 	base_position = scrapbot.vec3,
 	base_rotation = scrapbot.vec3,
 	trauma = scrapbot.number,
-}, { advanced = true })
-local ShakeImpulse = scrapbot.component("shake_impulse", { amount = scrapbot.number }, { advanced = true })
-local Hud = scrapbot.component("hud", {})
+}, { advanced = true }) :: CameraShakeComponent
+local ShakeImpulse = scrapbot.component("shake_impulse", { amount = scrapbot.number }, { advanced = true }) :: ShakeImpulseComponent
+local Hud = scrapbot.component("hud", {}) :: HudComponent
 local score = 0
 local random_state = 7331
 

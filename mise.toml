@@ -146,6 +146,16 @@ description = "Build and run the Scrapbot CLI"
 depends = ["build"]
 run = "bin/scrapbot \"$@\""
 
+[tasks.luau-workspace-types]
+description = "Refresh repository-wide Luau declarations from every example project"
+depends = ["build"]
+run = '''
+for project in assets asteroids ecs-showcase ecs-stress minimal ui-showcase; do
+  bin/scrapbot check "examples/$project"
+done
+node tools/generate_workspace_luau_types.mjs
+'''
+
 [tasks.test]
 description = "Run all local checks and smoke tests"
 depends = ["build"]
@@ -168,9 +178,12 @@ odin check src/scrapbot -no-entry-point
 odin test src/scrapbot -all-packages -extra-linker-flags:"$LUAU_LINK_FLAGS"
 bin/scrapbot --version
 bin/scrapbot check examples/minimal
+bin/scrapbot check examples/assets
+bin/scrapbot check examples/ecs-showcase
 bin/scrapbot check examples/ui-showcase
 bin/scrapbot check examples/ecs-stress
 bin/scrapbot check examples/asteroids
+node tools/generate_workspace_luau_types.mjs --check
 bin/scrapbot run examples/minimal --backend null --headless --no-hot-reload --frames 1
 bin/scrapbot run examples/ui-showcase --backend null --headless --no-hot-reload --frames 1
 bin/scrapbot run examples/asteroids --backend null --headless --no-hot-reload --frames 5

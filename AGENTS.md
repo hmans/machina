@@ -67,3 +67,8 @@ bin/scrapbot run <path> --backend wgpu --editor --headless --ui-script <actions.
 - Use `mise fmt-audit` to report formatting drift without modifying the worktree.
 - The tracked pre-commit hook checks staged Odin blobs with `mise fmt-staged`. Never bypass it with `--no-verify`.
 - Keep `ols.json` and `odinfmt.json` as the shared editor and formatting policy; do not replace them with editor-local defaults.
+
+## Luau Tooling
+
+- `scrapbot check <project>` refreshes that project's ignored `.scrapbot/types/scrapbot.d.luau` declarations. After changing generated Luau APIs or example component schemas, run `mise luau-workspace-types`; it checks the self-contained example set and rebuilds the tracked `types/scrapbot.d.luau` aggregate used when the complete Scrapbot repository is open in VS Code. Examples backed by ignored external fixtures keep project-local declarations and editor settings but are excluded from this default aggregate.
+- Keep each project `.vscode/settings.json` pointed at `.scrapbot/types/scrapbot.d.luau`, and keep the repository setting pointed at `types/scrapbot.d.luau`. `node tools/generate_workspace_luau_types.mjs --check` is the drift guard.

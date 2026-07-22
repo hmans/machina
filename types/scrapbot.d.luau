@@ -5,20 +5,49 @@ export type Scrapbot = {
 	log: (message: any) -> (),
 	entity_count: () -> number,
 	renderable_count: () -> number,
-	component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,
-	library_component: <T>(name: string, schema: ScrapbotComponentSchema) -> ScrapbotComponent<T, T>,
+	component: <T>(name: string, schema: ScrapbotComponentSchema, options: ScrapbotComponentOptions?) -> ScrapbotComponent<T, T>,
+	library_component: <T>(name: string, schema: ScrapbotComponentSchema, options: ScrapbotComponentOptions?) -> ScrapbotComponent<T, T>,
 	component_handle: <T, R>(name: string) -> ScrapbotComponent<T, R>,
+	field: <T, R>(field: ScrapbotComponentField<T, R>, options: ScrapbotFieldOptions?) -> ScrapbotComponentField<T, R>,
+	number: ScrapbotComponentField<number, number>,
+	vec2: ScrapbotComponentField<Vec2, ReadonlyVec2>,
 	vec3: ScrapbotComponentField<Vec3, ReadonlyVec3>,
+	vec4: ScrapbotComponentField<Vec4, ReadonlyVec4>,
+	color: ScrapbotComponentField<Vec4, ReadonlyVec4>,
 	transform: ScrapbotTransformComponent,
+	keyboard_input: ScrapbotKeyboardInputComponent,
+	pointer_input: ScrapbotPointerInputComponent,
+	input: {
+		key_down: (key: string) -> boolean,
+		key_pressed: (key: string) -> boolean,
+		key_released: (key: string) -> boolean,
+		pointer: () -> ScrapbotPointerSnapshot,
+		pointer_button: (button: string) -> (boolean, boolean, boolean),
+	},
 	camera: ScrapbotCameraComponent,
 	ambient_light: ScrapbotAmbientLightComponent,
 	directional_light: ScrapbotDirectionalLightComponent,
 	point_light: ScrapbotPointLightComponent,
 	shadow_caster: ScrapbotShadowCasterComponent,
 	shadow_receiver: ScrapbotShadowReceiverComponent,
+	ui_layout: ScrapbotUiLayoutComponent,
+	ui_hstack: ScrapbotUiHstackComponent,
+	ui_vstack: ScrapbotUiVstackComponent,
+	ui_scroll_area: ScrapbotUiScrollAreaComponent,
+	ui_panel: ScrapbotUiPanelComponent,
+	ui_table: ScrapbotUiTableComponent,
+	ui_list: ScrapbotUiListComponent,
+	ui_progress: ScrapbotUiProgressComponent,
+	ui_viewport: ScrapbotUiViewportComponent,
+	ui_state: ScrapbotUiStateComponent,
+	ui_text: ScrapbotUiTextComponent,
+	ui_button: ScrapbotUiButtonComponent,
+	ui_input: ScrapbotUiInputComponent,
+	ui_checkbox: ScrapbotUiCheckboxComponent,
 	mesh: ScrapbotMeshComponent,
 	geometry_component: ScrapbotGeometryComponent,
 	material_component: ScrapbotMaterialComponent,
+	model: ScrapbotModelComponent,
 	geometry: {
 		create: (name: string, descriptor: ScrapbotGeometryDescriptor) -> ScrapbotGeometryResource,
 		cube: (name: string, size: number?) -> ScrapbotGeometryResource,
@@ -31,19 +60,22 @@ export type Scrapbot = {
 	material: {
 		lit: (name: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
 		unlit: (name: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
+		emissive: (name: string, red: number?, green: number?, blue: number?, intensity: number?) -> ScrapbotMaterialResource,
+		textured: (name: string, asset_path: string, red: number?, green: number?, blue: number?, alpha: number?) -> ScrapbotMaterialResource,
 	},
 	system: (...any) -> (),
 	query: (<A, RA>(first: ScrapbotComponent<A, RA>) -> ScrapbotQuery1<A, RA>) & (<A, RA, B, RB>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>) -> ScrapbotQuery2<A, RA, B, RB>) & (<A, RA, B, RB, C, RC>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>, third: ScrapbotComponent<C, RC>) -> ScrapbotQuery3<A, RA, B, RB, C, RC>),
-	view: (<T, R>(component: ScrapbotComponent<T, R>) -> {ScrapbotQueryItem<R>}) & ((components: {ScrapbotComponent<any, any>}) -> {ScrapbotQueryComponentsItem}) & ((query: ScrapbotAnyQuery) -> {ScrapbotQueryComponentsItem}),
+	view: (<T, R>(component: ScrapbotComponent<T, R>) -> {ScrapbotQueryItem<R>}) & (<A, RA>(query: ScrapbotQuery1<A, RA>) -> {ScrapbotQueryItem<RA>}) & (<A, RA, B, RB>(query: ScrapbotQuery2<A, RA, B, RB>) -> {ScrapbotQueryComponentsItem}) & (<A, RA, B, RB, C, RC>(query: ScrapbotQuery3<A, RA, B, RB, C, RC>) -> {ScrapbotQueryComponentsItem}) & ((components: {ScrapbotComponent<any, any>}) -> {ScrapbotQueryComponentsItem}),
 	get_rotation: (entity: ScrapbotEntity) -> ScrapbotVec3,
 	set_rotation: (entity: ScrapbotEntity, rotation: ScrapbotVec3) -> (),
-	spawn: (options: ScrapbotSpawnOptions?) -> (),
+	spawn: (options: ScrapbotSpawnOptions?) -> string,
 	despawn: (entity: ScrapbotEntity) -> (),
 	add_component: (<T>(entity: ScrapbotEntity, component: ScrapbotComponent<T, any>, payload: T) -> ()) & ((entity: ScrapbotEntity, component: string, payload: any) -> ()),
 	remove_component: (entity: ScrapbotEntity, component: ScrapbotComponent<any, any> | string) -> (),
 }
 
 export type ScrapbotEntity = {
+	id: string,
 	index: number,
 	generation: number,
 	name: string?,
@@ -56,9 +88,20 @@ export type ScrapbotTime = {
 	read frame_index: number,
 }
 
+export type ScrapbotPointerSnapshot = {
+	available: boolean,
+	captured: boolean,
+	position: ReadonlyVec2,
+	delta: ReadonlyVec2,
+	wheel: ReadonlyVec2,
+}
+
 export type ScrapbotGeometryResource = {kind: "geometry", index: number, generation: number}
+
 export type ScrapbotMaterialResource = {kind: "material", index: number, generation: number}
+
 export type ScrapbotGeometryVertex = {position: Vec3, normal: Vec3, uv: {x: number, y: number}}
+
 export type ScrapbotGeometryDescriptor = {vertices: {ScrapbotGeometryVertex}, indices: {number}}
 
 export type ScrapbotVec3 = {
@@ -69,6 +112,22 @@ export type ScrapbotVec3 = {
 
 export type Vec3 = ScrapbotVec3
 
+export type ScrapbotVec2 = {
+	x: number,
+	y: number,
+}
+
+export type Vec2 = ScrapbotVec2
+
+export type ScrapbotVec4 = {
+	x: number,
+	y: number,
+	z: number,
+	w: number,
+}
+
+export type Vec4 = ScrapbotVec4
+
 export type ScrapbotReadonlyVec3 = {
 	read x: number,
 	read y: number,
@@ -76,6 +135,22 @@ export type ScrapbotReadonlyVec3 = {
 }
 
 export type ReadonlyVec3 = ScrapbotReadonlyVec3
+
+export type ScrapbotReadonlyVec2 = {
+	read x: number,
+	read y: number,
+}
+
+export type ReadonlyVec2 = ScrapbotReadonlyVec2
+
+export type ScrapbotReadonlyVec4 = {
+	read x: number,
+	read y: number,
+	read z: number,
+	read w: number,
+}
+
+export type ReadonlyVec4 = ScrapbotReadonlyVec4
 
 export type ScrapbotComponent<T, R> = {
 	id: number,
@@ -128,13 +203,24 @@ export type ScrapbotComponentSchema = {
 	[string]: ScrapbotComponentFieldType,
 }
 
+export type ScrapbotComponentOptions = {
+	advanced: boolean?,
+}
+
 export type ScrapbotComponentField<T, R> = {
 	name: string,
 	_type: T?,
 	_read_type: R?,
 }
 
-export type ScrapbotComponentFieldType = ScrapbotComponentField<any, any> | "vec3"
+export type ScrapbotFieldOptions = {
+	draggable: boolean?,
+	step: number?,
+	minimum: number?,
+	maximum: number?,
+}
+
+export type ScrapbotComponentFieldType = ScrapbotComponentField<any, any> | "number" | "vec2" | "vec3" | "vec4" | "color"
 
 export type ScrapbotComponentAccess = {
 	id: number,
@@ -146,6 +232,7 @@ export type ScrapbotReadAccess = ScrapbotComponentAccess | ScrapbotAnyQuery | st
 export type ScrapbotWriteAccess = ScrapbotComponentAccess | string
 
 export type ScrapbotSystemOptions = {
+	name: string?,
 	reads: {ScrapbotReadAccess}?,
 	writes: {ScrapbotWriteAccess}?,
 }
@@ -155,13 +242,45 @@ export type ScrapbotSpawnOptions = {
 	components: {[string]: any}?,
 }
 
+export type ScrapbotKeyboardInput = {
+	available: boolean,
+	focused: boolean,
+}
+
+export type ReadonlyScrapbotKeyboardInput = {
+	read available: boolean,
+	read focused: boolean,
+}
+
+export type ScrapbotKeyboardInputComponent = ScrapbotComponent<never, ReadonlyScrapbotKeyboardInput>
+
+export type ScrapbotPointerInput = {
+	available: boolean,
+	captured: boolean,
+	position: Vec2,
+	delta: Vec2,
+	wheel: Vec2,
+}
+
+export type ReadonlyScrapbotPointerInput = {
+	read available: boolean,
+	read captured: boolean,
+	read position: ReadonlyVec2,
+	read delta: ReadonlyVec2,
+	read wheel: ReadonlyVec2,
+}
+
+export type ScrapbotPointerInputComponent = ScrapbotComponent<never, ReadonlyScrapbotPointerInput>
+
 export type ScrapbotTransform = {
+	parent: string,
 	position: Vec3,
 	rotation: Vec3,
 	scale: Vec3,
 }
 
 export type ReadonlyScrapbotTransform = {
+	read parent: string,
 	read position: ReadonlyVec3,
 	read rotation: ReadonlyVec3,
 	read scale: ReadonlyVec3,
@@ -241,6 +360,14 @@ export type ReadonlyScrapbotMaterial = {
 
 export type ScrapbotMaterialComponent = ScrapbotComponent<ScrapbotMaterial, ReadonlyScrapbotMaterial>
 
+export type ScrapbotModel = {
+}
+
+export type ReadonlyScrapbotModel = {
+}
+
+export type ScrapbotModelComponent = ScrapbotComponent<ScrapbotModel, ReadonlyScrapbotModel>
+
 export type ScrapbotShadowCaster = {
 }
 
@@ -257,22 +384,728 @@ export type ReadonlyScrapbotShadowReceiver = {
 
 export type ScrapbotShadowReceiverComponent = ScrapbotComponent<ScrapbotShadowReceiver, ReadonlyScrapbotShadowReceiver>
 
+export type ScrapbotUiLayout = {
+	parent: string?,
+	position: Vec2?,
+	size: Vec2?,
+	min_size: Vec2?,
+	margin: Vec4?,
+	padding: Vec4?,
+	background: Vec4?,
+	border_color: Vec4?,
+	border_width: number?,
+	corner_radius: number?,
+	hidden: boolean?,
+	fill_width: boolean?,
+	fill_height: boolean?,
+	fit_content_width: boolean?,
+	fit_content_height: boolean?,
+	fixed_in_fill: boolean?,
+	tree_item: boolean?,
+	tree_parent: string?,
+	tree_order: number?,
+	tree_collapsed: boolean?,
+}
+
+export type ReadonlyScrapbotUiLayout = {
+	read parent: string,
+	read position: ReadonlyVec2,
+	read size: ReadonlyVec2,
+	read min_size: ReadonlyVec2,
+	read margin: ReadonlyVec4,
+	read padding: ReadonlyVec4,
+	read background: ReadonlyVec4,
+	read border_color: ReadonlyVec4,
+	read border_width: number,
+	read corner_radius: number,
+	read hidden: boolean,
+	read fill_width: boolean,
+	read fill_height: boolean,
+	read fit_content_width: boolean,
+	read fit_content_height: boolean,
+	read fixed_in_fill: boolean,
+	read tree_item: boolean,
+	read tree_parent: string,
+	read tree_order: number,
+	read tree_collapsed: boolean,
+}
+
+export type ScrapbotUiLayoutComponent = ScrapbotComponent<ScrapbotUiLayout, ReadonlyScrapbotUiLayout>
+
+export type ScrapbotUiHstack = {
+	gap: number?,
+	fill: boolean?,
+	draggable: boolean?,
+	min_size: number?,
+}
+
+export type ReadonlyScrapbotUiHstack = {
+	read gap: number,
+	read fill: boolean,
+	read draggable: boolean,
+	read min_size: number,
+}
+
+export type ScrapbotUiHstackComponent = ScrapbotComponent<ScrapbotUiHstack, ReadonlyScrapbotUiHstack>
+
+export type ScrapbotUiVstack = {
+	gap: number?,
+	fill: boolean?,
+	draggable: boolean?,
+	min_size: number?,
+}
+
+export type ReadonlyScrapbotUiVstack = {
+	read gap: number,
+	read fill: boolean,
+	read draggable: boolean,
+	read min_size: number,
+}
+
+export type ScrapbotUiVstackComponent = ScrapbotComponent<ScrapbotUiVstack, ReadonlyScrapbotUiVstack>
+
+export type ScrapbotUiScrollArea = {
+	scroll_speed: number?,
+	smoothness: number?,
+	scrollbar_width: number?,
+	scrollbar_right: number?,
+	scrollbar_vertical_inset: number?,
+	minimum_thumb_size: number?,
+	scrollbar_corner_radius: number?,
+	scrollbar_track_color: Vec4?,
+	scrollbar_thumb_color: Vec4?,
+}
+
+export type ReadonlyScrapbotUiScrollArea = {
+	read scroll_speed: number,
+	read smoothness: number,
+	read scrollbar_width: number,
+	read scrollbar_right: number,
+	read scrollbar_vertical_inset: number,
+	read minimum_thumb_size: number,
+	read scrollbar_corner_radius: number,
+	read scrollbar_track_color: ReadonlyVec4,
+	read scrollbar_thumb_color: ReadonlyVec4,
+}
+
+export type ScrapbotUiScrollAreaComponent = ScrapbotComponent<ScrapbotUiScrollArea, ReadonlyScrapbotUiScrollArea>
+
+export type ScrapbotUiPanel = {
+	title: string?,
+	font: string?,
+	title_color: Vec4?,
+	title_background: Vec4?,
+	title_size: number?,
+	title_height: number?,
+	disclosure_size: number?,
+	disclosure_margin: number?,
+	disclosure_gap: number?,
+	disclosure_corner_radius: number?,
+	collapsible: boolean?,
+	collapsed: boolean?,
+}
+
+export type ReadonlyScrapbotUiPanel = {
+	read title: string,
+	read font: string,
+	read title_color: ReadonlyVec4,
+	read title_background: ReadonlyVec4,
+	read title_size: number,
+	read title_height: number,
+	read disclosure_size: number,
+	read disclosure_margin: number,
+	read disclosure_gap: number,
+	read disclosure_corner_radius: number,
+	read collapsible: boolean,
+	read collapsed: boolean,
+}
+
+export type ScrapbotUiPanelComponent = ScrapbotComponent<ScrapbotUiPanel, ReadonlyScrapbotUiPanel>
+
+export type ScrapbotUiTable = {
+	columns: number?,
+	column_gap: number?,
+	row_gap: number?,
+	proportional_columns: boolean?,
+	resizable_columns: boolean?,
+	min_column_width: number?,
+}
+
+export type ReadonlyScrapbotUiTable = {
+	read columns: number,
+	read column_gap: number,
+	read row_gap: number,
+	read proportional_columns: boolean,
+	read resizable_columns: boolean,
+	read min_column_width: number,
+}
+
+export type ScrapbotUiTableComponent = ScrapbotComponent<ScrapbotUiTable, ReadonlyScrapbotUiTable>
+
+export type ScrapbotUiList = {
+	selected: string?,
+	gap: number?,
+	selection_background: Vec4?,
+	hover_background: Vec4?,
+	active_background: Vec4?,
+	draggable: boolean?,
+	drag_threshold: number?,
+	drop_edge_fraction: number?,
+	drop_target_background: Vec4?,
+	drop_indicator_color: Vec4?,
+	drop_indicator_thickness: number?,
+	drop_indicator_inset: number?,
+	tree_enabled: boolean?,
+	tree_indent: number?,
+}
+
+export type ReadonlyScrapbotUiList = {
+	read selected: string,
+	read gap: number,
+	read selection_background: ReadonlyVec4,
+	read hover_background: ReadonlyVec4,
+	read active_background: ReadonlyVec4,
+	read draggable: boolean,
+	read drag_threshold: number,
+	read drop_edge_fraction: number,
+	read drop_target_background: ReadonlyVec4,
+	read drop_indicator_color: ReadonlyVec4,
+	read drop_indicator_thickness: number,
+	read drop_indicator_inset: number,
+	read tree_enabled: boolean,
+	read tree_indent: number,
+}
+
+export type ScrapbotUiListComponent = ScrapbotComponent<ScrapbotUiList, ReadonlyScrapbotUiList>
+
+export type ScrapbotUiText = {
+	text: string?,
+	font: string?,
+	color: Vec4?,
+	size: number?,
+	alignment: string?,
+}
+
+export type ReadonlyScrapbotUiText = {
+	read text: string,
+	read font: string,
+	read color: ReadonlyVec4,
+	read size: number,
+	read alignment: string,
+}
+
+export type ScrapbotUiTextComponent = ScrapbotComponent<ScrapbotUiText, ReadonlyScrapbotUiText>
+
+export type ScrapbotUiProgress = {
+	value: number?,
+	maximum: number?,
+	fill_color: Vec4?,
+	background_color: Vec4?,
+	inset: Vec4?,
+	corner_radius: number?,
+	right_to_left: boolean?,
+}
+
+export type ReadonlyScrapbotUiProgress = {
+	read value: number,
+	read maximum: number,
+	read fill_color: ReadonlyVec4,
+	read background_color: ReadonlyVec4,
+	read inset: ReadonlyVec4,
+	read corner_radius: number,
+	read right_to_left: boolean,
+}
+
+export type ScrapbotUiProgressComponent = ScrapbotComponent<ScrapbotUiProgress, ReadonlyScrapbotUiProgress>
+
+export type ScrapbotUiViewport = {
+	camera: string?,
+	root: string?,
+	resource: string?,
+	orbit: Vec2?,
+	distance: number?,
+	clear_color: Vec4?,
+	interactive: boolean?,
+}
+
+export type ReadonlyScrapbotUiViewport = {
+	read camera: string,
+	read root: string,
+	read resource: string,
+	read orbit: ReadonlyVec2,
+	read distance: number,
+	read clear_color: ReadonlyVec4,
+	read interactive: boolean,
+}
+
+export type ScrapbotUiViewportComponent = ScrapbotComponent<ScrapbotUiViewport, ReadonlyScrapbotUiViewport>
+
+export type ScrapbotUiState = {
+	hovered: boolean?,
+	active: boolean?,
+	focused: boolean?,
+	activated: boolean?,
+	changed: boolean?,
+	valid: boolean?,
+	submitted: boolean?,
+	cancelled: boolean?,
+	dragging: boolean?,
+	drag_source: string?,
+	drop_target: string?,
+	drop_placement: string?,
+	activation_revision: number?,
+	change_revision: number?,
+	submit_revision: number?,
+	cancel_revision: number?,
+	drop_revision: number?,
+}
+
+export type ReadonlyScrapbotUiState = {
+	read hovered: boolean,
+	read active: boolean,
+	read focused: boolean,
+	read activated: boolean,
+	read changed: boolean,
+	read valid: boolean,
+	read submitted: boolean,
+	read cancelled: boolean,
+	read dragging: boolean,
+	read drag_source: string,
+	read drop_target: string,
+	read drop_placement: string,
+	read activation_revision: number,
+	read change_revision: number,
+	read submit_revision: number,
+	read cancel_revision: number,
+	read drop_revision: number,
+}
+
+export type ScrapbotUiStateComponent = ScrapbotComponent<never, ReadonlyScrapbotUiState>
+
+export type ScrapbotUiButton = {
+	text: string?,
+	font: string?,
+	color: Vec4?,
+	size: number?,
+	alignment: string?,
+	hover_background: Vec4?,
+	active_background: Vec4?,
+	hover_color: Vec4?,
+	active_color: Vec4?,
+	icon: string?,
+	icon_inset: number?,
+	icon_stroke: number?,
+	panel_action: boolean?,
+}
+
+export type ReadonlyScrapbotUiButton = {
+	read text: string,
+	read font: string,
+	read color: ReadonlyVec4,
+	read size: number,
+	read alignment: string,
+	read hover_background: ReadonlyVec4,
+	read active_background: ReadonlyVec4,
+	read hover_color: ReadonlyVec4,
+	read active_color: ReadonlyVec4,
+	read icon: string,
+	read icon_inset: number,
+	read icon_stroke: number,
+	read panel_action: boolean,
+}
+
+export type ScrapbotUiButtonComponent = ScrapbotComponent<ScrapbotUiButton, ReadonlyScrapbotUiButton>
+
+export type ScrapbotUiInput = {
+	text: string?,
+	font: string?,
+	prefix: string?,
+	color: Vec4?,
+	prefix_color: Vec4?,
+	prefix_background: Vec4?,
+	size: number?,
+	prefix_width: number?,
+	selection_background: Vec4?,
+	focus_border_color: Vec4?,
+	invalid_border_color: Vec4?,
+	caret_color: Vec4?,
+	number: number?,
+	step: number?,
+	minimum: number?,
+	maximum: number?,
+	prefix_gap: number?,
+	prefix_corner_radius: number?,
+	prefix_text_padding: number?,
+	selection_corner_radius: number?,
+	focus_border_width: number?,
+	invalid_border_width: number?,
+	caret_width: number?,
+	caret_inset: number?,
+	read_only: boolean?,
+	numeric: boolean?,
+	draggable: boolean?,
+	has_minimum: boolean?,
+	has_maximum: boolean?,
+}
+
+export type ReadonlyScrapbotUiInput = {
+	read text: string,
+	read font: string,
+	read prefix: string,
+	read color: ReadonlyVec4,
+	read prefix_color: ReadonlyVec4,
+	read prefix_background: ReadonlyVec4,
+	read size: number,
+	read prefix_width: number,
+	read selection_background: ReadonlyVec4,
+	read focus_border_color: ReadonlyVec4,
+	read invalid_border_color: ReadonlyVec4,
+	read caret_color: ReadonlyVec4,
+	read number: number,
+	read step: number,
+	read minimum: number,
+	read maximum: number,
+	read prefix_gap: number,
+	read prefix_corner_radius: number,
+	read prefix_text_padding: number,
+	read selection_corner_radius: number,
+	read focus_border_width: number,
+	read invalid_border_width: number,
+	read caret_width: number,
+	read caret_inset: number,
+	read read_only: boolean,
+	read numeric: boolean,
+	read draggable: boolean,
+	read has_minimum: boolean,
+	read has_maximum: boolean,
+}
+
+export type ScrapbotUiInputComponent = ScrapbotComponent<ScrapbotUiInput, ReadonlyScrapbotUiInput>
+
+export type ScrapbotUiCheckbox = {
+	checked: boolean?,
+	box_size: number?,
+	background: Vec4?,
+	checked_background: Vec4?,
+	border_color: Vec4?,
+	check_color: Vec4?,
+	hover_background: Vec4?,
+	active_background: Vec4?,
+	corner_radius: number?,
+	border_width: number?,
+	check_inset: number?,
+	check_corner_radius: number?,
+	read_only: boolean?,
+}
+
+export type ReadonlyScrapbotUiCheckbox = {
+	read checked: boolean,
+	read box_size: number,
+	read background: ReadonlyVec4,
+	read checked_background: ReadonlyVec4,
+	read border_color: ReadonlyVec4,
+	read check_color: ReadonlyVec4,
+	read hover_background: ReadonlyVec4,
+	read active_background: ReadonlyVec4,
+	read corner_radius: number,
+	read border_width: number,
+	read check_inset: number,
+	read check_corner_radius: number,
+	read read_only: boolean,
+}
+
+export type ScrapbotUiCheckboxComponent = ScrapbotComponent<ScrapbotUiCheckbox, ReadonlyScrapbotUiCheckbox>
+
 export type ScrapbotInternalRenderInstance = {
 }
 
 export type ReadonlyScrapbotInternalRenderInstance = {
 }
 
-export type ScrapbotInternalRenderInstanceComponent = ScrapbotComponent<ScrapbotInternalRenderInstance, ReadonlyScrapbotInternalRenderInstance>
+export type ScrapbotInternalRenderInstanceComponent = ScrapbotComponent<never, ReadonlyScrapbotInternalRenderInstance>
 
-export type Autorotate = {
+export type ScrapbotInternalEditorTransformGizmo = {
+}
+
+export type ReadonlyScrapbotInternalEditorTransformGizmo = {
+}
+
+export type ScrapbotInternalEditorTransformGizmoComponent = ScrapbotComponent<never, ReadonlyScrapbotInternalEditorTransformGizmo>
+
+export type Ship = {
+	turn_speed: number,
+	acceleration: number,
+	speed: number,
+	drag: number,
+	fire_interval: number,
+	cooldown: number,
+}
+
+export type ReadonlyShip = {
+	read turn_speed: number,
+	read acceleration: number,
+	read speed: number,
+	read drag: number,
+	read fire_interval: number,
+	read cooldown: number,
+}
+
+export type ShipComponent = ScrapbotComponent<Ship, ReadonlyShip>
+
+export type Asteroid = {
+	radius: number,
+}
+
+export type ReadonlyAsteroid = {
+	read radius: number,
+}
+
+export type AsteroidComponent = ScrapbotComponent<Asteroid, ReadonlyAsteroid>
+
+export type Velocity = {
+	value: Vec3,
+}
+
+export type ReadonlyVelocity = {
+	read value: ReadonlyVec3,
+}
+
+export type VelocityComponent = ScrapbotComponent<Velocity, ReadonlyVelocity>
+
+export type Body = {
+	restitution: number,
+	radius: number,
+}
+
+export type ReadonlyBody = {
+	read restitution: number,
+	read radius: number,
+}
+
+export type BodyComponent = ScrapbotComponent<Body, ReadonlyBody>
+
+export type Bullet = {
+	age: number,
+	radius: number,
+}
+
+export type ReadonlyBullet = {
+	read age: number,
+	read radius: number,
+}
+
+export type BulletComponent = ScrapbotComponent<Bullet, ReadonlyBullet>
+
+export type Spin = {
+	value: Vec3,
+}
+
+export type ReadonlySpin = {
+	read value: ReadonlyVec3,
+}
+
+export type SpinComponent = ScrapbotComponent<Spin, ReadonlySpin>
+
+export type SpawnPop = {
+	duration: number,
+	age: number,
+	target_scale: Vec3,
+}
+
+export type ReadonlySpawnPop = {
+	read duration: number,
+	read age: number,
+	read target_scale: ReadonlyVec3,
+}
+
+export type SpawnPopComponent = ScrapbotComponent<SpawnPop, ReadonlySpawnPop>
+
+export type CameraShake = {
+	base_position: Vec3,
+	trauma: number,
+	base_rotation: Vec3,
+}
+
+export type ReadonlyCameraShake = {
+	read base_position: ReadonlyVec3,
+	read trauma: number,
+	read base_rotation: ReadonlyVec3,
+}
+
+export type CameraShakeComponent = ScrapbotComponent<CameraShake, ReadonlyCameraShake>
+
+export type ShakeImpulse = {
+	amount: number,
+}
+
+export type ReadonlyShakeImpulse = {
+	read amount: number,
+}
+
+export type ShakeImpulseComponent = ScrapbotComponent<ShakeImpulse, ReadonlyShakeImpulse>
+
+export type Hud = {
+}
+
+export type ReadonlyHud = {
+}
+
+export type HudComponent = ScrapbotComponent<Hud, ReadonlyHud>
+
+export type ShowcaseSpin = {
+	angular_velocity: Vec3,
+}
+
+export type ReadonlyShowcaseSpin = {
+	read angular_velocity: ReadonlyVec3,
+}
+
+export type ShowcaseSpinComponent = ScrapbotComponent<ShowcaseSpin, ReadonlyShowcaseSpin>
+
+export type ShowcaseLifetime = {
+	timer: Vec3,
+}
+
+export type ReadonlyShowcaseLifetime = {
+	read timer: ReadonlyVec3,
+}
+
+export type ShowcaseLifetimeComponent = ScrapbotComponent<ShowcaseLifetime, ReadonlyShowcaseLifetime>
+
+export type ShowcaseVelocity = {
+	value: Vec3,
+}
+
+export type ReadonlyShowcaseVelocity = {
+	read value: ReadonlyVec3,
+}
+
+export type ShowcaseVelocityComponent = ScrapbotComponent<ShowcaseVelocity, ReadonlyShowcaseVelocity>
+
+export type ShowcaseEmitter = {
+	elapsed: number,
+	sequence: number,
+}
+
+export type ReadonlyShowcaseEmitter = {
+	read elapsed: number,
+	read sequence: number,
+}
+
+export type ShowcaseEmitterComponent = ScrapbotComponent<ShowcaseEmitter, ReadonlyShowcaseEmitter>
+
+export type ShowcaseFountain = {
+	spawn_rate: number,
+	burst_limit: number,
+	launch_speed: number,
+}
+
+export type ReadonlyShowcaseFountain = {
+	read spawn_rate: number,
+	read burst_limit: number,
+	read launch_speed: number,
+}
+
+export type ShowcaseFountainComponent = ScrapbotComponent<ShowcaseFountain, ReadonlyShowcaseFountain>
+
+export type ShowcaseLightOrbit = {
+	settings: Vec3,
+}
+
+export type ReadonlyShowcaseLightOrbit = {
+	read settings: ReadonlyVec3,
+}
+
+export type ShowcaseLightOrbitComponent = ScrapbotComponent<ShowcaseLightOrbit, ReadonlyShowcaseLightOrbit>
+
+export type Float = {
+	wave: Vec3,
+	origin: Vec3,
+}
+
+export type ReadonlyFloat = {
+	read wave: ReadonlyVec3,
+	read origin: ReadonlyVec3,
+}
+
+export type FloatComponent = ScrapbotComponent<Float, ReadonlyFloat>
+
+export type StressMotion = {
 	velocity: Vec3,
 }
 
-export type ReadonlyAutorotate = {
+export type ReadonlyStressMotion = {
 	read velocity: ReadonlyVec3,
 }
 
-export type AutorotateComponent = ScrapbotComponent<Autorotate, ReadonlyAutorotate>
+export type StressMotionComponent = ScrapbotComponent<StressMotion, ReadonlyStressMotion>
+
+export type StressSpin = {
+	velocity: Vec3,
+}
+
+export type ReadonlyStressSpin = {
+	read velocity: ReadonlyVec3,
+}
+
+export type StressSpinComponent = ScrapbotComponent<StressSpin, ReadonlyStressSpin>
+
+export type StressLifetime = {
+	age: number,
+	duration: number,
+}
+
+export type ReadonlyStressLifetime = {
+	read age: number,
+	read duration: number,
+}
+
+export type StressLifetimeComponent = ScrapbotComponent<StressLifetime, ReadonlyStressLifetime>
+
+export type StressEmitter = {
+	elapsed: number,
+	sequence: number,
+}
+
+export type ReadonlyStressEmitter = {
+	read elapsed: number,
+	read sequence: number,
+}
+
+export type StressEmitterComponent = ScrapbotComponent<StressEmitter, ReadonlyStressEmitter>
+
+export type StressSettings = {
+	spawn_rate: number,
+	lifetime: number,
+	launch_speed: number,
+}
+
+export type ReadonlyStressSettings = {
+	read spawn_rate: number,
+	read lifetime: number,
+	read launch_speed: number,
+}
+
+export type StressSettingsComponent = ScrapbotComponent<StressSettings, ReadonlyStressSettings>
+
+export type ScrappyphysicsSpin = {
+	angular_velocity: Vec3,
+}
+
+export type ReadonlyScrappyphysicsSpin = {
+	read angular_velocity: ReadonlyVec3,
+}
+
+export type ScrappyphysicsSpinComponent = ScrapbotComponent<ScrappyphysicsSpin, ReadonlyScrappyphysicsSpin>
+
+export type ScrappyphysicsRigidbody = {
+	velocity: Vec3,
+}
+
+export type ReadonlyScrappyphysicsRigidbody = {
+	read velocity: ReadonlyVec3,
+}
+
+export type ScrappyphysicsRigidbodyComponent = ScrapbotComponent<ScrappyphysicsRigidbody, ReadonlyScrappyphysicsRigidbody>
 
 declare scrapbot: Scrapbot

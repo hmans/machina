@@ -219,6 +219,7 @@ For generated Luau API or schema changes, run:
 
 - `mise build`
 - `bin/scrapbot check` for every affected example
+- `mise luau-workspace-types`
 - `mise test`
 - review of generated declaration diffs
 

@@ -358,6 +358,10 @@ test_luau_types_include_registered_components :: proc(t: ^testing.T) {
 			"<A, RA, B, RB>(first: ScrapbotComponent<A, RA>, second: ScrapbotComponent<B, RB>) -> ScrapbotQuery2<A, RA, B, RB>",
 		),
 	)
+	testing.expect(
+		t,
+		strings.contains(text, "<A, RA>(query: ScrapbotQuery1<A, RA>) -> {ScrapbotQueryItem<RA>}"),
+	)
 	testing.expect(t, !strings.contains(text, "query3:"))
 }
 
