@@ -144,7 +144,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] Asynchronous per-pass GPU timestamps and visibility/LOD counters
   - [x] Ambient, directional, and point-light rendering
 - Assets
-  - [x] Incremental static glTF 2.0/GLB model imports
+  - [x] Incremental static glTF 2.0/GLB model imports with embedded, data-URI, and external base-color images
   - [x] PNG texture assets
   - [x] UUID-backed texture and model resources
   - [x] Targeted live Reimport, import diagnostics, texture thumbnails, and stale model-product retirement

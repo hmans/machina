@@ -11,23 +11,58 @@ model_test_declaration :: proc() -> shared.Project_Resource {
 	return {id = id, kind = .Model, name = "Triangle", model = {source = "assets/triangle.gltf"}}
 }
 
-make_model_test_project :: proc(t: ^testing.T) -> string {
+make_named_model_test_project :: proc(t: ^testing.T, fixture, destination_name: string) -> string {
 	root, temp_err := os.make_directory_temp("", "scrapbot-model-import-*", context.allocator)
 	testing.expect(t, temp_err == nil)
 	assets, join_err := filepath.join({root, "assets"})
 	testing.expect(t, join_err == nil)
 	defer delete(assets)
 	testing.expect(t, os.make_directory_all(assets) == nil)
-	source, read_err := os.read_entire_file(
-		"tests/fixtures/gltf/assets/triangle.gltf",
-		context.temp_allocator,
-	)
+	source, read_err := os.read_entire_file(fixture, context.temp_allocator)
 	testing.expect(t, read_err == nil)
-	destination, destination_err := filepath.join({assets, "triangle.gltf"})
+	destination, destination_err := filepath.join({assets, destination_name})
 	testing.expect(t, destination_err == nil)
 	defer delete(destination)
 	testing.expect(t, os.write_entire_file(destination, source) == nil)
 	return root
+}
+
+make_model_test_project :: proc(t: ^testing.T) -> string {
+	return make_named_model_test_project(
+		t,
+		"tests/fixtures/gltf/assets/triangle.gltf",
+		"triangle.gltf",
+	)
+}
+
+@(test)
+test_gltf_import_decodes_embedded_base_color_image :: proc(t: ^testing.T) {
+	declaration := model_test_declaration()
+	declaration.model.source = "assets/textured-triangle.gltf"
+	root := make_named_model_test_project(
+		t,
+		"tests/fixtures/gltf/assets/textured-triangle.gltf",
+		"textured-triangle.gltf",
+	)
+	defer os.remove_all(root)
+	defer delete(root)
+	report := ensure_project_imports(root, []shared.Project_Resource{declaration})
+	defer destroy_report(&report)
+	testing.expectf(t, report.err == "", "textured model import failed: %s", report.err)
+	if report.err != "" || len(report.products) != 1 {
+		return
+	}
+	model, read_err := read_model_product(report.products[0].artifact_path)
+	defer destroy_model_product(&model)
+	testing.expectf(t, read_err == "", "textured model product read failed: %s", read_err)
+	if read_err != "" || len(model.materials) != 1 {
+		return
+	}
+	material := model.materials[0]
+	testing.expect_value(t, material.base_color_width, u32(8))
+	testing.expect_value(t, material.base_color_height, u32(8))
+	testing.expect_value(t, len(material.base_color_pixels), 8 * 8 * 4)
+	testing.expect_value(t, material.base_color.x, f32(0.5))
 }
 
 @(test)
@@ -131,6 +166,36 @@ test_gltf_import_rejects_external_buffers_outside_asset_directory :: proc(t: ^te
 		os.write_entire_file(
 			source_path,
 			`{"asset":{"version":"2.0"},"buffers":[{"byteLength":4,"uri":"../../secret.bin"}]}`,
+		) ==
+		nil,
+	)
+	declaration := model_test_declaration()
+	report := ensure_project_imports(root, []shared.Project_Resource{declaration})
+	defer destroy_report(&report)
+	testing.expect(t, report.err != "")
+}
+
+@(test)
+test_gltf_import_rejects_external_images_outside_asset_directory :: proc(t: ^testing.T) {
+	root, temp_err := os.make_directory_temp("", "scrapbot-model-image-path-*", context.allocator)
+	testing.expect(t, temp_err == nil)
+	if temp_err != nil {
+		return
+	}
+	defer os.remove_all(root)
+	defer delete(root)
+	assets, join_err := filepath.join({root, "assets"})
+	testing.expect(t, join_err == nil)
+	defer delete(assets)
+	testing.expect(t, os.make_directory_all(assets) == nil)
+	source_path, source_err := filepath.join({assets, "triangle.gltf"})
+	testing.expect(t, source_err == nil)
+	defer delete(source_path)
+	testing.expect(
+		t,
+		os.write_entire_file(
+			source_path,
+			`{"asset":{"version":"2.0"},"images":[{"uri":"../../secret.png"}]}`,
 		) ==
 		nil,
 	)

@@ -93,7 +93,9 @@ name = "Crate"
 source = "assets/models/crate.glb"
 ```
 
-The initial importer supports triangle primitives, positions, optional normals and UV0, optional indices, TRS node hierarchies, and base-color/emissive material factors. Missing normals are generated. Animation, skins, morph targets, matrix-authored nodes, Draco/required extensions, and glTF image textures fail with an explicit diagnostic.
+The importer supports triangle primitives, positions, optional normals and UV0, optional indices, TRS node hierarchies, base-color/emissive material factors, and base-color images. Images may come from GLB buffer views, base64 data URIs, or safe relative files beside the `.gltf`; every image dependency participates in cache invalidation. Missing normals are generated.
+
+Metallic-roughness, normal, occlusion, and emissive maps are accepted and surfaced as deferred import warnings, but are not rendered yet. Animation, skins, morph targets, matrix-authored nodes, Draco/required extensions, non-UV0 base-color mappings, texture transforms, and KTX2/Basis images fail with an explicit diagnostic. Imported model images currently use RGBA8 level zero and do not preserve glTF sampler settings.
 
 Generated icosphere LOD resources store one stable geometry identity plus up to four tessellation levels:
 

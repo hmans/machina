@@ -33,6 +33,7 @@ Model :: struct {
 	meshes: [dynamic]Model_Mesh,
 	nodes: [dynamic]Model_Node,
 	material_handles: [dynamic]Material_Handle,
+	ignored_texture_count: int,
 	generation: u32,
 	version: u32,
 	alive: bool,
@@ -121,6 +122,9 @@ register_project_model :: proc(
 	model.source, _ = strings.clone(declaration.source, registry.allocator)
 	model.asset_source, _ = strings.clone(declaration.model.source, registry.allocator)
 	model.import_byte_count = import_byte_count
+	for material in imported.materials {
+		model.ignored_texture_count += int(material.ignored_texture_count)
+	}
 	if model.name == "" || model.source == "" || model.asset_source == "" {
 		destroy_model(&model, registry.allocator)
 		return {}, "failed to allocate project model metadata"
@@ -132,7 +136,13 @@ register_project_model :: proc(
 		handle, material_err := register_material(
 			registry,
 			resource_name,
-			{base_color = Vec4(material.base_color), emissive = material.emissive},
+			{
+				base_color = Vec4(material.base_color),
+				emissive = material.emissive,
+				texture_pixels = material.base_color_pixels,
+				texture_width = material.base_color_width,
+				texture_height = material.base_color_height,
+			},
 		)
 		if material_err != "" {
 			destroy_model(&model, registry.allocator)

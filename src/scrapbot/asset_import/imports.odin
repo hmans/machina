@@ -27,7 +27,8 @@ Product :: struct {
 	byte_count: int,
 	color_space: shared.Texture_Color_Space,
 	node_count, mesh_count, primitive_count: int,
-	vertex_count, index_count, material_count: int,
+	vertex_count, index_count, material_count, texture_count: int,
+	ignored_texture_count: int,
 }
 
 Report :: struct {

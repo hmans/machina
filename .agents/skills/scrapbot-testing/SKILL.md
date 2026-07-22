@@ -39,6 +39,15 @@ Run `mise setup` for a complete contributor checkout. It installs pinned tools, 
 
 The manifest and license notes live under `tests/fixtures/external/`; downloaded bytes live under its ignored `downloads/` directory. Keep the ordinary `mise test` suite independent of these heavyweight or license-constrained files. An explicit integration task may require them, but it must fail with a direct `mise setup-assets` instruction when they are absent. Never commit downloaded fixtures or copy them into distributable examples, project packages, or releases.
 
+For real-world glTF importer work, use the pinned Khronos Damaged Helmet fixture:
+
+```sh
+mise test-gltf
+mise test-gltf-gpu
+```
+
+`test-gltf` imports and checks the model plus its product metadata. `test-gltf-gpu` additionally produces a bounded headless WGPU framegrab in the platform temporary directory. Run `mise setup-assets` first if the fixture check tells you it is absent.
+
 ## Structured Diagnostics
 
 Prefer `--json` for agent-driven CLI checks:

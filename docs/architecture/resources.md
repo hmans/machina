@@ -1,6 +1,6 @@
 # Resources and Registries
 
-**Last verified:** 2026-07-21
+**Last verified:** 2026-07-22
 **Persistent declarations:** `shared.Project_Resource` and `project.load_project_resources`  
 **Runtime authority:** `resources.Registry`
 
@@ -67,7 +67,8 @@ The recursive project loader rejects duplicate UUIDs. Scene validation resolves 
 ### Texture and Model imports
 
 - `asset_import.ensure_project_imports` fingerprints source/dependency bytes plus an importer schema and writes products atomically under `.scrapbot/imported/`.
-- Texture products contain validated RGBA8 mip chains. Model products contain static triangle vertices/indices, TRS nodes, and material factors decoded through pinned `cgltf`.
+- Texture products contain validated RGBA8 mip chains. Model products contain static triangle vertices/indices, TRS nodes, material factors, and decoded RGBA8 base-color images sourced from GLB buffer views, data URIs, or safe external relative files through pinned `cgltf`.
+- Every glTF image contributes to the model source fingerprint. Base-color images flow into the ordinary generated Material registration path; auxiliary PBR maps are counted in model metadata and editor warnings until their Material/renderer fields exist.
 - Texture and Model declarations retain UUID-backed registry handles and entry versions. Imported model registration publishes ordinary Geometry and Material handles for every primitive.
 - Editor Reimport addresses one authored UUID, forces only that importer, updates the existing registry slot, and then reconciles model instances. Reimport All uses the same path for every imported declaration; neither action reloads Luau or native Odin.
 - A replaced or removed Model retires generated Geometry and Material outputs absent from the replacement by marking their slots dead and incrementing generation/version. Stable/reused products retain their handles.

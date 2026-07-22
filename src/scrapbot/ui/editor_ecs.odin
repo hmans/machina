@@ -4061,6 +4061,18 @@ editor_ui_build_resource_inspector_panels :: proc(
 				"materials",
 				fmt.tprintf("%d", len(model.material_handles)),
 			)
+			texture_count := 0
+			for handle in model.material_handles {
+				material, material_alive := resources.get_material(state.resource_registry, handle)
+				if material_alive && len(material.desc.texture_pixels) > 0 {
+					texture_count += 1
+				}
+			}
+			editor_ui_inspector_field(
+				&builder,
+				"embedded textures",
+				fmt.tprintf("%d", texture_count),
+			)
 			editor_ui_begin_inspector_component(&builder, "IMPORT")
 			status := editor_resource_import_status(state, id)
 			editor_ui_inspector_field(&builder, "status", status)
@@ -4071,7 +4083,14 @@ editor_ui_build_resource_inspector_panels :: proc(
 				"product size",
 				editor_format_byte_count(model.import_byte_count),
 			)
-			editor_ui_inspector_field(&builder, "warnings", "None")
+			warnings := "None"
+			if model.ignored_texture_count > 0 {
+				warnings = fmt.tprintf(
+					"%d auxiliary PBR texture map(s) are not rendered yet",
+					model.ignored_texture_count,
+				)
+			}
+			editor_ui_inspector_field(&builder, "warnings", warnings)
 			if editor_resource_import_failed(state, id) {
 				editor_ui_inspector_field(
 					&builder,

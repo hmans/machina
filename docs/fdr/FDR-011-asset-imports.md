@@ -1,7 +1,7 @@
 # FDR-011: Asset imports
 
 **Status:** In Progress
-**Last reviewed:** 2026-07-21
+**Last reviewed:** 2026-07-22
 
 ## Overview
 
@@ -11,7 +11,8 @@ Asset imports turn artist-authored texture and model files under `assets/` into 
 
 - Texture resources import PNG sources with explicit color-space and mip-generation settings.
 - Material resources reference reusable Texture resources by UUID rather than embedding source paths.
-- Model resources import static glTF 2.0 `.gltf` and `.glb` files, including triangle geometry, TRS node transforms, and base-color and emissive material factors. glTF image textures are rejected until they can become proper Texture resources.
+- Model resources import static glTF 2.0 `.gltf` and `.glb` files, including triangle geometry, TRS node transforms, base-color and emissive material factors, and base-color images. Images may be embedded in GLB buffer views, encoded as base64 data URIs, or stored at safe relative paths beside the model.
+- Imported base-color images become owned texture payloads on the Model's generated Material resources. Metallic-roughness, normal, occlusion, and emissive maps are fingerprinted and reported as deferred rather than silently misrepresented; their renderer fields remain follow-up work.
 - Project checking, building, and running automatically import products that are absent or stale. `scrapbot import` performs the same work explicitly and reports structured per-resource results.
 - Imported products and manifests are generated under ignored project state. They are never hand-authored or committed as source authority.
 - Import validity includes source and dependency contents, settings, and importer version. Unchanged resources reuse their prior products without decoding or rebuilding them.
@@ -19,7 +20,7 @@ Asset imports turn artist-authored texture and model files under `assets/` into 
 - Explicit editor reimport targets one Texture or Model UUID without restarting Luau/native code; **Reimport All** forces every declared imported product. Automatic hot reload still uses the project asset stamp and importer cache until the platform watcher replaces polling. Ordinary simulation and render frames never scan the asset tree.
 - The editor's resource browser lists textures and models alongside materials. Its inspector exposes the source dependency, product kind and byte size, warnings/errors, and current import state. Textures render directly on the GPU with aspect-preserving fit. Models render their imported hierarchy, while Materials render on an isolated lit icosphere preview scene. All three use the public ECS viewport component and independently sized pooled targets; interactive 3D previews support orbit, zoom, and reset.
 - Reimport updates a live resource slot in place and reconciles affected model roots. Generated Geometry and Material products that disappear from a replaced or removed Model are retired with generation bumps, so stale handles cannot remain usable.
-- Imported models initially exclude animation, skins, morph targets, compressed geometry, and advanced material extensions; unsupported required glTF features fail clearly.
+- Imported models initially exclude animation, skins, morph targets, compressed geometry, non-UV0 base-color mappings, texture transforms, sampler preservation, and advanced material extensions; unsupported required glTF features fail clearly.
 
 ## Design Decisions
 
@@ -58,6 +59,12 @@ Asset imports turn artist-authored texture and model files under `assets/` into 
 **Decision:** Resolve viewport resource UUIDs across Texture, Model, and Material registries. Render Models and Materials through isolated renderer-owned preview scenes, render Textures through a direct GPU pass, and cache each stable target by its exact resource and presentation revisions.
 **Why:** Asset inspection should show the real renderer product without creating editor-private drawing code or spawning preview-only entities into the project's active ECS world.
 **Tradeoff:** Preview scenes are derived renderer state rather than independently simulated ECS worlds. The initial pool is bounded to eight targets and 1024 pixels per axis.
+
+### 7. Embed imported model images in generated materials first
+
+**Decision:** Decode a glTF material's base-color image into the versioned Model product and pass it to the ordinary generated Material registration path. Fingerprint all glTF image dependencies, including maps not rendered by the current material contract.
+**Why:** This gives static models correct authored color immediately while keeping the renderer on its existing Material path. It also makes external image edits invalidate the model deterministically and avoids creating unstable user-addressable UUIDs for glTF subresources before semantic subresource identity is designed.
+**Tradeoff:** Generated image payloads are model-owned rather than independently shareable Texture resources. The initial product stores RGBA8 level zero without sampler state or generated mips, and auxiliary PBR maps remain visible import warnings until the Material and renderer contracts grow.
 
 ## Related
 

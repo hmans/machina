@@ -53,6 +53,16 @@ run = "node tools/setup_external_assets.mjs"
 description = "Verify that pinned external development fixtures are installed"
 run = "node tools/setup_external_assets.mjs --check"
 
+[tasks.test-gltf]
+description = "Import and validate the pinned real-world glTF fixture"
+depends = ["build"]
+run = "node tools/test_external_gltf.mjs"
+
+[tasks.test-gltf-gpu]
+description = "Import and render the pinned real-world glTF fixture"
+depends = ["build"]
+run = 'node tools/test_external_gltf.mjs --framegrab "${TMPDIR:-/tmp}/scrapbot-damaged-helmet.png"'
+
 [tasks.build]
 description = "Build the Scrapbot CLI"
 depends = ["luau", "cgltf"]

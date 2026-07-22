@@ -14,3 +14,5 @@ Downloaded files live under ignored `downloads/` state. They must not be added t
 - Licensing: the rebuilt glTF is credited under CC BY 4.0 and the earlier model under CC BY-NC 4.0. Downloading the file does not remove those terms. Read the upstream README before using it outside Scrapbot's development tests.
 
 The ordinary test suite must remain independent of external downloads. Tests that require these fixtures should be explicit integration tasks and produce a direct `mise setup-assets` instruction when a fixture is absent.
+
+Run `mise test-gltf` to validate the real-world import product, or `mise test-gltf-gpu` to import it and produce a bounded headless WGPU framegrab in the platform temporary directory.

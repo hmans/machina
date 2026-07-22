@@ -1,6 +1,7 @@
 package asset_import
 
 import shared "../shared"
+import "core:encoding/base64"
 import "core:encoding/endian"
 import "core:encoding/json"
 import "core:fmt"
@@ -11,8 +12,8 @@ import "core:path/filepath"
 import "core:strings"
 import cgltf "vendor:cgltf"
 
-MODEL_IMPORTER_SCHEMA :: "scrapbot.model.v2.static-gltf2"
-MODEL_PRODUCT_MAGIC :: [8]u8{'S', 'B', 'M', 'O', 'D', 'E', 'L', '2'}
+MODEL_IMPORTER_SCHEMA :: "scrapbot.model.v3.static-gltf2-material-images"
+MODEL_PRODUCT_MAGIC :: [8]u8{'S', 'B', 'M', 'O', 'D', 'E', 'L', '3'}
 
 Model_Vertex :: struct {
 	position, normal: shared.Vec3,
@@ -23,6 +24,9 @@ Model_Material :: struct {
 	name: string,
 	base_color: shared.Vec4,
 	emissive: shared.Vec3,
+	base_color_pixels: []u8,
+	base_color_width, base_color_height: u32,
+	ignored_texture_count: u32,
 }
 
 Model_Primitive :: struct {
@@ -55,7 +59,8 @@ Model_Metadata :: struct {
 	source_hash: u64,
 	byte_count: int,
 	node_count, mesh_count, primitive_count: int,
-	vertex_count, index_count, material_count: int,
+	vertex_count, index_count, material_count, texture_count: int,
+	ignored_texture_count: int,
 }
 
 destroy_model_product :: proc(model: ^Model_Product) {
@@ -64,6 +69,7 @@ destroy_model_product :: proc(model: ^Model_Product) {
 	}
 	for &material in model.materials {
 		delete(material.name)
+		delete(material.base_color_pixels)
 	}
 	for &mesh in model.meshes {
 		delete(mesh.name)
@@ -110,7 +116,7 @@ ensure_model_import :: proc(
 		return {}, false, fmt.tprintf("failed to parse glTF model %s: %s", declaration.model.source, cgltf_result_message(parse_result))
 	}
 	defer cgltf.free(data)
-	if uri_err := validate_model_buffer_uris(data); uri_err != "" {
+	if uri_err := validate_model_uris(data); uri_err != "" {
 		return {}, false, fmt.tprintf("unsupported glTF model %s: %s", declaration.model.source, uri_err)
 	}
 	if load_result := cgltf.load_buffers({}, data, path_cstring); load_result != .success {
@@ -122,7 +128,10 @@ ensure_model_import :: proc(
 	if unsupported_err := validate_supported_static_gltf(data); unsupported_err != "" {
 		return {}, false, fmt.tprintf("unsupported glTF model %s: %s", declaration.model.source, unsupported_err)
 	}
-	source_hash := model_import_hash(source, data)
+	source_hash, hash_err := model_import_hash(source, data, source_path)
+	if hash_err != "" {
+		return {}, false, fmt.tprintf("failed to fingerprint glTF model %s: %s", declaration.model.source, hash_err)
+	}
 	artifact_path, metadata_path, paths_err := model_product_paths(build_dir, declaration.id)
 	if paths_err != "" {
 		return {}, false, paths_err
@@ -134,7 +143,7 @@ ensure_model_import :: proc(
 		cache_hit = false
 	}
 	if !cache_hit {
-		model, model_err := build_model_product(data)
+		model, model_err := build_model_product(data, source_path)
 		if model_err != "" {
 			return {}, false, fmt.tprintf("failed to import glTF model %s: %s", declaration.model.source, model_err)
 		}
@@ -178,42 +187,59 @@ ensure_model_import :: proc(
 			vertex_count = metadata.vertex_count,
 			index_count = metadata.index_count,
 			material_count = metadata.material_count,
+			texture_count = metadata.texture_count,
+			ignored_texture_count = metadata.ignored_texture_count,
 		},
 		imported,
 		""
 }
 
-validate_model_buffer_uris :: proc(data: ^cgltf.data) -> string {
+validate_model_uris :: proc(data: ^cgltf.data) -> string {
 	for buffer in data.buffers {
 		if buffer.uri == nil {
 			continue
 		}
-		uri := string(buffer.uri)
-		if strings.has_prefix(uri, "data:") {
+		if err := validate_model_uri(string(buffer.uri), "buffer"); err != "" {
+			return err
+		}
+	}
+	for image in data.images {
+		if image.uri == nil {
 			continue
 		}
-		decoded_uri, clone_err := strings.clone_to_cstring(uri, context.temp_allocator)
-		if clone_err != nil {
-			return "failed to allocate external buffer URI"
+		if err := validate_model_uri(string(image.uri), "image"); err != "" {
+			return err
 		}
-		_ = cgltf.decode_uri(cast([^]u8)decoded_uri)
-		decoded: string = string(decoded_uri)
-		if decoded == "" ||
-		   strings.has_prefix(decoded, "/") ||
-		   strings.contains(decoded, "\\") ||
-		   strings.contains(decoded, ":") ||
-		   strings.contains(decoded, "?") ||
-		   strings.contains(decoded, "#") {
-			return fmt.tprintf("external buffer URI '%s' must be a safe relative path", uri)
-		}
-		remaining: string = decoded
-		for part in strings.split_iterator(&remaining, "/") {
-			if part == "" || part == "." || part == ".." {
-				return fmt.tprintf(
-					"external buffer URI '%s' must stay inside the model asset directory",
-					uri,
-				)
-			}
+	}
+	return ""
+}
+
+validate_model_uri :: proc(uri, kind: string) -> string {
+	if strings.has_prefix(uri, "data:") {
+		return ""
+	}
+	decoded_uri, clone_err := strings.clone_to_cstring(uri, context.temp_allocator)
+	if clone_err != nil {
+		return fmt.tprintf("failed to allocate external %s URI", kind)
+	}
+	_ = cgltf.decode_uri(cast([^]u8)decoded_uri)
+	decoded: string = string(decoded_uri)
+	if decoded == "" ||
+	   strings.has_prefix(decoded, "/") ||
+	   strings.contains(decoded, "\\") ||
+	   strings.contains(decoded, ":") ||
+	   strings.contains(decoded, "?") ||
+	   strings.contains(decoded, "#") {
+		return fmt.tprintf("external %s URI '%s' must be a safe relative path", kind, uri)
+	}
+	remaining: string = decoded
+	for part in strings.split_iterator(&remaining, "/") {
+		if part == "" || part == "." || part == ".." {
+			return fmt.tprintf(
+				"external %s URI '%s' must stay inside the model asset directory",
+				kind,
+				uri,
+			)
 		}
 	}
 	return ""
@@ -253,22 +279,19 @@ validate_supported_static_gltf :: proc(data: ^cgltf.data) -> string {
 		}
 	}
 	for material in data.materials {
-		if material.has_pbr_metallic_roughness &&
-		   material.pbr_metallic_roughness.base_color_texture.texture != nil {
-			return(
-				"base-color textures inside glTF are not supported yet; use a Scrapbot Texture resource" \
-			)
-		}
-		if material.normal_texture.texture != nil ||
-		   material.emissive_texture.texture != nil ||
-		   material.occlusion_texture.texture != nil {
-			return "glTF material textures other than base color are not supported yet"
+		if material.has_pbr_metallic_roughness {
+			view := material.pbr_metallic_roughness.base_color_texture
+			if view.texture != nil && (view.texcoord != 0 || view.has_transform) {
+				return(
+					"base-color texture coordinates and transforms other than TEXCOORD_0 are not supported yet" \
+				)
+			}
 		}
 	}
 	return ""
 }
 
-model_import_hash :: proc(source: []u8, data: ^cgltf.data) -> u64 {
+model_import_hash :: proc(source: []u8, data: ^cgltf.data, source_path: string) -> (u64, string) {
 	value := hash.fnv64a(source)
 	value = hash.fnv64a(transmute([]byte)(string(MODEL_IMPORTER_SCHEMA)), value)
 	for buffer in data.buffers {
@@ -276,10 +299,24 @@ model_import_hash :: proc(source: []u8, data: ^cgltf.data) -> u64 {
 			value = hash.fnv64a((cast([^]u8)buffer.data)[:buffer.size], value)
 		}
 	}
-	return value
+	for &image in data.images {
+		bytes, image_err := load_model_image_bytes(&image, source_path)
+		if image_err != "" {
+			return 0, image_err
+		}
+		value = hash.fnv64a(bytes, value)
+		delete(bytes)
+	}
+	return value, ""
 }
 
-build_model_product :: proc(data: ^cgltf.data) -> (model: Model_Product, err: string) {
+build_model_product :: proc(
+	data: ^cgltf.data,
+	source_path: string,
+) -> (
+	model: Model_Product,
+	err: string,
+) {
 	for material, material_index in data.materials {
 		name := model_item_name(material.name, "material", material_index)
 		base_color := shared.Vec4{1, 1, 1, 1}
@@ -298,10 +335,47 @@ build_model_product :: proc(data: ^cgltf.data) -> (model: Model_Product, err: st
 			emissive.y *= strength
 			emissive.z *= strength
 		}
-		append(
-			&model.materials,
-			Model_Material{name = name, base_color = base_color, emissive = emissive},
-		)
+		if material.emissive_texture.texture != nil {
+			// Until emissive maps reach the renderer, ignoring the map must not turn
+			// its multiplier into a uniformly glowing surface.
+			emissive = {}
+		}
+		imported_material := Model_Material {
+			name = name,
+			base_color = base_color,
+			emissive = emissive,
+		}
+		if material.has_pbr_metallic_roughness &&
+		   material.pbr_metallic_roughness.metallic_roughness_texture.texture != nil {
+			imported_material.ignored_texture_count += 1
+		}
+		if material.normal_texture.texture != nil {
+			imported_material.ignored_texture_count += 1
+		}
+		if material.occlusion_texture.texture != nil {
+			imported_material.ignored_texture_count += 1
+		}
+		if material.emissive_texture.texture != nil {
+			imported_material.ignored_texture_count += 1
+		}
+		if material.has_pbr_metallic_roughness {
+			view := material.pbr_metallic_roughness.base_color_texture
+			if view.texture != nil {
+				pixels, width, height, texture_err := decode_model_texture(
+					view.texture,
+					source_path,
+				)
+				if texture_err != "" {
+					delete(imported_material.name)
+					destroy_model_product(&model)
+					return {}, fmt.tprintf("material %d base-color texture: %s", material_index, texture_err)
+				}
+				imported_material.base_color_pixels = pixels
+				imported_material.base_color_width = width
+				imported_material.base_color_height = height
+			}
+		}
+		append(&model.materials, imported_material)
 	}
 	for &mesh, mesh_index in data.meshes {
 		imported_mesh := Model_Mesh {
@@ -359,6 +433,88 @@ build_model_product :: proc(data: ^cgltf.data) -> (model: Model_Product, err: st
 		append(&model.nodes, imported_node)
 	}
 	return model, ""
+}
+
+decode_model_texture :: proc(
+	texture: ^cgltf.texture,
+	source_path: string,
+) -> (
+	pixels: []u8,
+	width, height: u32,
+	err: string,
+) {
+	if texture == nil {
+		return nil, 0, 0, "texture is missing"
+	}
+	if texture.has_basisu {
+		return nil, 0, 0, "KTX2/Basis Universal images are not supported yet"
+	}
+	if texture.image_ == nil {
+		return nil, 0, 0, "texture image is missing"
+	}
+	encoded, image_err := load_model_image_bytes(texture.image_, source_path)
+	if image_err != "" {
+		return nil, 0, 0, image_err
+	}
+	defer delete(encoded)
+	mip_count: u32
+	decode_err: string
+	pixels, width, height, mip_count, decode_err = decode_texture_product(encoded, false)
+	_ = mip_count
+	if decode_err != "" {
+		return nil, 0, 0, fmt.tprintf("failed to decode image: %s", decode_err)
+	}
+	return pixels, width, height, ""
+}
+
+load_model_image_bytes :: proc(image: ^cgltf.image, source_path: string) -> ([]u8, string) {
+	if image == nil {
+		return nil, "image is missing"
+	}
+	if image.buffer_view != nil {
+		if image.buffer_view.size == 0 {
+			return nil, "embedded image buffer is empty"
+		}
+		data := cgltf.buffer_view_data(image.buffer_view)
+		if data == nil {
+			return nil, "embedded image buffer is unavailable"
+		}
+		bytes := make([]u8, int(image.buffer_view.size))
+		copy(bytes, data[:image.buffer_view.size])
+		return bytes, ""
+	}
+	if image.uri == nil {
+		return nil, "image has neither a buffer view nor a URI"
+	}
+	uri := string(image.uri)
+	if strings.has_prefix(uri, "data:") {
+		comma := strings.index_byte(uri, ',')
+		if comma < 0 || !strings.contains(uri[:comma], ";base64") {
+			return nil, "image data URI must use base64 encoding"
+		}
+		decoded, decode_err := base64.decode(uri[comma + 1:])
+		if decode_err != nil {
+			return nil, "image data URI contains invalid base64"
+		}
+		return decoded, ""
+	}
+	decoded_uri, clone_err := strings.clone_to_cstring(uri, context.temp_allocator)
+	if clone_err != nil {
+		return nil, "failed to allocate external image URI"
+	}
+	_ = cgltf.decode_uri(cast([^]u8)decoded_uri)
+	directory := filepath.dir(source_path)
+	defer delete(directory)
+	path, join_err := filepath.join({directory, string(decoded_uri)})
+	if join_err != nil {
+		return nil, "failed to allocate external image path"
+	}
+	defer delete(path)
+	bytes, read_err := os.read_entire_file(path, context.allocator)
+	if read_err != nil {
+		return nil, fmt.tprintf("failed to read external image '%s': %v", uri, read_err)
+	}
+	return bytes, ""
 }
 
 build_model_primitive :: proc(
@@ -550,6 +706,12 @@ model_metadata :: proc(
 			metadata.index_count += len(primitive.indices)
 		}
 	}
+	for material in model.materials {
+		if len(material.base_color_pixels) > 0 {
+			metadata.texture_count += 1
+		}
+		metadata.ignored_texture_count += int(material.ignored_texture_count)
+	}
 	return metadata
 }
 
@@ -622,6 +784,11 @@ encode_model_product :: proc(model: ^Model_Product) -> []u8 {
 		model_write_string(&bytes, material.name)
 		model_write_vec4(&bytes, material.base_color)
 		model_write_vec3(&bytes, material.emissive)
+		model_write_u32(&bytes, material.base_color_width)
+		model_write_u32(&bytes, material.base_color_height)
+		model_write_u32(&bytes, u32(len(material.base_color_pixels)))
+		model_write_bytes(&bytes, material.base_color_pixels)
+		model_write_u32(&bytes, material.ignored_texture_count)
 	}
 	for mesh in model.meshes {
 		model_write_string(&bytes, mesh.name)
@@ -700,6 +867,44 @@ read_model_product :: proc(path: string) -> (model: Model_Product, err: string) 
 		material.emissive, ok = model_read_vec3(&reader)
 		if !ok {
 			delete(material.name)
+			destroy_model_product(&model)
+			return {}, "imported model material is truncated"
+		}
+		material.base_color_width, ok = model_read_u32(&reader)
+		if ok {
+			material.base_color_height, ok = model_read_u32(&reader)
+		}
+		pixel_count: u32
+		if ok {
+			pixel_count, ok = model_read_u32(&reader)
+		}
+		if !ok || pixel_count > 16384 * 16384 * 4 {
+			delete(material.name)
+			destroy_model_product(&model)
+			return {}, "imported model material texture is invalid"
+		}
+		texture_bytes: []u8
+		texture_bytes, ok = model_read_bytes(&reader, int(pixel_count))
+		if !ok ||
+		   (pixel_count > 0 &&
+				   (material.base_color_width == 0 ||
+						   material.base_color_height == 0 ||
+						   u64(material.base_color_width) * u64(material.base_color_height) * 4 !=
+							   u64(pixel_count))) ||
+		   (pixel_count == 0 &&
+				   (material.base_color_width != 0 || material.base_color_height != 0)) {
+			delete(material.name)
+			destroy_model_product(&model)
+			return {}, "imported model material texture is invalid"
+		}
+		if pixel_count > 0 {
+			material.base_color_pixels = make([]u8, int(pixel_count))
+			copy(material.base_color_pixels, texture_bytes)
+		}
+		material.ignored_texture_count, ok = model_read_u32(&reader)
+		if !ok {
+			delete(material.name)
+			delete(material.base_color_pixels)
 			destroy_model_product(&model)
 			return {}, "imported model material is truncated"
 		}
