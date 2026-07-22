@@ -301,6 +301,7 @@ apply_registered_component_snapshot :: proc(
 			mark_render_entity_dirty(world, entity_index)
 		case .World_Environment:
 			set_optional_world_environment(world, entity_index, true, value.world_environment)
+			bump_component_revision(world, entity_index)
 		case .Ambient_Light:
 			set_optional_ambient_light(world, entity_index, true, value.ambient_light)
 			mark_render_entity_dirty(world, entity_index)

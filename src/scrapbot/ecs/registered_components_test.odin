@@ -126,3 +126,40 @@ test_registered_component_membership_is_surgical_and_registry_driven :: proc(t: 
 	failure, integrity_ok := validate_world_integrity(&world)
 	testing.expectf(t, integrity_ok, "%s", format_world_integrity_failure(failure))
 }
+
+@(test)
+test_registered_world_environment_snapshot_invalidates_retained_consumers :: proc(t: ^testing.T) {
+	registry: component.Registry
+	component.init_registry(&registry)
+	definition, found := component.find_definition(&registry, "scrapbot.world_environment")
+	testing.expect(t, found)
+	if !found {
+		return
+	}
+
+	scene: shared.Scene
+	defer delete(scene.entities)
+	append(
+		&scene.entities,
+		shared.Scene_Entity {
+			id = shared.entity_uuid_from_engine_name("world-environment-snapshot"),
+			name = "World Environment",
+			has_world_environment = true,
+			world_environment = shared.world_environment_default(),
+		},
+	)
+	world := build_world(&scene)
+	defer destroy_world(&world)
+	snapshot, captured := capture_registered_component_snapshot(&world, 0, &definition)
+	testing.expect(t, captured)
+	if !captured {
+		return
+	}
+	defer destroy_registered_component_snapshot(&snapshot)
+
+	revision_before := world.entities[0].component_revision
+	snapshot.value.world_environment.turbidity = 8.5
+	testing.expect(t, apply_registered_component_snapshot(&world, 0, &snapshot))
+	testing.expect_value(t, world.world_environments[0].turbidity, f32(8.5))
+	testing.expect(t, world.entities[0].component_revision > revision_before)
+}
