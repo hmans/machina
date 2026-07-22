@@ -76,19 +76,31 @@ fn fs_main(input: Output) -> @location(0) vec4<f32> {
 	);
 	if (environment.background_max_specular_lod < 0.0) {
 		let elevation = clamp(direction.y, -1.0, 1.0);
-		let sky_height = pow(clamp(elevation, 0.0, 1.0), 0.35);
-		let ground_depth = pow(clamp(-elevation, 0.0, 1.0), 0.45);
+		let planet_radius = 1.0;
+		let observer_radius = 1.00012;
+		let horizon_elevation = -sqrt(
+			1.0 - (planet_radius * planet_radius) / (observer_radius * observer_radius)
+		);
+		let atmosphere_elevation = elevation - horizon_elevation;
+		let sky_height = pow(
+			clamp(atmosphere_elevation / (1.0 - horizon_elevation), 0.0, 1.0),
+			0.35,
+		);
+		let ground_depth = pow(
+			clamp(-atmosphere_elevation / (1.0 + horizon_elevation), 0.0, 1.0),
+			0.45,
+		);
 		let sky_horizon = vec3<f32>(0.30, 0.58, 0.88);
 		let sky_zenith = vec3<f32>(0.018, 0.095, 0.34);
 		var sky_color = mix(sky_horizon, sky_zenith, sky_height);
-		let aerial_haze = exp(-abs(elevation) * 13.0);
+		let aerial_haze = exp(-abs(atmosphere_elevation) * 13.0);
 		sky_color = mix(sky_color, vec3<f32>(0.68, 0.82, 0.94), aerial_haze * 0.58);
 		let ground_horizon = vec3<f32>(0.24, 0.235, 0.225);
 		let ground_nadir = vec3<f32>(0.055, 0.050, 0.046);
 		let ground_color = mix(ground_horizon, ground_nadir, ground_depth);
-		let sky_mask = smoothstep(-0.012, 0.022, elevation);
+		let sky_mask = smoothstep(-0.004, 0.006, atmosphere_elevation);
 		var color = mix(ground_color, sky_color, sky_mask);
-		let horizon_glow = exp(-abs(elevation) * 48.0);
+		let horizon_glow = exp(-abs(atmosphere_elevation) * 48.0);
 		color += vec3<f32>(0.18, 0.33, 0.42) * horizon_glow;
 		let sun_direction_length = length(environment.sun_direction_intensity.xyz);
 		if (environment.sun_direction_intensity.w > 0.0 && sun_direction_length > 0.0001) {
