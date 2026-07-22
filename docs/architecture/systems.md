@@ -96,8 +96,8 @@ These are the engine-owned rows published to the editor's Systems panel. They ar
 ### `scrapbot.render.shadow`
 
 - **Phase/order:** After visibility preparation and before depth/world shading.
-- **Inputs:** Directional shadow view, shadow-visible indirect draws, retained geometry/material pipeline state.
-- **Outputs:** Directional shadow depth texture consumed by receivers.
+- **Inputs:** Four stabilized directional-light views, per-cascade GPU/CPU-reference shadow-visible indirect draws, retained geometry/material pipeline state.
+- **Outputs:** Four-layer directional shadow depth texture consumed by receivers through cascade selection and PCF.
 - **Stable-frame behavior:** Reuses pipelines, buffers, and batch membership; only frame commands and explicitly dirty records are encoded/uploaded.
 - **Boundary:** WGPU render-pass encoding; absent/inapplicable shadow state keeps the phase bounded or empty.
 - **Source/tests:** `render/wgpu.odin`, `render/wgpu_shader.odin`, `render/wgpu_gpu_driven.odin`; `render/render_test.odin`.

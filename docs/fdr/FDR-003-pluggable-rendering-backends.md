@@ -13,8 +13,8 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 - The current implementation supports the null backend.
 - Users can select a renderer backend from the CLI.
 - The `wgpu` backend renders full indexed geometry with shared metallic-roughness GGX materials, mipmapped base-color/normal/occlusion/emissive images, a perspective camera, ambient/directional/point lighting, and optional scene-authored image-based environment lighting.
-- The first directional light produces a fixed-resolution shadow map. Only entities with `ShadowCaster` contribute depth, and only entities with `ShadowReceiver` sample it.
-- Lights are extracted into a bounded backend-neutral frame packet: accumulated ambient light, four directional lights, and sixteen point lights. Above the procedural horizon, World Environment contributes the first derived directional-light slot without creating an authored entity; explicit ECS lights fill the remaining slots.
+- The first directional light produces four stabilized, camera-relative 2048×2048 shadow cascades. Only entities with `ShadowCaster` contribute depth, and only entities with `ShadowReceiver` sample the cascades through 3×3 PCF.
+- Lights are extracted into a bounded backend-neutral frame packet: accumulated ambient light, four directional lights, and 256 point lights. WGPU stores point lights in a storage buffer and deterministically builds a 16×9×24 clustered-light grid on the GPU, capped at 64 lights per cluster. Above the procedural horizon, World Environment contributes the first derived directional-light slot without creating an authored entity; explicit ECS lights fill the remaining directional slots.
 - Base-color and emissive images use sRGB sampling while metallic-roughness, normal, occlusion, and imported environment products remain linear. Diffuse irradiance and roughness-prefiltered specular reflection join direct GGX lighting and emission in a floating-point HDR target. `scrapbot.world_environment` selects lighting and an independent imported or procedural visible sky. The procedural atmosphere exposes sky/ground color, turbidity, thickness, horizon, and an HDR sun direction, color, intensity, disc, and glow. Sun elevation planet-occludes the disc and drives a day/twilight/night transition plus hemispherical procedural fill. Above the horizon, the sun is the first derived directional render light and therefore drives ordinary GGX lighting and the primary shadow map; explicit ECS lights remain additive. World-environment exposure multiplied by active-camera exposure scales the complete HDR world before bright energy feeds a five-level bloom chain and the world is tone mapped once into an sRGB target.
 - Project UI, transform gizmos, editor-only project-camera bodies and projection frusta, and editor chrome render after world postprocessing and do not bloom.
 - Eligible entities receive internal render-instance components automatically.
@@ -83,9 +83,9 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 ### 8. Extract ECS lights into a bounded frame packet
 
-**Decision:** Ambient, directional, and point lights are public ECS components. ECS extraction iterates their compact active sets, accumulates ambient light, and copies up to four directional and sixteen point lights into each render list, following ADR-011.
-**Why:** Lights remain scriptable scene state without exposing ECS storage to renderer backends, and fixed limits keep the first uniform layout predictable.
-**Tradeoff:** Excess lights are ignored in active-membership order until a future light-selection or clustered-lighting path replaces the fixed packet.
+**Decision:** Ambient, directional, and point lights are public ECS components. ECS extraction iterates compact active sets, accumulates ambient light, and copies up to four directional and 256 point lights into each render list. WGPU builds deterministic per-cluster point-light lists entirely on the GPU. See ADR-011 and ADR-039.
+**Why:** Lights remain scriptable scene state without exposing ECS storage to renderer backends, while fragment work scales with locally relevant lights instead of the complete packet.
+**Tradeoff:** WGPU reserves a fixed cluster-index budget and ignores lights beyond the packet or 64-light per-cluster limits.
 
 ### 9. Accumulate lighting in linear space and tone map the result
 
@@ -95,9 +95,9 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 ### 10. Make shadow participation explicit
 
-**Decision:** Expose separate engine-provided shadow caster and receiver marker components and render one shadow map from the first directional light.
+**Decision:** Expose separate engine-provided shadow caster and receiver marker components and render four stabilized camera-relative cascades from the first directional light. See ADR-039.
 **Why:** Projects should control shadow cost and semantics independently for occluders and shaded surfaces without coupling them to geometry or material ownership.
-**Tradeoff:** The initial fixed orthographic shadow volume and single map do not cover point lights, multiple shadowed directional lights, cascades, or large scenes.
+**Tradeoff:** Shadows stop at 80 world units and do not yet cover point lights, multiple shadowed directional lights, cascade blending, or configurable quality levels.
 
 ### 11. Keep decoded images in resource ownership and GPU objects in the backend
 
@@ -121,11 +121,11 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 **Decision:** Keep image-based lighting and visible backgrounds independent. Preserve every imported Environment's source-resolution linear panorama for an optional infinite camera-oriented background, while using importer-built irradiance and prefiltered specular cubes for lighting. One authored `scrapbot.world_environment` component selects both sources plus independent intensity, rotation, exposure compensation, and blur. An enabled background without a resource renders a procedural atmospheric sky with a distinct spherical ground hemisphere, subtly curved aerial-perspective horizon, and an independently art-directed HDR sun. The component exposes bounded sky tint, ground color, turbidity, thickness, horizon softness, sun direction, color, intensity, size, and glow; these values share the retained environment revision and uniform update instead of creating per-frame work. World-environment and active-camera exposure apply to the complete HDR world.
 **Why:** Lighting probes are useful even when their photographic capture is unsuitable as scenery. A compact reflection cube is not an acceptable sharp background, while an intentionally blurred backdrop can reuse its prefiltered levels. Independent presentation avoids coupling art direction to physically useful reflections.
-**Tradeoff:** Environment products retain both the full panorama and compact lighting cubes, and an enabled background keeps another prefiltered cube resident. The visual sun does not automatically drive a directional light or its shadows; projects align those authored values explicitly when desired. There is no photographic EV calibration, automatic exposure, panorama mip chain, or local reflection-probe blending yet.
+**Tradeoff:** Environment products retain both the full panorama and compact lighting cubes, and an enabled background keeps another prefiltered cube resident. The procedural sun consumes the first directional-light slot while above the horizon. There is no photographic EV calibration, automatic exposure, panorama mip chain, or local reflection-probe blending yet.
 
 ## Related
 
-- **ADRs:** ADR-003, ADR-005, ADR-010, ADR-011, ADR-029, ADR-034, ADR-038
+- **ADRs:** ADR-003, ADR-005, ADR-010, ADR-011, ADR-029, ADR-034, ADR-038, ADR-039
 - **FDRs:** FDR-001, FDR-002, FDR-008
 
 ## Open Questions

@@ -115,7 +115,7 @@ These entries deliberately omit exhaustive field/default documentation. Follow t
 
 ### `scrapbot.directional_light`
 
-- **Contract:** Directional color/intensity input; the first active directional light supplies the current shadow view.
+- **Contract:** Directional color/intensity input; the first active directional light supplies the current four-cascade shadow direction.
 - **Storage/lifecycle:** Dedicated typed ECS storage; authored.
 - **Producers:** Scene loading, Luau/native mutation, editor inspector/history.
 - **Consumers:** World lighting, shadow-camera preparation, shadow rendering.
@@ -128,7 +128,7 @@ These entries deliberately omit exhaustive field/default documentation. Follow t
 - **Contract:** Bounded color/intensity/range input positioned by the entity's resolved world Transform.
 - **Storage/lifecycle:** Dedicated typed ECS storage; authored.
 - **Producers:** Scene loading, Luau/native mutation, editor inspector/history.
-- **Consumers:** Hierarchy/world-transform resolution and compact point-light render inputs.
+- **Consumers:** Hierarchy/world-transform resolution, compact point-light render inputs, and WGPU's GPU-built clustered-light table.
 - **Invalidation:** Membership is structural; light values or the paired Transform dirty the exact compact light input.
 - **Surfaces:** Public across scene TOML, Luau, native Odin, and editor authoring; see the [public component reference](../../docs-website/src/content/docs/reference/components.md#lights-and-shadows).
 - **Source/tests:** `ecs/world.odin`, `ecs/hierarchy.odin`, `render/render.odin`; `ecs/world_test.odin`, `render/render_test.odin`.

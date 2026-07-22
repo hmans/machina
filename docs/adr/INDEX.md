@@ -40,3 +40,4 @@
 | [ADR-036](ADR-036-compile-source-assets-into-versioned-resource-products.md) | Compile source assets into versioned resource products | 2026-07-21 |
 | [ADR-037](ADR-037-compose-embedded-worlds-through-ecs-ui-viewports.md) | Compose embedded worlds through ECS UI viewports | 2026-07-21 |
 | [ADR-038](ADR-038-author-scene-environments-as-ecs-components.md) | Author scene environments as ECS components | 2026-07-22 |
+| [ADR-039](ADR-039-keep-clustered-lighting-and-shadow-cascades-backend-owned.md) | Keep clustered lighting and shadow cascades backend-owned | 2026-07-22 |

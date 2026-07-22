@@ -258,7 +258,7 @@ Directional shadow markers have no fields:
 [entities.shadow_receiver]
 ```
 
-Casters write to the first directional light's shadow map. Receivers sample it. The markers are independent, so geometry may cast without receiving or receive without casting.
+Casters write to the first directional light's four camera-relative shadow cascades. Receivers select and PCF-sample the appropriate cascade. The markers are independent, so geometry may cast without receiving or receive without casting.
 
 Screen-space UI entities share a retained box model and compose container or content components:
 

@@ -12,7 +12,6 @@ This file tracks current actionable engineering work. The broad product roadmap 
 - [ ] Replace aggregate asset polling with dependency-aware platform file watching that enqueues exact resource UUID reimports.
 - [ ] Add imported mesh LODs and evaluate meshlets and richer submission against representative scenes.
 - [ ] Expose bloom threshold, intensity, and scatter as project settings, and evaluate automatic/adaptive exposure separately from authored camera exposure.
-- [ ] Add clustered or otherwise scalable lighting beyond the initial fixed light limits.
 - [ ] Add Hi-Z, visibility, and LOD debug views.
 - [ ] Add deterministic visual comparison for offscreen render output.
 

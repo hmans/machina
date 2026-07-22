@@ -160,12 +160,12 @@ The authored entity is the model root. Resource initialization and reload reconc
 | Component | Fields | Runtime behavior |
 | --- | --- | --- |
 | `scrapbot.ambient_light` | `color: Vec3`, `intensity: number` | Adds a scene-wide ambient contribution; no Transform required. |
-| `scrapbot.directional_light` | `direction: Vec3`, `color: Vec3`, `intensity: number` | Adds directional lighting; no Transform required. The first directional light owns the current shadow map. |
+| `scrapbot.directional_light` | `direction: Vec3`, `color: Vec3`, `intensity: number` | Adds directional lighting; no Transform required. The first directional light owns the current four-cascade shadow set. |
 | `scrapbot.point_light` | `color: Vec3`, `intensity: number`, `range: number` | Reads world position from a Transform on the same entity. Range and intensity are non-negative in editor authoring. |
 | `scrapbot.shadow_caster` | No fields | Marks renderable geometry as a directional-shadow caster. |
 | `scrapbot.shadow_receiver` | No fields | Marks renderable geometry as a directional-shadow receiver. |
 
-Light query payloads expose the listed data fields. Shadow components are empty marker payloads. The two shadow markers are independent.
+Light query payloads expose the listed data fields. Shadow components are empty marker payloads. The two shadow markers are independent. WGPU extracts at most 256 point lights and assigns them to view-space clusters on the GPU; one cluster evaluates at most 64 point lights.
 
 ## UI composition rules
 

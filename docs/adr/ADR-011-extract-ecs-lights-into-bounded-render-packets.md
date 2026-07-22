@@ -8,8 +8,10 @@ Lights are scene data that systems may create, remove, or animate, but rendering
 
 ## Decision
 
-Represent ambient, directional, and point lights as public engine ECS components. Before rendering, extract alive lights into the transient render list: accumulate ambient contributions, copy at most four directional lights, and copy at most sixteen point lights with positions taken from their transforms. Rendering backends consume this bounded packet and own the GPU representation.
+ADR-039 amends the original capacity and backend representation while preserving this ECS-to-renderer ownership boundary.
+
+Represent ambient, directional, and point lights as public engine ECS components. Before rendering, extract alive lights into the retained render list: accumulate ambient contributions and copy bounded directional and point-light inputs, with point-light positions taken from their transforms. Rendering backends consume this packet and own the GPU representation. The current limits and scalable WGPU representation are specified by ADR-039.
 
 ## Consequences
 
-Gameplay systems can query and animate lights through the same ECS used for other scene state, while renderer backends remain independent of world storage. Ambient lights do not require transforms; point lights do. The initial limits are simple and deterministic, but larger scenes will eventually need light selection, culling, clustered lighting, or storage-buffer based data.
+Gameplay systems can query and animate lights through the same ECS used for other scene state, while renderer backends remain independent of world storage. Ambient lights do not require transforms; point lights do. Backends may derive scalable visibility and storage without moving authoritative light state out of ECS.
