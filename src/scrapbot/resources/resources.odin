@@ -1827,10 +1827,10 @@ cylinder :: proc(
 			}
 			next := (i + 1) % segments; o := segments * 6 + (cap * segments + i) * 3
 			if cap ==
-			   0 {copy(indices[o:o + 3], []u32{u32(offset), u32(offset + 1 + next), u32(offset + 1 + i)})
+			   0 {copy(indices[o:o + 3], []u32{u32(offset), u32(offset + 1 + i), u32(offset + 1 + next)})
 			} else {copy(
 					indices[o:o + 3],
-					[]u32{u32(offset), u32(offset + 1 + i), u32(offset + 1 + next)},
+					[]u32{u32(offset), u32(offset + 1 + next), u32(offset + 1 + i)},
 				)}
 		}
 	}

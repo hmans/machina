@@ -390,6 +390,31 @@ test_generated_primitives_are_valid_indexed_geometry :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_generated_cylinder_caps_face_outward :: proc(t: ^testing.T) {
+	segments := 12
+	desc, err := cylinder(1, 2, segments)
+	defer delete(desc.vertices)
+	defer delete(desc.indices)
+	testing.expect(t, err == "")
+	side_index_count := segments * 6
+	for cap in 0 ..< 2 {
+		expected := Vec3{0, -1, 0} if cap == 0 else Vec3{0, 1, 0}
+		for segment in 0 ..< segments {
+			index_offset := side_index_count + (cap * segments + segment) * 3
+			a := desc.vertices[desc.indices[index_offset]].position
+			b := desc.vertices[desc.indices[index_offset + 1]].position
+			c := desc.vertices[desc.indices[index_offset + 2]].position
+			geometric_normal := cross(sub(b, a), sub(c, a))
+			alignment :=
+				geometric_normal.x * expected.x +
+				geometric_normal.y * expected.y +
+				geometric_normal.z * expected.z
+			testing.expect(t, alignment > 0)
+		}
+	}
+}
+
+@(test)
 test_generated_primitives_reject_invalid_tessellation :: proc(t: ^testing.T) {
 	_, sphere_err := sphere(1, 2, 8)
 	_, cylinder_err := cylinder(1, 1, 257)
