@@ -59,7 +59,7 @@ The recursive project loader rejects duplicate UUIDs. Scene validation resolves 
 - Authored materials register by UUID, name, and source path. Reload updates an existing UUID in place, preserving its slot/generation while incrementing version.
 - Deletion/disappearance marks the entry dead and increments generation/version. Reappearance by UUID reuses its registry slot through the authored registration path.
 - Editor history stores deep `Project_Material_Snapshot` values. Save derives create/write/delete files from the disk baseline and dirty UUID candidates.
-- Base color, HDR emissive value, or texture changes increment version; backend material/texture caches update only affected entries.
+- Base color, metallic/roughness factors, normal/occlusion strengths, HDR emissive value, or any material image change increments version; backend material/texture caches update only affected entries.
 - Source/tests: `resources/resources.odin`, `ui/editor_resource_authoring.odin`, `project_save.odin`; `resources/resources_test.odin`, `project_save_test.odin`.
 
 ### Font
@@ -67,8 +67,8 @@ The recursive project loader rejects duplicate UUIDs. Scene validation resolves 
 ### Texture and Model imports
 
 - `asset_import.ensure_project_imports` fingerprints source/dependency bytes plus an importer schema and writes products atomically under `.scrapbot/imported/`.
-- Texture products contain validated RGBA8 mip chains. Model products contain static triangle vertices/indices, TRS nodes, material factors, and decoded RGBA8 base-color images sourced from GLB buffer views, data URIs, or safe external relative files through pinned `cgltf`.
-- Every glTF image contributes to the model source fingerprint. Base-color images flow into the ordinary generated Material registration path; auxiliary PBR maps are counted in model metadata and editor warnings until their Material/renderer fields exist.
+- Texture products contain validated RGBA8 mip chains. Model products contain static triangle vertices/indices, TRS nodes, metallic-roughness material factors, and decoded RGBA8 mip chains for base-color, metallic-roughness, normal, occlusion, and emissive images sourced from GLB buffer views, data URIs, or safe external relative files through pinned `cgltf`.
+- Every glTF image contributes to the model source fingerprint. Generated Material entries own cloned image payloads with explicit sRGB or linear color-space meaning. The WGPU material cache uploads only a changed Material version, owns its generated texture/view set and factor uniform, and releases that complete set together.
 - Texture and Model declarations retain UUID-backed registry handles and entry versions. Imported model registration publishes ordinary Geometry and Material handles for every primitive.
 - Editor Reimport addresses one authored UUID, forces only that importer, updates the existing registry slot, and then reconciles model instances. Reimport All uses the same path for every imported declaration; neither action reloads Luau or native Odin.
 - A replaced or removed Model retires generated Geometry and Material outputs absent from the replacement by marking their slots dead and incrementing generation/version. Stable/reused products retain their handles.

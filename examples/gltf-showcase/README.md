@@ -1,6 +1,6 @@
 # glTF Showcase
 
-This project renders Khronos's Damaged Helmet through Scrapbot's real static glTF/GLB importer, generated resource hierarchy, material path, and WGPU renderer. A small Luau system rotates the imported model continuously.
+This project renders Khronos's Damaged Helmet through Scrapbot's real static glTF/GLB importer, generated resource hierarchy, and WGPU metallic-roughness PBR path. Its base-color, metallic-roughness, normal, occlusion, and emissive maps are imported with mip chains; the emissive details feed HDR bloom. A small Luau system rotates the imported model continuously.
 
 Install the pinned, checksum-verified model and run the example:
 

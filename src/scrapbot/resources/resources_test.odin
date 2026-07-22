@@ -472,6 +472,73 @@ test_materials_reject_non_finite_emission :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_pbr_materials_clone_complete_mipmapped_image_payloads :: proc(t: ^testing.T) {
+	pixels: [20]u8
+	for &value in pixels {
+		value = 127
+	}
+	registry: Registry
+	defer destroy_registry(&registry)
+	handle, err := register_material(
+		&registry,
+		"pbr",
+		{
+			base_color = {1, 1, 1, 1},
+			metallic_factor = 0.75,
+			roughness_factor = 0.25,
+			normal_scale = 0.5,
+			occlusion_strength = 0.8,
+			pbr = true,
+			normal_image = {
+				pixels = pixels[:],
+				width = 2,
+				height = 2,
+				mip_count = 2,
+				color_space = .Linear,
+			},
+		},
+	)
+	testing.expect_value(t, err, "")
+	material, alive := get_material(&registry, handle)
+	testing.expect(t, alive)
+	if !alive {
+		return
+	}
+	testing.expect_value(t, material.desc.metallic_factor, f32(0.75))
+	testing.expect_value(t, material.desc.roughness_factor, f32(0.25))
+	testing.expect_value(t, material.desc.normal_image.mip_count, u32(2))
+	testing.expect_value(t, len(material.desc.normal_image.pixels), 20)
+	pixels[0] = 255
+	testing.expect_value(t, material.desc.normal_image.pixels[0], u8(127))
+}
+
+@(test)
+test_pbr_materials_reject_incomplete_mip_chains :: proc(t: ^testing.T) {
+	pixels: [16]u8
+	registry: Registry
+	defer destroy_registry(&registry)
+	_, err := register_material(
+		&registry,
+		"invalid-pbr",
+		{
+			base_color = {1, 1, 1, 1},
+			roughness_factor = 1,
+			normal_scale = 1,
+			occlusion_strength = 1,
+			pbr = true,
+			normal_image = {
+				pixels = pixels[:],
+				width = 2,
+				height = 2,
+				mip_count = 2,
+				color_space = .Linear,
+			},
+		},
+	)
+	testing.expect(t, err != "")
+}
+
+@(test)
 test_project_lod_geometry_registers_stable_base_and_alternatives :: proc(t: ^testing.T) {
 	registry: Registry
 	defer destroy_registry(&registry)

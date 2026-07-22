@@ -82,6 +82,7 @@ WGPU_Render_Uniform :: struct {
 	point_position_range: [shared.MAX_POINT_LIGHTS][4]f32,
 	point_color_intensity: [shared.MAX_POINT_LIGHTS][4]f32,
 	light_counts: [4]u32,
+	camera_position: [4]f32,
 }
 
 WGPU_GPU_Render_Uniform :: struct {
@@ -93,8 +94,15 @@ WGPU_GPU_Render_Uniform :: struct {
 	point_position_range: [shared.MAX_POINT_LIGHTS][4]f32,
 	point_color_intensity: [shared.MAX_POINT_LIGHTS][4]f32,
 	light_counts: [4]u32,
+	camera_position: [4]f32,
 }
-#assert(size_of(WGPU_GPU_Render_Uniform) == 800)
+#assert(size_of(WGPU_GPU_Render_Uniform) == 816)
+
+WGPU_Material_Uniform :: struct {
+	pbr_factors: [4]f32,
+	flags: [4]f32,
+}
+#assert(size_of(WGPU_Material_Uniform) == 32)
 
 WGPU_Draw_Batch :: struct {
 	geometry: shared.Geometry_Handle,
@@ -195,10 +203,11 @@ WGPU_Material_Cache :: struct {
 	version: u32,
 	texture_handle: shared.Texture_Handle,
 	texture_version: u32,
-	texture: wgpu.Texture,
-	view: wgpu.TextureView,
+	textures: [5]wgpu.Texture,
+	views: [5]wgpu.TextureView,
 	bind_group: wgpu.BindGroup,
-	owns_texture: bool,
+	uniform_buffer: wgpu.Buffer,
+	owns_texture: [5]bool,
 	valid: bool,
 }
 
@@ -289,6 +298,8 @@ WGPU_Renderer :: struct {
 	bind_group: wgpu.BindGroup,
 	material_bind_group_layout: wgpu.BindGroupLayout,
 	material_sampler: wgpu.Sampler,
+	material_fallback_textures: [5]wgpu.Texture,
+	material_fallback_views: [5]wgpu.TextureView,
 	ui_bind_group_layout: wgpu.BindGroupLayout,
 	ui_bind_group: wgpu.BindGroup,
 	ui_pipeline_layout: wgpu.PipelineLayout,
@@ -297,6 +308,7 @@ WGPU_Renderer :: struct {
 	ui_viewport_pipeline: wgpu.RenderPipeline,
 	ui_viewport_texture_pipeline: wgpu.RenderPipeline,
 	ui_viewport_texture_pipeline_layout: wgpu.PipelineLayout,
+	ui_viewport_texture_bind_group_layout: wgpu.BindGroupLayout,
 	ui_font_texture: wgpu.Texture,
 	ui_font_view: wgpu.TextureView,
 	ui_font_sampler: wgpu.Sampler,
@@ -881,11 +893,7 @@ wgpu_material_cache :: proc(
 	   cached.texture_version == texture_version {
 		return cached, ""
 	}
-	if cached.bind_group != nil { wgpu.BindGroupRelease(cached.bind_group) }
-	if cached.owns_texture {
-		if cached.view != nil { wgpu.TextureViewRelease(cached.view) }
-		if cached.texture != nil { wgpu.TextureRelease(cached.texture) }
-	}
+	wgpu_release_material_cache_entry(cached)
 	cached^ = {
 		handle = handle,
 		version = material.version,
@@ -901,41 +909,112 @@ wgpu_material_cache :: proc(
 		if texture_err != "" {
 			return nil, texture_err
 		}
-		cached.texture = texture_cached.texture
-		cached.view = texture_cached.view
+		cached.textures[0] = texture_cached.texture
+		cached.views[0] = texture_cached.view
+	} else if len(material.desc.texture_pixels) > 0 {
+		base_image := resources.Material_Image {
+			pixels = material.desc.texture_pixels,
+			width = material.desc.texture_width,
+			height = material.desc.texture_height,
+			mip_count = material.desc.texture_mip_count,
+			color_space = .SRGB,
+		}
+		texture, view, texture_err := wgpu_create_material_image(
+			renderer,
+			base_image,
+			{255, 255, 255, 255},
+			"Scrapbot Base Color Texture",
+		)
+		if texture_err != "" {
+			return nil, texture_err
+		}
+		cached.textures[0] = texture
+		cached.views[0] = view
+		cached.owns_texture[0] = true
 	} else {
-		width, height := material.desc.texture_width, material.desc.texture_height
-		pixels := material.desc.texture_pixels
-		white := [4]u8{255, 255, 255, 255}
-		if len(pixels) == 0 { width = 1; height = 1; pixels = white[:] }
-		cached.texture = wgpu.DeviceCreateTexture(
-			renderer.device,
-			&wgpu.TextureDescriptor {
-				label = "Scrapbot Material Texture",
-				usage = {.TextureBinding, .CopyDst},
-				dimension = ._2D,
-				size = {width = width, height = height, depthOrArrayLayers = 1},
-				format = .RGBA8UnormSrgb,
-				mipLevelCount = 1,
-				sampleCount = 1,
-			},
-		)
-		if cached.texture == nil { return nil, "failed to create material texture" }
-		cached.owns_texture = true
-		wgpu.QueueWriteTexture(
-			renderer.queue,
-			&wgpu.TexelCopyTextureInfo{texture = cached.texture, aspect = .All},
-			raw_data(pixels),
-			uint(len(pixels)),
-			&wgpu.TexelCopyBufferLayout{bytesPerRow = width * 4, rowsPerImage = height},
-			&wgpu.Extent3D{width = width, height = height, depthOrArrayLayers = 1},
-		)
-		cached.view = wgpu.TextureCreateView(cached.texture)
-		if cached.view == nil { return nil, "failed to create material texture view" }
+		cached.textures[0] = renderer.material_fallback_textures[0]
+		cached.views[0] = renderer.material_fallback_views[0]
 	}
+	images := [?]resources.Material_Image {
+		material.desc.metallic_roughness_image,
+		material.desc.normal_image,
+		material.desc.occlusion_image,
+		material.desc.emissive_image,
+	}
+	fallbacks := [?][4]u8 {
+		{255, 255, 255, 255},
+		{128, 128, 255, 255},
+		{255, 255, 255, 255},
+		{0, 0, 0, 255},
+	}
+	labels := [?]string {
+		"Scrapbot Metallic Roughness Texture",
+		"Scrapbot Normal Texture",
+		"Scrapbot Occlusion Texture",
+		"Scrapbot Emissive Texture",
+	}
+	for image, image_index in images {
+		cache_index := image_index + 1
+		if len(image.pixels) == 0 {
+			cached.textures[cache_index] = renderer.material_fallback_textures[cache_index]
+			cached.views[cache_index] = renderer.material_fallback_views[cache_index]
+			continue
+		}
+		texture, view, image_err := wgpu_create_material_image(
+			renderer,
+			image,
+			fallbacks[image_index],
+			labels[image_index],
+		)
+		if image_err != "" {
+			wgpu_release_material_cache_entry(cached)
+			return nil, image_err
+		}
+		cached.textures[cache_index] = texture
+		cached.views[cache_index] = view
+		cached.owns_texture[cache_index] = true
+	}
+	material_uniform := WGPU_Material_Uniform {
+		pbr_factors = {
+			material.desc.metallic_factor,
+			material.desc.roughness_factor,
+			material.desc.normal_scale,
+			material.desc.occlusion_strength,
+		},
+		flags = {
+			1 if len(material.desc.emissive_image.pixels) > 0 else 0,
+			1 if material.desc.pbr else 0,
+			0,
+			0,
+		},
+	}
+	cached.uniform_buffer = wgpu.DeviceCreateBuffer(
+		renderer.device,
+		&wgpu.BufferDescriptor {
+			label = "Scrapbot Material Uniform Buffer",
+			usage = {.Uniform, .CopyDst},
+			size = u64(size_of(WGPU_Material_Uniform)),
+		},
+	)
+	if cached.uniform_buffer == nil {
+		wgpu_release_material_cache_entry(cached)
+		return nil, "failed to create material uniform buffer"
+	}
+	wgpu.QueueWriteBuffer(
+		renderer.queue,
+		cached.uniform_buffer,
+		0,
+		&material_uniform,
+		uint(size_of(WGPU_Material_Uniform)),
+	)
 	entries := [?]wgpu.BindGroupEntry {
-		{binding = 0, textureView = cached.view},
+		{binding = 0, textureView = cached.views[0]},
 		{binding = 1, sampler = renderer.material_sampler},
+		{binding = 2, textureView = cached.views[1]},
+		{binding = 3, textureView = cached.views[2]},
+		{binding = 4, textureView = cached.views[3]},
+		{binding = 5, textureView = cached.views[4]},
+		{binding = 6, buffer = cached.uniform_buffer, size = u64(size_of(WGPU_Material_Uniform))},
 	}
 	cached.bind_group = wgpu.DeviceCreateBindGroup(
 		renderer.device,
@@ -946,9 +1025,101 @@ wgpu_material_cache :: proc(
 			entries = raw_data(entries[:]),
 		},
 	)
-	if cached.bind_group == nil { return nil, "failed to create material bind group" }
+	if cached.bind_group == nil {
+		wgpu_release_material_cache_entry(cached)
+		return nil, "failed to create material bind group"
+	}
 	cached.valid = true
 	return cached, ""
+}
+
+wgpu_release_material_cache_entry :: proc(cached: ^WGPU_Material_Cache) {
+	if cached == nil {
+		return
+	}
+	if cached.bind_group != nil {
+		wgpu.BindGroupRelease(cached.bind_group)
+	}
+	if cached.uniform_buffer != nil {
+		wgpu.BufferRelease(cached.uniform_buffer)
+	}
+	for owns, index in cached.owns_texture {
+		if !owns {
+			continue
+		}
+		if cached.views[index] != nil {
+			wgpu.TextureViewRelease(cached.views[index])
+		}
+		if cached.textures[index] != nil {
+			wgpu.TextureRelease(cached.textures[index])
+		}
+	}
+	cached.bind_group = nil
+	cached.uniform_buffer = nil
+	cached.textures = {}
+	cached.views = {}
+	cached.owns_texture = {}
+}
+
+wgpu_create_material_image :: proc(
+	renderer: ^WGPU_Renderer,
+	image: resources.Material_Image,
+	fallback: [4]u8,
+	label: string,
+) -> (
+	texture: wgpu.Texture,
+	view: wgpu.TextureView,
+	err: string,
+) {
+	width, height, mip_count := image.width, image.height, image.mip_count
+	pixels := image.pixels
+	fallback_pixels := fallback
+	if len(pixels) == 0 {
+		width, height, mip_count = 1, 1, 1
+		pixels = fallback_pixels[:]
+	}
+	format: wgpu.TextureFormat = .RGBA8UnormSrgb
+	if image.color_space == .Linear {
+		format = .RGBA8Unorm
+	}
+	texture = wgpu.DeviceCreateTexture(
+		renderer.device,
+		&wgpu.TextureDescriptor {
+			label = label,
+			usage = {.TextureBinding, .CopyDst},
+			dimension = ._2D,
+			size = {width = width, height = height, depthOrArrayLayers = 1},
+			format = format,
+			mipLevelCount = mip_count,
+			sampleCount = 1,
+		},
+	)
+	if texture == nil {
+		return nil, nil, fmt.tprintf("failed to create %s", label)
+	}
+	offset := 0
+	mip_width, mip_height := width, height
+	for level in 0 ..< mip_count {
+		byte_count := int(mip_width * mip_height * 4)
+		level_pixels := pixels[offset:offset + byte_count]
+		wgpu.QueueWriteTexture(
+			renderer.queue,
+			&wgpu.TexelCopyTextureInfo{texture = texture, mipLevel = level, aspect = .All},
+			raw_data(level_pixels),
+			uint(len(level_pixels)),
+			&wgpu.TexelCopyBufferLayout{bytesPerRow = mip_width * 4, rowsPerImage = mip_height},
+			&wgpu.Extent3D{width = mip_width, height = mip_height, depthOrArrayLayers = 1},
+		)
+		offset += byte_count
+		mip_width = max(mip_width / 2, 1)
+		mip_height = max(mip_height / 2, 1)
+	}
+	view = wgpu.TextureCreateView(texture)
+	if view == nil {
+		wgpu.TextureRelease(texture)
+		return nil, nil, fmt.tprintf("failed to create %s view", label)
+	}
+	return texture, view, ""
 }
 
 wgpu_texture_cache :: proc(

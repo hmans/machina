@@ -45,10 +45,26 @@ Geometry_Desc :: struct {
 Material_Desc :: struct {
 	base_color: Vec4,
 	emissive: Vec3,
+	metallic_factor: f32,
+	roughness_factor: f32,
+	normal_scale: f32,
+	occlusion_strength: f32,
+	pbr: bool,
 	texture: Texture_Handle,
 	texture_pixels: []u8,
 	texture_width: u32,
 	texture_height: u32,
+	texture_mip_count: u32,
+	metallic_roughness_image: Material_Image,
+	normal_image: Material_Image,
+	occlusion_image: Material_Image,
+	emissive_image: Material_Image,
+}
+
+Material_Image :: struct {
+	pixels: []u8,
+	width, height, mip_count: u32,
+	color_space: shared.Texture_Color_Space,
 }
 
 Texture_Desc :: struct {
@@ -195,7 +211,7 @@ destroy_registry :: proc(registry: ^Registry) {
 		delete(material.name, allocator)
 		delete(material.source, allocator)
 		delete(material.texture_asset, allocator)
-		delete(material.desc.texture_pixels, allocator)
+		destroy_material_desc(&material.desc, allocator)
 	}
 	for &texture in registry.textures {
 		delete(texture.name, allocator)
@@ -707,9 +723,10 @@ register_material :: proc(
 	string,
 ) {
 	if registry == nil { return {}, "material registry is not available" }
+	normalized_desc := normalize_material_desc(desc)
 	ensure_allocator(registry)
 	if name == "" { return {}, "material name must not be empty" }
-	if err := validate_material_desc(desc); err != "" {
+	if err := validate_material_desc(normalized_desc); err != "" {
 		return {}, err
 	}
 	if index, found := material_index_by_name(registry, name); found {
@@ -717,8 +734,8 @@ register_material :: proc(
 		if material.authored {
 			return {}, fmt.tprintf("material name '%s' belongs to a project resource and cannot be replaced at runtime", name)
 		}
-		delete(material.desc.texture_pixels, registry.allocator)
-		material.desc = clone_material_desc(desc, registry.allocator)
+		destroy_material_desc(&material.desc, registry.allocator)
+		material.desc = clone_material_desc(normalized_desc, registry.allocator)
 		_ = touch_material(registry, {u32(index), material.generation})
 		return {u32(index), material.generation}, ""
 	}
@@ -728,7 +745,7 @@ register_material :: proc(
 		&registry.materials,
 		Material {
 			name = cloned_name,
-			desc = clone_material_desc(desc, registry.allocator),
+			desc = clone_material_desc(normalized_desc, registry.allocator),
 			generation = 1,
 			version = 1,
 			alive = true,
@@ -757,7 +774,8 @@ register_project_material :: proc(
 	if source == "" {
 		return {}, "project material source must not be empty"
 	}
-	if err := validate_material_desc(desc); err != "" {
+	normalized_desc := normalize_material_desc(desc)
+	if err := validate_material_desc(normalized_desc); err != "" {
 		return {}, err
 	}
 	ensure_allocator(registry)
@@ -775,13 +793,13 @@ register_project_material :: proc(
 		delete(material.name, registry.allocator)
 		delete(material.source, registry.allocator)
 		delete(material.texture_asset, registry.allocator)
-		delete(material.desc.texture_pixels, registry.allocator)
+		destroy_material_desc(&material.desc, registry.allocator)
 		material.name = cloned_name
 		material.source = cloned_source
 		material.texture_asset = ""
 		material.texture_id = texture_id
 		material.authored = true
-		material.desc = clone_material_desc(desc, registry.allocator)
+		material.desc = clone_material_desc(normalized_desc, registry.allocator)
 		material.alive = true
 		_ = touch_material(registry, {u32(index), material.generation})
 		return {u32(index), material.generation}, ""
@@ -806,7 +824,7 @@ register_project_material :: proc(
 			source = cloned_source,
 			texture_id = texture_id,
 			authored = true,
-			desc = clone_material_desc(desc, registry.allocator),
+			desc = clone_material_desc(normalized_desc, registry.allocator),
 			generation = 1,
 			version = 1,
 			alive = true,
@@ -864,7 +882,7 @@ destroy_project_material_snapshot :: proc(snapshot: ^Project_Material_Snapshot) 
 	delete(snapshot.name)
 	delete(snapshot.source)
 	delete(snapshot.texture_asset)
-	delete(snapshot.desc.texture_pixels)
+	destroy_material_desc(&snapshot.desc, context.allocator)
 	snapshot^ = {}
 }
 
@@ -993,8 +1011,8 @@ register_project_materials :: proc(
 	defer delete(names)
 	prepared := make([dynamic]Prepared_Project_Material)
 	defer {
-		for item in prepared {
-			delete(item.desc.texture_pixels)
+		for index in 0 ..< len(prepared) {
+			destroy_material_desc(&prepared[index].desc, context.allocator)
 		}
 		delete(prepared)
 	}
@@ -1242,7 +1260,7 @@ register_textured_material :: proc(
 	if load_err != "" {
 		return {}, load_err
 	}
-	defer delete(desc.texture_pixels)
+	defer destroy_material_desc(&desc, context.allocator)
 	return register_material(registry, name, desc)
 }
 
@@ -1282,9 +1300,13 @@ load_material_texture :: proc(
 	return Material_Desc {
 			base_color = base_color,
 			emissive = emissive,
+			roughness_factor = 1,
+			normal_scale = 1,
+			occlusion_strength = 1,
 			texture_pixels = owned_pixels,
 			texture_width = u32(x),
 			texture_height = u32(y),
+			texture_mip_count = 1,
 		},
 		""
 }
@@ -1301,7 +1323,32 @@ valid_asset_path :: proc(path: string) -> bool {
 clone_material_desc :: proc(desc: Material_Desc, allocator: mem.Allocator) -> Material_Desc {
 	result := desc
 	result.texture_pixels = clone_slice(desc.texture_pixels, allocator)
+	result.metallic_roughness_image = clone_material_image(
+		desc.metallic_roughness_image,
+		allocator,
+	)
+	result.normal_image = clone_material_image(desc.normal_image, allocator)
+	result.occlusion_image = clone_material_image(desc.occlusion_image, allocator)
+	result.emissive_image = clone_material_image(desc.emissive_image, allocator)
 	return result
+}
+
+clone_material_image :: proc(image: Material_Image, allocator: mem.Allocator) -> Material_Image {
+	result := image
+	result.pixels = clone_slice(image.pixels, allocator)
+	return result
+}
+
+destroy_material_desc :: proc(desc: ^Material_Desc, allocator: mem.Allocator) {
+	if desc == nil {
+		return
+	}
+	delete(desc.texture_pixels, allocator)
+	delete(desc.metallic_roughness_image.pixels, allocator)
+	delete(desc.normal_image.pixels, allocator)
+	delete(desc.occlusion_image.pixels, allocator)
+	delete(desc.emissive_image.pixels, allocator)
+	desc^ = {}
 }
 
 get_geometry :: proc(registry: ^Registry, handle: Geometry_Handle) -> (^Geometry, bool) {
@@ -1436,13 +1483,87 @@ validate_material_desc :: proc(desc: Material_Desc) -> string {
 	   desc.emissive.z < 0 {
 		return "material emissive color must be finite and non-negative"
 	}
+	if math.is_nan(desc.metallic_factor) ||
+	   math.is_inf(desc.metallic_factor) ||
+	   desc.metallic_factor < 0 ||
+	   desc.metallic_factor > 1 {
+		return "material metallic factor must be finite and between zero and one"
+	}
+	if math.is_nan(desc.roughness_factor) ||
+	   math.is_inf(desc.roughness_factor) ||
+	   desc.roughness_factor < 0 ||
+	   desc.roughness_factor > 1 {
+		return "material roughness factor must be finite and between zero and one"
+	}
+	if math.is_nan(desc.normal_scale) || math.is_inf(desc.normal_scale) || desc.normal_scale < 0 {
+		return "material normal scale must be finite and non-negative"
+	}
+	if math.is_nan(desc.occlusion_strength) ||
+	   math.is_inf(desc.occlusion_strength) ||
+	   desc.occlusion_strength < 0 ||
+	   desc.occlusion_strength > 1 {
+		return "material occlusion strength must be finite and between zero and one"
+	}
 	if len(desc.texture_pixels) > 0 {
-		if desc.texture_width == 0 || desc.texture_height == 0 {
-			return "material texture dimensions must be positive"
+		if err := validate_material_image(
+			Material_Image {
+				pixels = desc.texture_pixels,
+				width = desc.texture_width,
+				height = desc.texture_height,
+				mip_count = desc.texture_mip_count,
+			},
+		); err != "" {
+			return fmt.tprintf("material base-color texture: %s", err)
 		}
-		if len(desc.texture_pixels) != int(desc.texture_width * desc.texture_height * 4) {
-			return "material texture must contain RGBA8 pixels"
+	}
+	images := [?]Material_Image {
+		desc.metallic_roughness_image,
+		desc.normal_image,
+		desc.occlusion_image,
+		desc.emissive_image,
+	}
+	labels := [?]string{"metallic-roughness", "normal", "occlusion", "emissive"}
+	for image, index in images {
+		if err := validate_material_image(image); err != "" {
+			return fmt.tprintf("material %s texture: %s", labels[index], err)
 		}
+	}
+	return ""
+}
+
+normalize_material_desc :: proc(desc: Material_Desc) -> Material_Desc {
+	result := desc
+	if !result.pbr {
+		result.metallic_factor = 0
+		result.roughness_factor = 0.8
+		result.normal_scale = 1
+		result.occlusion_strength = 1
+	}
+	if len(result.texture_pixels) > 0 && result.texture_mip_count == 0 {
+		result.texture_mip_count = 1
+	}
+	return result
+}
+
+validate_material_image :: proc(image: Material_Image) -> string {
+	if len(image.pixels) == 0 {
+		if image.width != 0 || image.height != 0 || image.mip_count != 0 {
+			return "empty image must have zero dimensions and mip count"
+		}
+		return ""
+	}
+	if image.width == 0 || image.height == 0 || image.mip_count == 0 {
+		return "dimensions and mip count must be positive"
+	}
+	expected: u64
+	width, height := image.width, image.height
+	for _ in 0 ..< image.mip_count {
+		expected += u64(width) * u64(height) * 4
+		width = max(width / 2, 1)
+		height = max(height / 2, 1)
+	}
+	if expected != u64(len(image.pixels)) {
+		return "image must contain a complete RGBA8 mip chain"
 	}
 	return ""
 }

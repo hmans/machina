@@ -158,20 +158,20 @@ resource = "d4000000-0000-4000-8000-000000000001"
       readFileSync(join(importedDirectory, metadataName), "utf8"),
     );
     if (
-      metadata.schema !== "scrapbot.model.v3.static-gltf2-material-images" ||
+      metadata.schema !== "scrapbot.model.v4.metallic-roughness-pbr" ||
       metadata.node_count !== 1 ||
       metadata.mesh_count !== 1 ||
       metadata.primitive_count !== 1 ||
       metadata.material_count !== 1 ||
-      metadata.texture_count !== 1 ||
-      metadata.ignored_texture_count !== 4 ||
+      metadata.texture_count !== 5 ||
+      metadata.ignored_texture_count !== 0 ||
       metadata.vertex_count < 10000 ||
       metadata.index_count < 10000
     ) {
       throw new Error("Damaged Helmet metadata does not match the expected real-world model shape");
     }
     console.log(
-      `[external-gltf] imported Damaged Helmet: ${metadata.vertex_count} vertices, ${metadata.index_count} indices, ${metadata.texture_count} rendered base-color texture, ${metadata.ignored_texture_count} deferred PBR maps`,
+      `[external-gltf] imported Damaged Helmet: ${metadata.vertex_count} vertices, ${metadata.index_count} indices, ${metadata.texture_count} rendered PBR textures`,
     );
   } finally {
     rmSync(project, { force: true, recursive: true });

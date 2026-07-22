@@ -109,7 +109,7 @@ This is the legacy convenience path used by generated projects. It currently res
 | `scrapbot.geometry` | `resource` | Non-empty geometry name registered by Luau or native Odin. |
 | `scrapbot.material` | `resource` | UUID of an authored `scrapbot.material` project resource. |
 
-An entity using this resource-backed path becomes renderable when it has a Transform plus valid geometry and material handles. Materials may contribute a lit base color, a PNG texture, and unbounded linear HDR emission that feeds world bloom. The ECS stores generational resource handles; scene files store geometry names and stable material resource UUIDs. Luau and native material creation remains a transient runtime facility rather than authored project-resource persistence. See [Project File Reference](/reference/project-files/#project-resources) and [Luau API: Render resources](/reference/luau-api/#render-resources).
+An entity using this resource-backed path becomes renderable when it has a Transform plus valid geometry and material handles. Materials may contribute metallic-roughness factors, mipmapped base-color/normal/occlusion/emissive images, and unbounded linear HDR emission that feeds world bloom. Imported glTF models populate that complete PBR contract; authored project materials currently expose base color, an optional Texture resource, and emission. The ECS stores generational resource handles; scene files store geometry names and stable material resource UUIDs. Luau and native material creation remains a transient runtime facility rather than authored project-resource persistence. See [Project File Reference](/reference/project-files/#project-resources) and [Luau API: Render resources](/reference/luau-api/#render-resources).
 
 ### `scrapbot.model`
 

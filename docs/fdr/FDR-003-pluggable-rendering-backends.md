@@ -1,7 +1,7 @@
 # FDR-003: Pluggable rendering backends
 
 **Status:** Active
-**Last reviewed:** 2026-07-19
+**Last reviewed:** 2026-07-22
 
 ## Overview
 
@@ -12,10 +12,10 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 - The runtime can submit frame data through a renderer boundary.
 - The current implementation supports the null backend.
 - Users can select a renderer backend from the CLI.
-- The `wgpu` backend renders full indexed geometry with shared base-color, emissive HDR, and PNG-textured materials, a perspective camera, and ambient, directional, and point lighting.
+- The `wgpu` backend renders full indexed geometry with shared metallic-roughness GGX materials, mipmapped base-color/normal/occlusion/emissive images, a perspective camera, and ambient, directional, and point lighting.
 - The first directional light produces a fixed-resolution shadow map. Only entities with `ShadowCaster` contribute depth, and only entities with `ShadowReceiver` sample it.
 - Lights are ECS components extracted into a bounded backend-neutral frame packet: accumulated ambient light, four directional lights, and sixteen point lights.
-- Base colors are decoded to linear space before lighting. Emission and lighting accumulate in a floating-point HDR target, bright energy feeds a five-level bloom chain, and the combined world is tone mapped once into an sRGB target.
+- Base-color and emissive images use sRGB sampling while metallic-roughness, normal, and occlusion images remain linear. Emission and GGX lighting accumulate in a floating-point HDR target, bright energy feeds a five-level bloom chain, and the combined world is tone mapped once into an sRGB target.
 - Project UI, transform gizmos, editor-only project-camera bodies and projection frusta, and editor chrome render after world postprocessing and do not bloom.
 - Eligible entities receive internal render-instance components automatically.
 - Shared geometry/material pairs use one instanced draw batch, and geometry and material texture uploads are cached by handle and version.
@@ -57,9 +57,9 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 
 ### 4. Render full indexed geometry
 
-**Decision:** WGPU consumes position/normal/UV vertices with `u32` triangle indices and shared base-color or PNG-textured materials. Cube and plane helpers generate the same representation.
+**Decision:** WGPU consumes position/normal/UV vertices with `u32` triangle indices and shared materials. Materials may provide scalar metallic-roughness factors and base-color, metallic-roughness, normal, occlusion, and emissive images; cube and plane helpers generate the same geometry representation.
 **Why:** Procedural, custom, and future imported geometry should follow one rendering path.
-**Tradeoff:** The canonical vertex format and simple Lambert material model still need to grow toward physically based shading, mipmaps, and richer texture channels.
+**Tradeoff:** Normal mapping reconstructs a tangent frame from fragment derivatives instead of storing imported tangents. True environment-map lighting, sampler preservation, transparency, and advanced material extensions remain follow-up work.
 
 ### 5. Keep headless framegrabs on the same render path
 

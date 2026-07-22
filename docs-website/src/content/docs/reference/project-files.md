@@ -93,9 +93,9 @@ name = "Crate"
 source = "assets/models/crate.glb"
 ```
 
-The importer supports triangle primitives, positions, optional normals and UV0, optional indices, TRS node hierarchies, base-color/emissive material factors, and base-color images. Images may come from GLB buffer views, base64 data URIs, or safe relative files beside the `.gltf`; every image dependency participates in cache invalidation. Missing normals are generated.
+The importer supports triangle primitives, positions, optional normals and UV0, optional indices, TRS node hierarchies, metallic-roughness material factors, normal and occlusion strengths, emissive factors, and base-color, metallic-roughness, normal, occlusion, and emissive images. Images may come from GLB buffer views, base64 data URIs, or safe relative files beside the `.gltf`; every image dependency participates in cache invalidation. Missing normals are generated.
 
-Metallic-roughness, normal, occlusion, and emissive maps are accepted and surfaced as deferred import warnings, but are not rendered yet. Animation, skins, morph targets, matrix-authored nodes, Draco/required extensions, non-UV0 base-color mappings, texture transforms, and KTX2/Basis images fail with an explicit diagnostic. Imported model images currently use RGBA8 level zero and do not preserve glTF sampler settings.
+Imported images use complete RGBA8 mip chains. Base color and emissive use sRGB sampling; packed metallic-roughness, normal, and occlusion maps use linear sampling. WGPU renders these through its shared GGX material path with derivative-reconstructed normal mapping, ambient response, direct ECS lights, HDR emission, bloom, and tone mapping. Animation, skins, morph targets, matrix-authored nodes, Draco/required extensions, non-UV0 texture mappings, texture transforms, KTX2/Basis images, alpha modes, double-sided materials, and advanced material extensions are not supported yet. The importer does not yet preserve glTF sampler settings or provide true image-based environment lighting.
 
 Generated icosphere LOD resources store one stable geometry identity plus up to four tessellation levels:
 

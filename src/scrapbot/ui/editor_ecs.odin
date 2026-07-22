@@ -4064,8 +4064,22 @@ editor_ui_build_resource_inspector_panels :: proc(
 			texture_count := 0
 			for handle in model.material_handles {
 				material, material_alive := resources.get_material(state.resource_registry, handle)
-				if material_alive && len(material.desc.texture_pixels) > 0 {
+				if !material_alive {
+					continue
+				}
+				if len(material.desc.texture_pixels) > 0 {
 					texture_count += 1
+				}
+				images := [?]resources.Material_Image {
+					material.desc.metallic_roughness_image,
+					material.desc.normal_image,
+					material.desc.occlusion_image,
+					material.desc.emissive_image,
+				}
+				for image in images {
+					if len(image.pixels) > 0 {
+						texture_count += 1
+					}
 				}
 			}
 			editor_ui_inspector_field(
@@ -4086,7 +4100,7 @@ editor_ui_build_resource_inspector_panels :: proc(
 			warnings := "None"
 			if model.ignored_texture_count > 0 {
 				warnings = fmt.tprintf(
-					"%d auxiliary PBR texture map(s) are not rendered yet",
+					"%d unsupported texture map(s) were ignored",
 					model.ignored_texture_count,
 				)
 			}

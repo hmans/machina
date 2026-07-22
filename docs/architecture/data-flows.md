@@ -1,6 +1,6 @@
 # Major Data Flows
 
-**Last verified:** 2026-07-21
+**Last verified:** 2026-07-22
 
 ## Project load and world bootstrap
 
@@ -73,7 +73,7 @@ typed ECS/resource mutation
                        retained UI streams + presentation
 ```
 
-Cameras and bounded lights are compact frame inputs. Stable renderable membership and instance records are not re-extracted or uploaded without a mutation signal. WGPU reuses retained batch membership for Transform-only changes, uploads a compact position/rotation/scale/local-bounds record for each dirty slot, and expands only those slots into model matrices, normal matrices, and world bounds on the GPU before culling. When legal despawn/reuse churn leaves an authoritative retained slot inactive in the backend, the Transform path reconciles only that slot's static state before continuing. Render-list integrity checks enforce current entity generations and both entity-to-instance and slot-to-instance ownership. Material content revisions trigger a one-time dependent-instance pass only when material state changes. Static instance fields remain resident unless their own sources change.
+Cameras and bounded lights are compact frame inputs. Stable renderable membership and instance records are not re-extracted or uploaded without a mutation signal. WGPU reuses retained batch membership for Transform-only changes, uploads a compact position/rotation/scale/local-bounds record for each dirty slot, and expands only those slots into model matrices, normal matrices, and world bounds on the GPU before culling. When legal despawn/reuse churn leaves an authoritative retained slot inactive in the backend, the Transform path reconciles only that slot's static state before continuing. Render-list integrity checks enforce current entity generations and both entity-to-instance and slot-to-instance ownership. Material content revisions trigger a one-time dependent-instance pass only when material state changes. WGPU then replaces only that Material handle/version's PBR factor uniform, bind group, and owned image textures; stable materials reuse their complete GPU cache entry. Static instance fields remain resident unless their own sources change.
 
 ## Performance diagnostics
 

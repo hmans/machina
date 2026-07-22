@@ -12,20 +12,30 @@ import "core:path/filepath"
 import "core:strings"
 import cgltf "vendor:cgltf"
 
-MODEL_IMPORTER_SCHEMA :: "scrapbot.model.v3.static-gltf2-material-images"
-MODEL_PRODUCT_MAGIC :: [8]u8{'S', 'B', 'M', 'O', 'D', 'E', 'L', '3'}
+MODEL_IMPORTER_SCHEMA :: "scrapbot.model.v4.metallic-roughness-pbr"
+MODEL_PRODUCT_MAGIC :: [8]u8{'S', 'B', 'M', 'O', 'D', 'E', 'L', '4'}
 
 Model_Vertex :: struct {
 	position, normal: shared.Vec3,
 	uv: shared.Vec2,
 }
 
+Model_Image :: struct {
+	pixels: []u8,
+	width, height, mip_count: u32,
+}
+
 Model_Material :: struct {
 	name: string,
 	base_color: shared.Vec4,
 	emissive: shared.Vec3,
-	base_color_pixels: []u8,
-	base_color_width, base_color_height: u32,
+	metallic_factor, roughness_factor: f32,
+	normal_scale, occlusion_strength: f32,
+	base_color_image: Model_Image,
+	metallic_roughness_image: Model_Image,
+	normal_image: Model_Image,
+	occlusion_image: Model_Image,
+	emissive_image: Model_Image,
 	ignored_texture_count: u32,
 }
 
@@ -69,7 +79,11 @@ destroy_model_product :: proc(model: ^Model_Product) {
 	}
 	for &material in model.materials {
 		delete(material.name)
-		delete(material.base_color_pixels)
+		destroy_model_image(&material.base_color_image)
+		destroy_model_image(&material.metallic_roughness_image)
+		destroy_model_image(&material.normal_image)
+		destroy_model_image(&material.occlusion_image)
+		destroy_model_image(&material.emissive_image)
 	}
 	for &mesh in model.meshes {
 		delete(mesh.name)
@@ -87,6 +101,14 @@ destroy_model_product :: proc(model: ^Model_Product) {
 	delete(model.meshes)
 	delete(model.nodes)
 	model^ = {}
+}
+
+destroy_model_image :: proc(image: ^Model_Image) {
+	if image == nil {
+		return
+	}
+	delete(image.pixels)
+	image^ = {}
 }
 
 ensure_model_import :: proc(
@@ -280,13 +302,38 @@ validate_supported_static_gltf :: proc(data: ^cgltf.data) -> string {
 	}
 	for material in data.materials {
 		if material.has_pbr_metallic_roughness {
-			view := material.pbr_metallic_roughness.base_color_texture
-			if view.texture != nil && (view.texcoord != 0 || view.has_transform) {
-				return(
-					"base-color texture coordinates and transforms other than TEXCOORD_0 are not supported yet" \
-				)
+			if err := validate_model_texture_view(
+				material.pbr_metallic_roughness.base_color_texture,
+				"base-color",
+			); err != "" {
+				return err
+			}
+			if err := validate_model_texture_view(
+				material.pbr_metallic_roughness.metallic_roughness_texture,
+				"metallic-roughness",
+			); err != "" {
+				return err
 			}
 		}
+		if err := validate_model_texture_view(material.normal_texture, "normal"); err != "" {
+			return err
+		}
+		if err := validate_model_texture_view(material.occlusion_texture, "occlusion"); err != "" {
+			return err
+		}
+		if err := validate_model_texture_view(material.emissive_texture, "emissive"); err != "" {
+			return err
+		}
+	}
+	return ""
+}
+
+validate_model_texture_view :: proc(view: cgltf.texture_view, kind: string) -> string {
+	if view.texture != nil && (view.texcoord != 0 || view.has_transform) {
+		return fmt.tprintf(
+			"%s texture coordinates and transforms other than TEXCOORD_0 are not supported yet",
+			kind,
+		)
 	}
 	return ""
 }
@@ -335,44 +382,61 @@ build_model_product :: proc(
 			emissive.y *= strength
 			emissive.z *= strength
 		}
-		if material.emissive_texture.texture != nil {
-			// Until emissive maps reach the renderer, ignoring the map must not turn
-			// its multiplier into a uniformly glowing surface.
-			emissive = {}
-		}
 		imported_material := Model_Material {
 			name = name,
 			base_color = base_color,
 			emissive = emissive,
-		}
-		if material.has_pbr_metallic_roughness &&
-		   material.pbr_metallic_roughness.metallic_roughness_texture.texture != nil {
-			imported_material.ignored_texture_count += 1
-		}
-		if material.normal_texture.texture != nil {
-			imported_material.ignored_texture_count += 1
-		}
-		if material.occlusion_texture.texture != nil {
-			imported_material.ignored_texture_count += 1
-		}
-		if material.emissive_texture.texture != nil {
-			imported_material.ignored_texture_count += 1
+			metallic_factor = 1,
+			roughness_factor = 1,
+			normal_scale = 1,
+			occlusion_strength = 1,
 		}
 		if material.has_pbr_metallic_roughness {
-			view := material.pbr_metallic_roughness.base_color_texture
-			if view.texture != nil {
-				pixels, width, height, texture_err := decode_model_texture(
-					view.texture,
-					source_path,
-				)
-				if texture_err != "" {
-					delete(imported_material.name)
-					destroy_model_product(&model)
-					return {}, fmt.tprintf("material %d base-color texture: %s", material_index, texture_err)
-				}
-				imported_material.base_color_pixels = pixels
-				imported_material.base_color_width = width
-				imported_material.base_color_height = height
+			pbr := material.pbr_metallic_roughness
+			imported_material.metallic_factor = pbr.metallic_factor
+			imported_material.roughness_factor = pbr.roughness_factor
+			if image_err := decode_model_material_image(
+				pbr.base_color_texture,
+				source_path,
+				&imported_material.base_color_image,
+			); image_err != "" {
+				destroy_model_material(&imported_material)
+				destroy_model_product(&model)
+				return {}, fmt.tprintf("material %d base-color texture: %s", material_index, image_err)
+			}
+			if image_err := decode_model_material_image(
+				pbr.metallic_roughness_texture,
+				source_path,
+				&imported_material.metallic_roughness_image,
+			); image_err != "" {
+				destroy_model_material(&imported_material)
+				destroy_model_product(&model)
+				return {}, fmt.tprintf("material %d metallic-roughness texture: %s", material_index, image_err)
+			}
+		}
+		if material.normal_texture.texture != nil {
+			imported_material.normal_scale = material.normal_texture.scale
+		}
+		if material.occlusion_texture.texture != nil {
+			imported_material.occlusion_strength = material.occlusion_texture.scale
+		}
+		views := [?]cgltf.texture_view {
+			material.normal_texture,
+			material.occlusion_texture,
+			material.emissive_texture,
+		}
+		images := [?]^Model_Image {
+			&imported_material.normal_image,
+			&imported_material.occlusion_image,
+			&imported_material.emissive_image,
+		}
+		labels := [?]string{"normal", "occlusion", "emissive"}
+		for view, index in views {
+			if image_err := decode_model_material_image(view, source_path, images[index]);
+			   image_err != "" {
+				destroy_model_material(&imported_material)
+				destroy_model_product(&model)
+				return {}, fmt.tprintf("material %d %s texture: %s", material_index, labels[index], image_err)
 			}
 		}
 		append(&model.materials, imported_material)
@@ -435,36 +499,68 @@ build_model_product :: proc(
 	return model, ""
 }
 
+destroy_model_material :: proc(material: ^Model_Material) {
+	if material == nil {
+		return
+	}
+	delete(material.name)
+	destroy_model_image(&material.base_color_image)
+	destroy_model_image(&material.metallic_roughness_image)
+	destroy_model_image(&material.normal_image)
+	destroy_model_image(&material.occlusion_image)
+	destroy_model_image(&material.emissive_image)
+	material^ = {}
+}
+
+decode_model_material_image :: proc(
+	view: cgltf.texture_view,
+	source_path: string,
+	image: ^Model_Image,
+) -> string {
+	if view.texture == nil {
+		return ""
+	}
+	pixels, width, height, mip_count, err := decode_model_texture(view.texture, source_path)
+	if err != "" {
+		return err
+	}
+	image^ = {
+		pixels = pixels,
+		width = width,
+		height = height,
+		mip_count = mip_count,
+	}
+	return ""
+}
+
 decode_model_texture :: proc(
 	texture: ^cgltf.texture,
 	source_path: string,
 ) -> (
 	pixels: []u8,
-	width, height: u32,
+	width, height, mip_count: u32,
 	err: string,
 ) {
 	if texture == nil {
-		return nil, 0, 0, "texture is missing"
+		return nil, 0, 0, 0, "texture is missing"
 	}
 	if texture.has_basisu {
-		return nil, 0, 0, "KTX2/Basis Universal images are not supported yet"
+		return nil, 0, 0, 0, "KTX2/Basis Universal images are not supported yet"
 	}
 	if texture.image_ == nil {
-		return nil, 0, 0, "texture image is missing"
+		return nil, 0, 0, 0, "texture image is missing"
 	}
 	encoded, image_err := load_model_image_bytes(texture.image_, source_path)
 	if image_err != "" {
-		return nil, 0, 0, image_err
+		return nil, 0, 0, 0, image_err
 	}
 	defer delete(encoded)
-	mip_count: u32
 	decode_err: string
-	pixels, width, height, mip_count, decode_err = decode_texture_product(encoded, false)
-	_ = mip_count
+	pixels, width, height, mip_count, decode_err = decode_texture_product(encoded, true)
 	if decode_err != "" {
-		return nil, 0, 0, fmt.tprintf("failed to decode image: %s", decode_err)
+		return nil, 0, 0, 0, fmt.tprintf("failed to decode image: %s", decode_err)
 	}
-	return pixels, width, height, ""
+	return pixels, width, height, mip_count, ""
 }
 
 load_model_image_bytes :: proc(image: ^cgltf.image, source_path: string) -> ([]u8, string) {
@@ -707,8 +803,17 @@ model_metadata :: proc(
 		}
 	}
 	for material in model.materials {
-		if len(material.base_color_pixels) > 0 {
-			metadata.texture_count += 1
+		images := [?]Model_Image {
+			material.base_color_image,
+			material.metallic_roughness_image,
+			material.normal_image,
+			material.occlusion_image,
+			material.emissive_image,
+		}
+		for image in images {
+			if len(image.pixels) > 0 {
+				metadata.texture_count += 1
+			}
 		}
 		metadata.ignored_texture_count += int(material.ignored_texture_count)
 	}
@@ -784,10 +889,15 @@ encode_model_product :: proc(model: ^Model_Product) -> []u8 {
 		model_write_string(&bytes, material.name)
 		model_write_vec4(&bytes, material.base_color)
 		model_write_vec3(&bytes, material.emissive)
-		model_write_u32(&bytes, material.base_color_width)
-		model_write_u32(&bytes, material.base_color_height)
-		model_write_u32(&bytes, u32(len(material.base_color_pixels)))
-		model_write_bytes(&bytes, material.base_color_pixels)
+		model_write_f32(&bytes, material.metallic_factor)
+		model_write_f32(&bytes, material.roughness_factor)
+		model_write_f32(&bytes, material.normal_scale)
+		model_write_f32(&bytes, material.occlusion_strength)
+		model_write_image(&bytes, material.base_color_image)
+		model_write_image(&bytes, material.metallic_roughness_image)
+		model_write_image(&bytes, material.normal_image)
+		model_write_image(&bytes, material.occlusion_image)
+		model_write_image(&bytes, material.emissive_image)
 		model_write_u32(&bytes, material.ignored_texture_count)
 	}
 	for mesh in model.meshes {
@@ -870,41 +980,37 @@ read_model_product :: proc(path: string) -> (model: Model_Product, err: string) 
 			destroy_model_product(&model)
 			return {}, "imported model material is truncated"
 		}
-		material.base_color_width, ok = model_read_u32(&reader)
+		material.metallic_factor, ok = model_read_f32(&reader)
 		if ok {
-			material.base_color_height, ok = model_read_u32(&reader)
+			material.roughness_factor, ok = model_read_f32(&reader)
 		}
-		pixel_count: u32
 		if ok {
-			pixel_count, ok = model_read_u32(&reader)
+			material.normal_scale, ok = model_read_f32(&reader)
 		}
-		if !ok || pixel_count > 16384 * 16384 * 4 {
-			delete(material.name)
+		if ok {
+			material.occlusion_strength, ok = model_read_f32(&reader)
+		}
+		images := [?]^Model_Image {
+			&material.base_color_image,
+			&material.metallic_roughness_image,
+			&material.normal_image,
+			&material.occlusion_image,
+			&material.emissive_image,
+		}
+		for image in images {
+			if !ok {
+				break
+			}
+			ok = model_read_image(&reader, image)
+		}
+		if !ok {
+			destroy_model_material(&material)
 			destroy_model_product(&model)
 			return {}, "imported model material texture is invalid"
-		}
-		texture_bytes: []u8
-		texture_bytes, ok = model_read_bytes(&reader, int(pixel_count))
-		if !ok ||
-		   (pixel_count > 0 &&
-				   (material.base_color_width == 0 ||
-						   material.base_color_height == 0 ||
-						   u64(material.base_color_width) * u64(material.base_color_height) * 4 !=
-							   u64(pixel_count))) ||
-		   (pixel_count == 0 &&
-				   (material.base_color_width != 0 || material.base_color_height != 0)) {
-			delete(material.name)
-			destroy_model_product(&model)
-			return {}, "imported model material texture is invalid"
-		}
-		if pixel_count > 0 {
-			material.base_color_pixels = make([]u8, int(pixel_count))
-			copy(material.base_color_pixels, texture_bytes)
 		}
 		material.ignored_texture_count, ok = model_read_u32(&reader)
 		if !ok {
-			delete(material.name)
-			delete(material.base_color_pixels)
+			destroy_model_material(&material)
 			destroy_model_product(&model)
 			return {}, "imported model material is truncated"
 		}
@@ -1122,6 +1228,14 @@ model_write_vec4 :: proc(bytes: ^[dynamic]u8, value: shared.Vec4) {
 	model_write_f32(bytes, value.w)
 }
 
+model_write_image :: proc(bytes: ^[dynamic]u8, image: Model_Image) {
+	model_write_u32(bytes, image.width)
+	model_write_u32(bytes, image.height)
+	model_write_u32(bytes, image.mip_count)
+	model_write_u32(bytes, u32(len(image.pixels)))
+	model_write_bytes(bytes, image.pixels)
+}
+
 model_read_bytes :: proc(reader: ^Model_Reader, count: int) -> ([]u8, bool) {
 	if count < 0 || reader.offset + count > len(reader.bytes) {
 		return nil, false
@@ -1199,6 +1313,59 @@ model_read_vec4 :: proc(reader: ^Model_Reader) -> (shared.Vec4, bool) {
 	}
 	w, ok_w := model_read_f32(reader)
 	return {x, y, z, w}, ok_w
+}
+
+model_read_image :: proc(reader: ^Model_Reader, image: ^Model_Image) -> bool {
+	if image == nil {
+		return false
+	}
+	width, width_ok := model_read_u32(reader)
+	if !width_ok {
+		return false
+	}
+	height, height_ok := model_read_u32(reader)
+	if !height_ok {
+		return false
+	}
+	mip_count, mip_count_ok := model_read_u32(reader)
+	if !mip_count_ok {
+		return false
+	}
+	pixel_count, pixel_count_ok := model_read_u32(reader)
+	if !pixel_count_ok || pixel_count > 16384 * 16384 * 4 {
+		return false
+	}
+	texture_bytes, bytes_ok := model_read_bytes(reader, int(pixel_count))
+	if !bytes_ok {
+		return false
+	}
+	if pixel_count == 0 {
+		return width == 0 && height == 0 && mip_count == 0
+	}
+	if width == 0 ||
+	   height == 0 ||
+	   width > 16384 ||
+	   height > 16384 ||
+	   mip_count == 0 ||
+	   mip_count > 15 {
+		return false
+	}
+	expected: u64
+	mip_width, mip_height := width, height
+	for _ in 0 ..< mip_count {
+		expected += u64(mip_width) * u64(mip_height) * 4
+		mip_width = max(mip_width / 2, 1)
+		mip_height = max(mip_height / 2, 1)
+	}
+	if expected != u64(pixel_count) {
+		return false
+	}
+	image.pixels = make([]u8, int(pixel_count))
+	copy(image.pixels, texture_bytes)
+	image.width = width
+	image.height = height
+	image.mip_count = mip_count
+	return true
 }
 
 cgltf_result_message :: proc(value: cgltf.result) -> string {

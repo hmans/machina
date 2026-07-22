@@ -139,9 +139,22 @@ register_project_model :: proc(
 			{
 				base_color = Vec4(material.base_color),
 				emissive = material.emissive,
-				texture_pixels = material.base_color_pixels,
-				texture_width = material.base_color_width,
-				texture_height = material.base_color_height,
+				metallic_factor = material.metallic_factor,
+				roughness_factor = material.roughness_factor,
+				normal_scale = material.normal_scale,
+				occlusion_strength = material.occlusion_strength,
+				pbr = true,
+				texture_pixels = material.base_color_image.pixels,
+				texture_width = material.base_color_image.width,
+				texture_height = material.base_color_image.height,
+				texture_mip_count = material.base_color_image.mip_count,
+				metallic_roughness_image = model_material_image(
+					material.metallic_roughness_image,
+					.Linear,
+				),
+				normal_image = model_material_image(material.normal_image, .Linear),
+				occlusion_image = model_material_image(material.occlusion_image, .Linear),
+				emissive_image = model_material_image(material.emissive_image, .SRGB),
 			},
 		)
 		if material_err != "" {
@@ -227,6 +240,19 @@ register_project_model :: proc(
 	append(&registry.models, model)
 	bump_model_revision(registry)
 	return {u32(len(registry.models) - 1), 1}, ""
+}
+
+model_material_image :: proc(
+	image: asset_import.Model_Image,
+	color_space: shared.Texture_Color_Space,
+) -> Material_Image {
+	return {
+		pixels = image.pixels,
+		width = image.width,
+		height = image.height,
+		mip_count = image.mip_count,
+		color_space = color_space,
+	}
 }
 
 retire_model_products :: proc(registry: ^Registry, model: ^Model) {

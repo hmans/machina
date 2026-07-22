@@ -59,9 +59,10 @@ test_gltf_import_decodes_embedded_base_color_image :: proc(t: ^testing.T) {
 		return
 	}
 	material := model.materials[0]
-	testing.expect_value(t, material.base_color_width, u32(8))
-	testing.expect_value(t, material.base_color_height, u32(8))
-	testing.expect_value(t, len(material.base_color_pixels), 8 * 8 * 4)
+	testing.expect_value(t, material.base_color_image.width, u32(8))
+	testing.expect_value(t, material.base_color_image.height, u32(8))
+	testing.expect_value(t, material.base_color_image.mip_count, u32(4))
+	testing.expect_value(t, len(material.base_color_image.pixels), (8 * 8 + 4 * 4 + 2 * 2 + 1) * 4)
 	testing.expect_value(t, material.base_color.x, f32(0.5))
 }
 

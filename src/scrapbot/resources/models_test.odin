@@ -150,6 +150,7 @@ test_project_model_registers_embedded_base_color_image_on_generated_material :: 
 	if material_alive {
 		testing.expect_value(t, material.desc.texture_width, u32(8))
 		testing.expect_value(t, material.desc.texture_height, u32(8))
-		testing.expect_value(t, len(material.desc.texture_pixels), 8 * 8 * 4)
+		testing.expect_value(t, material.desc.texture_mip_count, u32(4))
+		testing.expect_value(t, len(material.desc.texture_pixels), (8 * 8 + 4 * 4 + 2 * 2 + 1) * 4)
 	}
 }

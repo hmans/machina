@@ -103,7 +103,7 @@ Scripts usually do three things:
 
 ## Assets
 
-Project-owned source assets live under `assets/`. UUID-backed `scrapbot.texture` and `scrapbot.model` resource files declare PNG and static glTF/GLB imports. Static models may carry base-color images in GLB buffer views or data URIs, or reference safe relative image files beside the source model. `scrapbot import`, `check`, `run`, and `build` share the incremental importer and write versioned products under `.scrapbot/imported/`. Source/dependency content and importer schema participate in the cache key; ordinary frames never scan or decode the asset tree. See the [Project File Reference](/reference/project-files/#project-resources) and `examples/assets`.
+Project-owned source assets live under `assets/`. UUID-backed `scrapbot.texture` and `scrapbot.model` resource files declare PNG and static glTF/GLB imports. Static models may carry base-color, metallic-roughness, normal, occlusion, and emissive images in GLB buffer views or data URIs, or reference safe relative image files beside the source model. `scrapbot import`, `check`, `run`, and `build` share the incremental importer and write versioned products under `.scrapbot/imported/`. Source/dependency content and importer schema participate in the cache key; ordinary frames never scan or decode the asset tree. See the [Project File Reference](/reference/project-files/#project-resources) and `examples/gltf-showcase`.
 
 ## Generated Luau types
 

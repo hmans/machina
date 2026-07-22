@@ -15,6 +15,12 @@ struct Render_Uniform {
 	point_position_range: array<vec4<f32>, 16>,
 	point_color_intensity: array<vec4<f32>, 16>,
 	light_counts: vec4<u32>,
+	camera_position: vec4<f32>,
+};
+
+struct Material_Uniform {
+	pbr_factors: vec4<f32>,
+	flags: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -23,6 +29,11 @@ var<uniform> render: Render_Uniform;
 @group(0) @binding(2) var shadow_sampler: sampler_comparison;
 @group(1) @binding(0) var base_color_texture: texture_2d<f32>;
 @group(1) @binding(1) var base_color_sampler: sampler;
+@group(1) @binding(2) var metallic_roughness_texture: texture_2d<f32>;
+@group(1) @binding(3) var normal_texture: texture_2d<f32>;
+@group(1) @binding(4) var occlusion_texture: texture_2d<f32>;
+@group(1) @binding(5) var emissive_texture: texture_2d<f32>;
+@group(1) @binding(6) var<uniform> material: Material_Uniform;
 
 struct Vertex_Input {
 	@location(0) position: vec3<f32>,
@@ -63,10 +74,89 @@ fn shadow_vs(input: Vertex_Input, @builtin(instance_index) instance_index: u32) 
 	return render.shadow_mvp[instance_index] * vec4<f32>(input.position, 1.0);
 }
 
+const PI: f32 = 3.14159265359;
+
+fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
+	return f0 + (vec3<f32>(1.0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> vec3<f32> {
+	return f0 + (max(vec3<f32>(1.0 - roughness), f0) - f0) *
+		pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+fn distribution_ggx(normal: vec3<f32>, halfway: vec3<f32>, roughness: f32) -> f32 {
+	let a = roughness * roughness;
+	let a2 = a * a;
+	let n_dot_h = max(dot(normal, halfway), 0.0);
+	let denominator = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+	return a2 / max(PI * denominator * denominator, 0.000001);
+}
+
+fn geometry_schlick_ggx(n_dot_v: f32, roughness: f32) -> f32 {
+	let r = roughness + 1.0;
+	let k = r * r / 8.0;
+	return n_dot_v / max(n_dot_v * (1.0 - k) + k, 0.000001);
+}
+
+fn geometry_smith(normal: vec3<f32>, view: vec3<f32>, light: vec3<f32>, roughness: f32) -> f32 {
+	return geometry_schlick_ggx(max(dot(normal, view), 0.0), roughness) *
+		geometry_schlick_ggx(max(dot(normal, light), 0.0), roughness);
+}
+
+fn mapped_normal(input: Vertex_Output) -> vec3<f32> {
+	let geometric = normalize(input.world_normal);
+	var sampled = textureSample(normal_texture, base_color_sampler, input.uv).xyz * 2.0 - 1.0;
+	sampled = normalize(vec3<f32>(sampled.xy * material.pbr_factors.z, sampled.z));
+	let position_dx = dpdx(input.world_position);
+	let position_dy = dpdy(input.world_position);
+	let uv_dx = dpdx(input.uv);
+	let uv_dy = dpdy(input.uv);
+	let determinant = uv_dx.x * uv_dy.y - uv_dx.y * uv_dy.x;
+	if (abs(determinant) < 0.000001) {
+		return geometric;
+	}
+	let tangent = normalize((position_dx * uv_dy.y - position_dy * uv_dx.y) / determinant);
+	let bitangent = normalize((-position_dx * uv_dy.x + position_dy * uv_dx.x) / determinant);
+	return normalize(mat3x3<f32>(tangent, bitangent, geometric) * sampled);
+}
+
+fn evaluate_light(
+	normal: vec3<f32>,
+	view: vec3<f32>,
+	light: vec3<f32>,
+	radiance: vec3<f32>,
+	base_color: vec3<f32>,
+	metallic: f32,
+	roughness: f32,
+	f0: vec3<f32>,
+) -> vec3<f32> {
+	let halfway = normalize(view + light);
+	let fresnel = fresnel_schlick(max(dot(halfway, view), 0.0), f0);
+	let distribution = distribution_ggx(normal, halfway, roughness);
+	let geometry = geometry_smith(normal, view, light, roughness);
+	let denominator = max(4.0 * max(dot(normal, view), 0.0) * max(dot(normal, light), 0.0), 0.0001);
+	let specular = distribution * geometry * fresnel / denominator;
+	let diffuse_weight = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
+	let n_dot_l = max(dot(normal, light), 0.0);
+	return (diffuse_weight * base_color / PI + specular) * radiance * n_dot_l;
+}
+
 @fragment
 fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
-	let normal = normalize(input.world_normal);
-	var lighting = render.ambient.rgb;
+	let normal = mapped_normal(input);
+	let view = normalize(render.camera_position.xyz - input.world_position);
+	let texture_color = textureSample(base_color_texture, base_color_sampler, input.uv).rgb;
+	let legacy_factor = pow(max(input.color, vec3<f32>(0.0)), vec3<f32>(2.2));
+	let color_factor = mix(legacy_factor, input.color, material.flags.y);
+	let base_color = texture_color * color_factor;
+	let packed = textureSample(metallic_roughness_texture, base_color_sampler, input.uv);
+	let metallic = clamp(packed.b * material.pbr_factors.x, 0.0, 1.0);
+	let roughness = clamp(packed.g * material.pbr_factors.y, 0.045, 1.0);
+	let occlusion_sample = textureSample(occlusion_texture, base_color_sampler, input.uv).r;
+	let occlusion = mix(1.0, occlusion_sample, material.pbr_factors.w);
+	let f0 = mix(vec3<f32>(0.04), base_color, metallic);
+	var color = vec3<f32>(0.0);
 	var shadow = 1.0;
 	if (input.shadow_receiver > 0.5 && render.light_counts.x > 0u && input.shadow_position.w > 0.0) {
 		let projected = input.shadow_position.xyz / input.shadow_position.w;
@@ -76,24 +166,32 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 		}
 	}
 	for (var i: u32 = 0u; i < render.light_counts.x; i = i + 1u) {
-		let packed = render.directional_direction_intensity[i];
-		let diffuse = max(dot(normal, -normalize(packed.xyz)), 0.0);
-		lighting += render.directional_color[i].rgb * packed.w * diffuse * shadow;
+		let directional = render.directional_direction_intensity[i];
+		let light = -normalize(directional.xyz);
+		let radiance = render.directional_color[i].rgb * directional.w * shadow;
+		color += evaluate_light(normal, view, light, radiance, base_color, metallic, roughness, f0);
 	}
 	for (var i: u32 = 0u; i < render.light_counts.y; i = i + 1u) {
-		let packed = render.point_position_range[i];
-		let offset = packed.xyz - input.world_position;
+		let point = render.point_position_range[i];
+		let offset = point.xyz - input.world_position;
 		let distance = length(offset);
-		if (distance < packed.w && distance > 0.0001) {
-			let diffuse = max(dot(normal, offset / distance), 0.0);
-			let range_fade = max(1.0 - distance / packed.w, 0.0);
+		if (distance < point.w && distance > 0.0001) {
+			let light = offset / distance;
+			let range_fade = max(1.0 - distance / point.w, 0.0);
 			let attenuation = range_fade * range_fade / (1.0 + distance * distance);
-			lighting += render.point_color_intensity[i].rgb * render.point_color_intensity[i].w * diffuse * attenuation;
+			let point_color = render.point_color_intensity[i];
+			let radiance = point_color.rgb * point_color.w * attenuation;
+			color += evaluate_light(normal, view, light, radiance, base_color, metallic, roughness, f0);
 		}
 	}
-	let texture_color = textureSample(base_color_texture, base_color_sampler, input.uv).rgb;
-	let base_color = texture_color * pow(max(input.color, vec3<f32>(0.0)), vec3<f32>(2.2));
-	return vec4<f32>(base_color * lighting + input.emissive, 1.0);
+	let n_dot_v = max(dot(normal, view), 0.0);
+	let ambient_fresnel = fresnel_schlick_roughness(n_dot_v, f0, roughness);
+	let ambient_diffuse = (vec3<f32>(1.0) - ambient_fresnel) * (1.0 - metallic) * base_color;
+	let ambient_specular = ambient_fresnel * mix(0.9, 0.2, roughness);
+	color += render.ambient.rgb * (ambient_diffuse + ambient_specular) * occlusion;
+	let emissive_map = textureSample(emissive_texture, base_color_sampler, input.uv).rgb;
+	let emissive = mix(input.emissive, input.emissive * emissive_map, material.flags.x);
+	return vec4<f32>(color + emissive, 1.0);
 }
 `
 

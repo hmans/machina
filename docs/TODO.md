@@ -4,8 +4,9 @@ This file tracks current actionable engineering work. The broad product roadmap 
 
 ## Rendering
 
-- [ ] Render imported glTF metallic-roughness, normal, occlusion, and emissive maps; preserve sampler settings and generate mip chains for embedded model images.
-- [ ] Add richer glTF PBR fields, animation, skins, morph targets, and compressed geometry.
+- [ ] Add image-based environment lighting, reflection probes, and exposure controls to the metallic-roughness PBR path.
+- [ ] Preserve glTF sampler settings and add GPU-native compressed texture products.
+- [ ] Add richer glTF PBR extensions, alpha modes, double-sided materials, animation, skins, morph targets, and compressed geometry.
 - [ ] Replace index-derived imported model subresource keys with durable semantic keys across glTF reordering.
 - [ ] Import only nodes and resources reachable from the selected glTF scene.
 - [ ] Add optional per-target post-processing, grids, axes, wireframe, and transparent presentation to embedded ECS viewports.

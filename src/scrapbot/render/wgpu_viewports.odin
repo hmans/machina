@@ -426,6 +426,7 @@ wgpu_encode_model_viewport :: proc(
 	)
 	view_projection := mat4_mul(projection, view)
 	uniform: WGPU_Render_Uniform
+	uniform.camera_position = {eye.x, eye.y, eye.z, 1}
 	uniform.ambient = {0.28, 0.30, 0.34, 1}
 	uniform.directional_direction_intensity[0] = {-0.45, -0.80, -0.35, 1.4}
 	uniform.directional_color[0] = {1.0, 0.96, 0.90, 1}
@@ -459,10 +460,13 @@ wgpu_encode_model_viewport :: proc(
 	)
 }
 
-wgpu_preview_view_projection :: proc(
+wgpu_preview_camera :: proc(
 	component: shared.UI_Viewport_Component,
 	aspect, radius: f32,
-) -> Mat4 {
+) -> (
+	Mat4,
+	shared.Vec3,
+) {
 	pitch := clamp(component.orbit.x, f32(-1.45), f32(1.45))
 	yaw := component.orbit.y
 	direction := shared.Vec3 {
@@ -479,7 +483,7 @@ wgpu_preview_view_projection :: proc(
 		max(radius * 0.01, f32(0.001)),
 		distance + radius * 4,
 	)
-	return mat4_mul(projection, view)
+	return mat4_mul(projection, view), eye
 }
 
 wgpu_apply_preview_lighting :: proc(uniform: ^WGPU_Render_Uniform) {
@@ -509,9 +513,11 @@ wgpu_encode_material_viewport :: proc(
 	model := mat4_identity()
 	uniform: WGPU_Render_Uniform
 	wgpu_apply_preview_lighting(&uniform)
+	view_projection, eye := wgpu_preview_camera(component, aspect, 0.75)
+	uniform.camera_position = {eye.x, eye.y, eye.z, 1}
 	uniform.model[0] = model
 	uniform.normal_model[0] = model
-	uniform.mvp[0] = mat4_mul(wgpu_preview_view_projection(component, aspect, 0.75), model)
+	uniform.mvp[0] = mat4_mul(view_projection, model)
 	uniform.color[0] = {
 		material.desc.base_color.x,
 		material.desc.base_color.y,
@@ -627,7 +633,7 @@ wgpu_encode_texture_viewport :: proc(
 		renderer.device,
 		&wgpu.BindGroupDescriptor {
 			label = "Scrapbot Texture Preview Bind Group",
-			layout = renderer.material_bind_group_layout,
+			layout = renderer.ui_viewport_texture_bind_group_layout,
 			entryCount = uint(len(entries)),
 			entries = raw_data(entries[:]),
 		},
@@ -752,6 +758,11 @@ wgpu_encode_world_viewport :: proc(
 		virtual_height,
 	)
 	uniform: WGPU_Render_Uniform
+	camera_position := shared.Vec3{0, 2, 6}
+	if has_camera {
+		camera_position = camera.transform.position
+	}
+	uniform.camera_position = {camera_position.x, camera_position.y, camera_position.z, 1}
 	uniform.ambient = {render_list.ambient.x, render_list.ambient.y, render_list.ambient.z, 1}
 	for light, index in render_list.directional_lights[:render_list.directional_light_count] {
 		uniform.directional_direction_intensity[index] = {

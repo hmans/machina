@@ -1647,6 +1647,11 @@ wgpu_prepare_gpu_draw_batches :: proc(
 	}
 	uniform.view_projection = view_projection
 	uniform.shadow_view_projection = light_view_projection
+	camera_position := Vec3{0, 2, 6}
+	if render_list.has_camera {
+		camera_position = render_list.camera.transform.position
+	}
+	uniform.camera_position = {camera_position.x, camera_position.y, camera_position.z, 1}
 	uniform.ambient = {render_list.ambient.x, render_list.ambient.y, render_list.ambient.z, 1}
 	uniform.light_counts = {
 		u32(render_list.directional_light_count),
@@ -1878,10 +1883,6 @@ wgpu_prepare_gpu_draw_batches :: proc(
 	)
 	renderer.gpu_current_view_projection = view_projection
 	renderer.gpu_hiz_occlusion_enabled = hiz_reusable
-	camera_position := Vec3{0, 2, 6}
-	if render_list.has_camera {
-		camera_position = render_list.camera.transform.position
-	}
 	cull_uniform := WGPU_GPU_Cull_Uniform {
 		camera_planes = wgpu_extract_frustum_planes(view_projection),
 		shadow_planes = wgpu_extract_frustum_planes(light_view_projection),

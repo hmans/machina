@@ -1,7 +1,7 @@
 # FDR-004: Luau scripting
 
 **Status:** Active
-**Last reviewed:** 2026-07-20
+**Last reviewed:** 2026-07-22
 
 ## Overview
 
@@ -31,7 +31,7 @@ Luau scripting lets project directories include fast-iteration game code without
 - `scrapbot.component` and `scrapbot.library_component` return typed component handles with runtime component IDs and names. Scripts can cast them to generated component handle types.
 - `scrapbot.component_handle` returns the same handle shape for components registered before script execution, including native extension schemas.
 - The `scrapbot` API exposes public transform, camera, geometry, material, lighting, shadow, UI layout, horizontal-stack, vertical-stack, text, and button component handles.
-- Scripts can define full named indexed geometry, generate cubes, planes, icospheres, UV spheres, pyramids, and capped cylinders, and define shared Lambert-lit base-color, unlit emissive HDR, or project-PNG-textured materials.
+- Scripts can define full named indexed geometry, generate cubes, planes, icospheres, UV spheres, pyramids, and capped cylinders, and define shared lit base-color, unlit emissive HDR, or project-PNG-textured materials. These convenience constructors use the shared material renderer with non-metallic defaults; imported models can populate its richer PBR image contract.
 - Scripts can register frame systems with `scrapbot.system(function(time) ... end)`.
 - Scripts can give systems a project-facing name through the optional system-options `name` field. Project-owned names use one token; dotted multi-token names are reserved for engine or library systems. Named systems use that label in editor tooling; unnamed legacy registrations retain an ordinal fallback.
 - Scripts can declare system component access with `scrapbot.system({ reads = {...}, writes = {...} }, function(time) ... end)`.

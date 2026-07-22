@@ -241,6 +241,9 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	if renderer.ui_viewport_texture_pipeline_layout != nil {
 		wgpu.PipelineLayoutRelease(renderer.ui_viewport_texture_pipeline_layout)
 	}
+	if renderer.ui_viewport_texture_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.ui_viewport_texture_bind_group_layout)
+	}
 	if renderer.ui_shader != nil { wgpu.ShaderModuleRelease(renderer.ui_shader) }
 	if renderer.ui_bind_group != nil { wgpu.BindGroupRelease(renderer.ui_bind_group) }
 	if renderer.ui_font_sampler != nil { wgpu.SamplerRelease(renderer.ui_font_sampler) }
@@ -402,12 +405,26 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	delete(renderer.texture_cache)
 	for &cached in renderer.material_cache {
 		if cached.bind_group != nil { wgpu.BindGroupRelease(cached.bind_group) }
-		if cached.owns_texture {
-			if cached.view != nil { wgpu.TextureViewRelease(cached.view) }
-			if cached.texture != nil { wgpu.TextureRelease(cached.texture) }
+		if cached.uniform_buffer != nil { wgpu.BufferRelease(cached.uniform_buffer) }
+		for owns, index in cached.owns_texture {
+			if !owns {
+				continue
+			}
+			if cached.views[index] != nil { wgpu.TextureViewRelease(cached.views[index]) }
+			if cached.textures[index] != nil { wgpu.TextureRelease(cached.textures[index]) }
 		}
 	}
 	delete(renderer.material_cache)
+	for view in renderer.material_fallback_views {
+		if view != nil {
+			wgpu.TextureViewRelease(view)
+		}
+	}
+	for texture in renderer.material_fallback_textures {
+		if texture != nil {
+			wgpu.TextureRelease(texture)
+		}
+	}
 	if renderer.bind_group != nil {
 		wgpu.BindGroupRelease(renderer.bind_group)
 	}
@@ -497,6 +514,31 @@ wgpu_create_render_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 			texture = {sampleType = .Float, viewDimension = ._2D},
 		},
 		{binding = 1, visibility = {.Fragment}, sampler = {type = .Filtering}},
+		{
+			binding = 2,
+			visibility = {.Fragment},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{
+			binding = 3,
+			visibility = {.Fragment},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{
+			binding = 4,
+			visibility = {.Fragment},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{
+			binding = 5,
+			visibility = {.Fragment},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{
+			binding = 6,
+			visibility = {.Fragment},
+			buffer = {type = .Uniform, minBindingSize = u64(size_of(WGPU_Material_Uniform))},
+		},
 	}
 	renderer.material_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
 		renderer.device,
@@ -518,10 +560,38 @@ wgpu_create_render_pipeline :: proc(renderer: ^WGPU_Renderer) -> string {
 			magFilter = .Linear,
 			minFilter = .Linear,
 			mipmapFilter = .Linear,
-			maxAnisotropy = 1,
+			maxAnisotropy = 8,
 		},
 	)
 	if renderer.material_sampler == nil { return "failed to create material sampler" }
+	fallbacks := [?][4]u8 {
+		{255, 255, 255, 255},
+		{255, 255, 255, 255},
+		{128, 128, 255, 255},
+		{255, 255, 255, 255},
+		{0, 0, 0, 255},
+	}
+	fallback_spaces := [?]shared.Texture_Color_Space{.SRGB, .Linear, .Linear, .Linear, .SRGB}
+	fallback_labels := [?]string {
+		"Scrapbot Base Color Fallback",
+		"Scrapbot Metallic Roughness Fallback",
+		"Scrapbot Normal Fallback",
+		"Scrapbot Occlusion Fallback",
+		"Scrapbot Emissive Fallback",
+	}
+	for fallback, index in fallbacks {
+		texture, view, fallback_err := wgpu_create_material_image(
+			renderer,
+			{color_space = fallback_spaces[index]},
+			fallback,
+			fallback_labels[index],
+		)
+		if fallback_err != "" {
+			return fallback_err
+		}
+		renderer.material_fallback_textures[index] = texture
+		renderer.material_fallback_views[index] = view
+	}
 
 	pipeline_layouts := [?]wgpu.BindGroupLayout {
 		renderer.bind_group_layout,
@@ -1150,12 +1220,31 @@ wgpu_create_embedded_viewport_resources :: proc(renderer: ^WGPU_Renderer) -> str
 		return "failed to create embedded texture preview shader"
 	}
 	defer wgpu.ShaderModuleRelease(texture_shader)
+	texture_layout_entries := [?]wgpu.BindGroupLayoutEntry {
+		{
+			binding = 0,
+			visibility = {.Fragment},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{binding = 1, visibility = {.Fragment}, sampler = {type = .Filtering}},
+	}
+	renderer.ui_viewport_texture_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
+		renderer.device,
+		&wgpu.BindGroupLayoutDescriptor {
+			label = "Scrapbot Embedded Texture Preview Bind Group Layout",
+			entryCount = uint(len(texture_layout_entries)),
+			entries = raw_data(texture_layout_entries[:]),
+		},
+	)
+	if renderer.ui_viewport_texture_bind_group_layout == nil {
+		return "failed to create embedded texture preview bind group layout"
+	}
 	renderer.ui_viewport_texture_pipeline_layout = wgpu.DeviceCreatePipelineLayout(
 		renderer.device,
 		&wgpu.PipelineLayoutDescriptor {
 			label = "Scrapbot Embedded Texture Preview Pipeline Layout",
 			bindGroupLayoutCount = 1,
-			bindGroupLayouts = &renderer.material_bind_group_layout,
+			bindGroupLayouts = &renderer.ui_viewport_texture_bind_group_layout,
 		},
 	)
 	if renderer.ui_viewport_texture_pipeline_layout == nil {

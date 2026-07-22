@@ -11,8 +11,8 @@ Asset imports turn artist-authored texture and model files under `assets/` into 
 
 - Texture resources import PNG sources with explicit color-space and mip-generation settings.
 - Material resources reference reusable Texture resources by UUID rather than embedding source paths.
-- Model resources import static glTF 2.0 `.gltf` and `.glb` files, including triangle geometry, TRS node transforms, base-color and emissive material factors, and base-color images. Images may be embedded in GLB buffer views, encoded as base64 data URIs, or stored at safe relative paths beside the model.
-- Imported base-color images become owned texture payloads on the Model's generated Material resources. Metallic-roughness, normal, occlusion, and emissive maps are fingerprinted and reported as deferred rather than silently misrepresented; their renderer fields remain follow-up work.
+- Model resources import static glTF 2.0 `.gltf` and `.glb` files, including triangle geometry, TRS node transforms, metallic-roughness material factors, normal and occlusion strengths, emissive factors, and base-color, metallic-roughness, normal, occlusion, and emissive images. Images may be embedded in GLB buffer views, encoded as base64 data URIs, or stored at safe relative paths beside the model.
+- Imported images become owned mipmapped texture payloads on the Model's generated Material resources. The WGPU material path renders them with GGX direct lighting, tangent-free derivative normal mapping, ambient diffuse/specular response, HDR emission, anisotropic trilinear sampling, bloom, and tone mapping.
 - Project checking, building, and running automatically import products that are absent or stale. `scrapbot import` performs the same work explicitly and reports structured per-resource results.
 - Imported products and manifests are generated under ignored project state. They are never hand-authored or committed as source authority.
 - Import validity includes source and dependency contents, settings, and importer version. Unchanged resources reuse their prior products without decoding or rebuilding them.
@@ -20,7 +20,7 @@ Asset imports turn artist-authored texture and model files under `assets/` into 
 - Explicit editor reimport targets one Texture or Model UUID without restarting Luau/native code; **Reimport All** forces every declared imported product. Automatic hot reload still uses the project asset stamp and importer cache until the platform watcher replaces polling. Ordinary simulation and render frames never scan the asset tree.
 - The editor's resource browser lists textures and models alongside materials. Its inspector exposes the source dependency, product kind and byte size, warnings/errors, and current import state. Textures render directly on the GPU with aspect-preserving fit. Models render their imported hierarchy, while Materials render on an isolated lit icosphere preview scene. All three use the public ECS viewport component and independently sized pooled targets; interactive 3D previews support orbit, zoom, and reset.
 - Reimport updates a live resource slot in place and reconciles affected model roots. Generated Geometry and Material products that disappear from a replaced or removed Model are retired with generation bumps, so stale handles cannot remain usable.
-- Imported models initially exclude animation, skins, morph targets, compressed geometry, non-UV0 base-color mappings, texture transforms, sampler preservation, and advanced material extensions; unsupported required glTF features fail clearly.
+- Imported models initially exclude animation, skins, morph targets, compressed geometry, non-UV0 texture mappings, texture transforms, sampler preservation, alpha modes, double-sided materials, true image-based environment lighting, and advanced material extensions; unsupported required glTF features fail clearly.
 
 ## Design Decisions
 
@@ -60,11 +60,17 @@ Asset imports turn artist-authored texture and model files under `assets/` into 
 **Why:** Asset inspection should show the real renderer product without creating editor-private drawing code or spawning preview-only entities into the project's active ECS world.
 **Tradeoff:** Preview scenes are derived renderer state rather than independently simulated ECS worlds. The initial pool is bounded to eight targets and 1024 pixels per axis.
 
-### 7. Embed imported model images in generated materials first
+### 7. Embed imported model images in generated materials
 
-**Decision:** Decode a glTF material's base-color image into the versioned Model product and pass it to the ordinary generated Material registration path. Fingerprint all glTF image dependencies, including maps not rendered by the current material contract.
-**Why:** This gives static models correct authored color immediately while keeping the renderer on its existing Material path. It also makes external image edits invalidate the model deterministically and avoids creating unstable user-addressable UUIDs for glTF subresources before semantic subresource identity is designed.
-**Tradeoff:** Generated image payloads are model-owned rather than independently shareable Texture resources. The initial product stores RGBA8 level zero without sampler state or generated mips, and auxiliary PBR maps remain visible import warnings until the Material and renderer contracts grow.
+**Decision:** Decode a glTF material's five core metallic-roughness images into the versioned Model product, generate complete mip chains, and pass them through the ordinary generated Material registration and GPU-cache path. Fingerprint every glTF image dependency.
+**Why:** Static models retain their authored surface response without adding a model-specific renderer. External image edits invalidate the model deterministically, while generated subresources avoid unstable user-addressable UUIDs before semantic imported-subresource identity is designed.
+**Tradeoff:** Generated image payloads are model-owned rather than independently shareable Texture resources. Products store RGBA8 mip chains and preserve color-space meaning, but do not yet preserve glTF sampler state or use GPU-native texture compression.
+
+### 8. Reconstruct the normal-map frame in the fragment shader
+
+**Decision:** Reconstruct tangent and bitangent directions from world-position and UV derivatives instead of adding imported tangents to the retained vertex format.
+**Why:** Core glTF normal maps work for existing and imported geometry without widening every vertex and GPU geometry cache entry. This keeps the feature inside the shared Material shader contract.
+**Tradeoff:** Derivative reconstruction costs fragment work and cannot exactly reproduce authored tangent bases at mirrored or discontinuous UV seams. Imported tangent attributes and MikkTSpace parity remain a future quality/performance option.
 
 ## Related
 
