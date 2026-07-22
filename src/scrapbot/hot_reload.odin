@@ -317,7 +317,18 @@ hot_reload_reconcile_models :: proc(data: rawptr, world: ^shared.World) -> strin
 	if state == nil {
 		return ""
 	}
-	return reconcile_model_instances(world, &state.resources)
+	if err := reconcile_model_instances(world, &state.resources); err != "" {
+		return err
+	}
+	return ""
+}
+
+hot_reload_reconcile_environment :: proc(data: rawptr, world: ^shared.World) -> string {
+	state := cast(^Hot_Reload_State)data
+	if state == nil {
+		return ""
+	}
+	return resources.reconcile_world_environment(&state.resources, world)
 }
 
 maybe_poll_hot_reload :: proc(state: ^Hot_Reload_State, world: ^shared.World, delta_seconds: f32) {

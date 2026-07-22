@@ -705,6 +705,36 @@ range = 12
 }
 
 @(test)
+test_scene_parses_world_environment_component :: proc(t: ^testing.T) {
+	scene, result := parse_scene(
+		`[[entities]]
+id = "a6000000-0000-4000-8000-000000000030"
+name = "World Environment"
+
+[entities.world_environment]
+lighting = ""
+lighting_intensity = 0.8
+lighting_rotation = 25
+exposure = 1.2
+background_visible = true
+background = ""
+background_intensity = 0.7
+background_rotation = -15
+background_exposure = 1.1
+background_blur = 0.25
+`,
+	)
+	defer destroy_scene(&scene)
+
+	testing.expect_value(t, result.err, Parse_Error.None)
+	testing.expect_value(t, len(scene.entities), 1)
+	testing.expect(t, scene.entities[0].has_world_environment)
+	testing.expect_value(t, scene.entities[0].world_environment.lighting_intensity, f32(0.8))
+	testing.expect(t, scene.entities[0].world_environment.background_visible)
+	testing.expect_value(t, scene.entities[0].world_environment.background_blur, f32(0.25))
+}
+
+@(test)
 test_scene_parses_shadow_marker_components :: proc(t: ^testing.T) {
 	scene, result := parse_scene(
 		`[[entities]]

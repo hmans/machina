@@ -8,6 +8,7 @@ TRANSFORM :: "scrapbot.transform"
 MESH :: "scrapbot.mesh"
 MODEL :: "scrapbot.model"
 AMBIENT_LIGHT :: "scrapbot.ambient_light"
+WORLD_ENVIRONMENT :: "scrapbot.world_environment"
 DIRECTIONAL_LIGHT :: "scrapbot.directional_light"
 POINT_LIGHT :: "scrapbot.point_light"
 SHADOW_CASTER :: "scrapbot.shadow_caster"
@@ -108,6 +109,9 @@ Mesh_Component :: Component {
 }
 Ambient_Light_Component :: Component {
 	name = AMBIENT_LIGHT,
+}
+World_Environment_Component :: Component {
+	name = WORLD_ENVIRONMENT,
 }
 Directional_Light_Component :: Component {
 	name = DIRECTIONAL_LIGHT,

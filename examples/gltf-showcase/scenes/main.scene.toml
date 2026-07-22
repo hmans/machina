@@ -1,4 +1,20 @@
 [[entities]]
+id = "d5100000-0000-4000-8000-000000000006"
+name = "World Environment"
+
+[entities.world_environment]
+lighting = "a7000000-0000-4000-8000-000000000002"
+lighting_intensity = 0.9
+lighting_rotation = 20
+exposure = 1
+background_visible = true
+background = ""
+background_intensity = 1
+background_rotation = 0
+background_exposure = 1
+background_blur = 0
+
+[[entities]]
 id = "d5100000-0000-4000-8000-000000000001"
 name = "Main Camera"
 

@@ -1,6 +1,6 @@
 # Engine Systems
 
-**Last verified:** 2026-07-21
+**Last verified:** 2026-07-22
 **Canonical names:** `engine_system_profile_name` in `src/scrapbot/scrapbot.odin`  
 **Execution boundaries:** `run_frame_system` in `src/scrapbot/render/render.odin` and WGPU frame encoding in `src/scrapbot/render/wgpu.odin`
 
@@ -15,6 +15,7 @@ These are the engine-owned rows published to the editor's Systems panel. They ar
 | `scrapbot.gizmo` | Reconciles camera visualization, transform gizmo interaction, and the editor-world overlay stream. | An editor UI state exists; most work is conditional on editor visibility and selection. | `render/render.odin`, `render/gizmo.odin`, `render/camera_visualizer.odin` |
 | `scrapbot.ui` | Reconciles retained ECS UI, editor composition, layout, interaction, and paint revisions. | An editor/UI state exists; stable domains skip unchanged work. | `ui/ui.odin`, `ui/editor_*.odin` |
 | `scrapbot.pick` | Resolves requested camera-mesh or exact scene-geometry picking and updates editor selection. | The phase is measured with editor state; intersection work runs only for a pending pick. | `render/picking.odin`, `render/camera_visualizer.odin` |
+| `scrapbot.environment` | Reconciles the singleton authored world environment into retained resource handles and presentation state. | Every rendered frame performs a cached revision check; UUID resolution runs only after membership or value changes. Resource reimports update the retained handles in place. | `resources.reconcile_world_environment` |
 | `scrapbot.prepare` | Applies render extraction mutations and prepares retained GPU draw batches/uniform inputs. | Every rendered frame; changed work follows render/resource dirty signals. | `ecs.populate_resource_render_list`, `render/wgpu_gpu_driven.odin` |
 | `scrapbot.render.cull` | Encodes GPU visibility, frustum/Hi-Z rejection, LOD selection, and indirect visibility compaction. | WGPU frames; CPU-reference mode substitutes CPU culling. | `render/wgpu_visibility.odin`, `render/wgpu_hiz.odin` |
 | `scrapbot.render.shadow` | Encodes directional shadow rendering. | WGPU frames with applicable shadow state. | `wgpu_encode_shadow_pass` |
@@ -64,6 +65,15 @@ These are the engine-owned rows published to the editor's Systems panel. They ar
 - **Stable-frame behavior:** With no pending pick, exact intersection and camera-visualizer tests are skipped.
 - **Boundary:** Main-thread CPU query against retained scene inputs; it does not mutate project component data.
 - **Source/tests:** `render/picking.odin`, `render/camera_visualizer.odin`, `render/render.odin`; `render/picking_test.odin`, `render/camera_visualizer_test.odin`.
+
+### `scrapbot.environment`
+
+- **Phase/order:** After project simulation and editor authoring, before render preparation consumes environment state.
+- **Inputs:** World-environment structural revision, retained singleton entity index/component revision, and Environment resource registry.
+- **Outputs:** Resolved lighting/background handles, intensity/rotation/exposure/background presentation values, and a monotonic renderer environment revision.
+- **Stable-frame behavior:** Compares retained revisions only. It scans entities solely after structural membership changes and resolves UUIDs solely after component changes; resource reimports version the retained handles in place.
+- **Boundary:** Main-thread backend-neutral ECS-to-resource-cache reconciliation; WGPU consumes the cache without scanning ECS.
+- **Source/tests:** `resources/environments.odin`, `render/render.odin`; `resources/resources_test.odin`, WGPU framegrab smoke tests.
 
 ### `scrapbot.prepare`
 

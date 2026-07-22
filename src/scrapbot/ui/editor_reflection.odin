@@ -59,6 +59,14 @@ editor_reflected_snapshot_component_value :: proc(
 			if entity.has_camera {
 				return any{rawptr(&entity.camera), typeid_of(shared.Camera_Component)}, true
 			}
+		case .World_Environment:
+			if entity.has_world_environment {
+				return any {
+						rawptr(&entity.world_environment),
+						typeid_of(shared.World_Environment_Component),
+					},
+					true
+			}
 		case .Ambient_Light:
 			if entity.has_ambient_light {
 				return any {
@@ -202,6 +210,12 @@ editor_reflected_live_component_value :: proc(
 			return any {
 					rawptr(&world.cameras[entity.camera_index]),
 					typeid_of(shared.Camera_Component),
+				},
+				true
+		case .World_Environment:
+			return any {
+					rawptr(&world.world_environments[entity.world_environment_index]),
+					typeid_of(shared.World_Environment_Component),
 				},
 				true
 		case .Ambient_Light:
@@ -942,6 +956,22 @@ editor_reflected_component_valid :: proc(
 				entity.point_light.color.y <= 1 &&
 				entity.point_light.color.z >= 0 &&
 				entity.point_light.color.z <= 1 \
+			)
+		case "scrapbot.world_environment":
+			lighting_valid := entity.world_environment.lighting == ""
+			if !lighting_valid {
+				_, lighting_valid = shared.resource_uuid_parse(entity.world_environment.lighting)
+			}
+			background_valid := entity.world_environment.background == ""
+			if !background_valid {
+				_, background_valid = shared.resource_uuid_parse(
+					entity.world_environment.background,
+				)
+			}
+			return(
+				lighting_valid &&
+				background_valid &&
+				shared.world_environment_is_valid(entity.world_environment) \
 			)
 		case "scrapbot.mesh":
 			return entity.mesh.primitive != ""

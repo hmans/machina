@@ -96,6 +96,8 @@ engine_system_profile_name :: proc(phase: render.Engine_System_Profile_Phase) ->
 			return "scrapbot.ui"
 		case .Picking:
 			return "scrapbot.pick"
+		case .Environment:
+			return "scrapbot.environment"
 		case .Render_Prepare:
 			return "scrapbot.prepare"
 		case .Render_Cull:
@@ -575,6 +577,8 @@ run_project_internal_untracked :: proc(
 		run_config.runtime_revert_data = hot_reload
 		run_config.runtime_reconcile = hot_reload_reconcile_models
 		run_config.runtime_reconcile_data = hot_reload
+		run_config.runtime_environment = hot_reload_reconcile_environment
+		run_config.runtime_environment_data = hot_reload
 		run_config.runtime_reimport = hot_reload_reimport_resources
 		run_config.runtime_reimport_data = hot_reload
 		run_config.resource_registry = &hot_reload.resources
@@ -670,6 +674,8 @@ run_project_internal_untracked :: proc(
 	run_config.runtime_revert_data = frame_runtime
 	run_config.runtime_reconcile = frame_runtime_reconcile_models
 	run_config.runtime_reconcile_data = frame_runtime
+	run_config.runtime_environment = frame_runtime_reconcile_environment
+	run_config.runtime_environment_data = frame_runtime
 	run_config.runtime_reimport = frame_runtime_reimport_resources
 	run_config.runtime_reimport_data = frame_runtime
 
@@ -744,6 +750,9 @@ init_render_resources :: proc(
 		if err := resources.configure_project_environment(registry, config.render); err != "" {
 			return err
 		}
+	}
+	if err := resources.reconcile_world_environment(registry, world); err != "" {
+		return err
 	}
 	if err := reconcile_model_instances(world, registry); err != "" {
 		return err
@@ -1006,7 +1015,18 @@ frame_runtime_reconcile_models :: proc(data: rawptr, world: ^shared.World) -> st
 	if runtime == nil {
 		return ""
 	}
-	return reconcile_model_instances(world, &runtime.resources)
+	if err := reconcile_model_instances(world, &runtime.resources); err != "" {
+		return err
+	}
+	return ""
+}
+
+frame_runtime_reconcile_environment :: proc(data: rawptr, world: ^shared.World) -> string {
+	runtime := cast(^Frame_Runtime)data
+	if runtime == nil {
+		return ""
+	}
+	return resources.reconcile_world_environment(&runtime.resources, world)
 }
 
 frame_runtime_reimport_resources :: proc(
@@ -1078,7 +1098,7 @@ reimport_project_resources :: proc(
 		); err != "" {
 			return err
 		}
-		return resources.configure_project_environment(registry, loaded.config.render)
+		return ""
 	}
 	declaration: shared.Project_Resource
 	found := false
@@ -1117,7 +1137,7 @@ reimport_project_resources :: proc(
 			); err != "" {
 				return err
 			}
-			return resources.configure_project_environment(registry, loaded.config.render)
+			return ""
 		case:
 			return "selected resource is not importable"
 	}

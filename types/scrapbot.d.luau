@@ -25,6 +25,7 @@ export type Scrapbot = {
 		pointer_button: (button: string) -> (boolean, boolean, boolean),
 	},
 	camera: ScrapbotCameraComponent,
+	world_environment: ScrapbotWorldEnvironmentComponent,
 	ambient_light: ScrapbotAmbientLightComponent,
 	directional_light: ScrapbotDirectionalLightComponent,
 	point_light: ScrapbotPointLightComponent,
@@ -295,6 +296,34 @@ export type ReadonlyScrapbotCamera = {
 }
 
 export type ScrapbotCameraComponent = ScrapbotComponent<ScrapbotCamera, ReadonlyScrapbotCamera>
+
+export type ScrapbotWorldEnvironment = {
+	lighting: string,
+	lighting_intensity: number,
+	lighting_rotation: number,
+	exposure: number,
+	background_visible: boolean,
+	background: string,
+	background_intensity: number,
+	background_rotation: number,
+	background_exposure: number,
+	background_blur: number,
+}
+
+export type ReadonlyScrapbotWorldEnvironment = {
+	read lighting: string,
+	read lighting_intensity: number,
+	read lighting_rotation: number,
+	read exposure: number,
+	read background_visible: boolean,
+	read background: string,
+	read background_intensity: number,
+	read background_rotation: number,
+	read background_exposure: number,
+	read background_blur: number,
+}
+
+export type ScrapbotWorldEnvironmentComponent = ScrapbotComponent<ScrapbotWorldEnvironment, ReadonlyScrapbotWorldEnvironment>
 
 export type ScrapbotAmbientLight = {
 	color: Vec3,

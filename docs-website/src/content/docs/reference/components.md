@@ -15,6 +15,7 @@ Most components use the same suffix in every public surface:
 | --- | --- | --- | --- |
 | `scrapbot.transform` | `[entities.transform]` | `scrapbot.transform` | `scrapbot.Transform_Component` |
 | `scrapbot.camera` | `[entities.camera]` | `scrapbot.camera` | Use `scrapbot.Component{name = "scrapbot.camera"}` for membership. |
+| `scrapbot.world_environment` | `[entities.world_environment]` | `scrapbot.world_environment` | Use `scrapbot.Component{name = "scrapbot.world_environment"}` for membership. |
 | `scrapbot.mesh` | `[entities.mesh]` | `scrapbot.mesh` | `scrapbot.Mesh_Component` |
 | `scrapbot.geometry` | `[entities.geometry]` | `scrapbot.geometry_component` | Use `scrapbot.Component{name = "scrapbot.geometry"}` for membership. |
 | `scrapbot.material` | `[entities.material]` | `scrapbot.material_component` | Use `scrapbot.Component{name = "scrapbot.material"}` for membership. |
@@ -31,6 +32,7 @@ The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type referen
 | --- | --- | --- |
 | `scrapbot.transform` | Data | Optional UUID parent plus local position, Euler rotation, and scale. |
 | `scrapbot.camera` | Data | Perspective camera projection. |
+| `scrapbot.world_environment` | Data/resource references | Singleton scene lighting, sky presentation, and base exposure. |
 | `scrapbot.ambient_light` | Data | Scene-wide ambient contribution. |
 | `scrapbot.directional_light` | Data | Directional light and the source for the current shadow map. |
 | `scrapbot.point_light` | Data | Distance-attenuated light positioned by a Transform. |
@@ -94,6 +96,25 @@ Parent UUIDs must resolve to another entity with a Transform and may not form a 
 | `exposure` | number | Positive linear camera-exposure multiplier. Defaults to `1` and multiplies project render exposure. |
 
 The camera reads position and orientation from a Transform on the same entity. The active camera's exposure affects direct lighting, image-based lighting, the visible environment, emission, and bloom together before tone mapping. Its Luau component handle currently exposes membership only; camera field mutation is an editor/scene-authoring surface in this slice.
+
+### `scrapbot.world_environment`
+
+A scene may contain at most one World Environment component. It belongs on an ordinary named entity, so the generated inspector, authoring history, Save/Revert, and playback restore treat environment configuration like other scene data.
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `lighting` | string | empty | Optional UUID of a `scrapbot.environment` resource used for diffuse/specular image-based lighting. |
+| `lighting_intensity` | number | `1` | Non-negative lighting multiplier. |
+| `lighting_rotation` | number | `0` | Lighting Y rotation in degrees. |
+| `exposure` | number | `1` | Positive base linear exposure multiplied by active-camera exposure. |
+| `background_visible` | boolean | `true` | Enables the infinite camera-oriented background. |
+| `background` | string | empty | Optional Environment UUID for the visible panorama. Empty reuses `lighting`; when both are empty, Scrapbot uses the procedural haze sky. |
+| `background_intensity` | number | `1` | Non-negative background-only multiplier. |
+| `background_rotation` | number | `0` | Background Y rotation in degrees. |
+| `background_exposure` | number | `1` | Positive background-only exposure compensation. |
+| `background_blur` | number | `0` | Imported-background blur from `0` to `1`. |
+
+The fixed `scrapbot.environment` engine phase retains the selected entity and component revision. Stable frames do not scan all entities or resources. Structural membership changes rediscover the singleton, and value changes resolve only the referenced UUIDs before advancing the renderer environment revision.
 
 ### `scrapbot.mesh`
 

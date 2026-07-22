@@ -18,6 +18,7 @@ Engine_System_Profile_Phase :: enum {
 	Editor_Gizmo,
 	UI,
 	Picking,
+	Environment,
 	Render_Prepare,
 	Render_Cull,
 	Render_Shadow,
@@ -174,6 +175,8 @@ Run_Config :: struct {
 	runtime_revert_data: rawptr,
 	runtime_reconcile: Runtime_World_Proc,
 	runtime_reconcile_data: rawptr,
+	runtime_environment: Runtime_World_Proc,
+	runtime_environment_data: rawptr,
 	runtime_reimport: Runtime_Reimport_Proc,
 	runtime_reimport_data: rawptr,
 	resource_registry: ^resources.Registry,
@@ -753,6 +756,14 @@ run_frame_system_unmeasured :: proc(
 				return err
 			}
 		}
+		environment_system_start := time.tick_now()
+		if config.runtime_environment != nil {
+			if err := config.runtime_environment(config.runtime_environment_data, world);
+			   err != "" {
+				return err
+			}
+		}
+		record_system_profile_phase(config, .Environment, environment_system_start)
 		record_system_profile_phase(config, .UI, ui_system_start)
 		cursor: platform.Runtime_Pointer_Cursor
 		switch ui.current_pointer_cursor(config.ui_state) {

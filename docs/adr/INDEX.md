@@ -39,3 +39,4 @@
 | [ADR-035](ADR-035-model-runtime-input-as-ecs-singletons.md) | Model runtime input as ECS singletons | 2026-07-21 |
 | [ADR-036](ADR-036-compile-source-assets-into-versioned-resource-products.md) | Compile source assets into versioned resource products | 2026-07-21 |
 | [ADR-037](ADR-037-compose-embedded-worlds-through-ecs-ui-viewports.md) | Compose embedded worlds through ECS UI viewports | 2026-07-21 |
+| [ADR-038](ADR-038-author-scene-environments-as-ecs-components.md) | Author scene environments as ECS components | 2026-07-22 |

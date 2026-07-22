@@ -637,6 +637,46 @@ test_project_environment_registration_is_stable_and_revision_driven :: proc(t: ^
 }
 
 @(test)
+test_world_environment_reconciliation_is_change_driven :: proc(t: ^testing.T) {
+	registry: Registry
+	defer destroy_registry(&registry)
+	world: shared.World
+	defer {
+		delete(world.entities)
+		delete(world.world_environments)
+	}
+	append(
+		&world.world_environments,
+		shared.World_Environment_Component {
+			lighting_intensity = 0.75,
+			exposure = 1.1,
+			background_visible = true,
+			background_intensity = 0.8,
+			background_exposure = 1,
+		},
+	)
+	append(
+		&world.entities,
+		shared.World_Entity{alive = true, component_revision = 1, world_environment_index = 0},
+	)
+	world.world_environment_revision = 1
+	world.world_environment_entity_index = -1
+
+	testing.expect_value(t, reconcile_world_environment(&registry, &world), "")
+	testing.expect_value(t, registry.environment_intensity, f32(0.75))
+	testing.expect(t, registry.background_visible)
+	first_revision := registry.environment_revision
+	testing.expect_value(t, reconcile_world_environment(&registry, &world), "")
+	testing.expect_value(t, registry.environment_revision, first_revision)
+
+	world.world_environments[0].background_intensity = 0.4
+	world.entities[0].component_revision += 1
+	testing.expect_value(t, reconcile_world_environment(&registry, &world), "")
+	testing.expect_value(t, registry.background_intensity, f32(0.4))
+	testing.expect(t, registry.environment_revision > first_revision)
+}
+
+@(test)
 test_project_lod_geometry_registers_stable_base_and_alternatives :: proc(t: ^testing.T) {
 	registry: Registry
 	defer destroy_registry(&registry)

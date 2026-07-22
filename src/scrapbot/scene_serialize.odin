@@ -39,6 +39,20 @@ write_scene_entity :: proc(builder: ^strings.Builder, entity: ^shared.Scene_Enti
 		write_scene_value(builder, "far", scene_f32(entity.camera.far))
 		write_scene_value(builder, "exposure", scene_f32(shared.camera_exposure(entity.camera)))
 	}
+	if entity.has_world_environment {
+		value := entity.world_environment
+		write_scene_section(builder, "world_environment")
+		write_scene_string(builder, "lighting", value.lighting)
+		write_scene_value(builder, "lighting_intensity", scene_f32(value.lighting_intensity))
+		write_scene_value(builder, "lighting_rotation", scene_f32(value.lighting_rotation))
+		write_scene_value(builder, "exposure", scene_f32(value.exposure))
+		write_scene_value(builder, "background_visible", scene_bool(value.background_visible))
+		write_scene_string(builder, "background", value.background)
+		write_scene_value(builder, "background_intensity", scene_f32(value.background_intensity))
+		write_scene_value(builder, "background_rotation", scene_f32(value.background_rotation))
+		write_scene_value(builder, "background_exposure", scene_f32(value.background_exposure))
+		write_scene_value(builder, "background_blur", scene_f32(value.background_blur))
+	}
 	if entity.has_ambient_light {
 		write_scene_section(builder, "ambient_light")
 		write_scene_value(builder, "color", scene_vec3(entity.ambient_light.color))

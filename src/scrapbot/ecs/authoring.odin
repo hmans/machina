@@ -102,6 +102,15 @@ capture_registered_component_snapshot :: proc(
 		case .Camera:
 			value.has_camera = true
 			value.camera = world.cameras[entity.camera_index]
+		case .World_Environment:
+			value.has_world_environment = true
+			value.world_environment = world.world_environments[entity.world_environment_index]
+			value.world_environment.lighting = clone_snapshot_string(
+				value.world_environment.lighting,
+			)
+			value.world_environment.background = clone_snapshot_string(
+				value.world_environment.background,
+			)
 		case .Ambient_Light:
 			value.has_ambient_light = true
 			value.ambient_light = world.ambient_lights[entity.ambient_light_index]
@@ -290,6 +299,8 @@ apply_registered_component_snapshot :: proc(
 		case .Camera:
 			set_optional_camera(world, entity_index, true, value.camera)
 			mark_render_entity_dirty(world, entity_index)
+		case .World_Environment:
+			set_optional_world_environment(world, entity_index, true, value.world_environment)
 		case .Ambient_Light:
 			set_optional_ambient_light(world, entity_index, true, value.ambient_light)
 			mark_render_entity_dirty(world, entity_index)
@@ -382,6 +393,17 @@ capture_entity_snapshot :: proc(world: ^World, entity_index: int) -> (Entity_Sna
 		entity.has_camera = true
 		entity.camera = world.cameras[source.camera_index]
 	}
+	if source.world_environment_index >= 0 &&
+	   source.world_environment_index < len(world.world_environments) {
+		entity.has_world_environment = true
+		entity.world_environment = world.world_environments[source.world_environment_index]
+		entity.world_environment.lighting = clone_snapshot_string(
+			entity.world_environment.lighting,
+		)
+		entity.world_environment.background = clone_snapshot_string(
+			entity.world_environment.background,
+		)
+	}
 	if source.ambient_light_index >= 0 && source.ambient_light_index < len(world.ambient_lights) {
 		entity.has_ambient_light = true
 		entity.ambient_light = world.ambient_lights[source.ambient_light_index]
@@ -465,6 +487,8 @@ destroy_entity_snapshot :: proc(snapshot: ^Entity_Snapshot) {
 	delete(entity.material_resource)
 	delete(entity.model_resource)
 	delete(entity.mesh.primitive)
+	delete(entity.world_environment.lighting)
+	delete(entity.world_environment.background)
 	delete(entity.ui_panel.title)
 	delete(entity.ui_panel.font)
 	delete(entity.ui_text.text)
@@ -602,6 +626,24 @@ set_registered_component_membership :: proc(
 			)
 			bump_component_revision(world, entity_index)
 			mark_render_entity_dirty(world, entity_index)
+		case .World_Environment:
+			if present {
+				for candidate, candidate_index in world.entities {
+					if candidate_index != entity_index &&
+					   candidate.alive &&
+					   candidate.world_environment_index >= 0 &&
+					   candidate.world_environment_index < len(world.world_environments) {
+						return false
+					}
+				}
+			}
+			set_optional_world_environment(
+				world,
+				entity_index,
+				present,
+				shared.world_environment_default(),
+			)
+			bump_component_revision(world, entity_index)
 		case .Ambient_Light:
 			set_optional_ambient_light(
 				world,
@@ -764,6 +806,47 @@ set_registered_component_membership :: proc(
 	return registered_component_is_present(world, entity_index, definition) == present
 }
 
+set_optional_world_environment :: proc(
+	world: ^World,
+	entity_index: int,
+	present: bool,
+	value: World_Environment_Component,
+) {
+	if world == nil || !entity_is_alive(world, entity_index) {
+		return
+	}
+	entity := &world.entities[entity_index]
+	was_present :=
+		entity.world_environment_index >= 0 &&
+		entity.world_environment_index < len(world.world_environments)
+	if entity.world_environment_index >= 0 &&
+	   entity.world_environment_index < len(world.world_environments) {
+		current := &world.world_environments[entity.world_environment_index]
+		delete(current.lighting, world.string_allocator)
+		delete(current.background, world.string_allocator)
+		if present {
+			current^ = value
+			current.lighting = clone_world_string(world, value.lighting)
+			current.background = clone_world_string(world, value.background)
+		} else {
+			current^ = {}
+			entity.world_environment_index = INVALID_COMPONENT_INDEX
+		}
+	} else if present {
+		entity.world_environment_index = len(world.world_environments)
+		copy := value
+		copy.lighting = clone_world_string(world, value.lighting)
+		copy.background = clone_world_string(world, value.background)
+		append(&world.world_environments, copy)
+	}
+	if was_present != present {
+		world.world_environment_revision += 1
+		if world.world_environment_revision == 0 {
+			world.world_environment_revision = 1
+		}
+	}
+}
+
 apply_entity_snapshot :: proc(world: ^World, snapshot: ^Entity_Snapshot) -> (int, bool) {
 	if world == nil || snapshot == nil || snapshot.entity.id == (shared.Entity_UUID{}) {
 		return -1, false
@@ -789,6 +872,12 @@ apply_entity_snapshot :: proc(world: ^World, snapshot: ^Entity_Snapshot) -> (int
 	set_entity_name(world, entity_index, value.name)
 	set_optional_transform(world, entity_index, value.has_transform, value.transform)
 	set_optional_camera(world, entity_index, value.has_camera, value.camera)
+	set_optional_world_environment(
+		world,
+		entity_index,
+		value.has_world_environment,
+		value.world_environment,
+	)
 	set_optional_ambient_light(world, entity_index, value.has_ambient_light, value.ambient_light)
 	set_optional_directional_light(
 		world,

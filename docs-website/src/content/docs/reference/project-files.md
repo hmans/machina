@@ -17,17 +17,6 @@ default_scene = "scenes/main.scene.toml"
 width = 1600
 height = 900
 
-[render]
-environment = "b1000000-0000-4000-8000-000000000004"
-environment_intensity = 1.0
-environment_rotation = 0
-exposure = 1.0
-background_visible = false
-background_intensity = 1.0
-background_rotation = 0
-background_exposure = 1.0
-background_blur = 0.0
-
 [[native_extensions]]
 name = "scrappyphysics"
 source = "native/scrappyphysics"
@@ -46,23 +35,14 @@ Fields:
 | `[window]` | No | Initial logical window size. Omitted fields default to 1600×900. |
 | `window.width` | No | Positive logical width up to 16384. |
 | `window.height` | No | Positive logical height up to 16384. |
-| `[render]` | No | Project-wide world rendering configuration. |
-| `render.environment` | No | UUID of a `scrapbot.environment` resource used for image-based lighting. |
-| `render.environment_intensity` | No | Finite non-negative multiplier for environment lighting; defaults to `1`. |
-| `render.environment_rotation` | No | Finite Y-axis rotation in degrees; defaults to `0`. |
-| `render.exposure` | No | Positive base linear exposure multiplier applied before bloom and tone mapping; defaults to `1` and is multiplied by the active camera's exposure. |
-| `render.background_visible` | No | Enables a photographic environment background; defaults to `false`, leaving the neutral clear color. |
-| `render.background_environment` | No | Optional Environment UUID used only for the background. When omitted, a visible background uses `render.environment`. |
-| `render.background_intensity` | No | Finite non-negative background-only multiplier; defaults to `1`. |
-| `render.background_rotation` | No | Independent finite background Y rotation in degrees; defaults to `0`. |
-| `render.background_exposure` | No | Positive background-only exposure compensation multiplied by project and active-camera exposure; defaults to `1`. |
-| `render.background_blur` | No | Background blur from `0` (source-resolution panorama) to `1` (maximally prefiltered); defaults to `0`. |
 | `[[native_extensions]]` | No | Repeated table for project-local native extension targets. |
 | `native_extensions.name` | Yes | Build output base name. Must be an identifier token. |
 | `native_extensions.source` | Yes | Safe relative path to an Odin package directory. |
 | `[[fonts]]` | No | Repeated table for project-local UI font resources; at most 15. |
 | `fonts.name` | Yes | Resource name used by UI components. Must be a unique identifier token. |
 | `fonts.source` | Yes | Safe path under `assets/` ending in `.ttf` or `.otf`. |
+
+The legacy optional `[render]` environment fields remain accepted as a compatibility fallback for scenes without `scrapbot.world_environment`. New projects and migrated examples should author environment state on the scene entity; when present, that component is authoritative.
 
 Visible windows preserve the requested aspect ratio but scale down when necessary to fit within 90% of the primary display's usable area. High-pixel-density displays may provide a larger physical-pixel framebuffer than this logical size. Headless framegrabs remain fixed at 1280×720 unless cropped.
 
@@ -100,7 +80,7 @@ name = "Studio"
 source = "assets/studio.hdr"
 ```
 
-`source` must be a safe 2:1 Radiance `.hdr` path under `assets/`. Importing preserves the source-resolution panorama and derives a 32×32 diffuse irradiance cube plus an eight-level 128×128 roughness-prefiltered specular cube in linear RGBA16F. `render.environment` selects image-based lighting independently from presentation. Backgrounds are hidden by default; `background_visible = true` opts in, and `background_environment` may select another Environment without changing the lighting source. Background intensity, rotation, exposure compensation, and blur are independent. The runtime uploads changed panoramas and cubes only when their resource versions or render settings change. Local reflection probes are not implemented yet.
+`source` must be a safe 2:1 Radiance `.hdr` path under `assets/`. Importing preserves the source-resolution panorama and derives a 32×32 diffuse irradiance cube plus an eight-level 128×128 roughness-prefiltered specular cube in linear RGBA16F. A scene's `scrapbot.world_environment` component selects image-based lighting independently from presentation. The visible background may select another Environment or use the built-in procedural haze sky. Background intensity, rotation, exposure compensation, and blur are independent. The runtime uploads changed panoramas and cubes only when their resource versions or environment settings change. Local reflection probes are not implemented yet.
 
 Material resources store shared surface data and reference Texture UUIDs:
 
@@ -163,7 +143,7 @@ Every entity must have a unique, non-zero RFC UUID in `id` and a `name`. The ID 
 
 ## Built-in component sections
 
-For a complete inventory of all 24 public engine components, reflected fields, defaults, constraints, and cross-surface names, see the [Engine Component Reference](/reference/components/).
+For a complete inventory of public engine components, reflected fields, defaults, constraints, and cross-surface names, see the [Engine Component Reference](/reference/components/).
 
 Transform:
 
@@ -187,7 +167,29 @@ far = 100
 exposure = 1
 ```
 
-A camera reads its world position and Euler orientation from the entity's resolved transform chain. Rotation is expressed in radians: X controls pitch, Y controls yaw, and Z controls roll. `exposure` is a positive linear multiplier, defaults to `1`, and combines with `render.exposure` for the active camera.
+A camera reads its world position and Euler orientation from the entity's resolved transform chain. Rotation is expressed in radians: X controls pitch, Y controls yaw, and Z controls roll. `exposure` is a positive linear multiplier, defaults to `1`, and combines with the World Environment exposure.
+
+World environment:
+
+```toml
+[[entities]]
+id = "d4000000-0000-4000-8000-000000000002"
+name = "World Environment"
+
+[entities.world_environment]
+lighting = "b1000000-0000-4000-8000-000000000004"
+lighting_intensity = 1
+lighting_rotation = 0
+exposure = 1
+background_visible = true
+background = ""
+background_intensity = 1
+background_rotation = 0
+background_exposure = 1
+background_blur = 0
+```
+
+A scene may contain at most one World Environment. `lighting` and `background` are optional Environment-resource UUIDs. An empty visible background reuses the lighting Environment; when both are empty, Scrapbot renders its built-in procedural haze sky. See the [component reference](/reference/components/#scrapbotworld_environment) for field constraints and change-driven runtime behavior.
 
 Built-in primitive convenience:
 

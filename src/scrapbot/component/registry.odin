@@ -39,6 +39,7 @@ Storage_Kind :: enum {
 	Custom,
 	Transform,
 	Camera,
+	World_Environment,
 	Ambient_Light,
 	Directional_Light,
 	Point_Light,
@@ -132,6 +133,22 @@ init_registry :: proc(registry: ^Registry) {
 		},
 	)
 	register_engine_component(registry, "scrapbot.camera", {})
+	register_engine_component(
+		registry,
+		"scrapbot.world_environment",
+		{
+			Field_Definition{name = "lighting", field_type = .String},
+			Field_Definition{name = "lighting_intensity", field_type = .Number},
+			Field_Definition{name = "lighting_rotation", field_type = .Number},
+			Field_Definition{name = "exposure", field_type = .Number},
+			Field_Definition{name = "background_visible", field_type = .Bool},
+			Field_Definition{name = "background", field_type = .String},
+			Field_Definition{name = "background_intensity", field_type = .Number},
+			Field_Definition{name = "background_rotation", field_type = .Number},
+			Field_Definition{name = "background_exposure", field_type = .Number},
+			Field_Definition{name = "background_blur", field_type = .Number},
+		},
+	)
 	register_engine_component(
 		registry,
 		"scrapbot.ambient_light",
@@ -465,6 +482,8 @@ engine_component_storage :: proc "contextless" (name: string) -> (Storage_Kind, 
 			return .Transform, .Authored
 		case "scrapbot.camera":
 			return .Camera, .Authored
+		case "scrapbot.world_environment":
+			return .World_Environment, .Authored
 		case "scrapbot.ambient_light":
 			return .Ambient_Light, .Authored
 		case "scrapbot.directional_light":

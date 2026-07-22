@@ -36,6 +36,7 @@ Material_Handle :: shared.Material_Handle
 Ambient_Light_Component :: shared.Ambient_Light_Component
 Directional_Light_Component :: shared.Directional_Light_Component
 Point_Light_Component :: shared.Point_Light_Component
+World_Environment_Component :: shared.World_Environment_Component
 UI_Layout_Component :: shared.UI_Layout_Component
 UI_Stack_Component :: shared.UI_Stack_Component
 UI_Scroll_Area_Component :: shared.UI_Scroll_Area_Component
@@ -70,6 +71,7 @@ init_world_entity :: proc(
 		component_revision = 1,
 		transform_index = INVALID_COMPONENT_INDEX,
 		camera_index = INVALID_COMPONENT_INDEX,
+		world_environment_index = INVALID_COMPONENT_INDEX,
 		ambient_light_index = INVALID_COMPONENT_INDEX,
 		directional_light_index = INVALID_COMPONENT_INDEX,
 		point_light_index = INVALID_COMPONENT_INDEX,
@@ -338,6 +340,11 @@ destroy_world :: proc(world: ^World) {
 	delete(world.entity_by_uuid)
 	delete(world.transforms)
 	delete(world.cameras)
+	for &environment in world.world_environments {
+		delete(environment.lighting, world.string_allocator)
+		delete(environment.background, world.string_allocator)
+	}
+	delete(world.world_environments)
 	delete(world.ambient_lights)
 	delete(world.directional_lights)
 	delete(world.point_lights)
@@ -404,6 +411,7 @@ destroy_world :: proc(world: ^World) {
 build_world :: proc(scene: ^Scene) -> World {
 	world: World
 	world.string_allocator = runtime.heap_allocator()
+	world.world_environment_entity_index = INVALID_COMPONENT_INDEX
 	world.instance_uuid = shared.entity_uuid_generate()
 	world.entity_by_uuid = make(map[shared.Entity_UUID]int)
 	world.live_entity_count = len(scene.entities)
@@ -439,6 +447,14 @@ build_world :: proc(scene: ^Scene) -> World {
 		if entity.has_camera {
 			world_entity.camera_index = len(world.cameras)
 			append(&world.cameras, entity.camera)
+		}
+		if entity.has_world_environment {
+			world_entity.world_environment_index = len(world.world_environments)
+			value := entity.world_environment
+			value.lighting = clone_world_string(&world, value.lighting)
+			value.background = clone_world_string(&world, value.background)
+			append(&world.world_environments, value)
+			world.world_environment_revision += 1
 		}
 		if entity.has_ambient_light { world_entity.ambient_light_index = len(world.ambient_lights); append(&world.ambient_lights, entity.ambient_light) }
 		if entity.has_directional_light { world_entity.directional_light_index = len(world.directional_lights); append(&world.directional_lights, entity.directional_light) }
@@ -2704,6 +2720,11 @@ entity_has_component :: proc "c" (
 			return entity.transform_index >= 0 && entity.transform_index < len(world.transforms)
 		case "scrapbot.camera":
 			return entity.camera_index >= 0 && entity.camera_index < len(world.cameras)
+		case "scrapbot.world_environment":
+			return(
+				entity.world_environment_index >= 0 &&
+				entity.world_environment_index < len(world.world_environments) \
+			)
 		case "scrapbot.ambient_light":
 			return(
 				entity.ambient_light_index >= 0 &&

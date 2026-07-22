@@ -1141,6 +1141,10 @@ despawn_entity :: proc(world: ^World, entity_index: int, generation: u32) {
 	release_entity_render_instance(world, entity)
 	entity.transform_index = INVALID_COMPONENT_INDEX
 	entity.camera_index = INVALID_COMPONENT_INDEX
+	if entity.world_environment_index >= 0 {
+		world.world_environment_revision += 1
+	}
+	entity.world_environment_index = INVALID_COMPONENT_INDEX
 	entity.ambient_light_index = INVALID_COMPONENT_INDEX
 	entity.directional_light_index = INVALID_COMPONENT_INDEX
 	entity.point_light_index = INVALID_COMPONENT_INDEX

@@ -170,6 +170,8 @@ Scene_Entity :: struct {
 	transform: Transform_Component,
 	has_camera: bool,
 	camera: Camera_Component,
+	has_world_environment: bool,
+	world_environment: World_Environment_Component,
 	has_ambient_light: bool,
 	ambient_light: Ambient_Light_Component,
 	has_directional_light: bool,
@@ -267,6 +269,54 @@ Camera_Component :: struct {
 	near: f32,
 	far: f32,
 	exposure: f32,
+}
+
+World_Environment_Component :: struct {
+	lighting: string,
+	lighting_intensity: f32,
+	lighting_rotation: f32,
+	exposure: f32,
+	background_visible: bool,
+	background: string,
+	background_intensity: f32,
+	background_rotation: f32,
+	background_exposure: f32,
+	background_blur: f32,
+}
+
+world_environment_default :: proc "contextless" () -> World_Environment_Component {
+	return {
+		lighting_intensity = 1,
+		exposure = 1,
+		background_visible = true,
+		background_intensity = 1,
+		background_exposure = 1,
+	}
+}
+
+world_environment_is_valid :: proc "contextless" (value: World_Environment_Component) -> bool {
+	return(
+		!math.is_nan(value.lighting_intensity) &&
+		!math.is_inf(value.lighting_intensity) &&
+		value.lighting_intensity >= 0 &&
+		!math.is_nan(value.lighting_rotation) &&
+		!math.is_inf(value.lighting_rotation) &&
+		!math.is_nan(value.exposure) &&
+		!math.is_inf(value.exposure) &&
+		value.exposure > 0 &&
+		!math.is_nan(value.background_intensity) &&
+		!math.is_inf(value.background_intensity) &&
+		value.background_intensity >= 0 &&
+		!math.is_nan(value.background_rotation) &&
+		!math.is_inf(value.background_rotation) &&
+		!math.is_nan(value.background_exposure) &&
+		!math.is_inf(value.background_exposure) &&
+		value.background_exposure > 0 &&
+		!math.is_nan(value.background_blur) &&
+		!math.is_inf(value.background_blur) &&
+		value.background_blur >= 0 &&
+		value.background_blur <= 1 \
+	)
 }
 
 Editor_Scene_Camera_Component :: struct {
@@ -1029,6 +1079,7 @@ World_Entity :: struct {
 	component_revision: u64,
 	transform_index: int,
 	camera_index: int,
+	world_environment_index: int,
 	ambient_light_index: int,
 	directional_light_index: int,
 	point_light_index: int,
@@ -1158,6 +1209,12 @@ World :: struct {
 	resolving_world_transform_epochs: [dynamic]u64,
 	world_transform_resolution_epoch: u64,
 	cameras: [dynamic]Camera_Component,
+	world_environments: [dynamic]World_Environment_Component,
+	world_environment_revision: u64,
+	world_environment_reconciled_revision: u64,
+	world_environment_entity_index: int,
+	world_environment_component_revision: u64,
+	world_environment_initialized: bool,
 	ambient_lights: [dynamic]Ambient_Light_Component,
 	directional_lights: [dynamic]Directional_Light_Component,
 	point_lights: [dynamic]Point_Light_Component,

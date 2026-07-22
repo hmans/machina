@@ -383,6 +383,13 @@ load_project :: proc(root: string) -> Project_Load_Result {
 		result.err = resource_err
 		return result
 	}
+	if environment_err := validate_scene_environment_references(
+		&result.scene,
+		result.resources[:],
+	); environment_err != "" {
+		result.err = environment_err
+		return result
+	}
 	if environment_err := validate_project_environment_reference(
 		&result.config,
 		result.resources[:],
@@ -390,6 +397,47 @@ load_project :: proc(root: string) -> Project_Load_Result {
 		result.err = environment_err
 	}
 	return result
+}
+
+validate_scene_environment_references :: proc(
+	scene: ^Scene,
+	resources: []shared.Project_Resource,
+) -> string {
+	if scene == nil {
+		return ""
+	}
+	found_environment := false
+	for entity in scene.entities {
+		if !entity.has_world_environment {
+			continue
+		}
+		if found_environment {
+			return "a scene may contain only one scrapbot.world_environment component"
+		}
+		found_environment = true
+		value := entity.world_environment
+		references := [2]string{value.lighting, value.background}
+		for reference in references {
+			if reference == "" {
+				continue
+			}
+			id, ok := shared.resource_uuid_parse(reference)
+			if !ok {
+				return "world environment references must be Environment resource UUIDs"
+			}
+			found := false
+			for resource in resources {
+				if resource.kind == .Environment && resource.id == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.tprintf("world environment references unknown resource %s", reference)
+			}
+		}
+	}
+	return ""
 }
 
 validate_project_environment_reference :: proc(

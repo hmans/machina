@@ -376,6 +376,41 @@ push_query_component_table :: proc "c" (
 		case "scrapbot.camera":
 			lua_createtable(L, 0, 0)
 			return
+		case "scrapbot.world_environment":
+			if entity.world_environment_index >= 0 &&
+			   entity.world_environment_index < len(world.world_environments) {
+				value := world.world_environments[entity.world_environment_index]
+				lua_createtable(L, 0, 10)
+				lua_pushlstring(
+					L,
+					cstring(raw_data(value.lighting)),
+					c.size_t(len(value.lighting)),
+				)
+				lua_setfield(L, -2, "lighting")
+				lua_pushnumber(L, f64(value.lighting_intensity))
+				lua_setfield(L, -2, "lighting_intensity")
+				lua_pushnumber(L, f64(value.lighting_rotation))
+				lua_setfield(L, -2, "lighting_rotation")
+				lua_pushnumber(L, f64(value.exposure))
+				lua_setfield(L, -2, "exposure")
+				lua_pushboolean(L, 1 if value.background_visible else 0)
+				lua_setfield(L, -2, "background_visible")
+				lua_pushlstring(
+					L,
+					cstring(raw_data(value.background)),
+					c.size_t(len(value.background)),
+				)
+				lua_setfield(L, -2, "background")
+				lua_pushnumber(L, f64(value.background_intensity))
+				lua_setfield(L, -2, "background_intensity")
+				lua_pushnumber(L, f64(value.background_rotation))
+				lua_setfield(L, -2, "background_rotation")
+				lua_pushnumber(L, f64(value.background_exposure))
+				lua_setfield(L, -2, "background_exposure")
+				lua_pushnumber(L, f64(value.background_blur))
+				lua_setfield(L, -2, "background_blur")
+				return
+			}
 		case "scrapbot.ambient_light":
 			if entity.ambient_light_index >= 0 &&
 			   entity.ambient_light_index <

@@ -30,6 +30,7 @@ export type Scrapbot = {
 		pointer_button: (button: string) -> (boolean, boolean, boolean),
 	},
 	camera: ScrapbotCameraComponent,
+	world_environment: ScrapbotWorldEnvironmentComponent,
 	ambient_light: ScrapbotAmbientLightComponent,
 	directional_light: ScrapbotDirectionalLightComponent,
 	point_light: ScrapbotPointLightComponent,

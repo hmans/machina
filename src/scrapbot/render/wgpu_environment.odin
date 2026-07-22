@@ -72,6 +72,20 @@ fn fs_main(input: Output) -> @location(0) vec4<f32> {
 		direction.y,
 		s * direction.x + c * direction.z,
 	);
+	if (environment.background_max_specular_lod < 0.0) {
+		let horizon = vec3<f32>(0.72, 0.78, 0.82);
+		let zenith = vec3<f32>(0.18, 0.36, 0.62);
+		let ground = vec3<f32>(0.20, 0.22, 0.24);
+		let sky_amount = smoothstep(-0.08, 0.48, rotated.y);
+		let ground_amount = smoothstep(-0.35, -0.02, rotated.y);
+		let upper = mix(horizon, zenith, sky_amount);
+		let haze = exp(-abs(rotated.y) * 8.0) * 0.12;
+		let color = mix(ground, upper, ground_amount) + vec3<f32>(haze);
+		return vec4<f32>(
+			color * environment.background_intensity * environment.background_exposure * environment.exposure,
+			1.0,
+		);
+	}
 	let longitude = atan2(rotated.z, rotated.x) / (2.0 * 3.141592653589793) + 0.5;
 	let latitude = asin(clamp(rotated.y, -1.0, 1.0)) / 3.141592653589793 + 0.5;
 	let panorama_color = textureSampleLevel(
@@ -425,6 +439,7 @@ wgpu_sync_environment :: proc(
 	}
 	uniform := WGPU_Environment_Uniform {
 		exposure = 1,
+		background_max_specular_lod = -1,
 	}
 	if registry != nil {
 		uniform.intensity = registry.environment_intensity
@@ -440,10 +455,12 @@ wgpu_sync_environment :: proc(
 		uniform.max_specular_lod = f32(environment.desc.specular_mip_count - 1)
 	}
 	if background_environment != nil {
-		uniform.background_enabled = 1
 		uniform.background_max_specular_lod = f32(
 			background_environment.desc.specular_mip_count - 1,
 		)
+	}
+	if registry != nil && registry.background_visible {
+		uniform.background_enabled = 1
 	}
 	wgpu.QueueWriteBuffer(
 		renderer.queue,

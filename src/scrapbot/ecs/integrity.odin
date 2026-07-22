@@ -33,6 +33,7 @@ World_Integrity_Failure :: struct {
 World_Component_Kind :: enum {
 	Transform,
 	Camera,
+	World_Environment,
 	Ambient_Light,
 	Directional_Light,
 	Point_Light,
@@ -120,10 +121,11 @@ format_world_integrity_failure :: proc(failure: World_Integrity_Failure) -> stri
 world_entity_component_slots :: proc(
 	world: ^World,
 	entity: World_Entity,
-) -> [25]World_Component_Slot {
+) -> [26]World_Component_Slot {
 	return {
 		{.Transform, entity.transform_index, len(world.transforms)},
 		{.Camera, entity.camera_index, len(world.cameras)},
+		{.World_Environment, entity.world_environment_index, len(world.world_environments)},
 		{.Ambient_Light, entity.ambient_light_index, len(world.ambient_lights)},
 		{.Directional_Light, entity.directional_light_index, len(world.directional_lights)},
 		{.Point_Light, entity.point_light_index, len(world.point_lights)},

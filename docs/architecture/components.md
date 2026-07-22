@@ -20,6 +20,7 @@ Lifecycle meanings:
 | `scrapbot.pointer_input` | Runtime input | Derived | Read-only | Singleton per-frame pointer position/delta/wheel/button snapshot; scheduler-visible and not entity-attached. |
 | `scrapbot.transform` | Spatial | Authored | Yes | UUID-parented local position, rotation, and scale; source for resolved world transforms. |
 | `scrapbot.camera` | Spatial/render | Authored | Yes | Selects camera projection and linear exposure data; project camera is distinct from the editor fly camera. |
+| `scrapbot.world_environment` | Environment/render | Authored | Yes | Singleton scene selection for imported lighting, procedural or imported sky presentation, and base exposure. |
 | `scrapbot.ambient_light` | Lighting | Authored | Yes | Compact scene-wide ambient light input. |
 | `scrapbot.directional_light` | Lighting | Authored | Yes | Directional light and current shadow-map source. |
 | `scrapbot.point_light` | Lighting | Authored | Yes | Bounded local light using the entity's resolved world position. |
@@ -91,6 +92,16 @@ These entries deliberately omit exhaustive field/default documentation. Follow t
 - **Invalidation:** Membership is structural; projection, exposure, or Transform changes update compact camera input. Exposure changes rewrite only the environment uniform, never rebuild its panorama or cube textures.
 - **Surfaces:** Public; scene/editor expose projection fields while current Luau/native handles primarily expose membership; see the [public component reference](../../docs-website/src/content/docs/reference/components.md#scrapbotcamera).
 - **Source/tests:** `ecs/world.odin`, `render/render.odin`, `render/camera_visualizer.odin`; `render/camera_visualizer_test.odin`, `render/render_test.odin`.
+
+### `scrapbot.world_environment`
+
+- **Contract:** At most one authored component per scene selects Environment-resource UUIDs for image-based lighting and the visible background, plus their independent presentation values. An enabled empty background selects the procedural haze sky.
+- **Storage/lifecycle:** Dedicated typed ECS storage; authored singleton-by-validation, attached to an ordinary selectable scene entity.
+- **Producers:** Scene loading, automatic editor reflection/history, component membership commands, and playback restore.
+- **Consumers:** The fixed `scrapbot.environment` phase resolves UUIDs to generational Environment handles and updates the renderer-facing resource-registry cache.
+- **Invalidation:** Structural membership changes rediscover the singleton. Value changes compare the retained entity component revision. Stable frames do not scan World entities or resources.
+- **Surfaces:** Public in scene TOML, Luau membership/query data, native membership, editor authoring, and persistence; see the [public component reference](../../docs-website/src/content/docs/reference/components.md#scrapbotworld_environment).
+- **Source/tests:** `resources/environments.odin`, `ecs/world.odin`, `render/wgpu_environment.odin`; `project/project_test.odin`, `resources/resources_test.odin`, WGPU framegrab smoke tests.
 
 ### `scrapbot.ambient_light`
 

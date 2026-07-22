@@ -262,38 +262,52 @@ write_missing_scene_fields :: proc(
 	if !found || !baseline_found || world.entities[entity_index].origin != .Scene {
 		return
 	}
-	keys: [3]string
+	keys: [10]string
 	key_count := 0
 	switch section {
 		case "transform":
-			keys = {"position", "rotation", "scale"}
+			keys[0], keys[1], keys[2] = "position", "rotation", "scale"
 			key_count = 3
 		case "camera":
-			keys = {"fov", "near", "far"}
+			keys[0], keys[1], keys[2] = "fov", "near", "far"
 			key_count = 3
+		case "world_environment":
+			keys = {
+				"lighting",
+				"lighting_intensity",
+				"lighting_rotation",
+				"exposure",
+				"background_visible",
+				"background",
+				"background_intensity",
+				"background_rotation",
+				"background_exposure",
+				"background_blur",
+			}
+			key_count = 10
 		case "ambient_light":
-			keys = {"color", "intensity", ""}
+			keys[0], keys[1] = "color", "intensity"
 			key_count = 2
 		case "directional_light":
-			keys = {"direction", "color", "intensity"}
+			keys[0], keys[1], keys[2] = "direction", "color", "intensity"
 			key_count = 3
 		case "point_light":
-			keys = {"color", "intensity", "range"}
+			keys[0], keys[1], keys[2] = "color", "intensity", "range"
 			key_count = 3
 		case "ui_layout":
-			keys = {"hidden", "", ""}
+			keys[0] = "hidden"
 			key_count = 1
 		case "ui_hstack", "ui_vstack":
-			keys = {"fill", "draggable", ""}
+			keys[0], keys[1] = "fill", "draggable"
 			key_count = 2
 		case "ui_panel":
-			keys = {"collapsible", "collapsed", ""}
+			keys[0], keys[1] = "collapsible", "collapsed"
 			key_count = 2
 		case "ui_input":
-			keys = {"read_only", "", ""}
+			keys[0] = "read_only"
 			key_count = 1
 		case "ui_checkbox":
-			keys = {"checked", "read_only", ""}
+			keys[0], keys[1] = "checked", "read_only"
 			key_count = 2
 		case:
 			return
@@ -438,6 +452,34 @@ scene_world_field_value :: proc(
 					return scene_f32(value.near), true
 				case "far":
 					return scene_f32(value.far), true
+			}
+		case "world_environment":
+			if entity.world_environment_index < 0 ||
+			   entity.world_environment_index >= len(world.world_environments) {
+				return "", false
+			}
+			value := world.world_environments[entity.world_environment_index]
+			switch key {
+				case "lighting":
+					return fmt.tprintf("\"%s\"", value.lighting), true
+				case "lighting_intensity":
+					return scene_f32(value.lighting_intensity), true
+				case "lighting_rotation":
+					return scene_f32(value.lighting_rotation), true
+				case "exposure":
+					return scene_f32(value.exposure), true
+				case "background_visible":
+					return scene_bool(value.background_visible), true
+				case "background":
+					return fmt.tprintf("\"%s\"", value.background), true
+				case "background_intensity":
+					return scene_f32(value.background_intensity), true
+				case "background_rotation":
+					return scene_f32(value.background_rotation), true
+				case "background_exposure":
+					return scene_f32(value.background_exposure), true
+				case "background_blur":
+					return scene_f32(value.background_blur), true
 			}
 		case "ambient_light":
 			if entity.ambient_light_index < 0 ||

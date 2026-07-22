@@ -195,11 +195,13 @@ configure_project_environment :: proc(
 		if background_id == (shared.Resource_UUID{}) {
 			background_id = config.environment
 		}
-		resolved, found := environment_handle_by_uuid(registry, background_id)
-		if !found {
-			return "configured background environment resource is unavailable"
+		if background_id != (shared.Resource_UUID{}) {
+			resolved, found := environment_handle_by_uuid(registry, background_id)
+			if !found {
+				return "configured background environment resource is unavailable"
+			}
+			background_handle = resolved
 		}
-		background_handle = resolved
 	}
 	if math.is_nan(config.environment_intensity) ||
 	   math.is_inf(config.environment_intensity) ||
@@ -247,6 +249,83 @@ configure_project_environment :: proc(
 		bump_environment_revision(registry)
 	}
 	return ""
+}
+
+reconcile_world_environment :: proc(registry: ^Registry, world: ^shared.World) -> string {
+	if registry == nil || world == nil {
+		return "environment state is not available"
+	}
+	structural_change :=
+		!world.world_environment_initialized ||
+		world.world_environment_revision != world.world_environment_reconciled_revision
+	if structural_change {
+		world.world_environment_entity_index = -1
+		for entity, entity_index in world.entities {
+			if !entity.alive ||
+			   entity.world_environment_index < 0 ||
+			   entity.world_environment_index >= len(world.world_environments) {
+				continue
+			}
+			if world.world_environment_entity_index >= 0 {
+				return "a scene may contain only one scrapbot.world_environment component"
+			}
+			world.world_environment_entity_index = entity_index
+		}
+		world.world_environment_reconciled_revision = world.world_environment_revision
+		world.world_environment_component_revision = 0
+		world.world_environment_initialized = true
+	}
+	entity_index := world.world_environment_entity_index
+	if entity_index < 0 ||
+	   entity_index >= len(world.entities) ||
+	   !world.entities[entity_index].alive {
+		if !structural_change {
+			return ""
+		}
+		return configure_world_environment(registry, shared.world_environment_default())
+	}
+	entity := world.entities[entity_index]
+	if !structural_change &&
+	   entity.component_revision == world.world_environment_component_revision {
+		return ""
+	}
+	value := world.world_environments[entity.world_environment_index]
+	if err := configure_world_environment(registry, value); err != "" {
+		return err
+	}
+	world.world_environment_component_revision = entity.component_revision
+	return ""
+}
+
+configure_world_environment :: proc(
+	registry: ^Registry,
+	value: shared.World_Environment_Component,
+) -> string {
+	config := shared.Project_Render_Config {
+		environment_intensity = value.lighting_intensity,
+		environment_rotation = value.lighting_rotation,
+		exposure = value.exposure,
+		background_visible = value.background_visible,
+		background_intensity = value.background_intensity,
+		background_rotation = value.background_rotation,
+		background_exposure = value.background_exposure,
+		background_blur = value.background_blur,
+	}
+	if value.lighting != "" {
+		id, ok := shared.resource_uuid_parse(value.lighting)
+		if !ok {
+			return "world environment lighting must be an Environment resource UUID"
+		}
+		config.environment = id
+	}
+	if value.background != "" {
+		id, ok := shared.resource_uuid_parse(value.background)
+		if !ok {
+			return "world environment background must be an Environment resource UUID"
+		}
+		config.background_environment = id
+	}
+	return configure_project_environment(registry, config)
 }
 
 get_environment :: proc(registry: ^Registry, handle: Environment_Handle) -> (^Environment, bool) {

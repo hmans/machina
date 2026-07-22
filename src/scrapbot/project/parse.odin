@@ -608,6 +608,7 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 
 		if line == "[entities.transform]" ||
 		   line == "[entities.camera]" ||
+		   line == "[entities.world_environment]" ||
 		   line == "[entities.mesh]" ||
 		   line == "[entities.geometry]" ||
 		   line == "[entities.material]" ||
@@ -638,6 +639,10 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 			}
 			section = line[10:len(line) - 1]
 			if section == "shadow_caster" { current.has_shadow_caster = true }
+			if section == "world_environment" {
+				current.has_world_environment = true
+				current.world_environment = shared.world_environment_default()
+			}
 			if section == "shadow_receiver" { current.has_shadow_receiver = true }
 			if section == "ui_layout" { current.has_ui_layout = true }
 			if section == "ui_hstack" { current.has_ui_hstack = true }
@@ -797,6 +802,41 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 					return scene, fail(
 						.Invalid_Field,
 						fmt.tprintf("camera.%s must be a number", key),
+					)
+				}
+			case "world_environment":
+				current.has_world_environment = true
+				switch key {
+					case "lighting":
+						current.world_environment.lighting, found = parse_basic_string(value)
+					case "lighting_intensity":
+						current.world_environment.lighting_intensity, found = parse_f32(value)
+					case "lighting_rotation":
+						current.world_environment.lighting_rotation, found = parse_f32(value)
+					case "exposure":
+						current.world_environment.exposure, found = parse_f32(value)
+					case "background_visible":
+						current.world_environment.background_visible, found = parse_bool(value)
+					case "background":
+						current.world_environment.background, found = parse_basic_string(value)
+					case "background_intensity":
+						current.world_environment.background_intensity, found = parse_f32(value)
+					case "background_rotation":
+						current.world_environment.background_rotation, found = parse_f32(value)
+					case "background_exposure":
+						current.world_environment.background_exposure, found = parse_f32(value)
+					case "background_blur":
+						current.world_environment.background_blur, found = parse_f32(value)
+					case:
+						return scene, fail(
+							.Invalid_Field,
+							fmt.tprintf("unknown world_environment field '%s'", key),
+						)
+				}
+				if !found || !valid_world_environment(current.world_environment) {
+					return scene, fail(
+						.Invalid_Field,
+						fmt.tprintf("invalid world_environment.%s", key),
 					)
 				}
 			case "ambient_light":
@@ -1915,6 +1955,10 @@ finite_render_config :: proc(value: shared.Project_Render_Config) -> bool {
 		!math.is_nan(value.background_blur) &&
 		!math.is_inf(value.background_blur) \
 	)
+}
+
+valid_world_environment :: proc(value: shared.World_Environment_Component) -> bool {
+	return shared.world_environment_is_valid(value)
 }
 
 finite_vec3 :: proc(value: Vec3) -> bool {
