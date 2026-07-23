@@ -1232,7 +1232,6 @@ Point_Light_Instance :: struct {
 }
 
 MAX_DIRECTIONAL_LIGHTS :: 4
-MAX_POINT_LIGHTS :: 256
 
 Render_List :: struct {
 	world_uuid: Entity_UUID,
@@ -1256,7 +1255,7 @@ Render_List :: struct {
 	ambient: Vec3,
 	directional_lights: [MAX_DIRECTIONAL_LIGHTS]Directional_Light_Instance,
 	directional_light_count: int,
-	point_lights: [MAX_POINT_LIGHTS]Point_Light_Instance,
+	point_lights: [dynamic]Point_Light_Instance,
 	point_light_count: int,
 }
 

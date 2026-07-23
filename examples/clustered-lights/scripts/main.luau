@@ -1,5 +1,5 @@
 local TAU = math.pi * 2
-local RING_COUNT = 15
+local RING_COUNT = 20
 local LIGHTS_PER_RING = 16
 local LIGHT_COUNT = RING_COUNT * LIGHTS_PER_RING
 

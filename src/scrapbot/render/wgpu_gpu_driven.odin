@@ -985,7 +985,7 @@ wgpu_make_batch_bind_group :: proc(
 		{
 			binding = 5,
 			buffer = renderer.gpu_point_light_buffer,
-			size = u64(shared.MAX_POINT_LIGHTS) * u64(size_of(WGPU_GPU_Point_Light)),
+			size = u64(renderer.gpu_point_light_capacity) * u64(size_of(WGPU_GPU_Point_Light)),
 		},
 		{
 			binding = 6,
@@ -995,7 +995,8 @@ wgpu_make_batch_bind_group :: proc(
 		{
 			binding = 7,
 			buffer = renderer.gpu_cluster_index_buffer,
-			size = u64(WGPU_CLUSTER_COUNT * WGPU_CLUSTER_MAX_LIGHTS) * u64(size_of(u32)),
+			size = u64(WGPU_CLUSTER_COUNT * renderer.gpu_cluster_light_capacity) *
+			u64(size_of(u32)),
 		},
 		{
 			binding = 8,
@@ -1843,6 +1844,19 @@ wgpu_prepare_gpu_draw_batches :: proc(
 	if topology_err != "" {
 		return nil, 0, topology_err
 	}
+	old_point_light_buffer, old_cluster_index_buffer, cluster_buffers_grew, cluster_err :=
+		wgpu_ensure_clustered_light_capacity(renderer, render_list.point_light_count)
+	if cluster_err != "" {
+		return nil, 0, cluster_err
+	}
+	if cluster_buffers_grew {
+		if batch_layout_err := wgpu_refresh_gpu_batch_layout(renderer, cache, registry);
+		   batch_layout_err != "" {
+			return nil, 0, batch_layout_err
+		}
+		wgpu.BufferRelease(old_point_light_buffer)
+		wgpu.BufferRelease(old_cluster_index_buffer)
+	}
 	if topology_changed {
 		if batch_cache_err := wgpu_rebuild_instance_batch_cache(
 			renderer,
@@ -1912,14 +1926,7 @@ wgpu_prepare_gpu_draw_batches :: proc(
 			1,
 		}
 	}
-	wgpu_prepare_clustered_lighting(
-		renderer,
-		render_list,
-		view,
-		projection,
-		u32(viewport.width),
-		u32(viewport.height),
-	)
+	wgpu_prepare_clustered_lighting(renderer, render_list, view, projection, viewport)
 	if wgpu_retain_render_uniform(renderer, uniform) {
 		wgpu.QueueWriteBuffer(
 			renderer.queue,

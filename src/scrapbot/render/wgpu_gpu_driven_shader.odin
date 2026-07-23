@@ -376,8 +376,16 @@ fn directional_shadow(world_position: vec3<f32>, view_depth: f32) -> f32 {
 }
 
 fn cluster_index(position: vec2<f32>, view_depth: f32) -> u32 {
-	let tile_size = cluster.viewport.xy / vec2<f32>(cluster.counts.xy);
-	let tile = min(vec2<u32>(position / tile_size), cluster.counts.xy - vec2<u32>(1u));
+	let viewport_position = clamp(
+		position - cluster.viewport.xy,
+		vec2<f32>(0.0),
+		max(cluster.viewport.zw - vec2<f32>(0.0001), vec2<f32>(0.0)),
+	);
+	let tile_size = cluster.viewport.zw / vec2<f32>(cluster.counts.xy);
+	let tile = min(
+		vec2<u32>(viewport_position / tile_size),
+		cluster.counts.xy - vec2<u32>(1u),
+	);
 	let near_plane = cluster.z_parameters.x;
 	let far_plane = cluster.z_parameters.y;
 	let depth = clamp(view_depth, near_plane, far_plane);

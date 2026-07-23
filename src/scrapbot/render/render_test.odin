@@ -9,9 +9,20 @@ import "core:math"
 import "core:testing"
 
 @(test)
-test_cluster_index_budget_covers_every_extracted_point_light :: proc(t: ^testing.T) {
-	testing.expect_value(t, WGPU_CLUSTER_MAX_LIGHTS, shared.MAX_POINT_LIGHTS)
-	testing.expect_value(t, WGPU_CLUSTER_COUNT * WGPU_CLUSTER_MAX_LIGHTS * size_of(u32), 3_538_944)
+test_cluster_index_budget_starts_at_256_and_grows_geometrically :: proc(t: ^testing.T) {
+	testing.expect_value(t, WGPU_CLUSTER_INITIAL_LIGHT_CAPACITY, 256)
+	testing.expect_value(
+		t,
+		WGPU_CLUSTER_COUNT * WGPU_CLUSTER_INITIAL_LIGHT_CAPACITY * size_of(u32),
+		3_538_944,
+	)
+	testing.expect_value(t, wgpu_grow_capacity(WGPU_CLUSTER_INITIAL_LIGHT_CAPACITY, 257), 512)
+}
+
+@(test)
+test_cluster_viewport_tracks_editor_origin_and_available_world_extent :: proc(t: ^testing.T) {
+	viewport := ui.Rect{320, 96, 1280, 720}
+	testing.expect_value(t, wgpu_cluster_viewport_uniform(viewport), [4]f32{320, 96, 1280, 720})
 }
 
 @(test)

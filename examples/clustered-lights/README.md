@@ -1,6 +1,6 @@
 # Cluster Cathedral
 
-This example fills a long dark hall with **240 independently animated HDR point lights**. Sixteen lights orbit each of fifteen architectural ribs while traveling pulses move through the palette. The result exercises Scrapbot's 16×9×24 GPU-computed light clusters, 256-light render packet, retained dirty transforms, shared geometry/material batching, bloom, and cascaded shadows in one deliberately excessive scene.
+This example fills a long dark hall with **320 independently animated HDR point lights**. Sixteen lights orbit each of twenty architectural ribs while traveling pulses move through the palette. The result exercises Scrapbot's 16×9×24 GPU-computed light clusters, growable light/index buffers beyond their initial 256-light capacity, retained dirty transforms, shared geometry/material batching, bloom, and cascaded shadows in one deliberately excessive scene.
 
 Run it directly:
 

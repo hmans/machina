@@ -37,9 +37,7 @@ WGPU_CLUSTER_COUNT_X :: 16
 WGPU_CLUSTER_COUNT_Y :: 9
 WGPU_CLUSTER_COUNT_Z :: 24
 WGPU_CLUSTER_COUNT :: WGPU_CLUSTER_COUNT_X * WGPU_CLUSTER_COUNT_Y * WGPU_CLUSTER_COUNT_Z
-WGPU_CLUSTER_MAX_LIGHTS :: shared.MAX_POINT_LIGHTS
-
-#assert(WGPU_CLUSTER_MAX_LIGHTS == shared.MAX_POINT_LIGHTS)
+WGPU_CLUSTER_INITIAL_LIGHT_CAPACITY :: 256
 
 WGPU_GPU_Timestamp_Phase :: enum u32 {
 	Cull,
@@ -526,7 +524,9 @@ WGPU_Renderer :: struct {
 	gpu_cluster_bind_group: wgpu.BindGroup,
 	gpu_cluster_dispatch_count: u64,
 	gpu_clustered_light_count: int,
-	gpu_point_lights: [shared.MAX_POINT_LIGHTS]WGPU_GPU_Point_Light,
+	gpu_point_light_capacity: int,
+	gpu_cluster_light_capacity: int,
+	gpu_point_lights: [dynamic]WGPU_GPU_Point_Light,
 	gpu_point_lights_valid: bool,
 	gpu_cluster_uniform: WGPU_Cluster_Uniform,
 	gpu_cluster_uniform_valid: bool,
@@ -2244,7 +2244,7 @@ wgpu_draw_frame :: proc(
 		config.stats.clustered_lighting = true
 		config.stats.shadow_cascades = WGPU_SHADOW_CASCADE_COUNT
 		config.stats.cluster_count = WGPU_CLUSTER_COUNT
-		config.stats.cluster_max_lights = WGPU_CLUSTER_MAX_LIGHTS
+		config.stats.cluster_max_lights = renderer.gpu_cluster_light_capacity
 		config.stats.clustered_point_lights = renderer.gpu_clustered_light_count
 		config.stats.cluster_dispatches = renderer.gpu_cluster_dispatch_count
 		config.stats.instance_capacity = WGPU_MAX_GPU_INSTANCES
@@ -2435,7 +2435,7 @@ wgpu_render_offscreen_frame :: proc(
 		config.stats.clustered_lighting = true
 		config.stats.shadow_cascades = WGPU_SHADOW_CASCADE_COUNT
 		config.stats.cluster_count = WGPU_CLUSTER_COUNT
-		config.stats.cluster_max_lights = WGPU_CLUSTER_MAX_LIGHTS
+		config.stats.cluster_max_lights = renderer.gpu_cluster_light_capacity
 		config.stats.clustered_point_lights = renderer.gpu_clustered_light_count
 		config.stats.cluster_dispatches = renderer.gpu_cluster_dispatch_count
 		config.stats.instance_capacity = WGPU_MAX_GPU_INSTANCES

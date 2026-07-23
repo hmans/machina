@@ -506,6 +506,7 @@ range = 7
 	testing.expect(t, len(world.render_active_directional_light_entities) == 1)
 	testing.expect(t, len(world.render_active_point_light_entities) == 1)
 	list: Render_List
+	defer destroy_render_list(&list)
 	extract_lights(&world, &list)
 
 	testing.expect(t, list.ambient == shared.Vec3{0.1, 0.2, 0.3})
@@ -515,6 +516,41 @@ range = 7
 	testing.expect(t, list.point_light_count == 1)
 	testing.expect(t, list.point_lights[0].position == shared.Vec3{2, 3, 4})
 	testing.expect(t, list.point_lights[0].light.range == 7)
+}
+
+@(test)
+test_render_list_extracts_more_than_the_original_fixed_point_light_packet :: proc(t: ^testing.T) {
+	scene: shared.Scene
+	world := build_world(&scene)
+	defer destroy_world(&world)
+	for light_index in 0 ..< 300 {
+		entity_index, created := create_world_entity(
+			&world,
+			fmt.tprintf("Light %d", light_index),
+			{},
+			.Runtime,
+		)
+		testing.expect(t, created)
+		world.entities[entity_index].transform_index = len(world.transforms)
+		append(
+			&world.transforms,
+			Transform_Component{position = {f32(light_index), 0, 0}, scale = {1, 1, 1}},
+		)
+		world.entities[entity_index].point_light_index = len(world.point_lights)
+		append(
+			&world.point_lights,
+			Point_Light_Component{color = {1, 1, 1}, intensity = 1, range = 2},
+		)
+		sync_render_watch_memberships(&world, entity_index)
+	}
+
+	list: Render_List
+	defer destroy_render_list(&list)
+	extract_lights(&world, &list)
+
+	testing.expect_value(t, list.point_light_count, 300)
+	testing.expect_value(t, len(list.point_lights), 300)
+	testing.expect_value(t, list.point_lights[299].position.x, f32(299))
 }
 
 @(test)

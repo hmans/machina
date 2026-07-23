@@ -306,6 +306,7 @@ wgpu_destroy_renderer :: proc(renderer: ^WGPU_Renderer) {
 	delete(renderer.gpu_cpu_visible)
 	delete(renderer.gpu_cpu_shadow_visible)
 	delete(renderer.gpu_indirect_templates)
+	delete(renderer.gpu_point_lights)
 	wgpu_release_visibility_readbacks(renderer)
 	ecs.destroy_render_list(&renderer.render_list)
 	if renderer.gpu_cull_bind_group != nil {

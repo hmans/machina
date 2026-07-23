@@ -1166,6 +1166,7 @@ populate_resource_render_list :: proc(
 	list.ambient = {}
 	list.directional_light_count = 0
 	list.point_light_count = 0
+	clear(&list.point_lights)
 	extract_lights(world, list, registry)
 }
 
@@ -1640,7 +1641,6 @@ extract_lights :: proc(world: ^World, list: ^Render_List, registry: ^resources.R
 		list.directional_light_count += 1
 	}
 	for entity_index in world.render_active_point_light_entities {
-		if list.point_light_count >= len(list.point_lights) { break }
 		if !entity_is_alive(world, entity_index) { continue }
 		entity := world.entities[entity_index]
 		if entity.point_light_index < 0 ||
@@ -1648,10 +1648,13 @@ extract_lights :: proc(world: ^World, list: ^Render_List, registry: ^resources.R
 		   entity.transform_index < 0 ||
 		   entity.transform_index >= len(world.transforms) { continue }
 		world_transform, _ := resolve_world_transform(world, entity_index)
-		list.point_lights[list.point_light_count] = {
-			position = world_transform.position,
-			light = world.point_lights[entity.point_light_index],
-		}
+		append(
+			&list.point_lights,
+			shared.Point_Light_Instance {
+				position = world_transform.position,
+				light = world.point_lights[entity.point_light_index],
+			},
+		)
 		list.point_light_count += 1
 	}
 }
@@ -1903,6 +1906,7 @@ destroy_render_list :: proc(list: ^Render_List) {
 	delete(list.instance_index_by_slot)
 	delete(list.dirty_instance_slots)
 	delete(list.dirty_transform_slots)
+	delete(list.point_lights)
 	delete(list.ancestor_counts)
 	delete(list.batch_memberships)
 	list^ = {}

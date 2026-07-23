@@ -1,6 +1,7 @@
 # ADR-011: Extract ECS lights into bounded render packets
 
 **Date:** 2026-07-12
+**Last amended:** 2026-07-23
 
 ## Context
 
@@ -10,7 +11,7 @@ Lights are scene data that systems may create, remove, or animate, but rendering
 
 ADR-039 amends the original capacity and backend representation while preserving this ECS-to-renderer ownership boundary.
 
-Represent ambient, directional, and point lights as public engine ECS components. Before rendering, extract alive lights into the retained render list: accumulate ambient contributions and copy bounded directional and point-light inputs, with point-light positions taken from their transforms. Rendering backends consume this packet and own the GPU representation. The current limits and scalable WGPU representation are specified by ADR-039.
+Represent ambient, directional, and point lights as public engine ECS components. Before rendering, extract alive lights into the retained render list: accumulate ambient contributions, copy bounded directional inputs, and retain a growable compact point-light list with positions taken from transforms. Rendering backends consume this packet and own the GPU representation. The current limits and scalable WGPU representation are specified by ADR-039.
 
 ## Consequences
 
