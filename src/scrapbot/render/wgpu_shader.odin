@@ -334,6 +334,204 @@ fn downsample_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 }
 `
 
+WGPU_AMBIENT_OCCLUSION_SHADER :: `
+struct Ambient_Occlusion_Uniform {
+	projection: vec4<f32>,
+	viewport: vec4<f32>,
+	dimensions: vec4<f32>,
+	parameters: vec4<f32>,
+};
+
+@group(0) @binding(0) var scene_depth: texture_depth_2d;
+@group(0) @binding(1) var source_occlusion: texture_2d<f32>;
+@group(0) @binding(2) var destination_occlusion: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(3) var<uniform> settings: Ambient_Occlusion_Uniform;
+
+fn viewport_minimum() -> vec2<i32> {
+	return vec2<i32>(floor(settings.viewport.xy));
+}
+
+fn viewport_maximum() -> vec2<i32> {
+	return vec2<i32>(ceil(settings.viewport.xy + settings.viewport.zw)) - vec2<i32>(1);
+}
+
+fn clamp_full_pixel(pixel: vec2<i32>) -> vec2<i32> {
+	return clamp(pixel, viewport_minimum(), viewport_maximum());
+}
+
+fn full_pixel_from_ao(pixel: vec2<i32>) -> vec2<i32> {
+	return clamp_full_pixel(pixel * 2 + vec2<i32>(1));
+}
+
+fn depth_at(pixel: vec2<i32>) -> f32 {
+	return textureLoad(scene_depth, clamp_full_pixel(pixel), 0);
+}
+
+fn view_position(pixel: vec2<i32>, depth: f32) -> vec3<f32> {
+	let sample_position = vec2<f32>(pixel) + vec2<f32>(0.5);
+	let viewport_uv = (sample_position - settings.viewport.xy) / settings.viewport.zw;
+	let ndc = viewport_uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0);
+	let view_z = -settings.projection.w / (depth + settings.projection.z);
+	return vec3<f32>(
+		ndc.x * -view_z / settings.projection.x,
+		ndc.y * -view_z / settings.projection.y,
+		view_z,
+	);
+}
+
+fn closest_difference(
+	center: vec3<f32>,
+	negative: vec3<f32>,
+	positive: vec3<f32>,
+) -> vec3<f32> {
+	let to_negative = center - negative;
+	let to_positive = positive - center;
+	return select(to_positive, to_negative, abs(to_negative.z) < abs(to_positive.z));
+}
+
+fn view_normal(pixel: vec2<i32>, center: vec3<f32>) -> vec3<f32> {
+	let left_pixel = clamp_full_pixel(pixel + vec2<i32>(-1, 0));
+	let right_pixel = clamp_full_pixel(pixel + vec2<i32>(1, 0));
+	let up_pixel = clamp_full_pixel(pixel + vec2<i32>(0, -1));
+	let down_pixel = clamp_full_pixel(pixel + vec2<i32>(0, 1));
+	let left = view_position(left_pixel, depth_at(left_pixel));
+	let right = view_position(right_pixel, depth_at(right_pixel));
+	let up = view_position(up_pixel, depth_at(up_pixel));
+	let down = view_position(down_pixel, depth_at(down_pixel));
+	let horizontal = closest_difference(center, left, right);
+	let vertical = closest_difference(center, up, down);
+	var normal = normalize(cross(horizontal, vertical));
+	if (normal.z < 0.0) {
+		normal = -normal;
+	}
+	return normal;
+}
+
+const SAMPLE_DIRECTIONS = array<vec2<f32>, 12>(
+	vec2<f32>( 1.0000,  0.0000),
+	vec2<f32>( 0.5000,  0.8660),
+	vec2<f32>(-0.5000,  0.8660),
+	vec2<f32>(-1.0000,  0.0000),
+	vec2<f32>(-0.5000, -0.8660),
+	vec2<f32>( 0.5000, -0.8660),
+	vec2<f32>( 0.9239,  0.3827),
+	vec2<f32>( 0.1305,  0.9914),
+	vec2<f32>(-0.7934,  0.6088),
+	vec2<f32>(-0.9239, -0.3827),
+	vec2<f32>(-0.1305, -0.9914),
+	vec2<f32>( 0.7934, -0.6088),
+);
+
+@compute @workgroup_size(8, 8)
+fn ambient_occlusion_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
+	let dimensions = textureDimensions(destination_occlusion);
+	if (invocation.x >= dimensions.x || invocation.y >= dimensions.y) {
+		return;
+	}
+	let ao_pixel = vec2<i32>(invocation.xy);
+	let pixel = full_pixel_from_ao(ao_pixel);
+	let depth = depth_at(pixel);
+	if (depth >= 0.999999) {
+		textureStore(destination_occlusion, ao_pixel, vec4<f32>(1.0));
+		return;
+	}
+	let center = view_position(pixel, depth);
+	let normal = view_normal(pixel, center);
+	let radius = settings.parameters.x;
+	let bias = settings.parameters.y;
+	let projected_radius = clamp(
+		radius * settings.projection.y * settings.viewport.w / max(-center.z, 0.001) * 0.5,
+		2.0,
+		96.0,
+	);
+	var occlusion = 0.0;
+	for (var index = 0u; index < 12u; index += 1u) {
+		let ring = 0.20 + 0.80 * (f32(index) + 0.5) / 12.0;
+		let offset = vec2<i32>(round(SAMPLE_DIRECTIONS[index] * projected_radius * ring));
+		let sample_pixel = clamp_full_pixel(pixel + offset);
+		let sample_depth = depth_at(sample_pixel);
+		if (sample_depth >= 0.999999) {
+			continue;
+		}
+		let sample_position = view_position(sample_pixel, sample_depth);
+		let difference = sample_position - center;
+		let distance = length(difference);
+		if (distance <= 0.0001 || distance >= radius) {
+			continue;
+		}
+		let horizon = max(dot(normal, difference / distance) - bias, 0.0);
+		occlusion += horizon * (1.0 - distance / radius);
+	}
+	let amount = clamp(
+		occlusion * settings.parameters.z * (3.0 / 12.0),
+		0.0,
+		1.0,
+	);
+	let visibility = pow(1.0 - amount, settings.parameters.w);
+	textureStore(
+		destination_occlusion,
+		ao_pixel,
+		vec4<f32>(visibility, visibility, visibility, 1.0),
+	);
+}
+
+fn linear_view_depth(pixel: vec2<i32>) -> f32 {
+	let depth = depth_at(pixel);
+	if (depth >= 0.999999) {
+		return 100000.0;
+	}
+	return -view_position(pixel, depth).z;
+}
+
+fn bilateral_blur(pixel: vec2<i32>, axis: vec2<i32>) -> f32 {
+	let dimensions = vec2<i32>(textureDimensions(source_occlusion));
+	let center_full_pixel = full_pixel_from_ao(pixel);
+	let center_depth = linear_view_depth(center_full_pixel);
+	var total = 0.0;
+	var weight_total = 0.0;
+	for (var offset = -2; offset <= 2; offset += 1) {
+		let sample_pixel = clamp(pixel + axis * offset, vec2<i32>(0), dimensions - vec2<i32>(1));
+		let sample_full_pixel = full_pixel_from_ao(sample_pixel);
+		let sample_depth = linear_view_depth(sample_full_pixel);
+		var spatial_weight = 0.40;
+		if (abs(offset) == 1) {
+			spatial_weight = 0.24;
+		} else if (abs(offset) == 2) {
+			spatial_weight = 0.06;
+		}
+		let depth_weight = 1.0 / (1.0 + abs(sample_depth - center_depth) * 8.0);
+		let weight = spatial_weight * depth_weight;
+		total += textureLoad(source_occlusion, sample_pixel, 0).r * weight;
+		weight_total += weight;
+	}
+	return total / max(weight_total, 0.0001);
+}
+
+fn store_blur(invocation: vec3<u32>, axis: vec2<i32>) {
+	let dimensions = textureDimensions(destination_occlusion);
+	if (invocation.x >= dimensions.x || invocation.y >= dimensions.y) {
+		return;
+	}
+	let pixel = vec2<i32>(invocation.xy);
+	let visibility = bilateral_blur(pixel, axis);
+	textureStore(
+		destination_occlusion,
+		pixel,
+		vec4<f32>(visibility, visibility, visibility, 1.0),
+	);
+}
+
+@compute @workgroup_size(8, 8)
+fn blur_horizontal_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
+	store_blur(invocation, vec2<i32>(1, 0));
+}
+
+@compute @workgroup_size(8, 8)
+fn blur_vertical_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
+	store_blur(invocation, vec2<i32>(0, 1));
+}
+`
+
 WGPU_COMPOSITE_SHADER :: `
 @group(0) @binding(0) var hdr_texture: texture_2d<f32>;
 @group(0) @binding(1) var linear_sampler: sampler;
@@ -342,6 +540,7 @@ WGPU_COMPOSITE_SHADER :: `
 @group(0) @binding(4) var bloom_2: texture_2d<f32>;
 @group(0) @binding(5) var bloom_3: texture_2d<f32>;
 @group(0) @binding(6) var bloom_4: texture_2d<f32>;
+@group(0) @binding(7) var ambient_occlusion_texture: texture_2d<f32>;
 
 struct Fullscreen_Output {
 	@builtin(position) position: vec4<f32>,
@@ -475,7 +674,9 @@ fn composite_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
 	bloom += textureSample(bloom_2, linear_sampler, input.uv).rgb * 0.20;
 	bloom += textureSample(bloom_3, linear_sampler, input.uv).rgb * 0.13;
 	bloom += textureSample(bloom_4, linear_sampler, input.uv).rgb * 0.07;
-	let hdr = fxaa_hdr(input.uv) + bloom * 0.8;
+	let ambient_visibility =
+		textureSample(ambient_occlusion_texture, linear_sampler, input.uv).r;
+	let hdr = fxaa_hdr(input.uv) * ambient_visibility + bloom * 0.8;
 	return vec4<f32>(aces(hdr), 1.0);
 }
 `

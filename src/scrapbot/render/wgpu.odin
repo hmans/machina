@@ -45,6 +45,7 @@ WGPU_GPU_Timestamp_Phase :: enum u32 {
 	Depth,
 	World,
 	HiZ,
+	Ambient_Occlusion,
 	Bloom,
 	Composite,
 	UI,
@@ -166,6 +167,14 @@ WGPU_Sky_Uniform :: struct {
 	projection: [4]f32,
 }
 #assert(size_of(WGPU_Sky_Uniform) == 64)
+
+WGPU_Ambient_Occlusion_Uniform :: struct {
+	projection: [4]f32,
+	viewport: [4]f32,
+	dimensions: [4]f32,
+	parameters: [4]f32,
+}
+#assert(size_of(WGPU_Ambient_Occlusion_Uniform) == 64)
 
 WGPU_Draw_Batch :: struct {
 	geometry: shared.Geometry_Handle,
@@ -585,7 +594,17 @@ WGPU_Renderer :: struct {
 	pipeline: wgpu.RenderPipeline,
 	shadow_pipeline: wgpu.RenderPipeline,
 	post_shader: wgpu.ShaderModule,
+	ambient_occlusion_shader: wgpu.ShaderModule,
 	composite_shader: wgpu.ShaderModule,
+	ambient_occlusion_bind_group_layout: wgpu.BindGroupLayout,
+	ambient_occlusion_pipeline_layout: wgpu.PipelineLayout,
+	ambient_occlusion_pipeline: wgpu.ComputePipeline,
+	ambient_occlusion_blur_horizontal_pipeline: wgpu.ComputePipeline,
+	ambient_occlusion_blur_vertical_pipeline: wgpu.ComputePipeline,
+	ambient_occlusion_uniform_buffer: wgpu.Buffer,
+	ambient_occlusion_textures: [3]wgpu.Texture,
+	ambient_occlusion_views: [3]wgpu.TextureView,
+	ambient_occlusion_bind_groups: [3]wgpu.BindGroup,
 	bloom_compute_bind_group_layout: wgpu.BindGroupLayout,
 	bloom_compute_pipeline_layout: wgpu.PipelineLayout,
 	bloom_bright_pipeline: wgpu.ComputePipeline,
@@ -600,6 +619,7 @@ WGPU_Renderer :: struct {
 	bloom_views: [WGPU_BLOOM_LEVELS]wgpu.TextureView,
 	bloom_compute_bind_groups: [WGPU_BLOOM_LEVELS]wgpu.BindGroup,
 	composite_bind_group: wgpu.BindGroup,
+	post_depth_view: wgpu.TextureView,
 	post_width: u32,
 	post_height: u32,
 	geometry_cache: [dynamic]WGPU_Geometry_Cache,
@@ -1569,7 +1589,8 @@ wgpu_encode_render_pass :: proc(
 	if err := wgpu_sync_environment(renderer, registry, &renderer.render_list); err != "" {
 		return err
 	}
-	if err := wgpu_ensure_post_targets(renderer, target_width, target_height); err != "" {
+	if err := wgpu_ensure_post_targets(renderer, target_width, target_height, depth_view);
+	   err != "" {
 		return err
 	}
 	if err := wgpu_encode_sky_pass(renderer, encoder, ui_state, target_width, target_height);
@@ -1693,6 +1714,7 @@ wgpu_encode_render_pass :: proc(
 		renderer,
 		encoder,
 		color_view,
+		depth_view,
 		target_width,
 		target_height,
 	); err != "" {

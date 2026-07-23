@@ -88,7 +88,7 @@ typed ECS/resource mutation
                                       │
                       persistent WGPU instance/draw database
                                       │
-           compute cull + shadow + depth/sky/world + FXAA/bloom/composite
+       compute cull + shadow + depth/sky/world + AO/FXAA/bloom/composite
                                       │
                        retained UI streams + presentation
 ```

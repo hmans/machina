@@ -15,6 +15,117 @@ wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		return "failed to create bloom shader"
 	}
 
+	ambient_occlusion_chain := wgpu.ShaderSourceWGSL {
+		chain = {sType = .ShaderSourceWGSL},
+		code = WGPU_AMBIENT_OCCLUSION_SHADER,
+	}
+	renderer.ambient_occlusion_shader = wgpu.DeviceCreateShaderModule(
+		renderer.device,
+		&wgpu.ShaderModuleDescriptor {
+			nextInChain = &ambient_occlusion_chain,
+			label = "Scrapbot Ambient Occlusion Shader",
+		},
+	)
+	if renderer.ambient_occlusion_shader == nil {
+		return "failed to create ambient occlusion shader"
+	}
+	ambient_occlusion_layout_entries := [?]wgpu.BindGroupLayoutEntry {
+		{
+			binding = 0,
+			visibility = {.Compute},
+			texture = {sampleType = .Depth, viewDimension = ._2D},
+		},
+		{
+			binding = 1,
+			visibility = {.Compute},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{
+			binding = 2,
+			visibility = {.Compute},
+			storageTexture = {access = .WriteOnly, format = .RGBA8Unorm, viewDimension = ._2D},
+		},
+		{
+			binding = 3,
+			visibility = {.Compute},
+			buffer = {
+				type = .Uniform,
+				minBindingSize = u64(size_of(WGPU_Ambient_Occlusion_Uniform)),
+			},
+		},
+	}
+	renderer.ambient_occlusion_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
+		renderer.device,
+		&wgpu.BindGroupLayoutDescriptor {
+			label = "Scrapbot Ambient Occlusion Bind Group Layout",
+			entryCount = uint(len(ambient_occlusion_layout_entries)),
+			entries = raw_data(ambient_occlusion_layout_entries[:]),
+		},
+	)
+	if renderer.ambient_occlusion_bind_group_layout == nil {
+		return "failed to create ambient occlusion bind group layout"
+	}
+	renderer.ambient_occlusion_pipeline_layout = wgpu.DeviceCreatePipelineLayout(
+		renderer.device,
+		&wgpu.PipelineLayoutDescriptor {
+			label = "Scrapbot Ambient Occlusion Pipeline Layout",
+			bindGroupLayoutCount = 1,
+			bindGroupLayouts = &renderer.ambient_occlusion_bind_group_layout,
+		},
+	)
+	if renderer.ambient_occlusion_pipeline_layout == nil {
+		return "failed to create ambient occlusion pipeline layout"
+	}
+	renderer.ambient_occlusion_pipeline = wgpu.DeviceCreateComputePipeline(
+		renderer.device,
+		&wgpu.ComputePipelineDescriptor {
+			label = "Scrapbot Ambient Occlusion Pipeline",
+			layout = renderer.ambient_occlusion_pipeline_layout,
+			compute = {
+				module = renderer.ambient_occlusion_shader,
+				entryPoint = "ambient_occlusion_cs",
+			},
+		},
+	)
+	renderer.ambient_occlusion_blur_horizontal_pipeline = wgpu.DeviceCreateComputePipeline(
+		renderer.device,
+		&wgpu.ComputePipelineDescriptor {
+			label = "Scrapbot Ambient Occlusion Horizontal Blur Pipeline",
+			layout = renderer.ambient_occlusion_pipeline_layout,
+			compute = {
+				module = renderer.ambient_occlusion_shader,
+				entryPoint = "blur_horizontal_cs",
+			},
+		},
+	)
+	renderer.ambient_occlusion_blur_vertical_pipeline = wgpu.DeviceCreateComputePipeline(
+		renderer.device,
+		&wgpu.ComputePipelineDescriptor {
+			label = "Scrapbot Ambient Occlusion Vertical Blur Pipeline",
+			layout = renderer.ambient_occlusion_pipeline_layout,
+			compute = {
+				module = renderer.ambient_occlusion_shader,
+				entryPoint = "blur_vertical_cs",
+			},
+		},
+	)
+	if renderer.ambient_occlusion_pipeline == nil ||
+	   renderer.ambient_occlusion_blur_horizontal_pipeline == nil ||
+	   renderer.ambient_occlusion_blur_vertical_pipeline == nil {
+		return "failed to create ambient occlusion compute pipelines"
+	}
+	renderer.ambient_occlusion_uniform_buffer = wgpu.DeviceCreateBuffer(
+		renderer.device,
+		&wgpu.BufferDescriptor {
+			label = "Scrapbot Ambient Occlusion Uniform Buffer",
+			usage = {.Uniform, .CopyDst},
+			size = u64(size_of(WGPU_Ambient_Occlusion_Uniform)),
+		},
+	)
+	if renderer.ambient_occlusion_uniform_buffer == nil {
+		return "failed to create ambient occlusion uniform buffer"
+	}
+
 	bloom_layout_entries := [?]wgpu.BindGroupLayoutEntry {
 		{
 			binding = 0,
@@ -85,7 +196,7 @@ wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 	if renderer.composite_shader == nil {
 		return "failed to create HDR composite shader"
 	}
-	composite_entries: [2 + WGPU_BLOOM_LEVELS]wgpu.BindGroupLayoutEntry
+	composite_entries: [3 + WGPU_BLOOM_LEVELS]wgpu.BindGroupLayoutEntry
 	composite_entries[0] = {
 		binding = 0,
 		visibility = {.Fragment},
@@ -102,6 +213,11 @@ wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 			visibility = {.Fragment},
 			texture = {sampleType = .Float, viewDimension = ._2D},
 		}
+	}
+	composite_entries[2 + WGPU_BLOOM_LEVELS] = {
+		binding = 2 + WGPU_BLOOM_LEVELS,
+		visibility = {.Fragment},
+		texture = {sampleType = .Float, viewDimension = ._2D},
 	}
 	renderer.composite_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
 		renderer.device,
@@ -192,6 +308,20 @@ wgpu_release_post_targets :: proc(renderer: ^WGPU_Renderer) {
 		wgpu.BindGroupRelease(renderer.composite_bind_group)
 		renderer.composite_bind_group = nil
 	}
+	for index in 0 ..< len(renderer.ambient_occlusion_bind_groups) {
+		if renderer.ambient_occlusion_bind_groups[index] != nil {
+			wgpu.BindGroupRelease(renderer.ambient_occlusion_bind_groups[index])
+			renderer.ambient_occlusion_bind_groups[index] = nil
+		}
+		if renderer.ambient_occlusion_views[index] != nil {
+			wgpu.TextureViewRelease(renderer.ambient_occlusion_views[index])
+			renderer.ambient_occlusion_views[index] = nil
+		}
+		if renderer.ambient_occlusion_textures[index] != nil {
+			wgpu.TextureRelease(renderer.ambient_occlusion_textures[index])
+			renderer.ambient_occlusion_textures[index] = nil
+		}
+	}
 	for index in 0 ..< WGPU_BLOOM_LEVELS {
 		if renderer.bloom_compute_bind_groups[index] != nil {
 			wgpu.BindGroupRelease(renderer.bloom_compute_bind_groups[index])
@@ -216,12 +346,34 @@ wgpu_release_post_targets :: proc(renderer: ^WGPU_Renderer) {
 	}
 	renderer.post_width = 0
 	renderer.post_height = 0
+	renderer.post_depth_view = nil
 }
 
 wgpu_release_post_process :: proc(renderer: ^WGPU_Renderer) {
 	wgpu_release_post_targets(renderer)
 	if renderer.post_sampler != nil {
 		wgpu.SamplerRelease(renderer.post_sampler)
+	}
+	if renderer.ambient_occlusion_uniform_buffer != nil {
+		wgpu.BufferRelease(renderer.ambient_occlusion_uniform_buffer)
+	}
+	if renderer.ambient_occlusion_pipeline != nil {
+		wgpu.ComputePipelineRelease(renderer.ambient_occlusion_pipeline)
+	}
+	if renderer.ambient_occlusion_blur_horizontal_pipeline != nil {
+		wgpu.ComputePipelineRelease(renderer.ambient_occlusion_blur_horizontal_pipeline)
+	}
+	if renderer.ambient_occlusion_blur_vertical_pipeline != nil {
+		wgpu.ComputePipelineRelease(renderer.ambient_occlusion_blur_vertical_pipeline)
+	}
+	if renderer.ambient_occlusion_pipeline_layout != nil {
+		wgpu.PipelineLayoutRelease(renderer.ambient_occlusion_pipeline_layout)
+	}
+	if renderer.ambient_occlusion_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.ambient_occlusion_bind_group_layout)
+	}
+	if renderer.ambient_occlusion_shader != nil {
+		wgpu.ShaderModuleRelease(renderer.ambient_occlusion_shader)
 	}
 	if renderer.composite_pipeline != nil {
 		wgpu.RenderPipelineRelease(renderer.composite_pipeline)
@@ -252,8 +404,15 @@ wgpu_release_post_process :: proc(renderer: ^WGPU_Renderer) {
 	}
 }
 
-wgpu_ensure_post_targets :: proc(renderer: ^WGPU_Renderer, width, height: u32) -> string {
-	if renderer.post_width == width && renderer.post_height == height && renderer.hdr_view != nil {
+wgpu_ensure_post_targets :: proc(
+	renderer: ^WGPU_Renderer,
+	width, height: u32,
+	depth_view: wgpu.TextureView,
+) -> string {
+	if renderer.post_width == width &&
+	   renderer.post_height == height &&
+	   renderer.post_depth_view == depth_view &&
+	   renderer.hdr_view != nil {
 		return ""
 	}
 	wgpu_release_post_targets(renderer)
@@ -275,6 +434,72 @@ wgpu_ensure_post_targets :: proc(renderer: ^WGPU_Renderer, width, height: u32) -
 	renderer.hdr_view = wgpu.TextureCreateView(renderer.hdr_texture)
 	if renderer.hdr_view == nil {
 		return "failed to create HDR scene texture view"
+	}
+
+	ambient_occlusion_width := max(u32(1), (width + 1) / 2)
+	ambient_occlusion_height := max(u32(1), (height + 1) / 2)
+	for index in 0 ..< len(renderer.ambient_occlusion_textures) {
+		texture := wgpu.DeviceCreateTexture(
+			renderer.device,
+			&wgpu.TextureDescriptor {
+				label = "Scrapbot Ambient Occlusion Texture",
+				usage = {.TextureBinding, .StorageBinding},
+				dimension = ._2D,
+				size = {
+					width = ambient_occlusion_width,
+					height = ambient_occlusion_height,
+					depthOrArrayLayers = 1,
+				},
+				format = .RGBA8Unorm,
+				mipLevelCount = 1,
+				sampleCount = 1,
+			},
+		)
+		if texture == nil {
+			return "failed to create ambient occlusion texture"
+		}
+		view := wgpu.TextureCreateView(texture)
+		if view == nil {
+			wgpu.TextureRelease(texture)
+			return "failed to create ambient occlusion texture view"
+		}
+		renderer.ambient_occlusion_textures[index] = texture
+		renderer.ambient_occlusion_views[index] = view
+	}
+	ambient_occlusion_sources := [?]wgpu.TextureView {
+		renderer.ambient_occlusion_views[2],
+		renderer.ambient_occlusion_views[0],
+		renderer.ambient_occlusion_views[1],
+	}
+	ambient_occlusion_destinations := [?]wgpu.TextureView {
+		renderer.ambient_occlusion_views[0],
+		renderer.ambient_occlusion_views[1],
+		renderer.ambient_occlusion_views[2],
+	}
+	for index in 0 ..< len(renderer.ambient_occlusion_bind_groups) {
+		entries := [?]wgpu.BindGroupEntry {
+			{binding = 0, textureView = depth_view},
+			{binding = 1, textureView = ambient_occlusion_sources[index]},
+			{binding = 2, textureView = ambient_occlusion_destinations[index]},
+			{
+				binding = 3,
+				buffer = renderer.ambient_occlusion_uniform_buffer,
+				offset = 0,
+				size = u64(size_of(WGPU_Ambient_Occlusion_Uniform)),
+			},
+		}
+		renderer.ambient_occlusion_bind_groups[index] = wgpu.DeviceCreateBindGroup(
+			renderer.device,
+			&wgpu.BindGroupDescriptor {
+				label = "Scrapbot Ambient Occlusion Bind Group",
+				layout = renderer.ambient_occlusion_bind_group_layout,
+				entryCount = uint(len(entries)),
+				entries = raw_data(entries[:]),
+			},
+		)
+		if renderer.ambient_occlusion_bind_groups[index] == nil {
+			return "failed to create ambient occlusion bind groups"
+		}
 	}
 
 	for index in 0 ..< WGPU_BLOOM_LEVELS {
@@ -324,7 +549,7 @@ wgpu_ensure_post_targets :: proc(renderer: ^WGPU_Renderer, width, height: u32) -
 			return "failed to create bloom bind groups"
 		}
 	}
-	composite_entries: [2 + WGPU_BLOOM_LEVELS]wgpu.BindGroupEntry
+	composite_entries: [3 + WGPU_BLOOM_LEVELS]wgpu.BindGroupEntry
 	composite_entries[0] = {
 		binding = 0,
 		textureView = renderer.hdr_view,
@@ -338,6 +563,10 @@ wgpu_ensure_post_targets :: proc(renderer: ^WGPU_Renderer, width, height: u32) -
 			binding = u32(index + 2),
 			textureView = renderer.bloom_views[index],
 		}
+	}
+	composite_entries[2 + WGPU_BLOOM_LEVELS] = {
+		binding = 2 + WGPU_BLOOM_LEVELS,
+		textureView = renderer.ambient_occlusion_views[2],
 	}
 	renderer.composite_bind_group = wgpu.DeviceCreateBindGroup(
 		renderer.device,
@@ -353,6 +582,7 @@ wgpu_ensure_post_targets :: proc(renderer: ^WGPU_Renderer, width, height: u32) -
 	}
 	renderer.post_width = width
 	renderer.post_height = height
+	renderer.post_depth_view = depth_view
 	return ""
 }
 
@@ -401,11 +631,74 @@ wgpu_encode_bloom_and_composite :: proc(
 	renderer: ^WGPU_Renderer,
 	encoder: wgpu.CommandEncoder,
 	output_view: wgpu.TextureView,
+	depth_view: wgpu.TextureView,
 	width, height: u32,
 ) -> string {
-	if err := wgpu_ensure_post_targets(renderer, width, height); err != "" {
+	if err := wgpu_ensure_post_targets(renderer, width, height, depth_view); err != "" {
 		return err
 	}
+	ambient_occlusion_width := max(u32(1), (width + 1) / 2)
+	ambient_occlusion_height := max(u32(1), (height + 1) / 2)
+	projection := renderer.gpu_cluster_uniform.projection
+	viewport := renderer.gpu_cluster_uniform.viewport
+	ambient_occlusion_uniform := WGPU_Ambient_Occlusion_Uniform {
+		projection = {projection[0], projection[5], projection[10], projection[14]},
+		viewport = viewport,
+		dimensions = {
+			f32(width),
+			f32(height),
+			f32(ambient_occlusion_width),
+			f32(ambient_occlusion_height),
+		},
+		parameters = {1.25, 0.035, 1.35, 1.15},
+	}
+	wgpu.QueueWriteBuffer(
+		renderer.queue,
+		renderer.ambient_occlusion_uniform_buffer,
+		0,
+		&ambient_occlusion_uniform,
+		size_of(ambient_occlusion_uniform),
+	)
+	ambient_occlusion_timestamps, ambient_occlusion_timestamps_enabled := wgpu_gpu_pass_timestamps(
+		renderer,
+		.Ambient_Occlusion,
+	)
+	ambient_occlusion_timestamps_ptr: ^wgpu.PassTimestampWrites
+	if ambient_occlusion_timestamps_enabled {
+		ambient_occlusion_timestamps_ptr = &ambient_occlusion_timestamps
+	}
+	ambient_occlusion_pass := wgpu.CommandEncoderBeginComputePass(
+		encoder,
+		&wgpu.ComputePassDescriptor {
+			label = "Scrapbot Ambient Occlusion Compute Pass",
+			timestampWrites = ambient_occlusion_timestamps_ptr,
+		},
+	)
+	if ambient_occlusion_pass == nil {
+		return "failed to begin ambient occlusion compute pass"
+	}
+	ambient_occlusion_pipelines := [?]wgpu.ComputePipeline {
+		renderer.ambient_occlusion_pipeline,
+		renderer.ambient_occlusion_blur_horizontal_pipeline,
+		renderer.ambient_occlusion_blur_vertical_pipeline,
+	}
+	for pipeline, index in ambient_occlusion_pipelines {
+		wgpu.ComputePassEncoderSetPipeline(ambient_occlusion_pass, pipeline)
+		wgpu.ComputePassEncoderSetBindGroup(
+			ambient_occlusion_pass,
+			0,
+			renderer.ambient_occlusion_bind_groups[index],
+		)
+		wgpu.ComputePassEncoderDispatchWorkgroups(
+			ambient_occlusion_pass,
+			(ambient_occlusion_width + 7) / 8,
+			(ambient_occlusion_height + 7) / 8,
+			1,
+		)
+	}
+	wgpu.ComputePassEncoderEnd(ambient_occlusion_pass)
+	wgpu.ComputePassEncoderRelease(ambient_occlusion_pass)
+
 	bloom_timestamps, bloom_timestamps_enabled := wgpu_gpu_pass_timestamps(renderer, .Bloom)
 	bloom_timestamps_ptr: ^wgpu.PassTimestampWrites
 	if bloom_timestamps_enabled {

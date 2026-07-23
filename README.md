@@ -141,7 +141,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] HDR rendering
   - [x] Imported image-based lighting with opt-in independently configured HDR backgrounds and per-camera exposure
   - [x] Authored ECS world environments with a renderer-native procedural haze sky
-  - [x] World-only FXAA, multi-scale bloom, and tone-mapping postprocessing
+  - [x] Depth-reconstructed ambient occlusion, world-only FXAA, multi-scale bloom, and tone-mapping postprocessing
   - [x] Compute camera and shadow frustum culling
   - [x] GPU-computed clustered point lighting
   - [x] Persistent GPU instances, visibility compaction, and indexed indirect drawing

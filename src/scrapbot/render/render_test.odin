@@ -1105,6 +1105,21 @@ test_wgpu_gpu_timing_marks_only_encoded_passes_for_the_sample :: proc(t: ^testin
 }
 
 @(test)
+test_wgpu_post_timing_includes_ambient_occlusion :: proc(t: ^testing.T) {
+	renderer: WGPU_Renderer
+	renderer.gpu_timestamp_valid = true
+	renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Ambient_Occlusion)] = 0.25
+	renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Bloom)] = 0.50
+	renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Composite)] = 0.75
+	stats: Render_Stats
+	wgpu_publish_gpu_timing(&renderer, &stats)
+	testing.expect_value(t, stats.gpu_ambient_occlusion_ms, 0.25)
+	testing.expect_value(t, stats.gpu_bloom_ms, 0.50)
+	testing.expect_value(t, stats.gpu_composite_ms, 0.75)
+	testing.expect_value(t, stats.gpu_post_ms, 1.50)
+}
+
+@(test)
 test_wgpu_gpu_shadow_timing_uses_distinct_queries_for_every_cascade :: proc(t: ^testing.T) {
 	renderer: WGPU_Renderer
 	renderer.gpu_timestamp_active_slot = 1
