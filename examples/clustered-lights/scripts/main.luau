@@ -24,9 +24,9 @@ local SculptureSpin = scrapbot.component("sculpture_spin", {
 local LightMarkerGeometry = scrapbot.geometry.sphere("cluster.marker", 0.11, 10, 6)
 local ArchitectureGeometry = scrapbot.geometry.cube("cluster.architecture", 1)
 local SculptureGeometry = scrapbot.geometry.icosphere("cluster.sculpture", 0.8, 1)
-local DarkMaterial = scrapbot.material.lit("cluster.dark", 0.075, 0.085, 0.13, 1)
-local MidMaterial = scrapbot.material.lit("cluster.mid", 0.16, 0.18, 0.25, 1)
-local SculptureMaterial = scrapbot.material.lit("cluster.sculpture", 0.27, 0.3, 0.4, 1)
+local DarkMaterial = scrapbot.material.lit("cluster.dark", 0.18, 0.2, 0.27, 1)
+local MidMaterial = scrapbot.material.lit("cluster.mid", 0.32, 0.35, 0.45, 1)
+local SculptureMaterial = scrapbot.material.lit("cluster.sculpture", 0.45, 0.48, 0.58, 1)
 
 local function hsv_to_rgb(hue: number, saturation: number, value: number)
 	local sector = math.floor(hue * 6)
@@ -53,7 +53,7 @@ for index = 1, 12 do
 		color.r,
 		color.g,
 		color.b,
-		5.5
+		3.8
 	)
 end
 
@@ -160,8 +160,8 @@ scrapbot.system({
 			local speed_scale = if inner_orbit then 1.7 else 1
 			local speed = direction * (0.12 + (ring % 4) * 0.018) * speed_scale
 			local phase = ring * 0.73 + light_index * 0.31
-			local base_intensity = 16 + (light_index % 4) * 2.2
-			local light_range = if inner_orbit then 4.6 else 5.2
+			local base_intensity = 21 + (light_index % 4) * 2.5
+			local light_range = if inner_orbit then 5.4 else 6.4
 			scrapbot.spawn({
 				name = string.format("Cluster Light %03d", ring * LIGHTS_PER_RING + light_index + 1),
 				components = {
