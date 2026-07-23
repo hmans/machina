@@ -52,7 +52,7 @@ mise test-gltf-gpu
 
 Use `examples/gltf-showcase` for persistent interactive or editor testing of a representative imported model. Its ignored `assets/DamagedHelmet.glb` placement is maintained by `mise setup-assets`; do not commit or redistribute it.
 
-Use the pinned Khronos Sponza bundle when a change needs a substantially larger external-file glTF graph, many generated materials/textures, model-root shadow inheritance, or a real architectural clustered-lighting workload:
+Use the pinned Khronos Sponza bundle and its separate CC0 Kloppenheim 01 Pure Sky HDRI when a change needs a substantially larger external-file glTF graph, many generated materials/textures, imported outdoor IBL, model-root shadow inheritance, or a real architectural clustered-lighting workload:
 
 ```sh
 mise test-sponza

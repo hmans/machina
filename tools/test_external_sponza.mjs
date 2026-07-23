@@ -11,7 +11,10 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const project = join(repositoryRoot, "examples/sponza");
 const modelSource = join(project, "assets/Sponza/Sponza.gltf");
-const environmentSource = join(project, "assets/studio_small_09_1k.hdr");
+const environmentSource = join(
+  project,
+  "assets/kloppenheim_01_puresky_1k.hdr",
+);
 const importedDirectory = join(project, ".scrapbot/imported");
 const framegrabArgument = process.argv.indexOf("--framegrab");
 const framegrab =
@@ -53,7 +56,7 @@ function runScrapbot(args) {
 function main() {
   if (!existsSync(modelSource) || !existsSync(environmentSource)) {
     throw new Error(
-      "Khronos Sponza or Studio Small 09 is not installed; run `mise setup-assets`",
+      "Khronos Sponza or Kloppenheim 01 Pure Sky is not installed; run `mise setup-assets`",
     );
   }
 

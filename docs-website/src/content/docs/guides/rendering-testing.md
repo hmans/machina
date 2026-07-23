@@ -38,6 +38,13 @@ Use `examples/clustered-lights` as the interactive clustered-lighting showcase. 
 mise scrapbot -- run examples/clustered-lights --editor
 ```
 
+Use `examples/sponza` for the heavyweight real-world importer and architectural-rendering workload. `mise setup-assets` installs the pinned Khronos model plus Poly Haven's CC0 Kloppenheim 01 Pure Sky HDRI into ignored development state. The neutral outdoor probe avoids reflecting studio walls and softboxes across Sponza's glossy materials:
+
+```sh
+mise setup-assets
+mise scrapbot -- run examples/sponza --editor
+```
+
 ```sh
 scrapbot run examples/ui-showcase --backend wgpu --headless --frames 2 --framegrab /tmp/scrapbot-ui.png
 ```

@@ -27,7 +27,7 @@ mise setup-assets
 mise scrapbot run examples/gltf-showcase --editor
 ```
 
-Stress the external-file glTF importer and GPU renderer with the full Khronos Sponza atrium, 25 generated materials, shadows, environment lighting, and clustered point lights:
+Stress the external-file glTF importer and GPU renderer with the full Khronos Sponza atrium, 25 generated materials, shadows, a pinned CC0 pure-sky environment, and clustered point lights:
 
 ```sh
 mise setup-assets

@@ -23,6 +23,14 @@ The ordinary test suite must remain independent of external downloads. Tests tha
 - Purpose: deterministic HDR environment import and image-based-lighting development
 - Licensing: CC0
 
+## Poly Haven Kloppenheim 01 Pure Sky
+
+- Local path: `downloads/hdr/kloppenheim_01_puresky_1k.hdr`
+- Upstream: [Poly Haven](https://polyhaven.com/a/kloppenheim_01_puresky)
+- Authors: Greg Zaal and Jarod Guest
+- Purpose: neutral low-contrast outdoor image-based lighting for the Sponza architectural workload
+- Licensing: CC0
+
 ## Khronos Sponza
 
 - Local path: `downloads/gltf/Sponza/`
@@ -35,6 +43,6 @@ Sponza is a manifest bundle: every file has an individual byte count and SHA-256
 
 Run `mise test-gltf` to validate the real-world import product, or `mise test-gltf-gpu` to import it and produce a bounded headless WGPU framegrab in the platform temporary directory.
 
-`mise setup-assets` also copies the verified helmet and studio HDRI into the ignored `examples/gltf-showcase/assets/` directory. Run `mise scrapbot run examples/gltf-showcase --editor` for the persistent interactive showcase.
+`mise setup-assets` also copies the verified helmet and studio HDRI into the ignored `examples/gltf-showcase/assets/` directory, and the pure-sky HDRI into `examples/sponza/assets/`. Run `mise scrapbot run examples/gltf-showcase --editor` for the persistent interactive showcase.
 
 Run `mise test-sponza` for the explicit heavyweight import contract, or `mise test-sponza-gpu` to import it and capture a bounded WGPU frame. Launch the persistent example with `mise scrapbot run examples/sponza --editor`.

@@ -22,8 +22,19 @@
       "source": "https://polyhaven.com/a/studio_small_09",
       "license": "CC0",
       "placements": [
-        "examples/gltf-showcase/assets/studio_small_09_1k.hdr",
-        "examples/sponza/assets/studio_small_09_1k.hdr"
+        "examples/gltf-showcase/assets/studio_small_09_1k.hdr"
+      ]
+    },
+    {
+      "id": "poly-haven-kloppenheim-01-puresky",
+      "path": "hdr/kloppenheim_01_puresky_1k.hdr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloppenheim_01_puresky_1k.hdr",
+      "bytes": 861984,
+      "sha256": "2d9eb00b9b359402366baad8e150e80717cee55367c93386c0f8dd3b0d4c8448",
+      "source": "https://polyhaven.com/a/kloppenheim_01_puresky",
+      "license": "CC0",
+      "placements": [
+        "examples/sponza/assets/kloppenheim_01_puresky_1k.hdr"
       ]
     },
     {
