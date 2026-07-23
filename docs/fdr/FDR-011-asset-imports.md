@@ -10,7 +10,7 @@ Asset imports turn artist-authored texture, model, and HDR environment files und
 ## Behavior
 
 - Texture resources import PNG sources with explicit color-space and mip-generation settings.
-- Environment resources import 2:1 Radiance `.hdr` sources. The importer preserves a source-resolution linear RGBA16F panorama for an opt-in background and builds separate diffuse irradiance and roughness-prefiltered specular cubes; ordinary frames never decode or reconvolve the source panorama.
+- Environment resources import 2:1 Radiance `.hdr` sources. The importer preserves a source-resolution linear RGBA16F panorama for an opt-in background and builds separate diffuse irradiance and roughness-prefiltered specular cubes. Panorama lookup is bilinear and seam-wrapped, while deterministic 256-sample GGX integration suppresses structured reflection noise; ordinary frames never decode or reconvolve the source panorama.
 - Material resources reference reusable Texture resources by UUID rather than embedding source paths.
 - Model resources import the selected glTF 2.0 `.gltf` or `.glb` scene and only its reachable nodes, meshes, materials, and images. Supported data includes triangle geometry, TRS node transforms, metallic-roughness material factors, normal and occlusion strengths, emissive factors, opaque and alpha-cutout materials, double-sided surfaces, and base-color, metallic-roughness, normal, occlusion, and emissive images. Images may be embedded in GLB buffer views, encoded as base64 data URIs, or stored at safe relative paths beside the model.
 - Imported images become owned mipmapped texture payloads on the Model's generated Material resources. Each texture slot preserves its glTF minification, magnification, mip, and U/V wrap policy. The WGPU material path renders them with GGX direct lighting, tangent-free derivative normal mapping, ambient diffuse/specular response, HDR emission, bloom, and tone mapping.
@@ -84,9 +84,9 @@ Model-root shadow markers are copied onto derived primitive entities during the 
 
 ### 9. Precompute image-based lighting during import
 
-**Decision:** Convert HDR equirectangular sources into a source-resolution linear panorama plus fixed renderer-ready diffuse and specular cube-map products in the importer. Configure image-based lighting separately from the optional visible background and allow the background to use another Environment.
+**Decision:** Convert HDR equirectangular sources into a source-resolution linear panorama plus fixed renderer-ready diffuse and specular cube-map products in the importer. Use bilinear seam-wrapped panorama sampling and deterministic 256-sample GGX integration for specular prefiltering. Configure image-based lighting separately from the optional visible background and allow the background to use another Environment.
 **Why:** Source decoding and convolution are asset work, not frame work. A standalone UUID resource can be reimported and cached independently of scenes while the renderer updates only when its handle, version, or global environment revision changes.
-**Tradeoff:** The first product uses fixed cube sizes and CPU preprocessing, supports only Radiance HDR input, and retains the source-resolution panorama alongside both cubes. Background blur reuses the prefiltered cube rather than a panorama mip chain. Local reflection probes remain future work.
+**Tradeoff:** The product uses fixed cube sizes and higher-quality CPU preprocessing, supports only Radiance HDR input, and retains the source-resolution panorama alongside both cubes. The denser prefilter makes a stale import more expensive to rebuild, but remains cached and never becomes frame work. Background blur reuses the prefiltered cube rather than a panorama mip chain. Local reflection probes remain future work.
 
 ### 10. Treat cutouts and transparency as different render classes
 

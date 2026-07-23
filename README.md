@@ -158,7 +158,7 @@ Run the full local test suite with `mise test`; it includes a 2,000-frame lifecy
   - [x] Selected-scene glTF closure imports with semantic reimport identity and authored texture samplers
   - [x] PNG texture assets
   - [x] UUID-backed texture and model resources
-  - [x] UUID-backed Radiance HDR environments with source-resolution skies and importer-built diffuse/specular cubes
+  - [x] UUID-backed Radiance HDR environments with source-resolution skies and high-quality importer-built diffuse/specular cubes
   - [x] Targeted live Reimport, import diagnostics, texture thumbnails, and stale model-product retirement
   - [x] UUID-backed material resources
   - [x] UUID-backed generated geometry LOD resources

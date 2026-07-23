@@ -11,7 +11,7 @@ import "core:path/filepath"
 import "core:strings"
 import stb "vendor:stb/image"
 
-ENVIRONMENT_IMPORTER_SCHEMA :: "scrapbot.environment.v3.rgba16f-sky-ibl"
+ENVIRONMENT_IMPORTER_SCHEMA :: "scrapbot.environment.v4.bilinear-ggx256"
 ENVIRONMENT_IRRADIANCE_SIZE :: 32
 ENVIRONMENT_SPECULAR_SIZE :: 128
 ENVIRONMENT_SPECULAR_MIP_COUNT :: 8
@@ -286,7 +286,7 @@ environment_specular_sample :: proc(
 	tangent, bitangent := environment_basis(normal)
 	color: [3]f32
 	weight := f32(0)
-	SAMPLE_COUNT :: 48
+	SAMPLE_COUNT :: 256
 	for index in 0 ..< SAMPLE_COUNT {
 		xi := environment_hammersley(index, SAMPLE_COUNT)
 		a := roughness * roughness
@@ -315,17 +315,38 @@ environment_sample_equirect :: proc(
 ) -> [3]f32 {
 	u := math.atan2(direction[2], direction[0]) / (2 * f32(math.PI)) + 0.5
 	v := math.asin(clamp(direction[1], f32(-1), f32(1))) / f32(math.PI) + 0.5
-	x := clamp(int(u * f32(width)), 0, width - 1)
-	y := clamp(int((1 - v) * f32(height)), 0, height - 1)
-	index := (y * width + x) * 4
+	source_x := u * f32(width) - 0.5
+	source_y := (1 - v) * f32(height) - 0.5
+	x_floor := int(math.floor(source_x))
+	y_floor := int(math.floor(source_y))
+	x0 := x_floor % width
+	if x0 < 0 {
+		x0 += width
+	}
+	x1 := (x0 + 1) % width
+	y0 := clamp(y_floor, 0, height - 1)
+	y1 := clamp(y_floor + 1, 0, height - 1)
+	blend_x := source_x - f32(x_floor)
+	blend_y := source_y - f32(y_floor)
 	result: [3]f32
 	for channel in 0 ..< 3 {
-		value := source[index + channel]
-		if !math.is_nan(value) && !math.is_inf(value) {
-			result[channel] = clamp(value, f32(0), f32(65504))
-		}
+		top_left := environment_source_channel(source, width, x0, y0, channel)
+		top_right := environment_source_channel(source, width, x1, y0, channel)
+		bottom_left := environment_source_channel(source, width, x0, y1, channel)
+		bottom_right := environment_source_channel(source, width, x1, y1, channel)
+		top := top_left + (top_right - top_left) * blend_x
+		bottom := bottom_left + (bottom_right - bottom_left) * blend_x
+		result[channel] = top + (bottom - top) * blend_y
 	}
 	return result
+}
+
+environment_source_channel :: proc(source: []f32, width, x, y, channel: int) -> f32 {
+	value := source[(y * width + x) * 4 + channel]
+	if math.is_nan(value) || math.is_inf(value) {
+		return 0
+	}
+	return clamp(value, f32(0), f32(65504))
 }
 
 environment_basis :: proc(normal: [3]f32) -> (tangent, bitangent: [3]f32) {
