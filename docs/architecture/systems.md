@@ -117,7 +117,7 @@ These are the engine-owned rows published to the editor's Systems panel. They ar
 - **Inputs:** HDR world target, bloom configuration/resources, viewport and presentation format.
 - **Outputs:** Composited scene color in the presentation target.
 - **Stable-frame behavior:** Reuses postprocess pipelines/bind groups at stable size; resize or configuration changes explicitly recreate affected resources.
-- **Boundary:** WGPU compute/render encoding for bloom and composite.
+- **Boundary:** WGPU compute/render encoding for contrast-adaptive world FXAA, bloom, tone mapping, and composite. UI is excluded and remains crisp.
 - **Source/tests:** `render/wgpu_post.odin`, `render/wgpu_shader.odin`; WGPU smoke/framegrab tests.
 
 ### `scrapbot.render.ui`

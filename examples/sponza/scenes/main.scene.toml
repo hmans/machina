@@ -86,6 +86,13 @@ color = [1, 0.28, 0.08]
 intensity = 28
 range = 5.5
 
+[entities.components.light_motion]
+origin = [-8, 2.8, -3.6]
+amplitude = [0.45, 0.2, 0.35]
+phase = 0
+speed = 0.55
+base_intensity = 28
+
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000011"
 name = "Warm Arcade Light 2"
@@ -99,6 +106,13 @@ scale = [1, 1, 1]
 color = [1, 0.38, 0.1]
 intensity = 28
 range = 5.5
+
+[entities.components.light_motion]
+origin = [-2, 2.8, -3.6]
+amplitude = [0.45, 0.2, 0.35]
+phase = 1.25
+speed = 0.55
+base_intensity = 28
 
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000012"
@@ -114,6 +128,13 @@ color = [1, 0.28, 0.08]
 intensity = 28
 range = 5.5
 
+[entities.components.light_motion]
+origin = [4, 2.8, -3.6]
+amplitude = [0.45, 0.2, 0.35]
+phase = 2.5
+speed = 0.55
+base_intensity = 28
+
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000013"
 name = "Cool Arcade Light 1"
@@ -127,6 +148,13 @@ scale = [1, 1, 1]
 color = [0.08, 0.32, 1]
 intensity = 24
 range = 5.5
+
+[entities.components.light_motion]
+origin = [-8, 2.8, 3.6]
+amplitude = [0.45, 0.2, 0.35]
+phase = 3.14
+speed = -0.48
+base_intensity = 24
 
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000014"
@@ -142,6 +170,13 @@ color = [0.08, 0.48, 1]
 intensity = 24
 range = 5.5
 
+[entities.components.light_motion]
+origin = [-2, 2.8, 3.6]
+amplitude = [0.45, 0.2, 0.35]
+phase = 4.39
+speed = -0.48
+base_intensity = 24
+
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000015"
 name = "Cool Arcade Light 3"
@@ -155,6 +190,13 @@ scale = [1, 1, 1]
 color = [0.08, 0.32, 1]
 intensity = 24
 range = 5.5
+
+[entities.components.light_motion]
+origin = [4, 2.8, 3.6]
+amplitude = [0.45, 0.2, 0.35]
+phase = 5.64
+speed = -0.48
+base_intensity = 24
 
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000016"
@@ -170,6 +212,13 @@ color = [1, 0.38, 0.1]
 intensity = 28
 range = 5.5
 
+[entities.components.light_motion]
+origin = [10, 2.8, -3.6]
+amplitude = [0.45, 0.2, 0.35]
+phase = 3.75
+speed = 0.55
+base_intensity = 28
+
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000017"
 name = "Cool Arcade Light 4"
@@ -183,6 +232,13 @@ scale = [1, 1, 1]
 color = [0.08, 0.48, 1]
 intensity = 24
 range = 5.5
+
+[entities.components.light_motion]
+origin = [10, 2.8, 3.6]
+amplitude = [0.45, 0.2, 0.35]
+phase = 6.89
+speed = -0.48
+base_intensity = 24
 
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000018"
@@ -198,6 +254,13 @@ color = [1, 0.72, 0.32]
 intensity = 42
 range = 7
 
+[entities.components.light_motion]
+origin = [-6, 5.8, 0]
+amplitude = [0.65, 0.3, 0.8]
+phase = 0.6
+speed = 0.38
+base_intensity = 42
+
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000019"
 name = "Central Lantern 2"
@@ -212,6 +275,13 @@ color = [1, 0.62, 0.24]
 intensity = 42
 range = 7
 
+[entities.components.light_motion]
+origin = [0, 5.8, 0]
+amplitude = [0.65, 0.3, 0.8]
+phase = 2.7
+speed = 0.38
+base_intensity = 42
+
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000020"
 name = "Central Lantern 3"
@@ -225,3 +295,10 @@ scale = [1, 1, 1]
 color = [1, 0.72, 0.32]
 intensity = 42
 range = 7
+
+[entities.components.light_motion]
+origin = [6, 5.8, 0]
+amplitude = [0.65, 0.3, 0.8]
+phase = 4.8
+speed = 0.38
+base_intensity = 42

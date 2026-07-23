@@ -370,6 +370,104 @@ fn aces(color: vec3<f32>) -> vec3<f32> {
 	);
 }
 
+fn display_luma(color: vec3<f32>) -> f32 {
+	let mapped = aces(color);
+	return dot(mapped, vec3<f32>(0.299, 0.587, 0.114));
+}
+
+fn fxaa_hdr(uv: vec2<f32>) -> vec3<f32> {
+	let texel = 1.0 / vec2<f32>(textureDimensions(hdr_texture));
+	let center = textureSample(hdr_texture, linear_sampler, uv).rgb;
+	let northwest = textureSample(
+		hdr_texture,
+		linear_sampler,
+		uv + vec2<f32>(-texel.x, -texel.y),
+	).rgb;
+	let northeast = textureSample(
+		hdr_texture,
+		linear_sampler,
+		uv + vec2<f32>(texel.x, -texel.y),
+	).rgb;
+	let southwest = textureSample(
+		hdr_texture,
+		linear_sampler,
+		uv + vec2<f32>(-texel.x, texel.y),
+	).rgb;
+	let southeast = textureSample(
+		hdr_texture,
+		linear_sampler,
+		uv + vec2<f32>(texel.x, texel.y),
+	).rgb;
+	let luma_center = display_luma(center);
+	let luma_northwest = display_luma(northwest);
+	let luma_northeast = display_luma(northeast);
+	let luma_southwest = display_luma(southwest);
+	let luma_southeast = display_luma(southeast);
+	let luma_min = min(
+		luma_center,
+		min(
+			min(luma_northwest, luma_northeast),
+			min(luma_southwest, luma_southeast),
+		),
+	);
+	let luma_max = max(
+		luma_center,
+		max(
+			max(luma_northwest, luma_northeast),
+			max(luma_southwest, luma_southeast),
+		),
+	);
+	let contrast = luma_max - luma_min;
+	if contrast < max(0.0312, luma_max * 0.125) {
+		return center;
+	}
+	var direction = vec2<f32>(
+		-(luma_northwest + luma_northeast - luma_southwest - luma_southeast),
+		luma_northwest + luma_southwest - luma_northeast - luma_southeast,
+	);
+	let direction_reduce = max(
+		(luma_northwest + luma_northeast + luma_southwest + luma_southeast) *
+			0.03125,
+		0.0078125,
+	);
+	let reciprocal_minimum =
+		1.0 / (min(abs(direction.x), abs(direction.y)) + direction_reduce);
+	direction = clamp(
+		direction * reciprocal_minimum,
+		vec2<f32>(-8.0),
+		vec2<f32>(8.0),
+	) * texel;
+	let first = textureSample(
+		hdr_texture,
+		linear_sampler,
+		uv + direction * (1.0 / 3.0 - 0.5),
+	).rgb;
+	let second = textureSample(
+		hdr_texture,
+		linear_sampler,
+		uv + direction * (2.0 / 3.0 - 0.5),
+	).rgb;
+	let narrow = (first + second) * 0.5;
+	let wide = narrow * 0.5 +
+		(
+			textureSample(
+				hdr_texture,
+				linear_sampler,
+				uv + direction * -0.5,
+			).rgb +
+			textureSample(
+				hdr_texture,
+				linear_sampler,
+				uv + direction * 0.5,
+			).rgb
+		) * 0.25;
+	let wide_luma = display_luma(wide);
+	if wide_luma < luma_min || wide_luma > luma_max {
+		return narrow;
+	}
+	return wide;
+}
+
 @fragment
 fn composite_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
 	var bloom = textureSample(bloom_0, linear_sampler, input.uv).rgb * 0.34;
@@ -377,7 +475,7 @@ fn composite_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
 	bloom += textureSample(bloom_2, linear_sampler, input.uv).rgb * 0.20;
 	bloom += textureSample(bloom_3, linear_sampler, input.uv).rgb * 0.13;
 	bloom += textureSample(bloom_4, linear_sampler, input.uv).rgb * 0.07;
-	let hdr = textureSample(hdr_texture, linear_sampler, input.uv).rgb + bloom * 0.8;
+	let hdr = fxaa_hdr(input.uv) + bloom * 0.8;
 	return vec4<f32>(aces(hdr), 1.0);
 }
 `
