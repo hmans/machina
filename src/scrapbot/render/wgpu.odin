@@ -109,8 +109,9 @@ WGPU_GPU_Render_Uniform :: struct {
 	light_counts: [4]u32,
 	camera_position: [4]f32,
 	shadow_cascade_splits: [4]f32,
+	shadow_cascade_texel_sizes: [4]f32,
 }
-#assert(size_of(WGPU_GPU_Render_Uniform) == 576)
+#assert(size_of(WGPU_GPU_Render_Uniform) == 592)
 
 WGPU_GPU_Point_Light :: struct {
 	position_range: [4]f32,

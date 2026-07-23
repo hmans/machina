@@ -118,6 +118,7 @@ struct Render_Uniform {
 	light_counts: vec4<u32>,
 	camera_position: vec4<f32>,
 	shadow_cascade_splits: vec4<f32>,
+	shadow_cascade_texel_sizes: vec4<f32>,
 };
 
 struct Point_Light {
@@ -357,9 +358,19 @@ fn shadow_cascade_index(view_depth: f32) -> u32 {
 	return 3u;
 }
 
-fn directional_shadow(world_position: vec3<f32>, view_depth: f32) -> f32 {
+fn directional_shadow(
+	world_position: vec3<f32>,
+	world_normal: vec3<f32>,
+	view_depth: f32,
+) -> f32 {
 	let cascade_index = shadow_cascade_index(view_depth);
-	let shadow_position = render.shadow_view_projections[cascade_index] * vec4<f32>(world_position, 1.0);
+	let light = -normalize(render.directional_direction_intensity[0].xyz);
+	let normal_light = clamp(dot(world_normal, light), 0.0, 1.0);
+	let normal_bias = render.shadow_cascade_texel_sizes[cascade_index] *
+		mix(1.5, 0.25, normal_light);
+	let biased_position = world_position + world_normal * normal_bias;
+	let shadow_position = render.shadow_view_projections[cascade_index] *
+		vec4<f32>(biased_position, 1.0);
 	if (shadow_position.w <= 0.0) {
 		return 1.0;
 	}
@@ -378,7 +389,7 @@ fn directional_shadow(world_position: vec3<f32>, view_depth: f32) -> f32 {
 				shadow_sampler,
 				uv + vec2<f32>(f32(x), f32(y)) * texel,
 				i32(cascade_index),
-				projected.z - 0.0015,
+				projected.z - 0.00035,
 			);
 		}
 	}
@@ -433,7 +444,10 @@ fn fs_main(
 	var color = vec3<f32>(0.0);
 	var shadow = 1.0;
 	if (input.shadow_receiver > 0.5 && render.light_counts.x > 0u) {
-		shadow = directional_shadow(input.world_position, input.view_depth);
+		let shadow_normal = normalize(
+			select(input.world_normal, -input.world_normal, !front_facing),
+		);
+		shadow = directional_shadow(input.world_position, shadow_normal, input.view_depth);
 	}
 	for (var i: u32 = 0u; i < render.light_counts.x; i = i + 1u) {
 		let directional = render.directional_direction_intensity[i];

@@ -106,7 +106,7 @@ Shadow participation is explicit and independent:
 [entities.shadow_receiver]
 ```
 
-`shadow_caster` makes an entity contribute to the first directional light's shadow cascades. `shadow_receiver` makes it sample the selected cascade while evaluating directional light. An entity may have either marker, both, or neither. WGPU uses four 2048×2048 layers, practical logarithmic/uniform camera-depth splits out to 80 world units, texel-stabilized light projections, per-cascade GPU caster culling, and 3×3 PCF. Point-light shadows, multiple shadowed directional lights, cascade blending, and configurable quality are not yet provided.
+`shadow_caster` makes an entity contribute to the first directional light's shadow cascades. `shadow_receiver` makes it sample the selected cascade while evaluating directional light. An entity may have either marker, both, or neither. WGPU uses four 2048×2048 layers, practical logarithmic/uniform camera-depth splits out to 80 world units, texel-stabilized light projections, per-cascade GPU caster culling, slope-scaled caster depth bias, cascade-texel-scaled receiver-normal offset, and 3×3 PCF. Point-light shadows, multiple shadowed directional lights, cascade blending, and configurable quality are not yet provided.
 
 ## Null renderer
 

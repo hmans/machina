@@ -113,6 +113,8 @@ wgpu_create_gpu_shadow_pipeline :: proc(
 			format = .Depth32Float,
 			depthWriteEnabled = .True,
 			depthCompare = .Less,
+			depthBias = 2,
+			depthBiasSlopeScale = 2,
 		},
 		multisample = {count = 1, mask = 0xFFFF_FFFF},
 	}
@@ -1937,6 +1939,7 @@ wgpu_prepare_gpu_draw_batches :: proc(
 	uniform.view = view
 	uniform.shadow_view_projections = shadow_cascades.matrices
 	uniform.shadow_cascade_splits = shadow_cascades.splits
+	uniform.shadow_cascade_texel_sizes = shadow_cascades.texel_sizes
 	camera_position := Vec3{0, 2, 6}
 	if render_list.has_camera {
 		camera_position = render_list.camera.transform.position

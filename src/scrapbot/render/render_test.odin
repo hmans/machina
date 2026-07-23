@@ -797,11 +797,15 @@ test_directional_shadow_cascades_cover_camera_depth_monotonically :: proc(t: ^te
 	for split, index in cascades.splits {
 		testing.expect(t, split > previous)
 		testing.expect(t, split <= WGPU_SHADOW_MAX_DISTANCE)
+		testing.expect(t, cascades.texel_sizes[index] > 0)
 		testing.expect(t, cascades.matrices[index] != mat4_identity())
 		for value in cascades.matrices[index] {
 			testing.expect(t, value == value)
 		}
 		previous = split
+	}
+	for index in 1 ..< WGPU_SHADOW_CASCADE_COUNT {
+		testing.expect(t, cascades.texel_sizes[index] >= cascades.texel_sizes[index - 1])
 	}
 	testing.expect_value(
 		t,

@@ -9,6 +9,7 @@ F32x4 :: #simd[4]f32
 WGPU_Shadow_Cascades :: struct {
 	matrices: [WGPU_SHADOW_CASCADE_COUNT]Mat4,
 	splits: [WGPU_SHADOW_CASCADE_COUNT]f32,
+	texel_sizes: [WGPU_SHADOW_CASCADE_COUNT]f32,
 }
 
 f32x4_from_array :: proc "contextless" (value: [4]f32) -> F32x4 {
@@ -343,6 +344,7 @@ wgpu_build_directional_shadow_cascades :: proc(
 		}
 		radius = max(math.ceil(radius * 16) / 16, 0.25)
 		texel_size := 2 * radius / f32(WGPU_SHADOW_MAP_SIZE)
+		result.texel_sizes[cascade_index] = texel_size
 		right_coordinate := vec3_dot(center, light_right)
 		up_coordinate := vec3_dot(center, light_up)
 		snapped_right := math.floor(right_coordinate / texel_size + 0.5) * texel_size
