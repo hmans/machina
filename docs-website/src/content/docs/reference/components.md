@@ -161,7 +161,7 @@ The authored entity is the model root. Resource initialization and reload reconc
 | --- | --- | --- |
 | `scrapbot.ambient_light` | `color: Vec3`, `intensity: number` | Adds a scene-wide ambient contribution; no Transform required. |
 | `scrapbot.directional_light` | `direction: Vec3`, `color: Vec3`, `intensity: number` | Adds directional lighting; no Transform required. The first directional light owns the current four-cascade shadow set. |
-| `scrapbot.point_light` | `color: Vec3`, `intensity: number`, `range: number` | Reads world position from a Transform on the same entity. Range and intensity are non-negative in editor authoring. |
+| `scrapbot.point_light` | `color: Vec3`, `intensity: number`, `range: number` | Reads world position from a Transform on the same entity. Range and intensity are non-negative. Luau deferred spawn accepts a validated initial payload when the system declares Point Light write access. |
 | `scrapbot.shadow_caster` | No fields | Marks renderable geometry as a directional-shadow caster. |
 | `scrapbot.shadow_receiver` | No fields | Marks renderable geometry as a directional-shadow receiver. |
 

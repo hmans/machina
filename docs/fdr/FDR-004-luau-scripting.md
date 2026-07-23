@@ -53,7 +53,7 @@ Luau scripting lets project directories include fast-iteration game code without
 - Scripts can read and write entity rotation through `scrapbot.get_rotation(entity)` and `scrapbot.set_rotation(entity, rotation)`, but query-driven systems should prefer direct `scrapbot.transform` payload mutation.
 - Script entity handles include an entity index, generation, and optional name. APIs reject stale handles whose generation no longer matches the world.
 - Scripts can queue entity lifecycle changes with `scrapbot.spawn({ name = "..." })` and `scrapbot.despawn(entity)`.
-- Spawn options may include initial `scrapbot.transform` data and schema-backed project or library component payloads.
+- Spawn options may include initial Transform, Geometry, Material, Point Light, shadow-marker, public UI, and schema-backed project or library component payloads. Point Light payloads validate color, intensity, and range before entering the deferred command buffer.
 - Scripts can queue component lifecycle changes with `scrapbot.add_component(entity, component, payload)` and `scrapbot.remove_component(entity, component)`.
 - Spawn, despawn, add-component, and remove-component requests are deferred until after all scheduled systems have run for the frame.
 - Scene files can attach schema-backed scalar and vector component data with `[entities.components.<name>]` sections. Colors are stored as four finite RGBA numbers but retain a distinct schema type for specialized tooling.
@@ -125,7 +125,7 @@ Registered component definitions also receive runtime-local component IDs. Luau 
 
 **Decision:** Add `scrapbot.spawn`, `scrapbot.despawn`, `scrapbot.add_component`, and `scrapbot.remove_component` as deferred Luau APIs instead of mutating the world immediately.
 **Why:** Project systems need a basic way to create and remove gameplay state, but immediate structural mutation would make queries and future parallel scheduling much harder to reason about.
-**Tradeoff:** Lifecycle changes are visible after the current frame step. Runtime component mutation currently supports `scrapbot.transform` and schema-backed project or library vec3 components, not arbitrary engine storage.
+**Tradeoff:** Lifecycle changes are visible after the current frame step. Deferred spawn supports the engine payloads listed above, including Point Light, but add/remove and query writeback still do not support arbitrary engine storage.
 
 ### 10. Include generations in Luau entity handles
 

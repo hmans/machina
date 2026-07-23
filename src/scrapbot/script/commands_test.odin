@@ -296,6 +296,102 @@ end)
 }
 
 @(test)
+test_luau_spawn_can_include_a_point_light :: proc(t: ^testing.T) {
+	world: ecs.World
+	defer ecs.destroy_world(&world)
+
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(
+		&runtime,
+		`
+local spawned = false
+scrapbot.system({
+	name = "spawn_light",
+	writes = { scrapbot.transform, scrapbot.point_light },
+}, function()
+	if spawned then return end
+	spawned = true
+	scrapbot.spawn({
+		name = "Runtime Point Light",
+		components = {
+			["scrapbot.transform"] = {
+				position = { x = 2, y = 3, z = 4 },
+				scale = { x = 1, y = 1, z = 1 },
+			},
+			["scrapbot.point_light"] = {
+				color = { x = 0.25, y = 0.5, z = 1 },
+				intensity = 12,
+				range = 7,
+			},
+		},
+	})
+end)
+`,
+		"=point-light-spawn-test",
+		&world,
+	)
+	testing.expectf(t, result.err == "", "script failed: %s", result.err)
+
+	step_err := step_runtime(&runtime, &world, 1.0 / 60.0)
+	testing.expectf(t, step_err == "", "point-light system failed: %s", step_err)
+	testing.expect_value(t, ecs.alive_entity_count(&world), 1)
+	entity := world.entities[0]
+	testing.expect(t, entity.transform_index >= 0)
+	testing.expect(t, entity.point_light_index >= 0)
+	light := world.point_lights[entity.point_light_index]
+	testing.expect_value(t, light.color, shared.Vec3{0.25, 0.5, 1})
+	testing.expect_value(t, light.intensity, f32(12))
+	testing.expect_value(t, light.range, f32(7))
+	resource_registry: resources.Registry
+	resources.init_registry(&resource_registry)
+	defer resources.destroy_registry(&resource_registry)
+	ecs.reconcile_render_instances(&world, &resource_registry)
+	testing.expect_value(t, len(world.render_active_point_light_entities), 1)
+	testing.expect_value(t, world.render_active_point_light_entities[0], 0)
+
+	first_light_slot := entity.point_light_index
+	ecs.despawn_entity(&world, 0, entity.id.generation)
+	result = run_source(
+		&runtime,
+		`
+local spawned = false
+scrapbot.system({
+	name = "respawn_light",
+	writes = { scrapbot.transform, scrapbot.point_light },
+}, function()
+	if spawned then return end
+	spawned = true
+	scrapbot.spawn({
+		name = "Replacement Point Light",
+		components = {
+			["scrapbot.transform"] = {
+				position = { x = 5, y = 6, z = 7 },
+				scale = { x = 1, y = 1, z = 1 },
+			},
+			["scrapbot.point_light"] = {
+				color = { x = 1, y = 0.25, z = 0.1 },
+				intensity = 9,
+				range = 5,
+			},
+		},
+	})
+end)
+`,
+		"=point-light-respawn-test",
+		&world,
+	)
+	testing.expectf(t, result.err == "", "replacement script failed: %s", result.err)
+	testing.expectf(
+		t,
+		step_runtime(&runtime, &world, 1.0 / 60.0) == "",
+		"replacement point-light system failed",
+	)
+	testing.expect_value(t, len(world.point_lights), 1)
+	testing.expect_value(t, world.entities[0].point_light_index, first_light_slot)
+}
+
+@(test)
 test_luau_add_component_is_deferred_until_after_system_step :: proc(t: ^testing.T) {
 	scene, parse_result := project.parse_scene(
 		`[[entities]]

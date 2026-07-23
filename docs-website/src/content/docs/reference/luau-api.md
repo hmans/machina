@@ -179,3 +179,5 @@ Query-driven transform payload mutation is preferred for new systems.
 | `scrapbot.remove_component(entity, component)` | Queue component removal. |
 
 Lifecycle commands apply after the scheduled frame step.
+
+`scrapbot.spawn` accepts initial Transform, Geometry, Material, Point Light, shadow-marker, public UI, and schema-backed project/library component payloads when the current system declares matching writes. Point Light payloads require an RGB `color` with channels from `0` to `1`, plus non-negative finite `intensity` and `range` values. The spawned light joins retained render-light membership after deferred commands flush; moving its Transform subsequently dirties only that light's compact render input.

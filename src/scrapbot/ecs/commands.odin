@@ -112,6 +112,8 @@ Spawn_Command :: struct {
 	geometry: Geometry_Handle,
 	has_material: bool,
 	material: Material_Handle,
+	has_point_light: bool,
+	point_light: shared.Point_Light_Component,
 	has_shadow_caster: bool,
 	has_shadow_receiver: bool,
 	custom_components: [MAX_COMMAND_COMPONENTS]Command_Component,
@@ -186,6 +188,8 @@ Queued_Spawn_Command :: struct {
 	geometry: Geometry_Handle,
 	has_material: bool,
 	material: Material_Handle,
+	has_point_light: bool,
+	point_light: shared.Point_Light_Component,
 	has_shadow_caster: bool,
 	has_shadow_receiver: bool,
 	custom_component_start: int,
@@ -308,6 +312,18 @@ spawn_set_geometry :: proc "c" (spawn: ^Spawn_Command, handle: Geometry_Handle) 
 spawn_set_material :: proc "c" (spawn: ^Spawn_Command, handle: Material_Handle) -> string {
 	if spawn ==
 	   nil { return "spawn command is not available" }; spawn.has_material = true; spawn.material = handle; return ""
+}
+
+spawn_set_point_light :: proc "c" (
+	spawn: ^Spawn_Command,
+	point_light: shared.Point_Light_Component,
+) -> string {
+	if spawn == nil {
+		return "spawn command is not available"
+	}
+	spawn.has_point_light = true
+	spawn.point_light = point_light
+	return ""
 }
 
 spawn_set_marker :: proc "c" (spawn: ^Spawn_Command, name: string) -> string {
@@ -610,6 +626,8 @@ queue_spawn_command :: proc "c" (buffer: ^Command_Buffer, spawn: Spawn_Command) 
 		geometry = spawn.geometry,
 		has_material = spawn.has_material,
 		material = spawn.material,
+		has_point_light = spawn.has_point_light,
+		point_light = spawn.point_light,
 		has_shadow_caster = spawn.has_shadow_caster,
 		has_shadow_receiver = spawn.has_shadow_receiver,
 		custom_component_start = len(buffer.components),
@@ -1045,6 +1063,15 @@ spawn_queued_entity :: proc(
 	world_entity.mesh_index = mesh_index
 	world_entity.has_shadow_caster = spawn.has_shadow_caster
 	world_entity.has_shadow_receiver = spawn.has_shadow_receiver
+	if spawn.has_point_light {
+		world_entity.point_light_index = reusable_point_light_slot(world)
+		if world_entity.point_light_index >= 0 {
+			world.point_lights[world_entity.point_light_index] = spawn.point_light
+		} else {
+			world_entity.point_light_index = len(world.point_lights)
+			append(&world.point_lights, spawn.point_light)
+		}
+	}
 	ensure_entity_renderable(world, entity_index)
 	if spawn.has_geometry { add_geometry(world, entity_index, spawn.geometry) }
 	if spawn.has_material { add_material(world, entity_index, spawn.material) }

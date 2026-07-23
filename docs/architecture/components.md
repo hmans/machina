@@ -1,6 +1,6 @@
 # Engine Components
 
-**Last verified:** 2026-07-22
+**Last verified:** 2026-07-23
 **Source of truth:** `src/scrapbot/component/registry.odin`  
 **Canonical public field reference:** `docs-website/src/content/docs/reference/components.md`
 
@@ -126,12 +126,12 @@ These entries deliberately omit exhaustive field/default documentation. Follow t
 ### `scrapbot.point_light`
 
 - **Contract:** Bounded color/intensity/range input positioned by the entity's resolved world Transform.
-- **Storage/lifecycle:** Dedicated typed ECS storage; authored.
-- **Producers:** Scene loading, Luau/native mutation, editor inspector/history.
+- **Storage/lifecycle:** Dedicated typed ECS storage; authored or runtime-spawned, with dead typed slots reused across entity lifetimes.
+- **Producers:** Scene loading, validated deferred Luau spawn, native mutation, editor inspector/history.
 - **Consumers:** Hierarchy/world-transform resolution, compact point-light render inputs, and WGPU's GPU-built clustered-light table.
 - **Invalidation:** Membership is structural; light values or the paired Transform dirty the exact compact light input.
 - **Surfaces:** Public across scene TOML, Luau, native Odin, and editor authoring; see the [public component reference](../../docs-website/src/content/docs/reference/components.md#lights-and-shadows).
-- **Source/tests:** `ecs/world.odin`, `ecs/hierarchy.odin`, `render/render.odin`; `ecs/world_test.odin`, `render/render_test.odin`.
+- **Source/tests:** `ecs/world.odin`, `ecs/commands.odin`, `script/commands.odin`, `ecs/hierarchy.odin`, `render/render.odin`; `script/commands_test.odin`, `ecs/world_test.odin`, `render/render_test.odin`.
 
 ### `scrapbot.mesh`
 

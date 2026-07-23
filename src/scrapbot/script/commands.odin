@@ -7,6 +7,7 @@ import resources "../resources"
 import shared "../shared"
 import base_runtime "base:runtime"
 import c "core:c"
+import "core:math"
 import "core:strings"
 
 scrapbot_spawn :: proc "c" (L: Lua_State) -> c.int {
@@ -290,6 +291,17 @@ read_spawn_components :: proc "c" (
 			if _, valid := resources.get_material(runtime.resource_registry, {index, generation});
 			   !valid { return "scrapbot.material references a stale resource" }
 			ecs.spawn_set_material(spawn, {index, generation})
+		} else if component_name == "scrapbot.point_light" {
+			if err := require_system_access(runtime, component_name, .Write); err != "" {
+				return err
+			}
+			point_light, err := read_point_light_payload(L, -1)
+			if err != "" {
+				return err
+			}
+			if err = ecs.spawn_set_point_light(spawn, point_light); err != "" {
+				return err
+			}
 		} else if component_name == "scrapbot.shadow_caster" ||
 		   component_name == "scrapbot.shadow_receiver" {
 			if err := require_system_access(runtime, component_name, .Write);
@@ -343,6 +355,53 @@ read_spawn_components :: proc "c" (
 		lua_settop(L, -2)
 	}
 	return ""
+}
+
+read_point_light_payload :: proc "c" (
+	L: Lua_State,
+	payload_index: c.int,
+) -> (
+	value: shared.Point_Light_Component,
+	err: string,
+) {
+	color, color_ok := required_vec3_field(L, payload_index, "color")
+	if !color_ok {
+		return value, "scrapbot.point_light.color must be a vec3"
+	}
+	intensity, intensity_found, intensity_ok := optional_number_field(
+		L,
+		payload_index,
+		"intensity",
+	)
+	if !intensity_found || !intensity_ok {
+		return value, "scrapbot.point_light.intensity must be a number"
+	}
+	light_range, range_found, range_ok := optional_number_field(L, payload_index, "range")
+	if !range_found || !range_ok {
+		return value, "scrapbot.point_light.range must be a number"
+	}
+	if color.x < 0 ||
+	   color.x > 1 ||
+	   color.y < 0 ||
+	   color.y > 1 ||
+	   color.z < 0 ||
+	   color.z > 1 ||
+	   intensity < 0 ||
+	   light_range < 0 ||
+	   math.is_nan(color.x) ||
+	   math.is_nan(color.y) ||
+	   math.is_nan(color.z) ||
+	   math.is_nan(intensity) ||
+	   math.is_nan(light_range) ||
+	   math.is_inf(color.x) ||
+	   math.is_inf(color.y) ||
+	   math.is_inf(color.z) ||
+	   math.is_inf(intensity) ||
+	   math.is_inf(light_range) {
+		return value, "scrapbot.point_light payload is invalid"
+	}
+	return shared.Point_Light_Component{color = color, intensity = intensity, range = light_range},
+		""
 }
 
 resource_handle_fields :: proc "c" (
