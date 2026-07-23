@@ -39,6 +39,12 @@ near = 0.1
 far = 100
 exposure = 0.9
 
+[entities.components.camera_dolly]
+origin = [-10, 1.8, 0]
+direction = [1, 0, 0]
+distance = 1.25
+duration = 30
+
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000003"
 name = "Soft Ambient"

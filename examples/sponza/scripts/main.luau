@@ -12,6 +12,37 @@ local MovingLights = scrapbot.query(
 	LightMotion
 )
 
+local CameraDolly = scrapbot.component("camera_dolly", {
+	origin = scrapbot.vec3,
+	direction = scrapbot.vec3,
+	distance = scrapbot.number,
+	duration = scrapbot.number,
+}, { advanced = true }) :: CameraDollyComponent
+
+local DollyCameras = scrapbot.query(
+	scrapbot.transform,
+	CameraDolly
+)
+
+scrapbot.system(DollyCameras, {
+	name = "camera_dolly",
+	writes = { scrapbot.transform },
+	reads = { CameraDolly },
+}, function(
+	time: ScrapbotTime,
+	_entity: ScrapbotEntity,
+	transform: ScrapbotTransform,
+	dolly: CameraDolly
+)
+	local duration = math.max(dolly.duration, 0.001)
+	local progress = math.min(time.elapsed_time / duration, 1)
+	local eased = progress * progress * (3 - 2 * progress)
+	local travel = dolly.distance * eased
+	transform.position.x = dolly.origin.x + dolly.direction.x * travel
+	transform.position.y = dolly.origin.y + dolly.direction.y * travel
+	transform.position.z = dolly.origin.z + dolly.direction.z * travel
+end)
+
 scrapbot.system(MovingLights, {
 	name = "animate_lights",
 	writes = { scrapbot.transform, scrapbot.point_light },
