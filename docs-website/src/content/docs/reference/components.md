@@ -116,7 +116,7 @@ A scene may contain at most one World Environment component. It belongs on an or
 | `lighting_rotation` | number | `0` | Lighting Y rotation in degrees. |
 | `exposure` | number | `1` | Positive base linear exposure multiplied by active-camera exposure. |
 | `background_visible` | boolean | `true` | Enables the infinite camera-oriented background. |
-| `background` | string | empty | Optional Environment UUID for the visible panorama. Empty reuses `lighting`; when both are empty, Scrapbot uses the procedural haze sky. |
+| `background` | string | empty | Optional Environment UUID for the visible panorama. Empty uses the procedural haze sky independently of `lighting`. |
 | `background_intensity` | number | `1` | Non-negative background-only multiplier. |
 | `background_rotation` | number | `0` | Background Y rotation in degrees. |
 | `background_exposure` | number | `1` | Positive background-only exposure compensation. |
@@ -167,7 +167,7 @@ point_light_intensity = 0.6
 | `light_intensity` | number | `1` | Primary directional-light scattering multiplier from `0` to `10`. |
 | `point_light_intensity` | number | `0` | Clustered point-light scattering multiplier from `0` to `10`. Zero disables local-light scattering. |
 
-The renderer integrates six stable midpoint samples along each visible camera ray. Density varies exponentially with world height and stops at scene depth or `max_distance`. The first directional light contributes anisotropic in-scattering and is filtered through the same four shadow cascades used by opaque geometry.
+The renderer integrates 16 stable midpoint samples along each visible camera ray. Density varies exponentially with world height and stops at scene depth or `max_distance`. The first directional light contributes anisotropic in-scattering and is filtered through the same four shadow cascades used by opaque geometry.
 
 When enabled, each midpoint reads every relevant point light from the same GPU-built view-frustum cluster used by opaque surface lighting. Point-light scattering is currently unshadowed.
 

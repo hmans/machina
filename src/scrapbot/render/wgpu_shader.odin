@@ -696,7 +696,7 @@ struct Cluster_Uniform {
 @group(1) @binding(2) var<storage, read_write> cluster_light_indices: array<u32>;
 @group(1) @binding(3) var<uniform> cluster: Cluster_Uniform;
 
-const FOG_STEP_COUNT: u32 = 6u;
+const FOG_STEP_COUNT: u32 = 16u;
 const FOG_PHASE_NORMALIZATION: f32 = 0.07957747155;
 
 fn octahedral_decode(encoded: vec2<f32>) -> vec3<f32> {

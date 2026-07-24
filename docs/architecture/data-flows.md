@@ -115,7 +115,7 @@ Editor mutation and validated Luau writeback update the authoritative ECS payloa
 
 Active-camera pose and FOV construct the background ray basis. Camera exposure multiplies world-environment exposure in the shared environment uniform. Exposure or atmosphere edits rewrite that uniform without rebuilding imported textures.
 
-Backend-neutral extraction converts an above-horizon procedural sun into the first bounded directional-light input. WGPU then uses the ordinary GGX and cascaded-shadow paths without creating another authored entity. Below the horizon, the derived direct light disappears and both the sky and analytic environment lighting transition toward night.
+Backend-neutral extraction converts an above-horizon procedural sun into the first bounded directional-light input. This remains active when image-based lighting is imported separately; only an imported visible background replaces the procedural sky and its sun. WGPU then uses the ordinary GGX and cascaded-shadow paths without creating another authored entity. Below the horizon, the derived direct light disappears and both the sky and analytic environment lighting transition toward night.
 
 Explicit ECS lights remain additive. Only the first directional render light owns the current shadow cascades and directional volumetric scattering. Later directional lights are direct, unshadowed surface contributions.
 
@@ -123,7 +123,7 @@ Scenes that need one coherent sun should use either the procedural environment s
 
 WGPU retains active point lights in a geometrically growing buffer and rebuilds 16×9×24 cluster membership only after point-light, camera, viewport, or capacity changes. Four stabilized camera-relative projections feed independent shadow-cull lanes and depth-array layers.
 
-One optional `scrapbot.volumetric_fog` component supplies a global exponential height medium. Postprocessing reads only that component storage's compact active set, clamps the reflected payload, and folds six deterministic ray samples into the temporal resolve.
+One optional `scrapbot.volumetric_fog` component supplies a global exponential height medium. Postprocessing reads only that component storage's compact active set, clamps the reflected payload, and folds 16 deterministic ray samples into the temporal resolve.
 
 Each sample uses the first directional light and a 2×2 UV-space filtered lookup into the same four shadow cascades as opaque rendering. Both paths cross-fade the final 10% of each cascade into its successor and fade the final cascade to unshadowed. Opt-in local scattering reads every relevant point light from the existing GPU-built cluster for that sample. There is no duplicate light list, extra fog target, or stochastic per-frame pattern. Local fog volumes remain follow-up work.
 

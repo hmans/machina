@@ -101,7 +101,7 @@ wgpu_temporal_jitter :: proc(sample_index: u64, width, height: u32) -> Vec2 {
 		{0.0625, 8.0 / 9.0},
 	}
 	sample := sequence[int(sample_index % u64(len(sequence)))]
-	return {(sample.x - 0.5) * 2 / f32(width), (sample.y - 0.5) * 2 / f32(height)}
+	return {(sample.x - 0.5) / f32(width), (sample.y - 0.5) / f32(height)}
 }
 
 wgpu_jitter_projection :: proc(projection: Mat4, jitter: Vec2) -> Mat4 {

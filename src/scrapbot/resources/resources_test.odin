@@ -696,6 +696,17 @@ test_project_environment_registration_is_stable_and_revision_driven :: proc(t: ^
 		testing.expect_value(t, environment.desc.sky_pixels[0], u16(2))
 		testing.expect_value(t, environment.desc.specular_pixels[0], u16(1))
 	}
+
+	project_environment := config
+	project_environment.background_environment = {}
+	testing.expect_value(t, configure_project_environment(&registry, project_environment), "")
+	testing.expect_value(t, registry.background_environment, handle)
+
+	world_environment := shared.world_environment_default()
+	world_environment.lighting = "a2000000-0000-4000-8000-000000000019"
+	testing.expect_value(t, configure_world_environment(&registry, world_environment), "")
+	testing.expect_value(t, registry.active_environment, handle)
+	testing.expect_value(t, registry.background_environment, Environment_Handle{})
 }
 
 @(test)

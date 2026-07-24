@@ -59,7 +59,7 @@ Use either the procedural sun or one authored directional light when a scene nee
 
 ### Volumetric fog
 
-Add one `scrapbot.volumetric_fog` component to author global height and distance fog. The renderer integrates a fixed six-sample camera ray, stops it at opaque depth or the authored distance bound, and evaluates exponential density around a world-space height plane.
+Add one `scrapbot.volumetric_fog` component to author global height and distance fog. The renderer integrates a fixed 16-sample camera ray, stops it at opaque depth or the authored distance bound, and evaluates exponential density around a world-space height plane.
 
 The primary directional light supplies anisotropic in-scattering. Its four cascaded shadows filter that contribution, so sunbeams and occluded haze follow the same shadow geometry as opaque surfaces. Ambient scattering remains available in shadow and at night.
 
@@ -81,7 +81,7 @@ AO attenuates only indirect diffuse light. It does not dirty direct lights, spec
 
 Enabled SSR marches a reflected view ray through scene depth and samples HDR color only at confirmed on-screen hits. Confidence fades rough, distant, uncertain, and screen-edge hits.
 
-Fog, AO, and SSR join the current HDR signal before temporal resolution. Enabled TAA uses an eight-sample projection-jitter sequence, camera reprojection, previous-depth rejection, and current-neighborhood clamping.
+Fog, AO, and SSR join the current HDR signal before temporal resolution. Enabled TAA uses an eight-sample projection-jitter sequence bounded to a quarter pixel, camera reprojection, previous-depth rejection, and current-neighborhood clamping. The compact footprint reduces visible static-view breathing while retaining subpixel coverage.
 
 When TAA is off, the renderer removes projection jitter and history traffic. Optional fast AA then uses only the current resolved frame. Resize, world replacement, depth replacement, camera cuts, and TAA mode changes invalidate temporal history.
 

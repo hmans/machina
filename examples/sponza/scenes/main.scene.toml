@@ -4,7 +4,7 @@ name = "World Environment"
 
 [entities.world_environment]
 lighting = "5a000000-0000-4000-8000-000000000002"
-lighting_intensity = 0.3
+lighting_intensity = 0.2
 reflection_intensity = 0.6
 lighting_rotation = 25
 exposure = 1
@@ -19,7 +19,7 @@ ground_color = [0.16, 0.18, 0.22]
 turbidity = 2
 atmosphere_thickness = 1
 horizon_softness = 1
-sun_direction = [-0.28, -0.95, -0.14]
+sun_direction = [0.12, 0.98, 0.14]
 sun_color = [1, 0.82, 0.62]
 sun_intensity = 3
 sun_size = 0.6
@@ -30,18 +30,18 @@ color = [0.56, 0.65, 0.75]
 density = 0.024
 height = 0
 height_falloff = 0.12
-max_distance = 65
-anisotropy = 0.48
-ambient_intensity = 0.22
-light_intensity = 1.1
-point_light_intensity = 0.6
+max_distance = 40
+anisotropy = 0.7
+ambient_intensity = 0.035
+light_intensity = 5
+point_light_intensity = 0.45
 
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000002"
 name = "Main Camera"
 
 [entities.transform]
-position = [-10, 1.8, 0]
+position = [-4, 1.8, 0]
 rotation = [-0.02, 1.5708, 0]
 scale = [1, 1, 1]
 
@@ -57,7 +57,7 @@ screen_space_reflections = true
 bloom = true
 
 [entities.components.camera_dolly]
-origin = [-10, 1.8, 0]
+origin = [-4, 1.8, 0]
 direction = [1, 0, 0]
 distance = 1.25
 duration = 30
@@ -68,7 +68,7 @@ name = "Soft Ambient"
 
 [entities.ambient_light]
 color = [0.3, 0.4, 0.62]
-intensity = 0.08
+intensity = 0.05
 
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000005"

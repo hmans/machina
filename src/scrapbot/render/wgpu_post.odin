@@ -1401,7 +1401,7 @@ wgpu_encode_bloom_and_composite :: proc(
 		projection = renderer.temporal_current_projection,
 		previous_projection = renderer.temporal_previous_projection,
 		viewport = viewport,
-		parameters = {projection[8], projection[9], history_valid, 0.9},
+		parameters = {projection[8], projection[9], history_valid, 0.97},
 		features = {
 			1 if resolved_camera.temporal_antialiasing else 0,
 			1 if resolved_camera.fast_antialiasing else 0,

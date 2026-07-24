@@ -100,12 +100,17 @@ test_sky_uniform_uses_active_camera_basis_projection_and_aspect :: proc(t: ^test
 }
 
 @(test)
-test_wgpu_temporal_jitter_stays_inside_one_pixel_and_cycles :: proc(t: ^testing.T) {
+test_wgpu_temporal_jitter_stays_inside_quarter_pixel_and_cycles :: proc(t: ^testing.T) {
 	first := wgpu_temporal_jitter(0, 1280, 720)
 	repeated := wgpu_temporal_jitter(8, 1280, 720)
 	testing.expect_value(t, first, repeated)
-	testing.expect(t, math.abs(first.x) <= 1.0 / 1280.0)
-	testing.expect(t, math.abs(first.y) <= 1.0 / 720.0)
+	for sample_index in 0 ..< 8 {
+		jitter := wgpu_temporal_jitter(u64(sample_index), 1280, 720)
+		screen_x := math.abs(jitter.x) * 1280 * 0.5
+		screen_y := math.abs(jitter.y) * 720 * 0.5
+		testing.expect(t, screen_x <= 0.25)
+		testing.expect(t, screen_y <= 0.25)
+	}
 }
 
 @(test)

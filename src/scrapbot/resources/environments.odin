@@ -177,6 +177,7 @@ register_project_environment :: proc(
 configure_project_environment :: proc(
 	registry: ^Registry,
 	config: shared.Project_Render_Config,
+	fallback_background_to_lighting := true,
 ) -> string {
 	if registry == nil {
 		return "environment registry is not available"
@@ -192,7 +193,7 @@ configure_project_environment :: proc(
 	background_handle: Environment_Handle
 	if config.background_visible {
 		background_id := config.background_environment
-		if background_id == (shared.Resource_UUID{}) {
+		if fallback_background_to_lighting && background_id == (shared.Resource_UUID{}) {
 			background_id = config.environment
 		}
 		if background_id != (shared.Resource_UUID{}) {
@@ -334,7 +335,7 @@ configure_world_environment :: proc(
 		}
 		config.background_environment = id
 	}
-	if err := configure_project_environment(registry, config); err != "" {
+	if err := configure_project_environment(registry, config, false); err != "" {
 		return err
 	}
 	if registry.atmosphere_sky_tint != value.sky_tint ||

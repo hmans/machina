@@ -584,6 +584,13 @@ test_procedural_sun_is_a_horizon_gated_directional_render_light :: proc(t: ^test
 		generation = 1,
 	}
 	populate_resource_render_list(&world, &registry, &list)
+	testing.expect_value(t, list.directional_light_count, 1)
+
+	registry.background_environment = {
+		index = 0,
+		generation = 1,
+	}
+	populate_resource_render_list(&world, &registry, &list)
 	testing.expect_value(t, list.directional_light_count, 0)
 }
 

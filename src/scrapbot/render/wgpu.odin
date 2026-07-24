@@ -2378,7 +2378,8 @@ wgpu_draw_frame :: proc(
 		config.stats.gpu_driven = true
 		config.stats.compute_culling = !config.cpu_culling
 		config.stats.clustered_lighting = true
-		config.stats.shadow_cascades = WGPU_SHADOW_CASCADE_COUNT
+		config.stats.shadow_cascades =
+			WGPU_SHADOW_CASCADE_COUNT if renderer.render_list.directional_light_count > 0 else 0
 		config.stats.cluster_count = WGPU_CLUSTER_COUNT
 		config.stats.cluster_max_lights = renderer.gpu_cluster_light_capacity
 		config.stats.clustered_point_lights = renderer.gpu_clustered_light_count
@@ -2569,7 +2570,8 @@ wgpu_render_offscreen_frame :: proc(
 		config.stats.gpu_driven = true
 		config.stats.compute_culling = !config.cpu_culling
 		config.stats.clustered_lighting = true
-		config.stats.shadow_cascades = WGPU_SHADOW_CASCADE_COUNT
+		config.stats.shadow_cascades =
+			WGPU_SHADOW_CASCADE_COUNT if renderer.render_list.directional_light_count > 0 else 0
 		config.stats.cluster_count = WGPU_CLUSTER_COUNT
 		config.stats.cluster_max_lights = renderer.gpu_cluster_light_capacity
 		config.stats.clustered_point_lights = renderer.gpu_clustered_light_count

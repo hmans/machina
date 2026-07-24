@@ -1575,7 +1575,6 @@ procedural_sun_directional_light :: proc(
 	bool,
 ) {
 	if registry == nil ||
-	   registry.active_environment != (shared.Environment_Handle{}) ||
 	   registry.background_environment != (shared.Environment_Handle{}) ||
 	   registry.atmosphere_sun_intensity <= 0 {
 		return {}, false
