@@ -20,7 +20,13 @@ scene parse + schema validation + resource UUID resolution
                        retained UI + render list + backend caches
 ```
 
-Native components register before Luau executes, allowing scripts to retrieve native handles. Asset import completes before runtime resource registration. Model roots then reconcile imported nodes and primitives into derived Transform/Geometry/Material ECS entities at bootstrap/reload; later root duplication, undo/redo, or resource replacement increments a model-instance revision and reconciles only after that structural signal. Scene validation occurs against the combined engine/native/Luau registry. Resource descriptions remain outside ECS; components store resolved runtime handles. Hot reload stages the replacement resource registry, world, script/native runtime, source set, and playback baseline independently; failure destroys the staged bundle, while success swaps the complete bundle atomically.
+Native components register before Luau executes, so scripts can retrieve native handles. Asset import completes before runtime resource registration. Scene validation uses the combined engine/native/Luau registry.
+
+At bootstrap or reload, Model roots reconcile imported nodes and primitives into derived Transform/Geometry/Material entities. Later duplication, Undo/Redo, or resource replacement increments a model-instance revision; reconciliation waits for that structural signal.
+
+Resource descriptions remain outside ECS. Components store resolved runtime handles.
+
+Hot reload stages the resource registry, world, script/native runtime, source set, and playback baseline independently. Failure destroys the staged bundle; success swaps it atomically.
 
 ## Simulation and scheduled mutation
 
@@ -68,7 +74,11 @@ The editor has no component-specific panel catalog. Every attached registry defi
 
 Input singletons are committed once before the schedule runs. Luau and native systems read the same immutable held/pressed/released snapshot and declare `scrapbot.keyboard_input` or `scrapbot.pointer_input` access without allocating synthetic entities or scanning entity storage.
 
-Each native worker and the Luau runtime retain a private deferred-command buffer. A compact header stream preserves issue order while spawn, despawn, add-component, and remove-component payloads grow in separate typed arrays. Queued spawns and component additions pool only the custom/UI components actually present; schema-backed custom-component headers then reference separate Number, Vec2, Vec3, and Vec4 arrays containing only fields that were supplied. This keeps the fixed-capacity ABI staging structs at the extension boundary without retaining their unused capacity in the engine queue. Buffers start small, grow geometrically without an arbitrary command-count ceiling, merge with payload-index and field-range remapping in deterministic schedule order, and retain their per-array high-water capacities for reuse. Fixed limits apply to caller-owned ABI staging payloads, not to how many lifecycle commands a frame may produce or how much unused payload capacity each queued command reserves.
+Each native worker and the Luau runtime retain a private deferred-command buffer. A compact header stream preserves issue order. Spawn, despawn, add-component, and remove-component payloads grow in separate typed arrays.
+
+Queued spawns and component additions pool only the custom/UI components actually present. Schema-backed headers reference separate Number, Vec2, Vec3, and Vec4 arrays containing only supplied fields.
+
+Buffers start small, grow geometrically, merge with deterministic index/range remapping, and retain their high-water capacities. Fixed limits apply only to caller-owned ABI staging payloads, not to engine queue length or unused component capacity.
 
 ## Rendering
 
@@ -93,9 +103,45 @@ typed ECS/resource mutation
                        retained UI streams + presentation
 ```
 
-Cameras and lights are compact frame inputs. One authored `scrapbot.world_environment` component selects an optional lighting Environment and a separately optional visible-background Environment; an enabled empty background selects the art-directable procedural haze sky and its HDR sun. Editor mutation and validated Luau query writeback both update the authoritative ECS payload and bump only that entity's component revision. The `scrapbot.environment` phase retains the singleton entity and revision, scanning membership only after structural changes and resolving UUIDs/copying procedural controls only after value changes. Active-camera pose/FOV construct the background ray basis, while its exposure multiplies world-environment exposure in the shared environment uniform; changing only exposure, background presentation, or procedural atmosphere values rewrites that uniform without rebuilding imported textures. Backend-neutral extraction converts an above-horizon procedural sun into the first bounded directional-light input, so WGPU uses the ordinary GGX and cascaded-shadow paths without creating an authored entity. The sky and world shaders consume the same retained atmosphere controls: the sky clips the disc against the spherical horizon and drives presentation, while world shading analytically evaluates roughness-aware diffuse and specular environment radiance from the procedural sky, ground, haze, and sun through the ordinary split-sum GGX path. Below the horizon, the derived direct light disappears and both presentation and analytic environment radiance transition toward night. Explicit ECS lights remain additive. WGPU retains every active point light in a geometrically growing storage buffer and runs a deterministic cluster-centric compute pass only when point lights, camera, viewport, or capacity change. The GPU owns all 16×9×24 view-frustum membership; each cluster's stride grows with the complete light list, and fragment lookup converts absolute framebuffer coordinates through the rendered viewport origin and extent. Four stabilized camera-relative light projections feed independent shadow-cull lanes and depth-array layers. Exact lighting/background handle or content-version changes rebuild the combined environment binding. Stable renderable membership and instance records are not re-extracted or uploaded without a mutation signal. WGPU reuses retained batch membership for Transform-only changes, uploads a compact position/rotation/scale/local-bounds record for each dirty slot, and expands only those slots into model matrices, normal matrices, and world bounds on the GPU before culling. When legal despawn/reuse churn leaves an authoritative retained slot inactive in the backend, the Transform path reconciles only that slot's static state before continuing. Render-list integrity checks enforce current entity generations and both entity-to-instance and slot-to-instance ownership. Material content revisions trigger a one-time dependent-instance pass only when material state changes. WGPU then replaces only that Material handle/version's PBR factor uniform, bind group, and owned image textures; stable materials reuse their complete GPU cache entry. Static instance fields remain resident unless their own sources change.
+### Environment and lights
 
-The active camera also owns the view's TAA, current-frame fast-AA, ambient-occlusion, screen-space-reflection, and bloom switches. World shading writes HDR color, a compact octahedral view normal/roughness/metallic target, and the indirect-diffuse portion of the HDR result. Enabled GTAO reconstructs view positions from depth, searches paired horizons across rotated slices around the mapped surface normal, filters visibility across compatible depth/normal neighborhoods, and attenuates only that indirect-diffuse target. Enabled SSR ray-marches scene depth in view space, samples only confirmed current-frame HDR hits, and feeds confidence-weighted reflection into temporal resolution. The editor fly camera contributes pose and lens while inheriting this policy from the active project camera. Disabling TAA removes jitter and temporal-history traffic; disabling AO, SSR, or bloom skips the corresponding compute dispatches. These value changes update compact render state and never cause renderable membership reconciliation or imported-texture rebuilds.
+Cameras and lights are compact frame inputs. One authored `scrapbot.world_environment` component selects:
+
+- an optional lighting Environment;
+- an independently optional visible-background Environment;
+- the procedural haze sky and HDR sun when the enabled background UUID is empty.
+
+Editor mutation and validated Luau writeback update the authoritative ECS payload and bump only that entity's component revision. The `scrapbot.environment` phase retains the singleton entity and revision. It scans membership only after structural changes and copies settings only after value changes.
+
+Active-camera pose and FOV construct the background ray basis. Camera exposure multiplies world-environment exposure in the shared environment uniform. Exposure or atmosphere edits rewrite that uniform without rebuilding imported textures.
+
+Backend-neutral extraction converts an above-horizon procedural sun into the first bounded directional-light input. WGPU then uses the ordinary GGX and cascaded-shadow paths without creating another authored entity. Below the horizon, the derived direct light disappears and both the sky and analytic environment lighting transition toward night.
+
+Explicit ECS lights remain additive. WGPU retains active point lights in a geometrically growing buffer and rebuilds 16×9×24 cluster membership only after point-light, camera, viewport, or capacity changes. Four stabilized camera-relative projections feed independent shadow-cull lanes and depth-array layers.
+
+### Instances and materials
+
+Stable renderable membership and instance records are not re-extracted or uploaded without a mutation signal. Transform-only changes upload compact position/rotation/scale/local-bounds records, then expand only those slots into GPU matrices and world bounds.
+
+If legal despawn/reuse churn leaves an authoritative retained slot inactive, the Transform path reconciles only that slot's static state. Bidirectional integrity checks enforce current entity generations and slot ownership.
+
+Material revisions trigger one dependent-instance pass. WGPU replaces only that Material handle/version's factor uniform, bind group, and owned image textures. Stable materials and static instance fields remain resident.
+
+### Camera-selected postprocessing
+
+The active camera owns TAA, current-frame fast AA, AO, SSR, and bloom switches. The editor fly camera contributes pose and lens while inheriting this policy.
+
+World shading writes:
+
+- HDR color;
+- octahedral view normal, roughness, and metallic surface data;
+- the indirect-diffuse portion of the HDR result.
+
+AO reconstructs view positions from depth. Each sample marks a constant-thickness angular interval in a 32-sector visibility bitmask, then a joint depth/normal filter attenuates only indirect diffuse.
+
+SSR ray-marches depth and samples confirmed current-frame HDR hits. The result feeds temporal resolution with confidence weighting.
+
+Disabling TAA removes jitter and history traffic. Disabling AO, SSR, or bloom skips that compute dispatch. These value changes never reconcile renderable membership or rebuild imported textures.
 
 ## Performance diagnostics
 

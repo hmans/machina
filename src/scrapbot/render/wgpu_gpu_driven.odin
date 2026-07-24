@@ -298,6 +298,7 @@ wgpu_create_gpu_driven_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		{format = .Float32x3, offset = 0, shaderLocation = 0},
 		{format = .Float32x3, offset = 12, shaderLocation = 1},
 		{format = .Float32x2, offset = 24, shaderLocation = 2},
+		{format = .Float32x4, offset = 32, shaderLocation = 3},
 	}
 	vertex_buffer_layout := wgpu.VertexBufferLayout {
 		stepMode = .Vertex,

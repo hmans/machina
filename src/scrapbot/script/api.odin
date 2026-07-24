@@ -301,13 +301,27 @@ scrapbot_geometry_create :: proc "c" (L: Lua_State) -> c.int {
 			-1,
 			"uv",
 		); ux, ux_ok := number_field(L, -1, "x"); uy, uy_ok := number_field(L, -1, "y"); lua_settop(L, -2)
-		if !position_ok ||
-		   !normal_ok ||
-		   !ux_ok ||
-		   !uy_ok { return luau_push_error(L, "geometry vertex requires position, normal, and uv") }
+		tangent := Vec4{}
+		tangent_ok := true
+		lua_getfield(L, -1, "tangent")
+		if lua_type(L, -1) != LUA_TNIL {
+			tangent, tangent_ok = vec4_argument(L, -1)
+		}
+		lua_settop(L, -2)
+		if !position_ok || !normal_ok || !ux_ok || !uy_ok || !tangent_ok {
+			return luau_push_error(
+				L,
+				"geometry vertex requires position, normal, uv, and an optional tangent",
+			)
+		}
 		append(
 			&vertices,
-			resources.Vertex{position = position, normal = normal, uv = {ux, uy}},
+			resources.Vertex {
+				position = position,
+				normal = normal,
+				uv = {ux, uy},
+				tangent = {tangent.x, tangent.y, tangent.z, tangent.w},
+			},
 		); lua_settop(L, -2)
 	}
 	lua_settop(L, -2)

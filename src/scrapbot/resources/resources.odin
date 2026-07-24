@@ -32,6 +32,7 @@ Vertex :: struct {
 	position: Vec3,
 	normal: Vec3,
 	uv: Vec2,
+	tangent: Vec4,
 }
 
 Bounds :: struct {
@@ -1714,7 +1715,8 @@ validate_geometry :: proc(desc: Geometry_Desc) -> string {
 	for vertex in desc.vertices {
 		if !finite3(vertex.position) ||
 		   !finite3(vertex.normal) ||
-		   !finite2(vertex.uv) { return "geometry vertex values must be finite" }
+		   !finite2(vertex.uv) ||
+		   !finite4(vertex.tangent) { return "geometry vertex values must be finite" }
 	}
 	for index in desc.indices { if int(index) >= len(desc.vertices) { return "geometry index is outside the vertex array" } }
 	return ""
@@ -1773,7 +1775,7 @@ cube :: proc(size: f32 = 1) -> (Geometry_Desc, string) {
 	}
 	normals := [6]Vec3{{0, 0, 1}, {0, 0, -1}, {-1, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, -1, 0}}
 	uvs := [4]Vec2{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-	for face in 0 ..< 6 { for corner in 0 ..< 4 { vertices[face * 4 + corner] = {positions[faces[face][corner]], normals[face], uvs[corner]} } }
+	for face in 0 ..< 6 { for corner in 0 ..< 4 { vertices[face * 4 + corner] = {positions[faces[face][corner]], normals[face], uvs[corner], {}} } }
 	indices := make([]u32, 36)
 	for face in 0 ..< 6 {
 		base := u32(face * 4); offset := face * 6
@@ -1790,8 +1792,18 @@ plane :: proc(width: f32 = 1, depth: f32 = 1) -> (Geometry_Desc, string) {
 	   depth <= 0 { return {}, "plane dimensions must be positive and finite" }
 	w, d := width / 2, depth / 2
 	vertices := make([]Vertex, 4)
-	vertices[0] = {{-w, 0, -d}, {0, 1, 0}, {0, 0}}; vertices[1] = {{w, 0, -d}, {0, 1, 0}, {1, 0}}
-	vertices[2] = {{w, 0, d}, {0, 1, 0}, {1, 1}}; vertices[3] = {{-w, 0, d}, {0, 1, 0}, {0, 1}}
+	vertices[0] = {
+		{-w, 0, -d},
+		{0, 1, 0},
+		{0, 0},
+		{},
+	}; vertices[1] = {{w, 0, -d}, {0, 1, 0}, {1, 0}, {}}
+	vertices[2] = {
+		{w, 0, d},
+		{0, 1, 0},
+		{1, 1},
+		{},
+	}; vertices[3] = {{-w, 0, d}, {0, 1, 0}, {0, 1}, {}}
 	indices := make([]u32, 6)
 	copy(indices, []u32{0, 1, 2, 0, 2, 3})
 	return {vertices, indices}, ""
@@ -1815,16 +1827,16 @@ pyramid :: proc(width: f32 = 1, height: f32 = 1, depth: f32 = 1) -> (Geometry_De
 		next := (i + 1) % 4
 		a, b, apex := base[i], base[next], Vec3{0, h, 0}
 		normal := normalize(cross(sub(b, a), sub(apex, a)))
-		vertices[i * 3 + 0] = {a, normal, uvs[0]}
-		vertices[i * 3 + 1] = {b, normal, uvs[1]}
-		vertices[i * 3 + 2] = {apex, normal, uvs[2]}
+		vertices[i * 3 + 0] = {a, normal, uvs[0], {}}
+		vertices[i * 3 + 1] = {b, normal, uvs[1], {}}
+		vertices[i * 3 + 2] = {apex, normal, uvs[2], {}}
 		indices[i * 3 + 0] = u32(
 			i * 3,
 		); indices[i * 3 + 1] = u32(i * 3 + 1); indices[i * 3 + 2] = u32(i * 3 + 2)
 	}
 	base_offset := 12
 	base_uvs := [4]Vec2{{0, 0}, {0, 1}, {1, 1}, {1, 0}}
-	for i in 0 ..< 4 { vertices[base_offset + i] = {base[i], {0, -1, 0}, base_uvs[i]} }
+	for i in 0 ..< 4 { vertices[base_offset + i] = {base[i], {0, -1, 0}, base_uvs[i], {}} }
 	copy(indices[12:], []u32{12, 14, 13, 12, 15, 14})
 	return {vertices, indices}, ""
 }
@@ -1850,8 +1862,8 @@ cylinder :: proc(
 		u := f32(i) / f32(segments); angle := u * 2 * math.PI
 		x, z := math.cos(angle) * radius, math.sin(angle) * radius
 		normal := Vec3{x, 0, z}; normal = normalize(normal)
-		vertices[i * 2] = {{x, -h, z}, normal, {u, 0}}
-		vertices[i * 2 + 1] = {{x, h, z}, normal, {u, 1}}
+		vertices[i * 2] = {{x, -h, z}, normal, {u, 0}, {}}
+		vertices[i * 2 + 1] = {{x, h, z}, normal, {u, 1}, {}}
 	}
 	for i in 0 ..< segments {
 		v := u32(i * 2); o := i * 6
@@ -1862,7 +1874,7 @@ cylinder :: proc(
 		y := -h if cap == 0 else h
 		normal := Vec3{0, -1, 0} if cap == 0 else Vec3{0, 1, 0}
 		offset := cap_start + cap * (segments + 1)
-		vertices[offset] = {{0, y, 0}, normal, {0.5, 0.5}}
+		vertices[offset] = {{0, y, 0}, normal, {0.5, 0.5}, {}}
 		for i in 0 ..< segments {
 			angle := f32(i) * 2 * math.PI / f32(segments)
 			x, z := math.cos(angle) * radius, math.sin(angle) * radius
@@ -1870,6 +1882,7 @@ cylinder :: proc(
 				{x, y, z},
 				normal,
 				{x / (2 * radius) + 0.5, z / (2 * radius) + 0.5},
+				{},
 			}
 			next := (i + 1) % segments; o := segments * 6 + (cap * segments + i) * 3
 			if cap ==
@@ -1898,7 +1911,7 @@ sphere :: proc(radius: f32 = 0.5, segments: int = 24, rings: int = 16) -> (Geome
 				math.cos(phi),
 				math.sin(phi) * math.sin(theta),
 			}
-			vertices[ring * (segments + 1) + segment] = {mul(normal, radius), normal, {u, v}}
+			vertices[ring * (segments + 1) + segment] = {mul(normal, radius), normal, {u, v}, {}}
 		}
 	}
 	offset := 0
@@ -2021,7 +2034,7 @@ icosphere :: proc(radius: f32 = 0.5, subdivisions: int = 2) -> (Geometry_Desc, s
 			0.5 +
 			math.atan2(position.z, position.x) /
 				(2 * math.PI); v := 0.5 - math.asin(position.y) / math.PI
-		vertices[i] = {mul(position, radius), position, {u, v}}
+		vertices[i] = {mul(position, radius), position, {u, v}, {}}
 	}
 	result_indices := clone_slice(indices[:])
 	return {vertices, result_indices}, ""

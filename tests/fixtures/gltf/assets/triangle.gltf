@@ -5,7 +5,7 @@
   "nodes": [{"name": "Triangle Node", "mesh": 0, "translation": [1, 2, 3]}],
   "meshes": [{
     "name": "Triangle Mesh",
-    "primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]
+    "primitives": [{"attributes": {"POSITION": 0, "TANGENT": 1}, "indices": 2, "material": 0}]
   }],
   "materials": [{
     "name": "Coral",
@@ -13,12 +13,13 @@
     "emissiveFactor": [0.1, 0.0, 0.0]
   }],
   "buffers": [{
-    "byteLength": 42,
-    "uri": "data:application/octet-stream;base64,AAAAAAAAgD8AAAAAAACAvwAAgL8AAAAAAACAPwAAgL8AAAAAAAABAAIA"
+    "byteLength": 90,
+    "uri": "data:application/octet-stream;base64,AAAAAAAAgD8AAAAAAACAvwAAgL8AAAAAAACAPwAAgL8AAAAAAACAPwAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD8AAIA/AAAAAAAAAAAAAIA/AAABAAIA"
   }],
   "bufferViews": [
     {"buffer": 0, "byteOffset": 0, "byteLength": 36, "target": 34962},
-    {"buffer": 0, "byteOffset": 36, "byteLength": 6, "target": 34963}
+    {"buffer": 0, "byteOffset": 36, "byteLength": 48, "target": 34962},
+    {"buffer": 0, "byteOffset": 84, "byteLength": 6, "target": 34963}
   ],
   "accessors": [
     {
@@ -29,6 +30,7 @@
       "min": [-1, -1, 0],
       "max": [1, 1, 0]
     },
-    {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+    {"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC4"},
+    {"bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR"}
   ]
 }

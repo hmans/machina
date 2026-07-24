@@ -212,6 +212,7 @@ struct Vertex_Input {
 	@location(0) position: vec3<f32>,
 	@location(1) normal: vec3<f32>,
 	@location(2) uv: vec2<f32>,
+	@location(3) tangent: vec4<f32>,
 };
 
 struct Vertex_Output {
@@ -223,6 +224,7 @@ struct Vertex_Output {
 	@location(4) shadow_receiver: f32,
 	@location(5) uv: vec2<f32>,
 	@location(6) emissive: vec3<f32>,
+	@location(7) world_tangent: vec4<f32>,
 };
 
 @vertex
@@ -233,6 +235,10 @@ fn vs_main(input: Vertex_Input, @builtin(instance_index) visible_index: u32) -> 
 	output.position = render.view_projection * instance.model * local_position;
 	output.world_position = (instance.model * local_position).xyz;
 	output.world_normal = normalize((instance.normal_model * vec4<f32>(input.normal, 0.0)).xyz);
+	output.world_tangent = vec4<f32>(
+		(instance.model * vec4<f32>(input.tangent.xyz, 0.0)).xyz,
+		input.tangent.w,
+	);
 	output.color = instance.color;
 	output.emissive = instance.emissive.rgb;
 	output.view_depth = -(render.view * instance.model * local_position).z;
@@ -264,6 +270,27 @@ fn environment_brdf(n_dot_v: f32, roughness: f32) -> vec2<f32> {
 	let r = roughness * c0 + c1;
 	let a004 = min(r.x * r.x, exp2(-9.28 * n_dot_v)) * r.x + r.y;
 	return vec2<f32>(-1.04, 1.04) * a004 + r.zw;
+}
+
+fn environment_specular_response(
+	f0: vec3<f32>,
+	n_dot_v: f32,
+	roughness: f32,
+) -> vec3<f32> {
+	let brdf = environment_brdf(n_dot_v, roughness);
+	let fresnel = fresnel_schlick_roughness(n_dot_v, f0, roughness);
+	let single_scattering = fresnel * brdf.x + brdf.y;
+	let single_scattering_energy = clamp(brdf.x + brdf.y, 0.0, 1.0);
+	let multiple_scattering_energy = 1.0 - single_scattering_energy;
+	let average_fresnel = f0 + (vec3<f32>(1.0) - f0) / 21.0;
+	let multiple_scattering =
+		single_scattering *
+		average_fresnel /
+		max(
+			vec3<f32>(1.0) - multiple_scattering_energy * average_fresnel,
+			vec3<f32>(0.001),
+		);
+	return single_scattering + multiple_scattering * multiple_scattering_energy;
 }
 
 fn distribution_ggx(normal: vec3<f32>, halfway: vec3<f32>, roughness: f32) -> f32 {
@@ -300,6 +327,16 @@ fn mapped_normal(input: Vertex_Output, front_facing: bool) -> vec3<f32> {
 	let flip = material.flags.w > 0.5 && !front_facing;
 	var sampled = textureSample(normal_texture, normal_sampler, input.uv).xyz * 2.0 - 1.0;
 	sampled = normalize(vec3<f32>(sampled.xy * material.pbr_factors.z, sampled.z));
+	let authored_tangent_length = length(input.world_tangent.xyz);
+	if (authored_tangent_length > 0.0001) {
+		let tangent = normalize(
+			input.world_tangent.xyz -
+			geometric * dot(geometric, input.world_tangent.xyz),
+		);
+		let bitangent = normalize(cross(geometric, tangent)) * input.world_tangent.w;
+		let mapped = normalize(mat3x3<f32>(tangent, bitangent, geometric) * sampled);
+		return select(mapped, -mapped, flip);
+	}
 	let position_dx = dpdx(input.world_position);
 	let position_dy = dpdy(input.world_position);
 	let uv_dx = dpdx(input.uv);
@@ -601,9 +638,10 @@ fn fs_main(
 			rotate_environment(reflection),
 			roughness * environment.max_specular_lod,
 		).rgb;
-		let brdf = environment_brdf(n_dot_v, roughness);
 		let diffuse_ibl = ambient_diffuse * irradiance;
-		let specular_ibl = prefiltered * (ambient_fresnel * brdf.x + brdf.y);
+		let specular_ibl =
+			prefiltered *
+			environment_specular_response(f0, n_dot_v, roughness);
 		indirect_diffuse += diffuse_ibl * occlusion * environment.intensity;
 		color += specular_ibl * occlusion * environment.intensity;
 	} else {
@@ -612,7 +650,6 @@ fn fs_main(
 			let reflection = reflect(-view, normal);
 			let procedural_irradiance = procedural_environment_radiance(normal, 1.0);
 			let procedural_specular = procedural_environment_radiance(reflection, roughness);
-			let brdf = environment_brdf(n_dot_v, roughness);
 			indirect_diffuse +=
 				ambient_diffuse *
 				procedural_irradiance *
@@ -620,7 +657,7 @@ fn fs_main(
 				environment.intensity;
 			color +=
 				procedural_specular *
-				(ambient_fresnel * brdf.x + brdf.y) *
+				environment_specular_response(f0, n_dot_v, roughness) *
 				occlusion *
 				environment.intensity;
 		}

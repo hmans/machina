@@ -78,6 +78,7 @@ Resource_Handle :: struct {
 Geometry_Vertex :: struct {
 	position, normal: Vec3,
 	uv: Vec2,
+	tangent: Vec4,
 }
 Geometry_Desc :: struct {
 	vertices: [^]Geometry_Vertex,

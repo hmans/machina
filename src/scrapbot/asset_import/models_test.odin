@@ -250,6 +250,10 @@ test_static_gltf_import_is_incremental_and_round_trips_product :: proc(t: ^testi
 			testing.expect_value(t, primitive.indices[2], u32(2))
 		}
 		testing.expect(t, math.abs(primitive.vertices[0].normal.z - 1) < 0.0001)
+		testing.expect_value(t, primitive.vertices[0].tangent.x, f32(1))
+		testing.expect_value(t, primitive.vertices[0].tangent.y, f32(0))
+		testing.expect_value(t, primitive.vertices[0].tangent.z, f32(0))
+		testing.expect_value(t, primitive.vertices[0].tangent.w, f32(1))
 		testing.expect_value(t, model.nodes[0].name, "Triangle Node")
 		testing.expect_value(t, model.nodes[0].mesh_index, i32(0))
 		testing.expect_value(t, model.nodes[0].transform.position.x, f32(1))

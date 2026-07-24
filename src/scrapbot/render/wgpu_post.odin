@@ -1137,11 +1137,12 @@ wgpu_encode_bloom_and_composite :: proc(
 			viewport = viewport,
 			dimensions = {f32(width), f32(height), projection[8], projection[9]},
 			parameters = {
-				WGPU_GTAO_RADIUS,
-				WGPU_GTAO_HORIZON_BIAS,
-				WGPU_GTAO_POWER,
-				WGPU_GTAO_STRENGTH,
+				WGPU_VISIBILITY_AO_RADIUS,
+				WGPU_VISIBILITY_AO_POWER,
+				WGPU_VISIBILITY_AO_STRENGTH,
+				0,
 			},
+			visibility_parameters = {WGPU_VISIBILITY_AO_THICKNESS, 0, 0, 0},
 		}
 		wgpu.QueueWriteBuffer(
 			renderer.queue,

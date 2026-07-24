@@ -173,7 +173,7 @@ cube_geometry :: proc "contextless" (size: f32 = 1) -> Generated_Geometry {
 	}
 	normals := [6]Vec3{{0, 0, 1}, {0, 0, -1}, {-1, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, -1, 0}}
 	uvs := [4]Vec2{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-	for face in 0 ..< 6 { for corner in 0 ..< 4 { result.vertices[face * 4 + corner] = {positions[faces[face][corner]], normals[face], uvs[corner]} } }
+	for face in 0 ..< 6 { for corner in 0 ..< 4 { result.vertices[face * 4 + corner] = {positions[faces[face][corner]], normals[face], uvs[corner], {}} } }
 	for face in 0 ..< 6 { base := u32(face * 4); o := face * 6; values := [6]u32{base, base + 1, base + 2, base, base + 2, base + 3}; for v, i in values { result.indices[o + i] = v } }
 	result.vertex_count = 24; result.index_count = 36; return result
 }
@@ -184,12 +184,14 @@ plane_geometry :: proc "contextless" (width, depth: f32) -> Generated_Geometry {
 		{-w, 0, -d},
 		{0, 1, 0},
 		{0, 0},
-	}; result.vertices[1] = {{w, 0, -d}, {0, 1, 0}, {1, 0}}
+		{},
+	}; result.vertices[1] = {{w, 0, -d}, {0, 1, 0}, {1, 0}, {}}
 	result.vertices[2] = {
 		{w, 0, d},
 		{0, 1, 0},
 		{1, 1},
-	}; result.vertices[3] = {{-w, 0, d}, {0, 1, 0}, {0, 1}}
+		{},
+	}; result.vertices[3] = {{-w, 0, d}, {0, 1, 0}, {0, 1}, {}}
 	values := [6]u32{0, 1, 2, 0, 2, 3}; for v, i in values { result.indices[i] = v }
 	result.vertex_count = 4; result.index_count = 6; return result
 }

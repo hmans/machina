@@ -11,11 +11,10 @@ This file tracks current actionable engineering work. The broad product roadmap 
 - [ ] Generalize retained-World viewport targets into explicitly addressable concurrent ECS worlds when multi-world runtime ownership exists.
 - [ ] Replace aggregate asset polling with dependency-aware platform file watching that enqueues exact resource UUID reimports.
 - [ ] Add imported mesh LODs and evaluate meshlets and richer submission against representative scenes.
-- [ ] Extend the camera's authored TAA/fast-AA/AO/SSR/bloom switches with ambient-occlusion radius/intensity/quality, reflection distance/thickness/roughness/quality, bloom threshold/intensity/scatter, temporal history/quality, and automatic/adaptive exposure controls; evaluate whether advanced overrides become a separate post-processing component or volume.
+- [ ] Extend the camera's authored TAA/fast-AA/AO/SSR/bloom switches with ambient-occlusion radius/intensity/quality/thickness, reflection distance/thickness/roughness/quality, bloom threshold/intensity/scatter, temporal history/quality, and automatic/adaptive exposure controls; evaluate whether advanced overrides become a separate post-processing component or volume.
 - [ ] Add hierarchical-Z ray marching, rough-reflection filtering, and temporal confidence accumulation to screen-space reflections; keep the current bounded linear ray march as the portable baseline.
 - [ ] Add per-object motion vectors so temporal antialiasing can reproject animated geometry exactly instead of relying on depth rejection and neighborhood clamping.
 - [ ] Add Hi-Z, visibility, and LOD debug views.
-- [ ] Add deterministic visual comparison for offscreen render output.
 
 ## ECS UI
 

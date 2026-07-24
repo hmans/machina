@@ -69,6 +69,7 @@ struct Vertex_Input {
 	@location(0) position: vec3<f32>,
 	@location(1) normal: vec3<f32>,
 	@location(2) uv: vec2<f32>,
+	@location(3) tangent: vec4<f32>,
 };
 
 struct Vertex_Output {
@@ -80,6 +81,7 @@ struct Vertex_Output {
 	@location(4) shadow_receiver: f32,
 	@location(5) uv: vec2<f32>,
 	@location(6) emissive: vec3<f32>,
+	@location(7) world_tangent: vec4<f32>,
 };
 
 @vertex
@@ -88,6 +90,10 @@ fn vs_main(input: Vertex_Input, @builtin(instance_index) instance_index: u32) ->
 	output.position = render.mvp[instance_index] * vec4<f32>(input.position, 1.0);
 	output.world_position = (render.model[instance_index] * vec4<f32>(input.position, 1.0)).xyz;
 	output.world_normal = normalize((render.normal_model[instance_index] * vec4<f32>(input.normal, 0.0)).xyz);
+	output.world_tangent = vec4<f32>(
+		(render.model[instance_index] * vec4<f32>(input.tangent.xyz, 0.0)).xyz,
+		input.tangent.w,
+	);
 	output.color = render.color[instance_index].rgb;
 	output.emissive = render.emissive[instance_index].rgb;
 	output.shadow_position = render.shadow_mvp[instance_index] * vec4<f32>(input.position, 1.0);
@@ -129,6 +135,27 @@ fn environment_brdf(n_dot_v: f32, roughness: f32) -> vec2<f32> {
 	return vec2<f32>(-1.04, 1.04) * a004 + r.zw;
 }
 
+fn environment_specular_response(
+	f0: vec3<f32>,
+	n_dot_v: f32,
+	roughness: f32,
+) -> vec3<f32> {
+	let brdf = environment_brdf(n_dot_v, roughness);
+	let fresnel = fresnel_schlick_roughness(n_dot_v, f0, roughness);
+	let single_scattering = fresnel * brdf.x + brdf.y;
+	let single_scattering_energy = clamp(brdf.x + brdf.y, 0.0, 1.0);
+	let multiple_scattering_energy = 1.0 - single_scattering_energy;
+	let average_fresnel = f0 + (vec3<f32>(1.0) - f0) / 21.0;
+	let multiple_scattering =
+		single_scattering *
+		average_fresnel /
+		max(
+			vec3<f32>(1.0) - multiple_scattering_energy * average_fresnel,
+			vec3<f32>(0.001),
+		);
+	return single_scattering + multiple_scattering * multiple_scattering_energy;
+}
+
 fn distribution_ggx(normal: vec3<f32>, halfway: vec3<f32>, roughness: f32) -> f32 {
 	let a = roughness * roughness;
 	let a2 = a * a;
@@ -152,6 +179,15 @@ fn mapped_normal(input: Vertex_Output) -> vec3<f32> {
 	let geometric = normalize(input.world_normal);
 	var sampled = textureSample(normal_texture, normal_sampler, input.uv).xyz * 2.0 - 1.0;
 	sampled = normalize(vec3<f32>(sampled.xy * material.pbr_factors.z, sampled.z));
+	let authored_tangent_length = length(input.world_tangent.xyz);
+	if (authored_tangent_length > 0.0001) {
+		let tangent = normalize(
+			input.world_tangent.xyz -
+			geometric * dot(geometric, input.world_tangent.xyz),
+		);
+		let bitangent = normalize(cross(geometric, tangent)) * input.world_tangent.w;
+		return normalize(mat3x3<f32>(tangent, bitangent, geometric) * sampled);
+	}
 	let position_dx = dpdx(input.world_position);
 	let position_dy = dpdy(input.world_position);
 	let uv_dx = dpdx(input.uv);
@@ -350,9 +386,10 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 			rotate_environment(reflection),
 			roughness * environment.max_specular_lod,
 		).rgb;
-		let brdf = environment_brdf(n_dot_v, roughness);
 		let diffuse_ibl = ambient_diffuse * irradiance;
-		let specular_ibl = prefiltered * (ambient_fresnel * brdf.x + brdf.y);
+		let specular_ibl =
+			prefiltered *
+			environment_specular_response(f0, n_dot_v, roughness);
 		color += (diffuse_ibl + specular_ibl) * occlusion * environment.intensity;
 	} else {
 		color += render.ambient.rgb * ambient_diffuse * occlusion;
@@ -360,7 +397,6 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 			let reflection = reflect(-view, normal);
 			let procedural_irradiance = procedural_environment_radiance(normal, 1.0);
 			let procedural_specular = procedural_environment_radiance(reflection, roughness);
-			let brdf = environment_brdf(n_dot_v, roughness);
 			color +=
 				ambient_diffuse *
 				procedural_irradiance *
@@ -368,7 +404,7 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 				environment.intensity;
 			color +=
 				procedural_specular *
-				(ambient_fresnel * brdf.x + brdf.y) *
+				environment_specular_response(f0, n_dot_v, roughness) *
 				occlusion *
 				environment.intensity;
 		}
@@ -835,6 +871,7 @@ struct Ambient_Occlusion_Uniform {
 	viewport: vec4<f32>,
 	dimensions: vec4<f32>,
 	parameters: vec4<f32>,
+	visibility_parameters: vec4<f32>,
 };
 
 @group(0) @binding(0) var scene_depth: texture_depth_2d;
@@ -847,6 +884,7 @@ const PI: f32 = 3.14159265359;
 const HALF_PI: f32 = 1.57079632679;
 const SLICE_COUNT: u32 = 3u;
 const STEPS_PER_SIDE: u32 = 6u;
+const SECTOR_COUNT: u32 = 32u;
 
 fn viewport_minimum() -> vec2<i32> {
 	return vec2<i32>(floor(settings.viewport.xy));
@@ -904,33 +942,78 @@ fn spatial_rotation(pixel: vec2<i32>) -> f32 {
 	return f32(value & 0xffffu) * (6.28318530718 / 65536.0);
 }
 
-fn integrate_arc(horizon: f32, normal_angle: f32, cos_normal: f32) -> f32 {
-	return (
-		cos_normal +
-		2.0 * horizon * sin(normal_angle) -
-		cos(2.0 * horizon - normal_angle)
-	) * 0.25;
+fn sector_mask(minimum_horizon: f32, maximum_horizon: f32) -> u32 {
+	let minimum_sector = min(
+		u32(floor(clamp(minimum_horizon, 0.0, 1.0) * f32(SECTOR_COUNT))),
+		SECTOR_COUNT - 1u,
+	);
+	let covered_sectors = min(
+		u32(round(
+			max(maximum_horizon - minimum_horizon, 0.0) *
+			f32(SECTOR_COUNT),
+		)),
+		SECTOR_COUNT,
+	);
+	if (covered_sectors == 0u) {
+		return 0u;
+	}
+	let low_bits = select(
+		0xffffffffu >> (SECTOR_COUNT - covered_sectors),
+		0xffffffffu,
+		covered_sectors == SECTOR_COUNT,
+	);
+	return low_bits << minimum_sector;
 }
 
-fn horizon_cosine(
+fn accumulate_visibility_sectors(
 	center: vec3<f32>,
 	view_direction: vec3<f32>,
 	sample_pixel: vec2<i32>,
 	radius: f32,
-) -> f32 {
+	thickness: f32,
+	sampling_direction: f32,
+	normal_angle: f32,
+	occluded_sectors: u32,
+) -> u32 {
 	let sample_depth = depth_at(sample_pixel);
 	if (sample_depth >= 0.999999) {
-		return -1.0;
+		return occluded_sectors;
 	}
 	let sample_position = view_position(sample_pixel, sample_depth);
 	let difference = sample_position - center;
 	let distance = length(difference);
 	if (distance <= 0.0001 || distance >= radius) {
-		return -1.0;
+		return occluded_sectors;
 	}
-	let radius_falloff = clamp(1.0 - distance / radius, 0.0, 1.0);
-	let candidate = dot(view_direction, difference / distance);
-	return mix(-1.0, candidate, radius_falloff * radius_falloff);
+	let back_difference = difference - view_direction * thickness;
+	let back_distance = length(back_difference);
+	if (back_distance <= 0.0001) {
+		return occluded_sectors;
+	}
+	let front_angle = acos(clamp(
+		dot(difference / distance, view_direction),
+		-1.0,
+		1.0,
+	));
+	let back_angle = acos(clamp(
+		dot(back_difference / back_distance, view_direction),
+		-1.0,
+		1.0,
+	));
+	let front_horizon = clamp(
+		(sampling_direction * -front_angle - normal_angle + HALF_PI) / PI,
+		0.0,
+		1.0,
+	);
+	let back_horizon = clamp(
+		(sampling_direction * -back_angle - normal_angle + HALF_PI) / PI,
+		0.0,
+		1.0,
+	);
+	return occluded_sectors | sector_mask(
+		min(front_horizon, back_horizon),
+		max(front_horizon, back_horizon),
+	);
 }
 
 @compute @workgroup_size(8, 8)
@@ -950,6 +1033,7 @@ fn ambient_occlusion_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 	let normal = view_normal(pixel);
 	let view_direction = normalize(-center);
 	let radius = settings.parameters.x;
+	let thickness = settings.visibility_parameters.x;
 	let projected_radius = clamp(
 		radius * settings.projection.y * settings.viewport.w / max(-center.z, 0.001) * 0.5,
 		2.0,
@@ -966,6 +1050,7 @@ fn ambient_occlusion_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 		let projected_normal = normal - slice_normal * dot(normal, slice_normal);
 		let projected_normal_length = length(projected_normal);
 		if (projected_normal_length <= 0.0001) {
+			visibility += 1.0;
 			continue;
 		}
 		let normalized_projected_normal = projected_normal / projected_normal_length;
@@ -974,14 +1059,14 @@ fn ambient_occlusion_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 			-1.0,
 			1.0,
 		);
+		let slice_tangent = normalize(cross(view_direction, slice_normal));
 		let normal_sign = select(
 			-1.0,
 			1.0,
-			dot(slice_direction, projected_normal) >= 0.0,
+			dot(projected_normal, slice_tangent) >= 0.0,
 		);
-		let normal_angle = normal_sign * acos(cos_normal);
-		var negative_horizon_cosine = -1.0;
-		var positive_horizon_cosine = -1.0;
+		let normal_angle = -normal_sign * acos(cos_normal);
+		var occluded_sectors = 0u;
 		for (var step = 0u; step < STEPS_PER_SIDE; step += 1u) {
 			let normalized_step =
 				(f32(step) + 0.35 + sample_jitter * 0.3) /
@@ -991,58 +1076,38 @@ fn ambient_occlusion_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 				projected_radius * normalized_step * normalized_step,
 			);
 			let offset = vec2<i32>(round(screen_direction * sample_distance));
-			negative_horizon_cosine = max(
-				negative_horizon_cosine,
-				horizon_cosine(
-					center,
-					view_direction,
-					clamp_full_pixel(pixel - offset),
-					radius,
-				),
+			occluded_sectors = accumulate_visibility_sectors(
+				center,
+				view_direction,
+				clamp_full_pixel(pixel - offset),
+				radius,
+				thickness,
+				-1.0,
+				normal_angle,
+				occluded_sectors,
 			);
-			positive_horizon_cosine = max(
-				positive_horizon_cosine,
-				horizon_cosine(
-					center,
-					view_direction,
-					clamp_full_pixel(pixel + offset),
-					radius,
-				),
+			occluded_sectors = accumulate_visibility_sectors(
+				center,
+				view_direction,
+				clamp_full_pixel(pixel + offset),
+				radius,
+				thickness,
+				1.0,
+				normal_angle,
+				occluded_sectors,
 			);
 		}
-		var negative_horizon = -acos(clamp(negative_horizon_cosine, -1.0, 1.0));
-		var positive_horizon = acos(clamp(positive_horizon_cosine, -1.0, 1.0));
-		negative_horizon = normal_angle + clamp(
-			negative_horizon - normal_angle + settings.parameters.y,
-			-HALF_PI,
-			HALF_PI,
-		);
-		positive_horizon = normal_angle + clamp(
-			positive_horizon - normal_angle - settings.parameters.y,
-			-HALF_PI,
-			HALF_PI,
-		);
-		let slice_visibility = projected_normal_length * (
-			integrate_arc(
-				negative_horizon,
-				normal_angle,
-				cos_normal,
-			) +
-			integrate_arc(
-				positive_horizon,
-				normal_angle,
-				cos_normal,
-			)
-		);
-		visibility += clamp(slice_visibility, 0.0, 1.0);
+		visibility +=
+			1.0 -
+			f32(countOneBits(occluded_sectors)) / f32(SECTOR_COUNT);
 	}
 	visibility = clamp(
 		visibility / f32(SLICE_COUNT),
 		0.0,
 		1.0,
 	);
-	visibility = pow(visibility, settings.parameters.z);
-	visibility = mix(1.0, visibility, settings.parameters.w);
+	visibility = pow(visibility, settings.parameters.y);
+	visibility = mix(1.0, visibility, settings.parameters.z);
 	textureStore(
 		destination_occlusion,
 		ao_pixel,

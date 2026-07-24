@@ -99,7 +99,7 @@ end)
 
 | API | Purpose |
 | --- | --- |
-| `scrapbot.geometry.create(name, descriptor)` | Register full position/normal/UV vertices and `u32` triangle indices. |
+| `scrapbot.geometry.create(name, descriptor)` | Register position/normal/UV vertices, optional `Vec4` tangents (`xyz` direction, `w` handedness), and `u32` triangle indices. |
 | `scrapbot.geometry.cube(name, size?)` | Generate and register indexed cube geometry. |
 | `scrapbot.geometry.plane(name, width?, depth?)` | Generate and register indexed plane geometry. |
 | `scrapbot.geometry.icosphere(name, radius?, subdivisions?)` | Generate an indexed icosphere. Subdivisions range from 0 to 4. |

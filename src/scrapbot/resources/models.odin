@@ -190,6 +190,12 @@ register_project_model :: proc(
 					position = vertex.position,
 					normal = vertex.normal,
 					uv = {vertex.uv.x, vertex.uv.y},
+					tangent = {
+						vertex.tangent.x,
+						vertex.tangent.y,
+						vertex.tangent.z,
+						vertex.tangent.w,
+					},
 				}
 			}
 			geometry_name := fmt.tprintf(

@@ -6,15 +6,78 @@ description: Run the null and WebGPU backends, smoke-test projects, and verify g
 Scrapbot has two rendering paths today:
 
 - `null`: headless renderer for fast smoke tests.
-- `wgpu`: SDL3 plus `wgpu-native` for indexed geometry, metallic-roughness GGX materials with base-color, normal, occlusion, and emissive maps, ECS and imported HDR environment lighting, GPU-computed clustered point lights, four-cascade directional shadows, exposure, depth-aware temporal antialiasing, horizon-integrated GTAO, HDR bloom, tone mapping, persistent GPU instances, compute frustum culling, visibility compaction, and indexed indirect drawing.
+- `wgpu`: SDL3 plus `wgpu-native` for the complete GPU-driven renderer.
+
+The WGPU backend includes:
+
+- metallic-roughness GGX materials and HDR environment lighting;
+- GPU-clustered point lights and four directional-shadow cascades;
+- retained instances, compute culling, visibility compaction, LOD selection, and indirect draws;
+- TAA, fast AA, visibility-bitmask AO, SSR, bloom, and tone mapping.
+
+## GPU-driven rendering
 
 WGPU retains geometry/material/LOD batches across Transform-only frames. Stable ECS render slots address a backend-owned instance table. Transform changes pack into one dense update stream and one upload before GPU matrix/bounds expansion; static record changes still upload only coalesced dirty ranges. One compute pass produces separate camera-visible and shadow-visible instance lists plus their indirect counts. The renderer supports 131,072 instance slots and grows its draw database geometrically; it uses conservative geometry-derived bounding spheres and one portable indirect call per retained batch.
 
 Pass `--cpu-culling` to run the same bounding-sphere tests, screen-radius LOD selection, and compaction on the CPU while retaining WGPU storage-buffer shaders and indirect draws. This is useful as a correctness oracle and compatibility diagnostic; compute culling remains the default. Hi-Z rejection is GPU-only and therefore disabled on the reference path. The compute path also disables previous-frame Hi-Z rejection whenever the camera or a persistent instance record changes, then rebuilds the pyramid from the current conservative frustum result.
 
-Run `mise test-gpu` for the bounded GPU acceptance gate. It drives a greater-than-64-batch stress scene through compute and CPU visibility, verifies adaptive Hi-Z rejection and asynchronous timestamps/counters, and requires pixel-equivalent frames with meaningful color variance. The comparator permits at most one 8-bit channel step in sixteen channels across a complete frame, covering harmless backend rounding without accepting a visible mismatch. It also pauses the dense Cluster Cathedral inside the editor and verifies that large near-field architectural bounds remain visible while Hi-Z continues rejecting eligible hidden instances. A second authored-resource fixture places one instance in each of three GPU-selected geometry LODs and requires the CPU reference to make the same selections and produce the same pixels.
+Run `mise test-gpu` for the bounded GPU acceptance gate. It drives a greater-than-64-batch stress scene through compute and CPU visibility. It also verifies adaptive Hi-Z rejection plus asynchronous timestamps and counters.
 
-The WGPU path samples base-color and emissive maps as sRGB and material-data maps as linear values. Its GGX shader combines metallic-roughness factors, derivative-reconstructed tangent-space normals, occlusion, direct directional/point lights, and environment lighting. Imported HDR environments provide diffuse-irradiance and roughness-prefiltered specular cubes; the procedural atmosphere analytically evaluates matching diffuse and roughness-aware specular radiance from its sky, ground, haze, and sun. Metallic materials therefore retain reflected environment color when no imported probe is selected instead of falling back to an arbitrary ambient-specular constant. Environment import uses seam-wrapped bilinear panorama lookup and deterministic 256-sample GGX prefiltering so close glossy surfaces do not magnify blocky integration noise. Point lights live outside the render uniform; a cluster-centric compute pass deterministically assigns a growable retained light list into a 16×9×24 view-frustum grid. Every cluster can reference the complete list, so dense moving lights do not pop through a smaller hidden per-cluster limit. Fragment lookup uses the rendered viewport origin and extent, including when editor chrome insets the world view. The pass reruns only when the camera, viewport, point-light payload, or buffer capacity changes. A scene's World Environment independently selects image-based lighting and either an imported panorama or the built-in procedural atmosphere. The procedural sky exposes live sky/ground color, turbidity, atmosphere thickness, horizon softness, and an HDR sun direction, color, intensity, size, and glow. Its spherical horizon clips the sun, and elevation transitions sky presentation and environment lighting through daylight, twilight, and night. Above the horizon, the sun occupies the first directional-light render slot and therefore drives ordinary GGX lighting, shadow culling, and the primary shadow cascades; explicit ECS lights remain additive. Lighting, an enabled background, and material emission accumulate in an `RGBA16Float` scene target while world shading also writes compact view-normal, roughness, and metallic surface data plus a separate indirect-diffuse target. The active `scrapbot.camera` independently enables temporal antialiasing, lightweight fast antialiasing, ambient occlusion, screen-space reflections, and bloom for its view. Enabled GTAO reconstructs view-space positions from depth, searches paired horizons across rotated slices around the mapped surface normal, analytically integrates their visibility at half resolution, and filters only across depth- and normal-similar neighbors. The result attenuates indirect diffuse light; direct lights, specular lighting, emission, and reflections stay untouched. Enabled SSR reconstructs the current surface, marches its reflected view ray through depth, and samples HDR color only at confirmed on-screen hits; rough, distant, uncertain, and screen-edge hits fade out. GTAO and SSR join the current HDR signal before an enabled eight-sample projection-jitter sequence feeds a depth-aware temporal resolve that reconstructs world positions, reprojects retained color/depth history through the previous camera, rejects disocclusions, and clamps history to the current 3×3 color neighborhood. When TAA is off, the renderer removes projection jitter and history traffic; optional fast AA uses only the current resolved frame. Resize, world replacement, sampled-depth replacement, camera cuts, and TAA mode changes invalidate history; animated objects currently rely on rejection and clamping until per-object motion vectors land. World-environment exposure multiplied by active-camera exposure scales the result, and enabled bloom builds five successively smaller bright-pass levels before one ACES-style tone-map pass presents through an sRGB target. Disabled AO, SSR, and bloom skip their compute passes. Project UI, gizmos, and editor chrome render afterward, so world postprocessing never softens text or controls. GTAO and SSR remain screen-space effects and cannot recover off-screen or occluded geometry; reflection probes and off-screen/hierarchical tracing remain future work.
+The comparator permits at most one 8-bit channel step in sixteen channels across a complete frame. This covers harmless backend rounding without accepting a visible mismatch.
+
+The gate pauses the dense Cluster Cathedral inside the editor and requires large near-field bounds to remain visible while Hi-Z rejects eligible hidden instances. A separate authored-resource fixture places one instance in each of three GPU-selected LODs and requires the CPU reference to select and render the same result.
+
+## Lighting and postprocessing
+
+### Materials and environments
+
+The WGPU path samples base-color and emissive maps as sRGB. Metallic-roughness, normal, occlusion, and imported-environment data remain linear.
+
+Its GGX shader combines material factors, tangent-space normals, direct lights, and environment lighting. Imported glTF geometry keeps authored tangent handedness for stable normal maps across UV seams; geometry without tangents falls back to derivative reconstruction. Imported HDR environments provide diffuse-irradiance and roughness-prefiltered specular cubes.
+
+The procedural atmosphere evaluates equivalent diffuse and roughness-aware specular radiance from its sky, ground, haze, and sun. Metallic materials therefore retain reflected environment color even when no imported probe is selected.
+
+Environment import uses seam-wrapped bilinear panorama lookup and deterministic 256-sample GGX prefiltering. This prevents close glossy surfaces from magnifying blocky integration noise.
+
+### Clustered and directional lighting
+
+Point lights live outside the render uniform. A cluster-centric compute pass assigns the retained light list into a 16×9×24 view-frustum grid.
+
+Every cluster can reference the complete light list, so dense moving lights do not pop through a smaller hidden per-cluster limit. Fragment lookup accounts for the rendered viewport origin and extent, including editor chrome. The pass reruns only when the camera, viewport, point-light payload, or buffer capacity changes.
+
+A scene's World Environment independently selects lighting and its visible background. The procedural sky exposes:
+
+- sky and ground color;
+- turbidity, atmosphere thickness, and horizon softness;
+- sun direction, color, intensity, size, and glow.
+
+The spherical horizon clips the sun and drives the daylight, twilight, and night transition. Above the horizon, the sun becomes the first directional render light and drives direct GGX lighting plus the primary shadow cascades. Explicit ECS lights remain additive.
+
+### Ambient occlusion
+
+Enabled AO reconstructs view-space positions from depth and samples rotated slices around the mapped surface normal at half resolution. Each depth sample marks only its constant-thickness angular interval in a 32-sector visibility bitmask.
+
+Visibility can therefore reopen behind thin geometry instead of one high horizon occluding the rest of a slice. Joint depth/normal filtering prevents the result from crossing incompatible surfaces.
+
+AO attenuates only indirect diffuse light. It does not dirty direct lights, specular lighting, emission, or reflections.
+
+### Reflections, antialiasing, and composite
+
+Enabled SSR marches a reflected view ray through scene depth and samples HDR color only at confirmed on-screen hits. Confidence fades rough, distant, uncertain, and screen-edge hits.
+
+AO and SSR join the current HDR signal before temporal resolution. Enabled TAA uses an eight-sample projection-jitter sequence, camera reprojection, previous-depth rejection, and current-neighborhood clamping.
+
+When TAA is off, the renderer removes projection jitter and history traffic. Optional fast AA then uses only the current resolved frame. Resize, world replacement, depth replacement, camera cuts, and TAA mode changes invalidate temporal history.
+
+World-environment and active-camera exposure multiply together. Enabled bloom builds five bright-pass levels before one ACES-style tone-map pass presents through an sRGB target.
+
+Disabled AO, SSR, and bloom skip their compute dispatches. Project UI, gizmos, and editor chrome render afterward, so world postprocessing never softens text or controls.
+
+### Screen-space limits
+
+AO and SSR cannot recover off-screen or occluded geometry. AO thickness is necessarily approximate because a single depth layer cannot reveal a surface's true back face. Animated objects rely on temporal rejection and clamping until per-object motion vectors land.
+
+Reflection probes and off-screen or hierarchical tracing remain future work.
 
 Use an emissive material when a visible surface should glow independently of lighting:
 
@@ -30,9 +93,19 @@ Use `examples/pbr-materials` as the small, deterministic authored-material refer
 scrapbot run examples/pbr-materials
 ```
 
-Screen-space ECS UI is reconciled after engine/project systems and painted as a blended overlay after world geometry. Visible windows feed platform pointer and keyboard state into the retained interaction system. Headless runs normally provide no interaction, but a semantic UI diagnostic script can drive the same reconciled controls deterministically without OS automation. `examples/ui-showcase` exercises the box model, hidden subtrees, nested horizontal and vertical stacks, titled panels, equal-width multi-column tables, selectable lists, progress indicators, smooth clipped scrolling, SDF-rounded styling, buttons, numeric and text inputs, checkboxes, and the embedded Inter typeface rendered from a precomputed MTSDF atlas. See [ECS UI](/guides/ecs-ui/) for the shared project/editor component contract.
+`mise test-gpu` captures this scene at 1280×720 and checks broad luminance, contrast, and chroma contracts over named material regions. The contract intentionally allows small cross-GPU differences while catching broken tone mapping, lost rough-metal energy, and reversed roughness response. See `tests/fixtures/visual/pbr-materials.json`.
 
-With `--editor`, WGPU fills the complete central project viewport with world rendering and derives camera aspect from that live rectangle. Project UI retains one uniform canvas-to-window scale, is translated and clipped to the free-aspect viewport, and uses the inverse transform for pointer input and semantic diagnostics; it is never stretched independently along X and Y. Transient editor-origin ECS UI paints in a separate full-window coordinate and paint domain. Visible windows use the display's native pixel density while retaining logical editor dimensions, keeping UI text crisp on HiDPI displays. The editor-origin scene-camera entity clones the initial project view and supports right-mouse-captured WASD, Space, and Ctrl fly navigation in a visible window. Use `examples/ecs-showcase` to verify live geometry and `examples/ui-showcase` to verify project UI scaling:
+Screen-space ECS UI reconciles after engine/project systems and paints after world geometry. Visible windows feed platform pointer and keyboard state into retained interaction.
+
+Headless runs normally have no interaction. A semantic UI script can drive the same controls deterministically without OS automation.
+
+`examples/ui-showcase` exercises layout, panels, tables, lists, progress, scrolling, SDF styling, inputs, buttons, checkboxes, and the embedded Inter MTSDF atlas. See [ECS UI](/guides/ecs-ui/) for the shared project/editor contract.
+
+With `--editor`, WGPU fills the central project viewport and derives camera aspect from that live rectangle. Project UI uses one uniform canvas scale, viewport translation, and clipping. Pointer input and semantic diagnostics invert the same transform; the canvas never stretches independently on each axis.
+
+Editor-origin ECS UI paints in a separate full-window domain. Visible windows use native pixel density with logical editor dimensions to keep text crisp.
+
+The editor scene camera clones the initial project view and supports right-mouse-captured WASD, Space, and Ctrl fly navigation. Use `examples/ecs-showcase` to verify live geometry and `examples/ui-showcase` to verify project UI scaling:
 
 ```sh
 bin/scrapbot run examples/ecs-showcase --backend wgpu --editor --headless --frames 20 --framegrab /tmp/scrapbot-editor.png
@@ -101,7 +174,24 @@ Scripts use schema version 1 and execute actions sequentially:
 }
 ```
 
-Available actions are `click`, `hover`, `scroll` (`wheel_y`), `type` (`text`), `drag`, `key`, `wait` (`frames`), `expect`, and `capture`. Drag presses the target center, then moves either by `delta_x`/`delta_y` or to a semantic `destination` target before releasing. Set `destination_anchor` to `top`, `center` (the default), or `bottom` to distinguish insertion from into-row drops. Destination drags are preferred for list/tree drops and other target-oriented gestures because they survive layout changes; offsets remain useful for sliders and splitters. A positive `frames` value interpolates the movement across that many input frames for sustained gestures and performance diagnostics, while omitted or zero keeps the one-frame move. Keys include navigation, editing, Tab, Enter, Escape, Select All, Save, Undo, Redo, Editor Toggle, Run/Stop, and Pause/Step. Expectations cover `visible`, `hovered`, `active`, `focused`, `text`, and `inside_parent`; a text expectation compares the action's `text` value. Targets may combine `uuid`, `name`, `text`, and `origin`, plus a zero-based `occurrence` for duplicate matches. Set `part` to `panel_action` to resolve the first direct child button placed in a panel title instead of the panel's complete rectangle. A capture target supplies the framegrab region unless `--framegrab-region` is explicitly present. When `--frames` is omitted, a scripted run receives a 240-frame safety bound and exits as soon as all actions complete.
+Available actions are:
+
+- `click`, `hover`, `scroll`, `type`, `drag`, `key`, `wait`, `expect`, and `capture`;
+- `scroll` takes `wheel_y`;
+- `type` takes `text`;
+- `wait` takes a frame count.
+
+A drag starts at the target center. It moves by `delta_x`/`delta_y` or towards a semantic `destination`, then releases.
+
+Use `destination_anchor` with `top`, `center` (the default), or `bottom` to distinguish insertion from an into-row drop. Semantic destinations are preferred for lists and trees because they survive layout changes. Offsets remain useful for sliders and splitters.
+
+A positive drag `frames` value interpolates motion across multiple input frames. Omit it or use zero for a one-frame move.
+
+Key actions cover navigation and editing plus Tab, Enter, Escape, Select All, Save, Undo, Redo, Editor Toggle, Run/Stop, and Pause/Step. Expectations cover `visible`, `hovered`, `active`, `focused`, `text`, and `inside_parent`.
+
+Targets may combine `uuid`, `name`, `text`, and `origin`. Use a zero-based `occurrence` for duplicate matches. Set `part` to `panel_action` to target the first direct child button in a panel title.
+
+A capture target supplies the framegrab region unless `--framegrab-region` is explicit. Without `--frames`, a scripted run gets a 240-frame safety bound and exits when all actions finish.
 
 ## Directional shadows
 
@@ -167,7 +257,13 @@ git diff --check
 
 `mise test` builds Luau, builds the Scrapbot CLI, checks the engine package, runs all Odin package tests, checks the CLI version, validates the examples, runs null-renderer smoke tests, and applies a 2,000-frame lifecycle CPU/RAM growth gate.
 
-The normal Odin suite also includes persistence torture harnesses. The scene harness drives seeded edits through a 512-entity scene, asserts that candidate classification scales with unique dirty UUIDs, keeps value-only comments and formatting intact during mixed structural saves, requires byte-identical repeated saves, excludes runtime entities, round-trips every scene component through structural serialization, injects write and generated-TOML failures, and crosses Save/Undo/Redo/Revert savepoints. The project transaction harness injects failures at every staging, backup, installation, and commit-marker phase, simulates crashes immediately before and after the commit boundary, verifies rollback or forward recovery for replacement and resource moves, rejects create conflicts, and reloads a jointly changed scene and resource registry. Resource lifecycle tests cover create, move, delete, UUID-preserving structural Undo/Redo, reference-aware deletion, and nested resource discovery. These are structural and golden-text assertions rather than machine-dependent timing thresholds.
+The normal Odin suite includes persistence torture harnesses:
+
+- The scene harness drives seeded edits through 512 entities. It checks dirty-UUID scaling, formatting preservation, byte-identical repeated saves, runtime-entity exclusion, component round trips, injected failures, and Save/Undo/Redo/Revert boundaries.
+- The project transaction harness injects failures at every staging, backup, installation, and commit-marker phase. It simulates crashes around the commit boundary and verifies rollback or forward recovery.
+- Resource lifecycle tests cover create, move, delete, UUID-preserving structural Undo/Redo, reference-aware deletion, and nested discovery.
+
+These are structural and golden-text assertions, not machine-dependent timing thresholds.
 
 WGPU smoke tests are not part of the default suite because they may need platform window-system access.
 

@@ -101,7 +101,7 @@ export type ScrapbotGeometryResource = {kind: "geometry", index: number, generat
 
 export type ScrapbotMaterialResource = {kind: "material", index: number, generation: number}
 
-export type ScrapbotGeometryVertex = {position: Vec3, normal: Vec3, uv: {x: number, y: number}}
+export type ScrapbotGeometryVertex = {position: Vec3, normal: Vec3, uv: {x: number, y: number}, tangent: Vec4?}
 
 export type ScrapbotGeometryDescriptor = {vertices: {ScrapbotGeometryVertex}, indices: {number}}
 

@@ -13,13 +13,13 @@ Scrapbot separates authoritative project/runtime state from derived indexes, cac
 | Compiled native chunk plans | Each `native.Native_System` | Derived query/storage/field resolution | Bounded cache keyed by chunk terms and bindings; invalidated by World UUID, component-registry revision, newly appearing storage families, or extension-set replacement. Ordinary component membership churn retains the plan. |
 | Entity identity and component values | `shared.World` / `ecs` | Active runtime authority | Typed ECS mutation, deferred command application, playback restore, or world replacement. |
 | Frame time | `world.time` | Current runtime resource | Advanced once per permitted simulation step. |
-| Geometry/material/environment descriptions and handles | `resources.Registry` | Runtime shared-resource authority | Project resource load/edit/hot reload; generational handles and content/topology versions expose changes. Material descriptions own cloned factors and image payloads. Environment descriptions own a cloned source-resolution panorama plus irradiance/specular cube payloads. Registry render state resolves independent lighting and optional-background handles/settings; one monotonic environment revision invalidates the global WGPU binding only when either selection, settings, or content changes. Active-camera exposure is a separate compact render input and rewrites the environment uniform without rebuilding textures. Procedural solar elevation derives day/night presentation and fill in shaders plus an ephemeral first directional-light render input above the horizon; no authored entity or component is created. |
+| Geometry/material/environment descriptions and handles | `resources.Registry` | Runtime shared-resource authority | Generational handles plus content/topology versions. See [Resource render state](#resource-render-state). |
 | Texture/Model imported products | `asset_import` products plus `resources.Registry` | Derived from authored UUID recipes and asset/dependency contents | Ensured at import/check/build/run or asset hot reload; schema/content fingerprints reuse unchanged products, atomic writes preserve last-good files, and model-root revisions reconcile derived ECS children at bootstrap/reload or an explicit structural edit. |
 | Authoring history and dirty UUID candidates | Editor UI state | In-memory authoring authority until Save/Revert | One transaction per completed gesture or structural operation; playback mutations remain disposable. |
 | Retained UI hierarchy, layout, interaction, and paint commands | `ui.State` | Derived from public UI ECS components | Structural dirty queue plus independent project/editor layout and paint revisions. |
 | `scrapbot.ui_state` components | UI reconciler | Derived, renderer-owned | Targeted interaction-dirty queue and retained node state; project code reads only. |
 | Render-instance membership and retained render list | ECS render extraction | Derived from Transform/geometry/material/shadow membership and resource resolution | Structural/static dirty queue, separate exact Transform queue, and resource revisions. Static extraction supersedes a same-frame Transform entry. Entity and slot reverse indexes are bidirectional ownership maps: delayed removal of a stale owner must never erase a newly reused slot's mapping. Batch appearance/disappearance advances topology exactly at the membership boundary. |
-| GPU dense transform updates, expanded instance table, draw database, visibility, indirect args, clustered lights, shadow cascades, postprocess targets, pipelines, resource caches | WGPU backend | Derived backend state | Transform-only slots bypass resource/batch work and pack one dense 64-byte update carrying its destination slot. One upload feeds a dirty-only compute pass that expands matrices and bounds before culling. If lifecycle churn exposes an authoritative retained render slot whose GPU slot is inactive, that exact slot is promoted through static reconciliation before its Transform update; unavailable resources or batches remain errors. World replacement clears every retained GPU slot, including capacity beyond a smaller replacement world. Resource caches replace stale generations by stable handle index. A material cache entry owns its generated texture/view set, factor uniform, and bind group as one lifetime; borrowed first-class Texture cache entries remain separately owned. Batch-owned bind groups are released before cache storage is cleared. Changed point-light records upload into geometrically growing backend storage; camera, viewport, light, or capacity changes trigger deterministic GPU cluster reconstruction. Each cluster owns an equally growing stride that can reference the complete retained light list. Fragment lookup uses the exact rendered viewport origin and extent, so editor chrome cannot offset cluster selection. Four camera-relative shadow matrices own independent visibility slices and texture-array layers. Frustum/LOD work uses the unjittered camera, while retained Hi-Z depth owns the exact jittered projection that produced it and expands projected bounds by one pixel so the TAA sequence remains conservative. WGPU retains independent lighting and background handle/version keys; either exact change rebuilds only the shared environment binding and its textures. The sky camera/projection uniform is retained and uploads only when its exact value changes. Full-resolution surface data, indirect diffuse, and reflection output are current-frame derived targets. GTAO consumes depth plus mapped surface normals and attenuates only indirect diffuse; SSR consumes surface data and HDR color. Full-resolution temporal resolved/history color and depth targets retain prior-frame state; resize, depth-view replacement, world replacement, and detected camera cuts reject that history. Half-resolution GTAO and blur targets plus their depth/surface bindings are retained at a stable output size and rebuilt only when the output dimensions or sampled depth view change; their final visibility feeds temporal resolution before history is updated. Static fields remain in separate retained storage; batch-key/topology revisions, material content revisions, geometric capacity growth, target shape, and backend lifetime govern targeted updates or full rebuilds. |
+| GPU instances, draw/visibility data, lights, shadows, postprocess targets, pipelines, and resource caches | WGPU backend | Derived backend state | Exact dirty queues, resource versions, camera/viewport revisions, target shape, capacity growth, world replacement, or backend lifetime. See [WGPU derived state](#wgpu-derived-state). |
 | Active-camera render-feature policy | Authored `scrapbot.camera`; consumed by WGPU | Authoritative ECS value with derived backend execution/history state | TAA, current-frame fast AA, AO, SSR, and bloom are per-camera booleans. The editor fly camera contributes pose/lens but inherits the active project camera's policy. TAA-mode changes reject history; disabled TAA omits jitter/history copies, while disabled AO/SSR/bloom omit their compute dispatches. Retained surface/reflection targets stay allocated across toggles to avoid allocation churn. |
 | Project/editor/overlay UI vertex buffers | WGPU backend | Derived from UI output streams | Independent monotonic stream revisions; stable streams retain CPU/GPU buffers. Target size or editor viewport changes invalidate the project stream key. Project commands use one uniform canvas scale plus viewport translation and clipping; pointer input and diagnostics invert the same transform. |
 | Embedded UI viewport membership and targets | `ui.State` / WGPU backend | Derived from authored `scrapbot.ui_viewport`, layout, and resource/World state | Structural UI dirtiness maintains compact viewport-node membership. Layout refreshes only bounded visible surfaces. WGPU reuses eight independently sized target slots, quantized from 64–1024 pixels per axis. Static Texture/Model/Material preview scenes cache by component, target shape, exact resource version, and relevant registry revisions; World targets consume the retained render list. |
@@ -28,6 +28,48 @@ Scrapbot separates authoritative project/runtime state from derived indexes, cac
 | Live entity origin counters | ECS world | Derived from entity lifecycle | Incremented on spawn and decremented on despawn; diagnostics read them without scanning entity capacity. |
 | Editor browsers and inspector snapshots | Editor UI composition over component registry and canonical payloads | Derived tooling view | The entity browser contains authored entities plus an explicitly selected runtime entity. Component cards and rows are runtime type-inspected with no per-component panel catalog. Selection or explicit structural invalidation rebuilds them; the 5 Hz running-value cadence refreshes values without rematerializing browser rows. Stopped values remain change-driven, focused inputs retain staged text, and active scrubs defer unrelated refresh. |
 | Generated Luau declarations and native build products | `.scrapbot/` and build directories | Derived products | Regenerated from schemas/source and never hand-edited as authority. |
+
+## Resource render state
+
+Project resource load, editing, and hot reload update the registry. Material descriptions own cloned factors and image payloads. Environment descriptions own a cloned source panorama plus irradiance and specular cubes.
+
+Render state resolves independent lighting and optional-background handles/settings. One monotonic environment revision invalidates the global WGPU binding only when selection, settings, or content changes.
+
+Active-camera exposure is a separate compact input. It rewrites the environment uniform without rebuilding textures.
+
+Procedural solar elevation derives day/night presentation and fill in shaders. Above the horizon it also produces an ephemeral first directional-light input; it does not create an authored entity or component.
+
+## WGPU derived state
+
+### Instances and draws
+
+Transform-only slots pack one dense 64-byte update with a destination slot. One upload feeds a dirty-only compute pass that expands matrices and bounds before culling.
+
+If lifecycle churn exposes a retained render slot whose GPU slot is inactive, only that slot receives static reconciliation before its Transform update. Missing resources or batches remain errors. World replacement clears all retained GPU slots, including capacity beyond a smaller replacement world.
+
+Static instance fields remain separately retained. Batch topology, geometry capacity, and exact structural changes drive their updates.
+
+### Resource caches
+
+Resource caches replace stale generations by stable handle index. A material entry owns its generated textures/views, factor uniform, and bind group as one lifetime. Borrowed first-class Texture entries remain separately owned.
+
+Batch bind groups are released before cache storage is cleared. Exact lighting/background handle or content-version changes rebuild only the shared environment binding. The sky camera/projection uniform uploads only after an exact value change.
+
+### Lights, shadows, and visibility
+
+Changed point lights upload into geometrically growing storage. Camera, viewport, light, or capacity changes trigger deterministic cluster reconstruction. Every cluster can reference the complete retained light list.
+
+Fragment lookup includes the rendered viewport origin and extent, so editor chrome cannot offset cluster selection. Four camera-relative shadow matrices own independent visibility slices and texture-array layers.
+
+Frustum and LOD work uses the unjittered camera. Retained Hi-Z depth tracks the exact jittered projection that produced it and expands projected bounds by one pixel to remain conservative across TAA samples.
+
+### Postprocessing
+
+Surface data, indirect diffuse, and reflection output are current-frame derived targets. Visibility-bitmask AO consumes depth plus mapped normals and attenuates only indirect diffuse. SSR consumes surface data and HDR color.
+
+Temporal color and depth retain prior-frame state. Resize, depth-view replacement, world replacement, and detected camera cuts reject that history.
+
+Half-resolution AO targets and their depth/surface bindings retain a stable output shape. They rebuild only when output dimensions or the sampled depth view change.
 
 ## Stable-frame invariant
 

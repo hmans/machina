@@ -14,15 +14,52 @@ test_world_shaders_light_procedural_skies_through_the_pbr_environment_path :: pr
 	shaders := [?]string{WGPU_GPU_DRIVEN_SHADER, WGPU_RENDER_SHADER}
 	for shader in shaders {
 		testing.expect(t, strings.contains(shader, "fn procedural_environment_radiance"))
+		testing.expect(t, strings.contains(shader, "fn environment_specular_response"))
 		testing.expect(
 			t,
-			strings.contains(
-				shader,
-				"procedural_specular *\n\t\t\t\t(ambient_fresnel * brdf.x + brdf.y)",
-			),
+			strings.contains(shader, "multiple_scattering * multiple_scattering_energy"),
 		)
+		testing.expect(t, strings.contains(shader, "procedural_specular *"))
 		testing.expect(t, !strings.contains(shader, "ambient_specular * occlusion"))
 	}
+}
+
+@(test)
+test_world_shaders_prefer_authored_tangent_frames_with_a_derivative_fallback :: proc(
+	t: ^testing.T,
+) {
+	shaders := [?]string{WGPU_GPU_DRIVEN_SHADER, WGPU_RENDER_SHADER}
+	for shader in shaders {
+		testing.expect(t, strings.contains(shader, "@location(3) tangent: vec4<f32>"))
+		testing.expect(t, strings.contains(shader, "@location(7) world_tangent: vec4<f32>"))
+		testing.expect(t, strings.contains(shader, "authored_tangent_length > 0.0001"))
+		testing.expect(t, strings.contains(shader, "input.world_tangent.w"))
+		testing.expect(t, strings.contains(shader, "let position_dx = dpdx(input.world_position)"))
+	}
+	testing.expect_value(t, size_of(resources.Vertex), 48)
+}
+
+@(test)
+test_ambient_occlusion_tracks_thickness_with_visibility_sectors :: proc(t: ^testing.T) {
+	testing.expect(
+		t,
+		strings.contains(WGPU_AMBIENT_OCCLUSION_SHADER, "const SECTOR_COUNT: u32 = 32u"),
+	)
+	testing.expect(t, strings.contains(WGPU_AMBIENT_OCCLUSION_SHADER, "fn sector_mask"))
+	testing.expect(
+		t,
+		strings.contains(
+			WGPU_AMBIENT_OCCLUSION_SHADER,
+			"back_difference = difference - view_direction * thickness",
+		),
+	)
+	testing.expect(
+		t,
+		strings.contains(WGPU_AMBIENT_OCCLUSION_SHADER, "countOneBits(occluded_sectors)"),
+	)
+	testing.expect(t, !strings.contains(WGPU_AMBIENT_OCCLUSION_SHADER, "negative_horizon_cosine"))
+	testing.expect(t, WGPU_VISIBILITY_AO_THICKNESS > 0)
+	testing.expect(t, WGPU_VISIBILITY_AO_THICKNESS < WGPU_VISIBILITY_AO_RADIUS)
 }
 
 @(test)

@@ -80,7 +80,7 @@ function main() {
     readFileSync(join(importedDirectory, metadataName), "utf8"),
   );
   if (
-    metadata.schema !== "scrapbot.model.v6.semantic-scene" ||
+    metadata.schema !== "scrapbot.model.v7.authored-tangents" ||
     metadata.node_count !== 1 ||
     metadata.mesh_count !== 1 ||
     metadata.primitive_count !== 103 ||

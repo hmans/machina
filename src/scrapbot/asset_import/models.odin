@@ -12,12 +12,13 @@ import "core:path/filepath"
 import "core:strings"
 import cgltf "vendor:cgltf"
 
-MODEL_IMPORTER_SCHEMA :: "scrapbot.model.v6.semantic-scene"
-MODEL_PRODUCT_MAGIC :: [8]u8{'S', 'B', 'M', 'O', 'D', 'E', 'L', '6'}
+MODEL_IMPORTER_SCHEMA :: "scrapbot.model.v7.authored-tangents"
+MODEL_PRODUCT_MAGIC :: [8]u8{'S', 'B', 'M', 'O', 'D', 'E', 'L', '7'}
 
 Model_Vertex :: struct {
 	position, normal: shared.Vec3,
 	uv: shared.Vec2,
+	tangent: shared.Vec4,
 }
 
 Model_Image :: struct {
@@ -947,6 +948,7 @@ build_model_primitive :: proc(
 	position: ^cgltf.accessor
 	normal: ^cgltf.accessor
 	uv: ^cgltf.accessor
+	tangent: ^cgltf.accessor
 	for attribute in primitive.attributes {
 		#partial switch attribute.type {
 			case .position:
@@ -955,6 +957,8 @@ build_model_primitive :: proc(
 				if attribute.index == 0 { normal = attribute.data }
 			case .texcoord:
 				if attribute.index == 0 { uv = attribute.data }
+			case .tangent:
+				if attribute.index == 0 { tangent = attribute.data }
 			case:
 		}
 	}
@@ -966,6 +970,9 @@ build_model_primitive :: proc(
 	}
 	if uv != nil && (uv.type != .vec2 || uv.count != position.count) {
 		return {}, "TEXCOORD_0 must be a VEC2 accessor matching POSITION count"
+	}
+	if tangent != nil && (tangent.type != .vec4 || tangent.count != position.count) {
+		return {}, "TANGENT must be a VEC4 accessor matching POSITION count"
 	}
 	result.material_index = -1
 	if primitive.material != nil {
@@ -1012,6 +1019,24 @@ build_model_primitive :: proc(
 				return {}, "failed to decode TEXCOORD_0 accessor"
 			}
 			result.vertices[vertex_index].uv = {uv_value[0], uv_value[1]}
+		}
+		if tangent != nil {
+			tangent_value: [4]f32
+			if !cgltf.accessor_read_float(
+				tangent,
+				uint(vertex_index),
+				raw_data(tangent_value[:]),
+				4,
+			) {
+				destroy_model_primitive(&result)
+				return {}, "failed to decode TANGENT accessor"
+			}
+			result.vertices[vertex_index].tangent = {
+				tangent_value[0],
+				tangent_value[1],
+				tangent_value[2],
+				tangent_value[3],
+			}
 		}
 	}
 	if primitive.indices != nil {
@@ -1341,6 +1366,7 @@ encode_model_product :: proc(model: ^Model_Product) -> []u8 {
 				model_write_vec3(&bytes, vertex.position)
 				model_write_vec3(&bytes, vertex.normal)
 				model_write_vec2(&bytes, vertex.uv)
+				model_write_vec4(&bytes, vertex.tangent)
 			}
 			for index in primitive.indices {
 				model_write_u32(&bytes, index)
@@ -1514,7 +1540,7 @@ read_model_product :: proc(path: string) -> (model: Model_Product, err: string) 
 			index_count: u32
 			index_count, ok = model_read_u32(&reader)
 			remaining_bytes := u64(len(reader.bytes) - reader.offset)
-			required_bytes := u64(vertex_count) * 32 + u64(index_count) * 4
+			required_bytes := u64(vertex_count) * 48 + u64(index_count) * 4
 			if !ok ||
 			   vertex_count > 10000000 ||
 			   index_count > 30000000 ||
@@ -1532,6 +1558,9 @@ read_model_product :: proc(path: string) -> (model: Model_Product, err: string) 
 				}
 				if ok {
 					vertex.uv, ok = model_read_vec2(&reader)
+				}
+				if ok {
+					vertex.tangent, ok = model_read_vec4(&reader)
 				}
 				if !ok {
 					destroy_model_primitive(&primitive)

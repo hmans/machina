@@ -177,13 +177,14 @@ WGPU_Ambient_Occlusion_Uniform :: struct {
 	viewport: [4]f32,
 	dimensions: [4]f32,
 	parameters: [4]f32,
+	visibility_parameters: [4]f32,
 }
-#assert(size_of(WGPU_Ambient_Occlusion_Uniform) == 64)
+#assert(size_of(WGPU_Ambient_Occlusion_Uniform) == 80)
 
-WGPU_GTAO_RADIUS :: f32(1.0)
-WGPU_GTAO_HORIZON_BIAS :: f32(0.025)
-WGPU_GTAO_POWER :: f32(1.0)
-WGPU_GTAO_STRENGTH :: f32(0.45)
+WGPU_VISIBILITY_AO_RADIUS :: f32(1.0)
+WGPU_VISIBILITY_AO_POWER :: f32(1.0)
+WGPU_VISIBILITY_AO_STRENGTH :: f32(0.45)
+WGPU_VISIBILITY_AO_THICKNESS :: f32(0.15)
 
 WGPU_Screen_Space_Reflections_Uniform :: struct {
 	projection: [4]f32,

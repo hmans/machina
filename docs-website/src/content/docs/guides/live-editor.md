@@ -19,7 +19,20 @@ Pass `--editor` to start with the editor already open:
 bin/scrapbot run examples/ecs-showcase --editor
 ```
 
-Opening the editor preserves the current playback state. Closing it always starts or resumes normal playback, including when the project was paused or stopped. The project world fills all currently available center space without enforcing a fixed aspect ratio. Project-authored UI keeps the same uniform canvas scale it uses outside the editor, then translates into and clips against that free-aspect viewport; text and controls never stretch independently along X or Y. Drag either vertical separator beside the viewport to resize the scene or inspector sidebar; the center viewport automatically fills the remainder and the panes keep their proportions as the window changes. Each complete sidebar also has a contrasting 10-pixel frame around its smooth scroll viewport, with a small gutter between separate tool sections, so the dock hierarchy stays legible and every section remains reachable in a short window. Systems, Scene, Inspector, and component sections share the same titled card, colors, disclosure arrow, and collapse behavior; click any title band to fold that section. Wheel input over a nested Systems, scene-browser, or inspector pane scrolls that pane; wheel input over sidebar padding or non-scrollable chrome scrolls the complete sidebar. During a native window resize, the simulation, surface, camera aspect, viewport, and editor layout continue updating throughout the drag.
+Opening the editor preserves the current playback state. Closing it always starts or resumes normal playback, including when the project was paused or stopped.
+
+The project world fills all available center space without enforcing a fixed aspect ratio. Project-authored UI keeps the same uniform canvas scale it uses outside the editor, then translates into and clips against the free-aspect viewport. Text and controls never stretch independently along X or Y.
+
+The editor workspace is responsive:
+
+- Drag either vertical separator beside the viewport to resize a sidebar.
+- The center viewport fills the remaining space.
+- Panes retain their proportions when the window changes.
+- Native window resizing keeps the simulation, surface, camera aspect, viewport, and layout updating throughout the drag.
+
+Each complete sidebar has a contrasting 10-pixel frame around its smooth scroll viewport and a small gutter between tool sections. Systems, Scene, Inspector, and component sections use the same titled card, colors, disclosure arrow, and collapse behavior. Click a title band to fold its section.
+
+Scrolling follows the pane under the pointer. A wheel event over Systems, the scene browser, or an inspector pane scrolls that pane. A wheel event over sidebar padding or non-scrollable chrome scrolls the complete sidebar.
 
 The top bar contains the Scrapbot title and project simulation controls. The bottom bar reports simulation and persistence status. Running and paused playback display `PLAY MODE / <STATE> / CHANGES ARE TEMPORARY`; amber top and status bars plus an amber viewport frame keep that warning visible across the workspace. Pausing preserves the play-mode treatment because edits remain disposable. Stop returns the editor to neutral authoring chrome.
 
@@ -45,13 +58,42 @@ Opening the shell never changes transport state. Leaving it always enters runnin
 
 Transport shortcuts are ignored while the scene camera captures the pointer or a project-owned input has focus. Command-modified E and R do not change the transform-gizmo mode.
 
-Pause preserves the current runtime world so Play can resume it. Play and Step capture the current stopped authoring state in memory before simulation advances. Stop returns to that captured state without reloading code or the scene file: unsaved authored entities, dirty state, selection, and undo history survive, while playback mutations and runtime-spawned entities disappear. Stopped is authoring mode. The bottom bar retains `/ UNSAVED` beside the current playback state until Save—or `Ctrl/Cmd+S`—writes those changes explicitly, Undo/Redo returns to the clean history position, or Revert discards them.
+Pause preserves the current runtime world so Play can resume it. Play and Step capture the current stopped authoring state in memory before simulation advances.
 
-Project resources participate in the same authoring state. The left sidebar's Resources panel is a selectable ECS list with Create, Duplicate, and Delete controls. Selecting a material opens an inline resource inspector where Name and Path rename or move it; base color, HDR emissive, metallic, and roughness use the ordinary numeric controls; and the References panel reports consumers. Metallic and roughness are constrained to the authored `0`–`1` range. Referenced resources cannot be deleted; Find Usage selects their first live consumer. Resource lifecycle operations are stopped-mode structural transactions, so Undo/Redo and Play/Stop preserve them in memory. Revert discards them.
+Stop returns to that captured state without reloading code or the scene file:
 
-Save addresses entities and resources by stable UUID, prepares every dirty scene and resource output in memory, validates the generated TOML and scene resource references, and then commits file creation, replacement, moves, and deletion together as one recoverable project transaction. A failure before commit restores every previous file and removes incomplete new destinations; an interrupted committed Save finishes cleanup when the project next loads. Resource names and paths can change without changing scene identity.
+- unsaved authored entities, dirty state, selection, and undo history survive;
+- playback mutations and runtime-spawned entities disappear.
 
-Save matches authored entities by stable UUID, not by name. Completed authoring transactions identify candidate entities, then Save compares each unique candidate with the parsed authored baseline through constant-time UUID indexes. Value-only edits patch semantic differences and preserve comments and surrounding formatting even when the same Save contains structural changes. Structural saves rewrite only their own dirty entity blocks, omit deleted UUIDs, and append created or explicitly kept runtime UUIDs in action order. Scrapbot validates the complete generated scene before atomically replacing the source file. A successful Save marks the current history position as clean, so undoing away from it reports unsaved changes and redoing back clears them. Unpromoted runtime and editor-owned entities are never written. Changes made while running or paused remain disposable runtime state.
+Stopped is authoring mode. The bottom bar retains `/ UNSAVED` until Save—or `Ctrl/Cmd+S`—writes the changes, Undo/Redo returns to the clean history position, or Revert discards them.
+
+Project resources participate in the same authoring state. The Resources panel is a selectable ECS list with Create, Duplicate, and Delete controls.
+
+Selecting a material opens an inline resource inspector:
+
+- Name and Path rename or move the resource.
+- Base color, HDR emissive, metallic, and roughness use ordinary numeric controls.
+- Metallic and roughness are constrained to the authored `0`–`1` range.
+- References reports consumers, and Find Usage selects the first live consumer.
+
+Referenced resources cannot be deleted. Resource lifecycle operations are stopped-mode structural transactions, so Undo/Redo and Play/Stop preserve them in memory. Revert discards them.
+
+Save addresses entities and resources by stable UUID. It prepares every dirty scene and resource output in memory, then validates the generated TOML and scene resource references.
+
+File creation, replacement, moves, and deletion commit together as one recoverable project transaction. A failure before commit restores previous files and removes incomplete destinations. If a committed Save is interrupted, the next project load finishes cleanup. Resource names and paths can change without changing scene identity.
+
+Save matches authored entities by stable UUID, not by name. Completed authoring transactions identify candidates, and constant-time UUID indexes compare each unique candidate with the parsed authored baseline.
+
+Save preserves unrelated source text:
+
+- Value-only edits patch semantic differences while retaining comments and surrounding formatting.
+- Structural saves rewrite only their dirty entity blocks.
+- Deleted UUIDs are omitted.
+- Created or explicitly kept runtime UUIDs are appended in action order.
+
+Scrapbot validates the complete generated scene before atomically replacing the source file. A successful Save marks the current history position as clean. Undoing away from that position reports unsaved changes; redoing back to it clears the warning.
+
+Unpromoted runtime and editor-owned entities are never written. Changes made while running or paused remain disposable runtime state.
 
 ## Navigate the scene view
 
@@ -69,15 +111,48 @@ The editor creates an editor-owned scene-camera entity whose initial view matche
 
 Closing and reopening the editor preserves the scene-camera viewpoint for the current run.
 
-While the editor is open, project and runtime camera entities appear in the scene view as blue, world-scaled wireframe camera bodies. The body naturally becomes smaller on screen as the scene viewpoint moves away. Selecting a camera highlights its visualizer in amber and reveals a bounded projection-frustum preview derived from its FOV, near clip plane, current viewport aspect, and resolved world transform. The preview stops after five world units (or at a shorter far clip plane), so an ordinary long far plane cannot flood the scene view. Click any visible body or selected frustum stroke to select its owning camera entity; camera visualizers take priority over ordinary triangle picking. These visualizers are editor-only: the separate fly camera is never shown as project content, and closing the editor removes them.
+While the editor is open, project and runtime cameras appear as blue, world-scaled wireframe bodies. A body naturally becomes smaller on screen as the scene viewpoint moves away.
+
+Selecting a camera highlights it in amber and reveals a projection-frustum preview derived from:
+
+- its field of view;
+- its near clip plane;
+- the current viewport aspect;
+- its resolved world transform.
+
+The preview stops after five world units, or at a shorter far clip plane, so an ordinary long far plane cannot flood the scene view. Click a visible body or selected frustum stroke to select its camera; camera visualizers take priority over triangle picking.
+
+These visualizers are editor-only. The separate fly camera is never shown as project content, and closing the editor removes them.
 
 ## Browse and inspect entities
 
-The top-left systems panel is a selectable list of every system participating in the frame. Engine-owned rows cover the editor camera, transform gizmo, ECS UI, picking, render preparation, and granular render phases; registered project-Odin and Luau systems follow them. Selecting a system has no action yet, but the selection is retained for future debugger details. Its right-aligned timing column shows rolling average callback time per frame in milliseconds with three decimal places, published every five successful frames from the latest 50 successful frames. A colored dot identifies provenance: mint for Engine, blue for Project Odin, and amber for Luau. The matching thin bar has no background track; it is anchored to the panel's right edge and grows leftward across the complete row on an absolute scale where 10 ms fills the available width. Drag the horizontal separator below the panel to trade height between the profiler and the complete Scene pane. Engine systems use `scrapbot.*` names, project-Odin systems use their registered names, and Luau systems use the optional `name` from their system options with an ordinal fallback when unnamed. Render rows report CPU callback and API time, not asynchronous GPU execution time.
+The top-left Systems panel lists every system participating in the frame. Engine rows cover the editor camera, transform gizmo, ECS UI, picking, render preparation, and granular render phases. Registered project-Odin and Luau systems follow them. Selecting a system retains the selection for future debugger details but currently takes no action.
+
+Each row shows:
+
+- a right-aligned rolling average in milliseconds with three decimal places;
+- a thin, trackless contribution bar that grows leftward, where 10 ms fills the row;
+- a provenance dot: mint for Engine, blue for Project Odin, or amber for Luau.
+
+Timings publish every five successful frames from the latest 50 successful frames. Render rows report CPU callback and API time, not asynchronous GPU execution. Engine systems use `scrapbot.*` names, project-Odin systems use their registered names, and Luau systems use the optional `name` from their system options with an ordinal fallback.
+
+Drag the horizontal separator below Systems to trade height with the complete Scene pane.
 
 Project-system values measure callback execution and exclude scheduler setup and deferred-command application. Engine rows measure their named CPU frame phases. `scrapbot.render.cull`, `.shadow`, `.world`, `.post`, `.ui`, `.finish`, `.submit`, and `.present` expose where CPU-side renderer time is spent; none measures asynchronous GPU execution. Values above 10 ms clamp to a full-width bar.
 
-The Scene panel contains a flush, selectable, scrollable hierarchy plus a compact stopped-mode authoring toolbar. It is an ordinary public tree-enabled `ui_list`: pooled direct rows carry semantic parent, sibling order, and collapse state on `ui_layout`, while the shared UI system owns flattening, indentation, collapsed-branch filtering, and subtree placement. Transform parent UUIDs form the scene meaning of that tree; SDF chevrons expand and collapse branches. Drop on the middle of another row to make it the new parent, on a row's top or bottom edge to adopt that row's parent and insert before or after it, or in empty Scene-list space to make the entity a root. The reusable list/tree gesture paints a lander line for insertion and tints a row for reparenting. Parent and order changes happen atomically, preserve the current world pose, and reject cycles; a transformless source receives an identity Transform, while a transformless parent contributes an identity spatial basis. While stopped, scene entities may use only scene parents and one completed drag is one undoable, saveable structural transaction. Save emits TOML entity blocks in the authored order without moving live ECS storage handles. During playback, hierarchy and order edits are disposable. An authored parent with children must currently be emptied before it can be deleted.
+The Scene panel contains a flush, selectable, scrollable hierarchy and a compact stopped-mode authoring toolbar. It uses the public tree-enabled `ui_list`, not an editor-only tree implementation.
+
+Pooled direct rows store semantic parent, sibling order, and collapse state on `ui_layout`. The shared UI system owns flattening, indentation, collapsed-branch filtering, and subtree placement. Transform parent UUIDs give the tree its scene meaning, and SDF chevrons expand or collapse branches.
+
+Drag and drop supports three targets:
+
+- Drop on the middle of a row to make it the new parent.
+- Drop on a row's top or bottom edge to adopt that row's parent and insert before or after it.
+- Drop in empty Scene-list space to make the entity a root.
+
+The reusable gesture paints an insertion line or tints the reparent target. Parent and order changes are atomic, preserve world pose, and reject cycles. A transformless source receives an identity Transform; a transformless parent contributes an identity spatial basis.
+
+While stopped, scene entities may use only scene parents, and one completed drag is one undoable, saveable structural transaction. Save emits TOML blocks in authored order without moving live ECS storage handles. During playback, hierarchy and order edits are disposable. An authored parent with children must currently be emptied before deletion.
 
 `+` creates a scene entity with a Transform, `DUP` duplicates the selected scene or runtime entity into a new authored UUID, `DEL` removes the selected authored entity, and `KEEP` explicitly promotes a selected runtime entity into scene data. The hierarchy shows scene-authored entities by default, so high-churn runtime spawns do not create thousands of editor rows. A runtime entity selected through the viewport or another tool is surfaced in muted gray and remains fully inspectable. Transient editor-origin entities—including the shell itself and scene camera—stay hidden from the browser and inspector.
 
@@ -85,19 +160,64 @@ The shell is itself built from transient ECS entities using the same responsive 
 
 Click an entry to select it, or click rendered geometry in the viewport. Viewport picking tests the rendered triangles and selects the nearest hit; clicking empty viewport space clears the selection. The browser scrolls to reveal a viewport-picked entity and automatically clears selection if that entity despawns.
 
-The inspector reports the selected entity's editable name, identity, provenance, attached components, field names, and current values. Component cards are not hand-authored editor screens: Scrapbot enumerates live registry membership, inspects each canonical runtime payload, and creates the titled card and field rows automatically. Project/native dynamic components use their registered schema as runtime type metadata. Each discovered field becomes a label/value row in an edge-to-edge two-column property table; marker components naturally have title-only cards. The initial split gives labels one third and values two thirds of the width; drag the column boundary to resize it. Spacing belongs to the individual cells, so controls stay comfortably inset without shrinking the table itself. Click a panel title or its SDF disclosure arrow to collapse or expand that component. Components registered as advanced and engine-derived components remain visible and inspectable but start collapsed; expanding one remains a retained editor choice while inspecting that component. Click the trailing cross to remove an authorable component.
+The inspector reports the selected entity's editable name, identity, provenance, attached components, fields, and current values.
+
+Component cards are runtime-generated:
+
+- Scrapbot enumerates live registry membership.
+- It inspects each canonical runtime payload.
+- Project/native dynamic components use their registered schema as runtime type metadata.
+- Each discovered field becomes a label/value row.
+- Marker components naturally produce title-only cards.
+
+Fields use an edge-to-edge, two-column property table. Labels initially receive one third of the width and values receive two thirds; drag the boundary to resize it. Cell-level spacing keeps controls inset without shrinking the table.
+
+Click a title or its SDF disclosure arrow to collapse a component. Advanced and engine-derived components remain inspectable but start collapsed, and their disclosure state is retained while inspecting that component. Click the trailing cross to remove an authorable component.
 
 An authored Material panel shows its resource name and UUID, editable base color, HDR emissive, metallic, and roughness values, and a stopped-mode selector populated from known material resources. Material numbers use the same typing, stepping, and whole-control scrubbing as every numeric input. While running or paused they preview immediately as disposable runtime changes; Stop restores the captured authoring resource values. While stopped they become undoable authoring transactions. Resource-reference switching remains stopped-mode authoring. Resource data stays registry-owned outside ECS; the selector and controls themselves use the public ECS UI system.
 
-Texture, Environment, and Model resources expose import information in the same inspector: source dependency, product kind and size, warnings, errors, and status. Environment inspectors report their derived irradiance/specular cube shape and the selected environment lights the project plus Model/Material previews. Texture inspectors render the complete imported image directly on the GPU with aspect-preserving fit. Model inspectors render imported geometry and materials, while Material inspectors render an isolated lit icosphere. All use the public `scrapbot.ui_viewport` component and adaptive pooled targets. Drag a 3D preview to orbit, use the wheel to zoom, and click **Reset** to restore its view. Stable previews are revision-cached. Click **Reimport** to force only the selected Texture, Environment, or Model importer, update its live registry entry, and reconcile model instances when relevant without restarting Luau, native Odin, or the scene world. **Reimport All** in the Resources toolbar forces every imported declaration. Failed imports leave the prior atomic product intact and surface the error in the inspector.
+Texture, Environment, and Model resources expose their source dependency, product kind and size, warnings, errors, and status.
+
+Their previews use the public `scrapbot.ui_viewport` component and adaptive pooled targets:
+
+- Texture renders the complete imported image with aspect-preserving fit.
+- Model renders imported geometry and materials.
+- Material renders an isolated lit icosphere.
+- Environment reports its derived irradiance/specular cube shape and lights Model and Material previews when selected.
+
+Drag a 3D preview to orbit, use the wheel to zoom, and click **Reset** to restore its view. Stable previews are revision-cached.
+
+Click **Reimport** to force only the selected importer, update its live registry entry, and reconcile model instances when necessary. This does not restart Luau, native Odin, or the scene world. **Reimport All** forces every imported declaration. Failed imports retain the prior atomic product and surface the error in the inspector.
 
 Discovered Bool, String, Number, Vec2, Vec3, Vec4, and Color values select the same reusable checkbox and input controls available to project UI. Vector rows provide one input per axis, while scalar and string rows use one full-width input. UUID references and text alignment are validated text for now. Color fields are semantically distinct, default to bounded RGBA channel controls, and are ready for a future reusable color picker. Engine-derived state and unsupported or opaque values remain read-only until they gain an honest public editing contract. A complete stopped-mode reflected edit records only that component's before/after snapshot as one authoring transaction, so Undo, Redo, Save, and Revert work without field-specific editor history code.
 
-Click **Add Component** to open a floating, independently scrollable component picker. It is populated from the live component registry rather than a hardcoded editor list: single-token project components appear under **Project**, while dotted engine and library names are nested by namespace token. The menu lists only components not already attached to the selected entity. Remove an authorable component with the cross in its panel title. While stopped, scene-entity membership changes are undoable authoring transactions. While running or paused, changes apply immediately to scene and runtime entities for inspection and experimentation, remain outside Undo and Save, and disappear on Stop. Engine-defined components such as Transform, Camera, lights, render data, and UI remain mutable because the entity owns their membership. Engine-managed derived state such as Render Instance and editor gizmo ownership remains visible in the inspector but intentionally has no removal action. Click outside the menu, press Escape, or choose a component to close it.
+Click **Add Component** to open a floating, independently scrollable picker. Its entries come from the live component registry:
+
+- single-token project components appear under **Project**;
+- dotted engine and library names are nested by namespace token;
+- components already attached to the entity are omitted.
+
+Remove an authorable component with the cross in its panel title. While stopped, scene-entity membership changes are undoable authoring transactions. While running or paused, membership changes apply immediately for experimentation, stay outside Undo and Save, and disappear on Stop.
+
+Engine-defined components such as Transform, Camera, lights, render data, and UI remain mutable because the entity owns their membership. Engine-managed derived state such as Render Instance and editor gizmo ownership remains visible but intentionally has no removal action.
+
+Click outside the menu, press Escape, or choose a component to close it.
 
 Click a value to focus it and select its complete contents. Typed text replaces the selection. Left/Right/Home/End move the cursor, Shift extends the selection, and Backspace/Delete edit it. Numeric typing and keyboard stepping remain staged without changing the component until Enter commits and leaves the field. Escape, clicking elsewhere, or using Tab/Shift+Tab restores the value captured when focus began; Tab still moves through fields in visual order, including independent X/Y/Z/W controls. Pointer scrubbing remains a live preview and commits once on release.
 
-Numeric typing and keyboard stepping remain local to the focused control until Enter commits the valid value; invalid numbers receive a red border and never reach the active world. Use Up/Down for the field's normal step, Shift+Up/Down for a 10× step, or Ctrl/Cmd+Up/Down for a 0.1× step. Built-in editor numbers and custom fields whose registry metadata sets `draggable` can be scrubbed horizontally anywhere across the control without requiring an axis badge; scrubbing previews live and commits once on release. Use the top-bar controls or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` to undo and redo. Complete typing, stepping, scrubbing, boolean changes, transform-gizmo drags, renames, entity operations, promotions, and component membership changes each occupy one bounded history entry; dependent boolean fields changed by one control remain atomic. While stopped, authored changes can be persisted with Save; edits to unpromoted runtime entities and all edits made while running or paused are session-only and do not enter authoring history.
+Numeric typing and keyboard stepping stay local to the focused control until Enter commits a valid value. Invalid numbers receive a red border and never reach the active world.
+
+Keyboard stepping uses the field's configured step:
+
+- Up/Down uses the normal step.
+- Shift+Up/Down uses a 10× step.
+- Ctrl/Cmd+Up/Down uses a 0.1× step.
+
+Built-in editor numbers and custom fields marked `draggable` can be scrubbed horizontally across the complete control. Scrubbing previews live and commits once on release.
+
+Use the top-bar controls or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` for Undo and Redo. Complete typing, stepping, scrubbing, boolean changes, gizmo drags, renames, entity operations, promotions, and component membership changes each occupy one bounded history entry. Dependent boolean fields changed by one control remain atomic.
+
+While stopped, authored changes can be saved. Edits to unpromoted runtime entities and all edits made while running or paused are session-only and do not enter authoring history.
 
 Resource-browser values and the selected entity's running component values refresh every 200 ms, while selection and stopped-authoring changes refresh immediately. This periodic value refresh does not rebuild the scene browser; explicit hierarchy invalidation and selection changes do. A periodic refresh leaves the actively edited text alone. The scene browser and inspector scroll independently with pixel-continuous targets, frame-time smoothing without line snapping, clipped partial content, and proportional scrollbars. Fractional trackpad deltas remain fractional.
 

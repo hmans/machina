@@ -1,7 +1,7 @@
 # FDR-011: Asset imports
 
 **Status:** In Progress
-**Last reviewed:** 2026-07-23
+**Last reviewed:** 2026-07-24
 
 ## Overview
 
@@ -13,7 +13,7 @@ Asset imports turn artist-authored texture, model, and HDR environment files und
 - Environment resources import 2:1 Radiance `.hdr` sources. The importer preserves a source-resolution linear RGBA16F panorama for an opt-in background and builds separate diffuse irradiance and roughness-prefiltered specular cubes. Panorama lookup is bilinear and seam-wrapped, while deterministic 256-sample GGX integration suppresses structured reflection noise; ordinary frames never decode or reconvolve the source panorama.
 - Material resources reference reusable Texture resources by UUID rather than embedding source paths.
 - Model resources import the selected glTF 2.0 `.gltf` or `.glb` scene and only its reachable nodes, meshes, materials, and images. Supported data includes triangle geometry, TRS node transforms, metallic-roughness material factors, normal and occlusion strengths, emissive factors, opaque and alpha-cutout materials, double-sided surfaces, and base-color, metallic-roughness, normal, occlusion, and emissive images. Images may be embedded in GLB buffer views, encoded as base64 data URIs, or stored at safe relative paths beside the model.
-- Imported images become owned mipmapped texture payloads on the Model's generated Material resources. Each texture slot preserves its glTF minification, magnification, mip, and U/V wrap policy. The WGPU material path renders them with GGX direct lighting, tangent-free derivative normal mapping, ambient diffuse/specular response, HDR emission, bloom, and tone mapping.
+- Imported images become owned mipmapped texture payloads on the Model's generated Material resources. Each texture slot preserves its glTF minification, magnification, mip, and U/V wrap policy. The WGPU material path renders them with GGX direct lighting, authored tangent-space normal mapping with a derivative fallback, ambient diffuse/specular response, HDR emission, bloom, and tone mapping.
 - Project checking, building, and running automatically import products that are absent or stale. `scrapbot import` performs the same work explicitly and reports structured per-resource results.
 - Imported products and manifests are generated under ignored project state. They are never hand-authored or committed as source authority.
 - Import validity includes source and dependency contents, settings, and importer version. Unchanged resources reuse their prior products without decoding or rebuilding them.
@@ -76,11 +76,13 @@ Model-root shadow markers are copied onto derived primitive entities during the 
 **Why:** A glTF file may contain alternate scenes, export leftovers, and large unreachable libraries. Import cost, product size, runtime entities, and validation should describe the resource the project actually selected.
 **Tradeoff:** Unsupported mesh, node, or material features outside the selected closure are ignored. File-wide features such as animation and required extensions remain importer-level constraints until those feature families are supported.
 
-### 8. Reconstruct the normal-map frame in the fragment shader
+### 8. Preserve authored normal-map tangent frames
 
-**Decision:** Reconstruct tangent and bitangent directions from world-position and UV derivatives instead of adding imported tangents to the retained vertex format.
-**Why:** Core glTF normal maps work for existing and imported geometry without widening every vertex and GPU geometry cache entry. This keeps the feature inside the shared Material shader contract.
-**Tradeoff:** Derivative reconstruction costs fragment work and cannot exactly reproduce authored tangent bases at mirrored or discontinuous UV seams. Imported tangent attributes and MikkTSpace parity remain a future quality/performance option.
+**Decision:** Import glTF `TANGENT` vectors, including their handedness, into the retained vertex format. Use them for normal mapping when present; reconstruct the frame from position and UV derivatives only when the tangent is zero.
+
+**Why:** Author-provided tangent bases keep normal maps stable at mirrored UVs, discontinuous seams, and grazing edges. The zero-tangent fallback keeps generated, Luau, and native geometry usable without requiring tangent generation.
+
+**Tradeoff:** Retained vertices grow from 32 to 48 bytes. Geometry without authored tangents still pays derivative reconstruction and may not match MikkTSpace exactly.
 
 ### 9. Precompute image-based lighting during import
 

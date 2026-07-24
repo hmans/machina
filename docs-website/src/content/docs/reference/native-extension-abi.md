@@ -118,6 +118,18 @@ The context includes:
 - `get_ui_component` and `set_ui_component` for complete public ECS UI value and style payloads;
 - full indexed geometry and shared material registration;
 - linear HDR emission through the material descriptor's `emissive` vector;
+
+Registered geometry vertices contain position, normal, UV, and an optional tangent:
+
+```odin
+Geometry_Vertex :: struct {
+	position, normal: Vec3,
+	uv: Vec2,
+	tangent: Vec4,
+}
+```
+
+Set tangent `xyz` to zero when no authored tangent basis exists. WGPU then reconstructs the frame from position and UV derivatives. Otherwise, `xyz` is the tangent direction and `w` is its handedness.
 - deferred lifecycle helpers for resource-backed renderable spawns, public UI spawns, despawn, transform, schema-backed payloads, UI payloads, and removal.
 
 Return `nil` on success or a static error string on failure. The host enforces declared access through the callback context.

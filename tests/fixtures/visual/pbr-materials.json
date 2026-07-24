@@ -1,0 +1,88 @@
+{
+  "width": 1280,
+  "height": 720,
+  "regions": [
+    {
+      "name": "sky",
+      "rect": [80, 70, 100, 100],
+      "expect": {
+        "mean_luminance": [0.30, 0.60],
+        "mean_chroma": [0.15, 0.40]
+      }
+    },
+    {
+      "name": "ground",
+      "rect": [80, 500, 100, 80],
+      "expect": {
+        "mean_luminance": [0.01, 0.12],
+        "mean_chroma": [0.00, 0.08]
+      }
+    },
+    {
+      "name": "dielectric_smooth",
+      "rect": [285, 230, 80, 80],
+      "expect": {
+        "mean_luminance": [0.18, 0.50],
+        "luminance_deviation": [0.08, 0.30],
+        "mean_chroma": [0.12, 0.45]
+      }
+    },
+    {
+      "name": "dielectric_rough",
+      "rect": [917, 230, 80, 80],
+      "expect": {
+        "mean_luminance": [0.04, 0.16],
+        "luminance_deviation": [0.01, 0.12],
+        "mean_chroma": [0.35, 0.65]
+      }
+    },
+    {
+      "name": "metal_smooth",
+      "rect": [295, 392, 80, 80],
+      "expect": {
+        "mean_luminance": [0.12, 0.45],
+        "luminance_deviation": [0.10, 0.35],
+        "mean_chroma": [0.15, 0.55]
+      }
+    },
+    {
+      "name": "metal_rough",
+      "rect": [917, 392, 80, 80],
+      "expect": {
+        "mean_luminance": [0.003, 0.08],
+        "luminance_deviation": [0.001, 0.08],
+        "mean_chroma": [0.02, 0.30]
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "left": "sky",
+      "metric": "mean_luminance",
+      "operator": "greater",
+      "right": "ground",
+      "margin": 0.20
+    },
+    {
+      "left": "metal_smooth",
+      "metric": "mean_luminance",
+      "operator": "greater",
+      "right": "metal_rough",
+      "margin": 0.08
+    },
+    {
+      "left": "metal_smooth",
+      "metric": "luminance_deviation",
+      "operator": "greater",
+      "right": "metal_rough",
+      "margin": 0.05
+    },
+    {
+      "left": "dielectric_smooth",
+      "metric": "luminance_deviation",
+      "operator": "greater",
+      "right": "dielectric_rough",
+      "margin": 0.04
+    }
+  ]
+}
