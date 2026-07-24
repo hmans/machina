@@ -368,7 +368,22 @@ fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
 		let projected = input.shadow_position.xyz / input.shadow_position.w;
 		let uv = vec2<f32>(projected.x * 0.5 + 0.5, 0.5 - projected.y * 0.5);
 		if (all(uv >= vec2<f32>(0.0)) && all(uv <= vec2<f32>(1.0)) && projected.z >= 0.0 && projected.z <= 1.0) {
-			shadow = textureSampleCompare(shadow_map, shadow_sampler, uv, projected.z - 0.002);
+			let texel = 1.0 / vec2<f32>(textureDimensions(shadow_map));
+			shadow = 0.0;
+			for (var y: i32 = -1; y <= 1; y = y + 1) {
+				for (var x: i32 = -1; x <= 1; x = x + 1) {
+					let weight =
+						select(1.0, 2.0, x == 0) *
+						select(1.0, 2.0, y == 0);
+					shadow += weight * textureSampleCompare(
+						shadow_map,
+						shadow_sampler,
+						uv + vec2<f32>(f32(x), f32(y)) * texel * 1.5,
+						projected.z - 0.002,
+					);
+				}
+			}
+			shadow /= 16.0;
 		}
 	}
 	for (var i: u32 = 0u; i < render.light_counts.x; i = i + 1u) {

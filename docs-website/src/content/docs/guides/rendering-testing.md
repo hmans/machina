@@ -85,6 +85,8 @@ Fog, AO, and SSR join the current HDR signal before temporal resolution. Enabled
 
 When TAA is off, the renderer removes projection jitter and history traffic. Optional fast AA then uses only the current resolved frame. Resize, world replacement, depth replacement, camera cuts, and TAA mode changes invalidate temporal history.
 
+The primary directional light uses four stabilized shadow cascades. Opaque receivers resolve each cascade with a wider tent-weighted filter and blend across cascade boundaries; volumetric fog uses a cheaper filtered lookup at every ray-march step.
+
 World-environment and active-camera exposure multiply together. Enabled bloom builds five bright-pass levels before one ACES-style tone-map pass presents through an sRGB target. A fixed screen-space sub-LSB dither breaks up 8-bit bands in smooth sky and fog gradients without introducing a temporally changing pattern.
 
 Disabled AO, SSR, and bloom skip their compute dispatches. Project UI, gizmos, and editor chrome render afterward, so world postprocessing never softens text or controls.
@@ -220,7 +222,7 @@ Shadow participation is explicit and independent:
 
 `shadow_caster` makes an entity contribute to the first directional light's shadow cascades. `shadow_receiver` makes it sample the selected cascade while evaluating directional light. An entity may have either marker, both, or neither.
 
-WGPU uses four 2048×2048 layers, practical logarithmic/uniform camera-depth splits out to 80 world units, texel-stabilized light projections, per-cascade GPU caster culling, slope-scaled caster depth bias, cascade-texel-scaled receiver-normal offset, and 3×3 PCF. The final 10% of each slice blends into its successor. The final slice fades to unshadowed beyond the shadow distance.
+WGPU uses four 2048×2048 layers, practical logarithmic/uniform camera-depth splits out to 80 world units, texel-stabilized light projections, per-cascade GPU caster culling, slope-scaled caster depth bias, cascade-texel-scaled receiver-normal offset, and a wider tent-weighted nine-comparison PCF kernel. The final 10% of each slice blends into its successor. The final slice fades to unshadowed beyond the shadow distance.
 
 Point-light shadows, multiple shadowed directional lights, and configurable quality are not yet provided.
 

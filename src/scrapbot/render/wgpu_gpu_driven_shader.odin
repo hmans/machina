@@ -536,16 +536,19 @@ fn directional_shadow_cascade(
 	var visibility = 0.0;
 	for (var y: i32 = -1; y <= 1; y = y + 1) {
 		for (var x: i32 = -1; x <= 1; x = x + 1) {
-			visibility += textureSampleCompare(
+			let weight =
+				select(1.0, 2.0, x == 0) *
+				select(1.0, 2.0, y == 0);
+			visibility += weight * textureSampleCompare(
 				shadow_map,
 				shadow_sampler,
-				uv + vec2<f32>(f32(x), f32(y)) * texel,
+				uv + vec2<f32>(f32(x), f32(y)) * texel * 1.5,
 				i32(cascade_index),
 				projected.z - 0.00035,
 			);
 		}
 	}
-	return visibility / 9.0;
+	return visibility / 16.0;
 }
 
 fn directional_shadow(

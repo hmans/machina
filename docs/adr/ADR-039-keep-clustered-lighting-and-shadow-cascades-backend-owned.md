@@ -19,7 +19,7 @@ Postprocessing reuses those same retained buffers for opt-in volumetric point-li
 
 Render the first directional light through four camera-relative cascades in one depth-texture array. Compute practical logarithmic/uniform splits out to 80 world units, stabilize each light projection to shadow texels, and GPU-cull casters independently for every cascade.
 
-Opaque receivers use a 3×3 PCF footprint. Fog uses a 2×2 footprint with offsets derived from the shadow texture's UV dimensions, not the cascade's world-space texel size. The final 10% of each camera-depth slice blends into the next cascade; the last slice blends to unshadowed beyond the 80-unit bound. This removes hard cascade boundaries from both surfaces and participating media.
+Opaque receivers use nine comparison samples over a wider tent-weighted PCF footprint. Fog uses a cheaper 2×2 footprint with offsets derived from the shadow texture's UV dimensions, not the cascade's world-space texel size. The final 10% of each camera-depth slice blends into the next cascade; the last slice blends to unshadowed beyond the 80-unit bound. This removes hard cascade boundaries from both surfaces and participating media.
 
 Apply slope-scaled depth bias while rendering casters and a receiver-normal offset scaled by each cascade's world-space texel size. `--cpu-culling` retains a deterministic reference implementation of the same four cascade visibility volumes; it does not replace GPU cluster construction.
 

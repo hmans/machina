@@ -44,6 +44,17 @@ test_composite_dithers_tone_mapped_output_in_fixed_display_space :: proc(t: ^tes
 }
 
 @(test)
+test_world_shaders_filter_directional_shadows_with_a_wide_tent_kernel :: proc(t: ^testing.T) {
+	shaders := [?]string{WGPU_GPU_DRIVEN_SHADER, WGPU_RENDER_SHADER}
+	for shader in shaders {
+		testing.expect(t, strings.contains(shader, "select(1.0, 2.0, x == 0)"))
+		testing.expect(t, strings.contains(shader, "select(1.0, 2.0, y == 0)"))
+		testing.expect(t, strings.contains(shader, "vec2<f32>(f32(x), f32(y)) * texel * 1.5"))
+		testing.expect(t, strings.contains(shader, "16.0"))
+	}
+}
+
+@(test)
 test_world_shaders_prefer_authored_tangent_frames_with_a_derivative_fallback :: proc(
 	t: ^testing.T,
 ) {
