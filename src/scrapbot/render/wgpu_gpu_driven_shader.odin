@@ -511,12 +511,11 @@ fn shadow_cascade_index(view_depth: f32) -> u32 {
 	return 3u;
 }
 
-fn directional_shadow(
+fn directional_shadow_cascade(
 	world_position: vec3<f32>,
 	world_normal: vec3<f32>,
-	view_depth: f32,
+	cascade_index: u32,
 ) -> f32 {
-	let cascade_index = shadow_cascade_index(view_depth);
 	let light = -normalize(render.directional_direction_intensity[0].xyz);
 	let normal_light = clamp(dot(world_normal, light), 0.0, 1.0);
 	let normal_bias = render.shadow_cascade_texel_sizes[cascade_index] *
@@ -547,6 +546,42 @@ fn directional_shadow(
 		}
 	}
 	return visibility / 9.0;
+}
+
+fn directional_shadow(
+	world_position: vec3<f32>,
+	world_normal: vec3<f32>,
+	view_depth: f32,
+) -> f32 {
+	let cascade_index = shadow_cascade_index(view_depth);
+	let visibility = directional_shadow_cascade(
+		world_position,
+		world_normal,
+		cascade_index,
+	);
+	var previous_split = cluster.z_parameters.x;
+	if (cascade_index > 0u) {
+		previous_split = render.shadow_cascade_splits[cascade_index - 1u];
+	}
+	let current_split = render.shadow_cascade_splits[cascade_index];
+	let transition_width = max((current_split - previous_split) * 0.1, 0.001);
+	let transition = smoothstep(
+		current_split - transition_width,
+		current_split,
+		view_depth,
+	);
+	if (transition <= 0.0) {
+		return visibility;
+	}
+	var next_visibility = 1.0;
+	if (cascade_index < 3u) {
+		next_visibility = directional_shadow_cascade(
+			world_position,
+			world_normal,
+			cascade_index + 1u,
+		);
+	}
+	return mix(visibility, next_visibility, transition);
 }
 
 fn cluster_index(position: vec2<f32>, view_depth: f32) -> u32 {

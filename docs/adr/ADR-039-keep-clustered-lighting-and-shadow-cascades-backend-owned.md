@@ -1,7 +1,7 @@
 # ADR-039: Keep clustered lighting and shadow cascades backend-owned
 
 **Date:** 2026-07-22
-**Last amended:** 2026-07-23
+**Last amended:** 2026-07-24
 
 ## Context
 
@@ -17,7 +17,11 @@ WGPU uploads changed point-light records into a geometrically growing storage bu
 
 Postprocessing reuses those same retained buffers for opt-in volumetric point-light scattering. Each deterministic fog ray step resolves its view-frustum cluster and evaluates its complete relevant list. Fog does not build, upload, or retain a second light list.
 
-Render the first directional light through four camera-relative cascades in one depth-texture array. Compute practical logarithmic/uniform splits out to 80 world units, stabilize each light projection to shadow texels, GPU-cull casters independently for every cascade, and select the cascade plus a 3×3 PCF footprint in the world shader. Apply slope-scaled depth bias while rendering casters and a receiver-normal offset scaled by each cascade's world-space texel size; this avoids camera-dependent self-shadowing without making one clip-space constant serve incompatible cascade scales. `--cpu-culling` retains a deterministic reference implementation of the same four cascade visibility volumes; it does not replace GPU cluster construction.
+Render the first directional light through four camera-relative cascades in one depth-texture array. Compute practical logarithmic/uniform splits out to 80 world units, stabilize each light projection to shadow texels, and GPU-cull casters independently for every cascade.
+
+Opaque receivers use a 3×3 PCF footprint. Fog uses a 2×2 footprint with offsets derived from the shadow texture's UV dimensions, not the cascade's world-space texel size. The final 10% of each camera-depth slice blends into the next cascade; the last slice blends to unshadowed beyond the 80-unit bound. This removes hard cascade boundaries from both surfaces and participating media.
+
+Apply slope-scaled depth bias while rendering casters and a receiver-normal offset scaled by each cascade's world-space texel size. `--cpu-culling` retains a deterministic reference implementation of the same four cascade visibility volumes; it does not replace GPU cluster construction.
 
 Keep all cluster buffers, cascade textures, matrices, visibility lists, indirect arguments, and diagnostics inside WGPU. Public Ambient, Directional, Point Light, Shadow Caster, and Shadow Receiver components remain backend-neutral.
 
@@ -25,4 +29,4 @@ Keep all cluster buffers, cascade textures, matrices, visibility lists, indirect
 
 Scenes may use substantially more point lights without evaluating every light in every fragment or fog sample, and directional shadows retain useful near-camera resolution over larger views. Stable camera/light frames do not rebuild cluster lists, and ordinary ECS membership remains change-driven.
 
-The backend initially reserves storage for 3,456 cluster counts and 256 indices per cluster—about 3.4 MiB of cluster-index storage—and grows geometrically when a scene exceeds that light count. A pathological cluster may evaluate every retained light and buffer memory grows with the worst-case per-cluster stride, but ordinary fragments still visit only lights whose spheres overlap their view-frustum cluster. Explicit remaining limits are four cascades, one shadowed directional light, and an 80-unit shadow distance. Point-light shadows, compact variable-length cluster storage, adaptive cluster dimensions, device-limit diagnostics, cascade blending, and user-facing quality settings remain future work.
+The backend initially reserves storage for 3,456 cluster counts and 256 indices per cluster—about 3.4 MiB of cluster-index storage—and grows geometrically when a scene exceeds that light count. A pathological cluster may evaluate every retained light and buffer memory grows with the worst-case per-cluster stride, but ordinary fragments still visit only lights whose spheres overlap their view-frustum cluster. Explicit remaining limits are four cascades, one shadowed directional light, and an 80-unit shadow distance. Point-light shadows, compact variable-length cluster storage, adaptive cluster dimensions, device-limit diagnostics, and user-facing quality settings remain future work.

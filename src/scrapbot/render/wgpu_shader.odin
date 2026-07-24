@@ -813,18 +813,7 @@ fn current_color_at(pixel: vec2<i32>) -> vec3<f32> {
 		reflection_color;
 }
 
-fn fog_shadow_visibility(world_position: vec3<f32>, view_depth: f32) -> f32 {
-	if (render.light_counts.x == 0u) {
-		return 0.0;
-	}
-	var cascade_index = 3u;
-	if (view_depth <= render.shadow_cascade_splits.x) {
-		cascade_index = 0u;
-	} else if (view_depth <= render.shadow_cascade_splits.y) {
-		cascade_index = 1u;
-	} else if (view_depth <= render.shadow_cascade_splits.z) {
-		cascade_index = 2u;
-	}
+fn fog_shadow_cascade(world_position: vec3<f32>, cascade_index: u32) -> f32 {
 	let shadow_position =
 		render.shadow_view_projections[cascade_index] * vec4<f32>(world_position, 1.0);
 	if (shadow_position.w <= 0.0) {
@@ -840,7 +829,7 @@ fn fog_shadow_visibility(world_position: vec3<f32>, view_depth: f32) -> f32 {
 	) {
 		return 1.0;
 	}
-	let texel = render.shadow_cascade_texel_sizes[cascade_index];
+	let texel = 1.0 / vec2<f32>(textureDimensions(shadow_map).xy);
 	var visibility = 0.0;
 	for (var y = 0u; y < 2u; y += 1u) {
 		for (var x = 0u; x < 2u; x += 1u) {
@@ -855,6 +844,40 @@ fn fog_shadow_visibility(world_position: vec3<f32>, view_depth: f32) -> f32 {
 		}
 	}
 	return visibility * 0.25;
+}
+
+fn fog_shadow_visibility(world_position: vec3<f32>, view_depth: f32) -> f32 {
+	if (render.light_counts.x == 0u) {
+		return 0.0;
+	}
+	var cascade_index = 3u;
+	if (view_depth <= render.shadow_cascade_splits.x) {
+		cascade_index = 0u;
+	} else if (view_depth <= render.shadow_cascade_splits.y) {
+		cascade_index = 1u;
+	} else if (view_depth <= render.shadow_cascade_splits.z) {
+		cascade_index = 2u;
+	}
+	let visibility = fog_shadow_cascade(world_position, cascade_index);
+	var previous_split = cluster.z_parameters.x;
+	if (cascade_index > 0u) {
+		previous_split = render.shadow_cascade_splits[cascade_index - 1u];
+	}
+	let current_split = render.shadow_cascade_splits[cascade_index];
+	let transition_width = max((current_split - previous_split) * 0.1, 0.001);
+	let transition = smoothstep(
+		current_split - transition_width,
+		current_split,
+		view_depth,
+	);
+	if (transition <= 0.0) {
+		return visibility;
+	}
+	var next_visibility = 1.0;
+	if (cascade_index < 3u) {
+		next_visibility = fog_shadow_cascade(world_position, cascade_index + 1u);
+	}
+	return mix(visibility, next_visibility, transition);
 }
 
 fn fog_phase(cosine: f32, anisotropy: f32) -> f32 {

@@ -125,7 +125,7 @@ WGPU retains active point lights in a geometrically growing buffer and rebuilds 
 
 One optional `scrapbot.volumetric_fog` component supplies a global exponential height medium. Postprocessing reads only that component storage's compact active set, clamps the reflected payload, and folds six deterministic ray samples into the temporal resolve.
 
-Each sample uses the first directional light and a filtered lookup into the same four shadow cascades as opaque rendering. Opt-in local scattering reads every relevant point light from the existing GPU-built cluster for that sample. There is no duplicate light list, extra fog target, or stochastic per-frame pattern. Local fog volumes remain follow-up work.
+Each sample uses the first directional light and a 2×2 UV-space filtered lookup into the same four shadow cascades as opaque rendering. Both paths cross-fade the final 10% of each cascade into its successor and fade the final cascade to unshadowed. Opt-in local scattering reads every relevant point light from the existing GPU-built cluster for that sample. There is no duplicate light list, extra fog target, or stochastic per-frame pattern. Local fog volumes remain follow-up work.
 
 ### Instances and materials
 

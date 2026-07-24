@@ -13,7 +13,7 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
 - The current implementation supports the null backend.
 - Users can select a renderer backend from the CLI.
 - The `wgpu` backend renders full indexed geometry with shared metallic-roughness GGX materials, mipmapped base-color/normal/occlusion/emissive images, a perspective camera, ambient/directional/point lighting, and optional scene-authored image-based environment lighting.
-- The first directional light produces four stabilized, camera-relative 2048×2048 shadow cascades. Only entities with `ShadowCaster` contribute slope-biased depth, and only entities with `ShadowReceiver` sample the cascades through 3×3 PCF after a cascade-texel-scaled receiver-normal offset.
+- The first directional light produces four stabilized, camera-relative 2048×2048 shadow cascades. Only entities with `ShadowCaster` contribute slope-biased depth, and only entities with `ShadowReceiver` sample the cascades through 3×3 PCF after a cascade-texel-scaled receiver-normal offset. The last 10% of each cascade blends into the next; the final cascade blends to unshadowed beyond the configured shadow distance.
 - Lights are extracted into compact backend-neutral frame data: accumulated ambient light, four directional lights, and a growable retained point-light list. WGPU grows its point-light and cluster-index buffers geometrically and deterministically builds a 16×9×24 view-frustum grid on the GPU. Every cluster can reference the complete retained list, preventing dense moving lights from popping at an internal overflow boundary. Editor-inset rendering uses the viewport's origin and extent for fragment-to-cluster lookup. Above the procedural horizon, World Environment contributes the first derived directional-light slot without creating an authored entity; explicit ECS lights fill the remaining directional slots.
 - The HDR pipeline:
   - samples base-color and emissive images as sRGB while material data and imported environments remain linear;
@@ -104,7 +104,7 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 **Decision:** Expose separate engine-provided shadow caster and receiver marker components and render four stabilized camera-relative cascades from the first directional light. See ADR-039.
 **Why:** Projects should control shadow cost and semantics independently for occluders and shaded surfaces without coupling them to geometry or material ownership.
-**Tradeoff:** Shadows stop at 80 world units and do not yet cover point lights, multiple shadowed directional lights, cascade blending, or configurable quality levels.
+**Tradeoff:** Shadows stop at 80 world units and do not yet cover point lights, multiple shadowed directional lights, or configurable quality levels.
 
 ### 11. Keep decoded images in resource ownership and GPU objects in the backend
 
@@ -118,7 +118,7 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 The active camera controls TAA, current-frame fast AA, half-resolution AO, SSR, and five-level bloom.
 
-One optional authored `scrapbot.volumetric_fog` component supplies a global exponential height medium. The temporal resolve integrates six fixed midpoint samples up to scene depth or its distance bound. Ambient scattering is unshadowed; anisotropic primary-directional scattering uses a 2×2 filter over the same four cascades as opaque geometry. Projects may independently opt clustered point lights into the medium. Absence or zero density takes a no-op branch and allocates no fog target.
+One optional authored `scrapbot.volumetric_fog` component supplies a global exponential height medium. The temporal resolve integrates six fixed midpoint samples up to scene depth or its distance bound. Ambient scattering is unshadowed; anisotropic primary-directional scattering uses a 2×2 UV-space filter and the same cascade transition bands as opaque geometry. Projects may independently opt clustered point lights into the medium. Absence or zero density takes a no-op branch and allocates no fog target.
 
 AO uses rotated view-space slices and a 32-sector visibility bitmask. Each depth sample covers the interval between its front surface and a constant-thickness reconstructed back surface. A separable bilateral filter crosses only compatible depth and normals, then AO attenuates indirect diffuse.
 

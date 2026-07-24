@@ -895,6 +895,29 @@ test_directional_shadow_cascade_splits_respect_short_camera_far_plane :: proc(t:
 }
 
 @(test)
+test_directional_shadow_shader_blends_adjacent_cascades :: proc(t: ^testing.T) {
+	testing.expect(t, strings.contains(WGPU_GPU_DRIVEN_SHADER, "fn directional_shadow_cascade"))
+	testing.expect(
+		t,
+		strings.contains(
+			WGPU_GPU_DRIVEN_SHADER,
+			"let transition_width = max((current_split - previous_split) * 0.1, 0.001)",
+		),
+	)
+	testing.expect(
+		t,
+		strings.contains(WGPU_GPU_DRIVEN_SHADER, "next_visibility = directional_shadow_cascade"),
+	)
+	testing.expect(
+		t,
+		strings.contains(
+			WGPU_GPU_DRIVEN_SHADER,
+			"return mix(visibility, next_visibility, transition)",
+		),
+	)
+}
+
+@(test)
 test_wgpu_draw_batch_topology_is_retained_across_transform_only_frames :: proc(t: ^testing.T) {
 	renderer: WGPU_Renderer
 	defer delete(renderer.draw_batch_cache.source_indices)
@@ -1459,7 +1482,29 @@ test_volumetric_fog_shader_is_energy_normalized_shadowed_and_temporally_resolved
 		strings.contains(WGPU_TEMPORAL_AA_SHADER, "FOG_PHASE_NORMALIZATION * (1.0 - g2)"),
 	)
 	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "fog_shadow_visibility"))
+	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "fn fog_shadow_cascade"))
 	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "textureSampleCompareLevel"))
+	testing.expect(
+		t,
+		strings.contains(
+			WGPU_TEMPORAL_AA_SHADER,
+			"let texel = 1.0 / vec2<f32>(textureDimensions(shadow_map).xy)",
+		),
+	)
+	testing.expect(
+		t,
+		!strings.contains(
+			WGPU_TEMPORAL_AA_SHADER,
+			"let texel = render.shadow_cascade_texel_sizes[cascade_index]",
+		),
+	)
+	testing.expect(
+		t,
+		strings.contains(
+			WGPU_TEMPORAL_AA_SHADER,
+			"next_visibility = fog_shadow_cascade(world_position, cascade_index + 1u)",
+		),
+	)
 	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "fog_point_light_radiance"))
 	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "cluster_light_counts"))
 	testing.expect(t, !strings.contains(WGPU_TEMPORAL_AA_SHADER, "FOG_MAX_POINT_LIGHTS_PER_STEP"))
