@@ -48,6 +48,7 @@ WGPU_GPU_Timestamp_Phase :: enum u32 {
 	HiZ,
 	Temporal_AA,
 	Ambient_Occlusion,
+	Screen_Space_Reflections,
 	Bloom,
 	Composite,
 	UI,
@@ -179,6 +180,14 @@ WGPU_Ambient_Occlusion_Uniform :: struct {
 }
 #assert(size_of(WGPU_Ambient_Occlusion_Uniform) == 64)
 
+WGPU_Screen_Space_Reflections_Uniform :: struct {
+	projection: [4]f32,
+	viewport: [4]f32,
+	parameters: [4]f32,
+	_padding: [4]f32,
+}
+#assert(size_of(WGPU_Screen_Space_Reflections_Uniform) == 64)
+
 WGPU_Temporal_AA_Uniform :: struct {
 	previous_view_projection: Mat4,
 	inverse_view: Mat4,
@@ -186,14 +195,17 @@ WGPU_Temporal_AA_Uniform :: struct {
 	previous_projection: [4]f32,
 	viewport: [4]f32,
 	parameters: [4]f32,
+	features: [4]f32,
+	reflections: [4]f32,
 }
-#assert(size_of(WGPU_Temporal_AA_Uniform) == 192)
+#assert(size_of(WGPU_Temporal_AA_Uniform) == 224)
 
 WGPU_Temporal_Camera :: struct {
 	position: Vec3,
 	forward: Vec3,
 	fov: f32,
 	has_camera: bool,
+	temporal_antialiasing: bool,
 }
 
 WGPU_Draw_Batch :: struct {
@@ -651,6 +663,14 @@ WGPU_Renderer :: struct {
 	ambient_occlusion_textures: [3]wgpu.Texture,
 	ambient_occlusion_views: [3]wgpu.TextureView,
 	ambient_occlusion_bind_groups: [3]wgpu.BindGroup,
+	screen_space_reflections_shader: wgpu.ShaderModule,
+	screen_space_reflections_bind_group_layout: wgpu.BindGroupLayout,
+	screen_space_reflections_pipeline_layout: wgpu.PipelineLayout,
+	screen_space_reflections_pipeline: wgpu.ComputePipeline,
+	screen_space_reflections_uniform_buffer: wgpu.Buffer,
+	screen_space_reflections_texture: wgpu.Texture,
+	screen_space_reflections_view: wgpu.TextureView,
+	screen_space_reflections_bind_group: wgpu.BindGroup,
 	bloom_compute_bind_group_layout: wgpu.BindGroupLayout,
 	bloom_compute_pipeline_layout: wgpu.PipelineLayout,
 	bloom_bright_pipeline: wgpu.ComputePipeline,
@@ -661,6 +681,8 @@ WGPU_Renderer :: struct {
 	post_sampler: wgpu.Sampler,
 	hdr_texture: wgpu.Texture,
 	hdr_view: wgpu.TextureView,
+	surface_texture: wgpu.Texture,
+	surface_view: wgpu.TextureView,
 	bloom_textures: [WGPU_BLOOM_LEVELS]wgpu.Texture,
 	bloom_views: [WGPU_BLOOM_LEVELS]wgpu.TextureView,
 	bloom_compute_bind_groups: [WGPU_BLOOM_LEVELS]wgpu.BindGroup,
@@ -1654,11 +1676,20 @@ wgpu_encode_render_pass :: proc(
 	   err != "" {
 		return err
 	}
-	color_attachment := wgpu.RenderPassColorAttachment {
-		view = renderer.hdr_view,
-		depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
-		loadOp = .Load,
-		storeOp = .Store,
+	color_attachments := [2]wgpu.RenderPassColorAttachment {
+		{
+			view = renderer.hdr_view,
+			depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
+			loadOp = .Load,
+			storeOp = .Store,
+		},
+		{
+			view = renderer.surface_view,
+			depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
+			loadOp = .Clear,
+			storeOp = .Store,
+			clearValue = {},
+		},
 	}
 	depth_attachment := wgpu.RenderPassDepthStencilAttachment {
 		view = depth_view,
@@ -1677,8 +1708,8 @@ wgpu_encode_render_pass :: proc(
 		encoder,
 		&wgpu.RenderPassDescriptor {
 			label = label,
-			colorAttachmentCount = 1,
-			colorAttachments = &color_attachment,
+			colorAttachmentCount = len(color_attachments),
+			colorAttachments = raw_data(color_attachments[:]),
 			depthStencilAttachment = &depth_attachment,
 			timestampWrites = world_timestamps_ptr,
 		},
@@ -1774,6 +1805,8 @@ wgpu_encode_render_pass :: proc(
 		depth_view,
 		target_width,
 		target_height,
+		renderer.render_list.camera.camera,
+		renderer.render_list.has_camera,
 	); err != "" {
 		return err
 	}

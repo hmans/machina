@@ -2005,6 +2005,10 @@ active_camera_instance :: proc(
 	begin_world_transform_resolution(world)
 	if use_editor_camera {
 		if editor_camera, found := editor_scene_camera_instance(world); found {
+			if project_camera, has_project_camera := first_camera_instance(world);
+			   has_project_camera {
+				shared.camera_copy_render_features(&editor_camera.camera, project_camera.camera)
+			}
 			return editor_camera, true
 		}
 	}

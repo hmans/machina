@@ -95,6 +95,14 @@ World_Environment_Writeback :: struct {
 	can_write: bool,
 }
 
+Camera_Writeback :: struct {
+	ref: c.int,
+	entity_index: int,
+	component_id: Component_ID,
+	original: shared.Camera_Component,
+	can_write: bool,
+}
+
 Prepared_Transform_Writebacks :: struct {
 	transforms: [ecs.MAX_QUERY_TERMS]Transform_Component,
 	changed: [ecs.MAX_QUERY_TERMS]bool,
@@ -107,6 +115,11 @@ Prepared_Custom_Component_Writebacks :: struct {
 
 Prepared_World_Environment_Writebacks :: struct {
 	environments: [ecs.MAX_QUERY_TERMS]shared.World_Environment_Component,
+	changed: [ecs.MAX_QUERY_TERMS]bool,
+}
+
+Prepared_Camera_Writebacks :: struct {
+	cameras: [ecs.MAX_QUERY_TERMS]shared.Camera_Component,
 	changed: [ecs.MAX_QUERY_TERMS]bool,
 }
 
@@ -407,6 +420,8 @@ run_script_system :: proc(
 			component_writeback_count := 0
 			world_environment_writebacks: [ecs.MAX_QUERY_TERMS]World_Environment_Writeback
 			world_environment_writeback_count := 0
+			camera_writebacks: [ecs.MAX_QUERY_TERMS]Camera_Writeback
+			camera_writeback_count := 0
 			for term_index in 0 ..< system.query.term_count {
 				term := system.query.terms[term_index]
 				push_query_component_table(L, runtime.world, entity_index, term)
@@ -425,6 +440,22 @@ run_script_system :: proc(
 							),
 						}
 						writeback_count += 1
+					}
+				} else if term.name == "scrapbot.camera" {
+					camera_index := runtime.world.entities[entity_index].camera_index
+					if camera_index >= 0 && camera_index < len(runtime.world.cameras) {
+						camera_writebacks[camera_writeback_count] = Camera_Writeback {
+							ref = lua_ref(L, -1),
+							entity_index = entity_index,
+							component_id = term.component_id,
+							original = runtime.world.cameras[camera_index],
+							can_write = system_allows_component_access(
+								system.declaration,
+								term.name,
+								.Write,
+							),
+						}
+						camera_writeback_count += 1
 					}
 				} else if term.name == "scrapbot.world_environment" {
 					world_environment_index :=
@@ -479,6 +510,9 @@ run_script_system :: proc(
 				for writeback in world_environment_writebacks[:world_environment_writeback_count] {
 					lua_unref(L, writeback.ref)
 				}
+				for writeback in camera_writebacks[:camera_writeback_count] {
+					lua_unref(L, writeback.ref)
+				}
 				return luau_stack_error(L, "Luau system")
 			}
 			prepared_transforms: Prepared_Transform_Writebacks
@@ -505,6 +539,12 @@ run_script_system :: proc(
 				world_environment_writebacks[:world_environment_writeback_count],
 				&prepared_world_environments,
 			)
+			prepared_cameras: Prepared_Camera_Writebacks
+			camera_err := prepare_camera_writebacks(
+				L,
+				camera_writebacks[:camera_writeback_count],
+				&prepared_cameras,
+			)
 			if transform_err != "" {
 				return transform_err
 			}
@@ -513,6 +553,9 @@ run_script_system :: proc(
 			}
 			if world_environment_err != "" {
 				return world_environment_err
+			}
+			if camera_err != "" {
+				return camera_err
 			}
 			apply_transform_writebacks(
 				runtime.world,
@@ -528,6 +571,11 @@ run_script_system :: proc(
 				runtime.world,
 				world_environment_writebacks[:world_environment_writeback_count],
 				&prepared_world_environments,
+			)
+			apply_camera_writebacks(
+				runtime.world,
+				camera_writebacks[:camera_writeback_count],
+				&prepared_cameras,
 			)
 		}
 		return ""
@@ -766,6 +814,62 @@ apply_world_environment_writebacks :: proc(
 				has_world_environment = true,
 				world_environment = prepared.environments[index],
 			},
+		}
+		_ = ecs.apply_registered_component_snapshot(world, writeback.entity_index, &snapshot)
+	}
+}
+
+prepare_camera_writebacks :: proc(
+	L: Lua_State,
+	writebacks: []Camera_Writeback,
+	prepared: ^Prepared_Camera_Writebacks,
+) -> string {
+	first_err := ""
+	for writeback, index in writebacks {
+		lua_rawgeti(L, LUA_REGISTRYINDEX, writeback.ref)
+		value, err := read_full_camera_table(L, -1, writeback.original)
+		lua_settop(L, -2)
+		lua_unref(L, writeback.ref)
+		if err != "" {
+			if first_err == "" {
+				if !writeback.can_write {
+					first_err = "Luau system: system access declaration does not permit component write"
+				} else {
+					first_err = "Luau system: invalid scrapbot.camera payload"
+				}
+			}
+			continue
+		}
+		if value == writeback.original {
+			continue
+		}
+		if !writeback.can_write {
+			if first_err == "" {
+				first_err = "Luau system: system access declaration does not permit component write"
+			}
+			continue
+		}
+		prepared.cameras[index] = value
+		prepared.changed[index] = true
+	}
+	return first_err
+}
+
+apply_camera_writebacks :: proc(
+	world: ^World,
+	writebacks: []Camera_Writeback,
+	prepared: ^Prepared_Camera_Writebacks,
+) {
+	for writeback, index in writebacks {
+		if !prepared.changed[index] {
+			continue
+		}
+		snapshot := ecs.Registered_Component_Snapshot {
+			component_id = writeback.component_id,
+			name = "scrapbot.camera",
+			storage_kind = .Camera,
+			present = true,
+			value = {has_camera = true, camera = prepared.cameras[index]},
 		}
 		_ = ecs.apply_registered_component_snapshot(world, writeback.entity_index, &snapshot)
 	}

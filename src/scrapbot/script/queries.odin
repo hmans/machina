@@ -374,6 +374,29 @@ push_query_component_table :: proc "c" (
 				return
 			}
 		case "scrapbot.camera":
+			if entity.camera_index >= 0 && entity.camera_index < len(world.cameras) {
+				value := world.cameras[entity.camera_index]
+				lua_createtable(L, 0, 8)
+				lua_pushnumber(L, f64(value.fov))
+				lua_setfield(L, -2, "fov")
+				lua_pushnumber(L, f64(value.near))
+				lua_setfield(L, -2, "near")
+				lua_pushnumber(L, f64(value.far))
+				lua_setfield(L, -2, "far")
+				lua_pushnumber(L, f64(shared.camera_exposure(value)))
+				lua_setfield(L, -2, "exposure")
+				lua_pushboolean(L, 1 if value.temporal_antialiasing else 0)
+				lua_setfield(L, -2, "temporal_antialiasing")
+				lua_pushboolean(L, 1 if value.fast_antialiasing else 0)
+				lua_setfield(L, -2, "fast_antialiasing")
+				lua_pushboolean(L, 1 if value.ambient_occlusion else 0)
+				lua_setfield(L, -2, "ambient_occlusion")
+				lua_pushboolean(L, 1 if value.screen_space_reflections else 0)
+				lua_setfield(L, -2, "screen_space_reflections")
+				lua_pushboolean(L, 1 if value.bloom else 0)
+				lua_setfield(L, -2, "bloom")
+				return
+			}
 			lua_createtable(L, 0, 0)
 			return
 		case "scrapbot.world_environment":

@@ -27,12 +27,8 @@ reconcile_editor_scene_camera :: proc(
 		rotation = {-0.32175055, 0, 0},
 		scale = {1, 1, 1},
 	}
-	camera := shared.Camera_Component {
-		fov = 60,
-		near = 0.1,
-		far = 100,
-		exposure = 1,
-	}
+	camera := shared.camera_defaults()
+	camera.far = 100
 	if source, ok := first_camera_instance(world); ok {
 		transform = source.transform
 		camera = source.camera

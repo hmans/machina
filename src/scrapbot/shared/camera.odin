@@ -2,6 +2,34 @@ package shared
 
 import "core:math"
 
+camera_defaults :: proc "contextless" () -> Camera_Component {
+	return {
+		fov = 60,
+		near = 0.1,
+		far = 1000,
+		exposure = 1,
+		temporal_antialiasing = true,
+		ambient_occlusion = true,
+		screen_space_reflections = false,
+		bloom = true,
+	}
+}
+
+camera_copy_render_features :: proc "contextless" (
+	destination: ^Camera_Component,
+	source: Camera_Component,
+) {
+	if destination == nil {
+		return
+	}
+	destination.exposure = source.exposure
+	destination.temporal_antialiasing = source.temporal_antialiasing
+	destination.fast_antialiasing = source.fast_antialiasing
+	destination.ambient_occlusion = source.ambient_occlusion
+	destination.screen_space_reflections = source.screen_space_reflections
+	destination.bloom = source.bloom
+}
+
 camera_exposure :: proc "contextless" (camera: Camera_Component) -> f32 {
 	if camera.exposure == 0 {
 		return 1

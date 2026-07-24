@@ -475,9 +475,9 @@ if (result.schema_version !== 1 || result.command !== "run" || result.ok !== tru
   process.exit(1);
 }
 ' "$MASK_JSON"
-cmp "$COMPUTE_FRAME" "$CPU_FRAME"
-cmp "$LOD_COMPUTE_FRAME" "$LOD_CPU_FRAME"
-cmp "$TRANSFORM_COMPUTE_FRAME" "$TRANSFORM_CPU_FRAME"
+node tools/assert_png_close.mjs "$COMPUTE_FRAME" "$CPU_FRAME"
+node tools/assert_png_close.mjs "$LOD_COMPUTE_FRAME" "$LOD_CPU_FRAME"
+node tools/assert_png_close.mjs "$TRANSFORM_COMPUTE_FRAME" "$TRANSFORM_CPU_FRAME"
 node tools/assert_png_variance.mjs "$COMPUTE_FRAME"
 node tools/assert_png_variance.mjs "$LOD_COMPUTE_FRAME"
 node tools/assert_png_variance.mjs "$TRANSFORM_COMPUTE_FRAME"

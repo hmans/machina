@@ -96,6 +96,19 @@ test_wgpu_temporal_camera_continuity_rejects_cuts :: proc(t: ^testing.T) {
 	turned := camera
 	turned.forward = {1, 0, 0}
 	testing.expect(t, !wgpu_temporal_camera_continuous(camera, turned))
+	disabled := camera
+	disabled.temporal_antialiasing = !camera.temporal_antialiasing
+	testing.expect(t, !wgpu_temporal_camera_continuous(camera, disabled))
+}
+
+@(test)
+test_camera_render_feature_defaults_preserve_current_renderer_policy :: proc(t: ^testing.T) {
+	camera := shared.camera_defaults()
+	testing.expect(t, camera.temporal_antialiasing)
+	testing.expect(t, !camera.fast_antialiasing)
+	testing.expect(t, camera.ambient_occlusion)
+	testing.expect(t, !camera.screen_space_reflections)
+	testing.expect(t, camera.bloom)
 }
 
 @(test)
@@ -1168,20 +1181,22 @@ test_wgpu_gpu_timing_marks_only_encoded_passes_for_the_sample :: proc(t: ^testin
 }
 
 @(test)
-test_wgpu_post_timing_includes_temporal_aa_and_ambient_occlusion :: proc(t: ^testing.T) {
+test_wgpu_post_timing_includes_camera_post_effects :: proc(t: ^testing.T) {
 	renderer: WGPU_Renderer
 	renderer.gpu_timestamp_valid = true
 	renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Temporal_AA)] = 0.125
 	renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Ambient_Occlusion)] = 0.25
+	renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Screen_Space_Reflections)] = 0.375
 	renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Bloom)] = 0.50
 	renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Composite)] = 0.75
 	stats: Render_Stats
 	wgpu_publish_gpu_timing(&renderer, &stats)
 	testing.expect_value(t, stats.gpu_temporal_aa_ms, 0.125)
 	testing.expect_value(t, stats.gpu_ambient_occlusion_ms, 0.25)
+	testing.expect_value(t, stats.gpu_screen_space_reflections_ms, 0.375)
 	testing.expect_value(t, stats.gpu_bloom_ms, 0.50)
 	testing.expect_value(t, stats.gpu_composite_ms, 0.75)
-	testing.expect_value(t, stats.gpu_post_ms, 1.625)
+	testing.expect_value(t, stats.gpu_post_ms, 2.0)
 }
 
 @(test)

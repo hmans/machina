@@ -132,7 +132,21 @@ init_registry :: proc(registry: ^Registry) {
 			Field_Definition{name = "scale", field_type = .Vec3},
 		},
 	)
-	register_engine_component(registry, "scrapbot.camera", {})
+	register_engine_component(
+		registry,
+		"scrapbot.camera",
+		{
+			Field_Definition{name = "fov", field_type = .Number},
+			Field_Definition{name = "near", field_type = .Number},
+			Field_Definition{name = "far", field_type = .Number},
+			Field_Definition{name = "exposure", field_type = .Number},
+			Field_Definition{name = "temporal_antialiasing", field_type = .Bool},
+			Field_Definition{name = "fast_antialiasing", field_type = .Bool},
+			Field_Definition{name = "ambient_occlusion", field_type = .Bool},
+			Field_Definition{name = "screen_space_reflections", field_type = .Bool},
+			Field_Definition{name = "bloom", field_type = .Bool},
+		},
+	)
 	register_engine_component(
 		registry,
 		"scrapbot.world_environment",

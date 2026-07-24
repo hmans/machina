@@ -423,6 +423,54 @@ end)
 }
 
 @(test)
+test_luau_query_system_configures_camera_render_features :: proc(t: ^testing.T) {
+	scene, parse_result := project.parse_scene(
+		`[[entities]]
+id = "a9000000-0000-4000-8000-000000000053"
+name = "Camera"
+
+[entities.transform]
+position = [0, 0, 5]
+rotation = [0, 0, 0]
+scale = [1, 1, 1]
+
+[entities.camera]
+fov = 60
+`,
+	)
+	defer project.destroy_scene(&scene)
+	testing.expect(t, parse_result.err == .None)
+	world := ecs.build_world(&scene)
+	defer ecs.destroy_world(&world)
+	runtime: Runtime
+	defer destroy_runtime(&runtime)
+	result := run_source(
+		&runtime,
+		`local Cameras = scrapbot.query(scrapbot.camera)
+scrapbot.system(Cameras, {
+	writes = { scrapbot.camera },
+}, function(time, entity, camera)
+	camera.temporal_antialiasing = false
+	camera.fast_antialiasing = true
+	camera.ambient_occlusion = false
+	camera.screen_space_reflections = true
+	camera.bloom = false
+end)
+`,
+		"=test",
+		&world,
+	)
+	testing.expectf(t, result.err == "", "script registration failed: %s", result.err)
+	step_err := step_runtime(&runtime, &world, 0.5)
+	testing.expectf(t, step_err == "", "camera writeback failed: %s", step_err)
+	testing.expect(t, !world.cameras[0].temporal_antialiasing)
+	testing.expect(t, world.cameras[0].fast_antialiasing)
+	testing.expect(t, !world.cameras[0].ambient_occlusion)
+	testing.expect(t, world.cameras[0].screen_space_reflections)
+	testing.expect(t, !world.cameras[0].bloom)
+}
+
+@(test)
 test_luau_query_reuses_cached_object_for_same_component_set :: proc(t: ^testing.T) {
 	scene, parse_result := project.parse_scene(
 		`[[entities]]

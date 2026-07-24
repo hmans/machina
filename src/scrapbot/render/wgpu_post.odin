@@ -1,5 +1,6 @@
 package render
 
+import shared "../shared"
 import "vendor:wgpu"
 
 wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
@@ -68,6 +69,11 @@ wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		},
 		{
 			binding = 8,
+			visibility = {.Compute},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{
+			binding = 9,
 			visibility = {.Compute},
 			texture = {sampleType = .Float, viewDimension = ._2D},
 		},
@@ -226,6 +232,99 @@ wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 	)
 	if renderer.ambient_occlusion_uniform_buffer == nil {
 		return "failed to create ambient occlusion uniform buffer"
+	}
+
+	reflections_chain := wgpu.ShaderSourceWGSL {
+		chain = {sType = .ShaderSourceWGSL},
+		code = WGPU_SCREEN_SPACE_REFLECTIONS_SHADER,
+	}
+	renderer.screen_space_reflections_shader = wgpu.DeviceCreateShaderModule(
+		renderer.device,
+		&wgpu.ShaderModuleDescriptor {
+			nextInChain = &reflections_chain,
+			label = "Scrapbot Screen-Space Reflections Shader",
+		},
+	)
+	if renderer.screen_space_reflections_shader == nil {
+		return "failed to create screen-space reflections shader"
+	}
+	reflections_layout_entries := [?]wgpu.BindGroupLayoutEntry {
+		{
+			binding = 0,
+			visibility = {.Compute},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{binding = 1, visibility = {.Compute}, sampler = {type = .Filtering}},
+		{
+			binding = 2,
+			visibility = {.Compute},
+			texture = {sampleType = .Depth, viewDimension = ._2D},
+		},
+		{
+			binding = 3,
+			visibility = {.Compute},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{
+			binding = 4,
+			visibility = {.Compute},
+			storageTexture = {access = .WriteOnly, format = .RGBA16Float, viewDimension = ._2D},
+		},
+		{
+			binding = 5,
+			visibility = {.Compute},
+			buffer = {
+				type = .Uniform,
+				minBindingSize = u64(size_of(WGPU_Screen_Space_Reflections_Uniform)),
+			},
+		},
+	}
+	renderer.screen_space_reflections_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
+		renderer.device,
+		&wgpu.BindGroupLayoutDescriptor {
+			label = "Scrapbot Screen-Space Reflections Bind Group Layout",
+			entryCount = uint(len(reflections_layout_entries)),
+			entries = raw_data(reflections_layout_entries[:]),
+		},
+	)
+	if renderer.screen_space_reflections_bind_group_layout == nil {
+		return "failed to create screen-space reflections bind group layout"
+	}
+	renderer.screen_space_reflections_pipeline_layout = wgpu.DeviceCreatePipelineLayout(
+		renderer.device,
+		&wgpu.PipelineLayoutDescriptor {
+			label = "Scrapbot Screen-Space Reflections Pipeline Layout",
+			bindGroupLayoutCount = 1,
+			bindGroupLayouts = &renderer.screen_space_reflections_bind_group_layout,
+		},
+	)
+	if renderer.screen_space_reflections_pipeline_layout == nil {
+		return "failed to create screen-space reflections pipeline layout"
+	}
+	renderer.screen_space_reflections_pipeline = wgpu.DeviceCreateComputePipeline(
+		renderer.device,
+		&wgpu.ComputePipelineDescriptor {
+			label = "Scrapbot Screen-Space Reflections Pipeline",
+			layout = renderer.screen_space_reflections_pipeline_layout,
+			compute = {
+				module = renderer.screen_space_reflections_shader,
+				entryPoint = "screen_space_reflections_cs",
+			},
+		},
+	)
+	if renderer.screen_space_reflections_pipeline == nil {
+		return "failed to create screen-space reflections pipeline"
+	}
+	renderer.screen_space_reflections_uniform_buffer = wgpu.DeviceCreateBuffer(
+		renderer.device,
+		&wgpu.BufferDescriptor {
+			label = "Scrapbot Screen-Space Reflections Uniform Buffer",
+			usage = {.Uniform, .CopyDst},
+			size = u64(size_of(WGPU_Screen_Space_Reflections_Uniform)),
+		},
+	)
+	if renderer.screen_space_reflections_uniform_buffer == nil {
+		return "failed to create screen-space reflections uniform buffer"
 	}
 
 	bloom_layout_entries := [?]wgpu.BindGroupLayoutEntry {
@@ -491,6 +590,18 @@ wgpu_release_post_targets :: proc(renderer: ^WGPU_Renderer) {
 			renderer.ambient_occlusion_textures[index] = nil
 		}
 	}
+	if renderer.screen_space_reflections_bind_group != nil {
+		wgpu.BindGroupRelease(renderer.screen_space_reflections_bind_group)
+		renderer.screen_space_reflections_bind_group = nil
+	}
+	if renderer.screen_space_reflections_view != nil {
+		wgpu.TextureViewRelease(renderer.screen_space_reflections_view)
+		renderer.screen_space_reflections_view = nil
+	}
+	if renderer.screen_space_reflections_texture != nil {
+		wgpu.TextureRelease(renderer.screen_space_reflections_texture)
+		renderer.screen_space_reflections_texture = nil
+	}
 	for index in 0 ..< WGPU_BLOOM_LEVELS {
 		if renderer.bloom_compute_bind_groups[index] != nil {
 			wgpu.BindGroupRelease(renderer.bloom_compute_bind_groups[index])
@@ -512,6 +623,14 @@ wgpu_release_post_targets :: proc(renderer: ^WGPU_Renderer) {
 	if renderer.hdr_texture != nil {
 		wgpu.TextureRelease(renderer.hdr_texture)
 		renderer.hdr_texture = nil
+	}
+	if renderer.surface_view != nil {
+		wgpu.TextureViewRelease(renderer.surface_view)
+		renderer.surface_view = nil
+	}
+	if renderer.surface_texture != nil {
+		wgpu.TextureRelease(renderer.surface_texture)
+		renderer.surface_texture = nil
 	}
 	renderer.post_width = 0
 	renderer.post_height = 0
@@ -559,6 +678,21 @@ wgpu_release_post_process :: proc(renderer: ^WGPU_Renderer) {
 	}
 	if renderer.ambient_occlusion_shader != nil {
 		wgpu.ShaderModuleRelease(renderer.ambient_occlusion_shader)
+	}
+	if renderer.screen_space_reflections_uniform_buffer != nil {
+		wgpu.BufferRelease(renderer.screen_space_reflections_uniform_buffer)
+	}
+	if renderer.screen_space_reflections_pipeline != nil {
+		wgpu.ComputePipelineRelease(renderer.screen_space_reflections_pipeline)
+	}
+	if renderer.screen_space_reflections_pipeline_layout != nil {
+		wgpu.PipelineLayoutRelease(renderer.screen_space_reflections_pipeline_layout)
+	}
+	if renderer.screen_space_reflections_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.screen_space_reflections_bind_group_layout)
+	}
+	if renderer.screen_space_reflections_shader != nil {
+		wgpu.ShaderModuleRelease(renderer.screen_space_reflections_shader)
 	}
 	if renderer.composite_pipeline != nil {
 		wgpu.RenderPipelineRelease(renderer.composite_pipeline)
@@ -622,6 +756,54 @@ wgpu_ensure_post_targets :: proc(
 	}
 
 	err: string
+	renderer.surface_texture, renderer.surface_view, err = wgpu_create_post_texture(
+		renderer,
+		"Scrapbot Surface Data",
+		width,
+		height,
+		.RGBA16Float,
+		{.RenderAttachment, .TextureBinding},
+	)
+	if err != "" {
+		return err
+	}
+	renderer.screen_space_reflections_texture, renderer.screen_space_reflections_view, err =
+		wgpu_create_post_texture(
+			renderer,
+			"Scrapbot Screen-Space Reflections",
+			width,
+			height,
+			.RGBA16Float,
+			{.TextureBinding, .StorageBinding},
+		)
+	if err != "" {
+		return err
+	}
+	reflections_entries := [?]wgpu.BindGroupEntry {
+		{binding = 0, textureView = renderer.hdr_view},
+		{binding = 1, sampler = renderer.post_sampler},
+		{binding = 2, textureView = depth_view},
+		{binding = 3, textureView = renderer.surface_view},
+		{binding = 4, textureView = renderer.screen_space_reflections_view},
+		{
+			binding = 5,
+			buffer = renderer.screen_space_reflections_uniform_buffer,
+			offset = 0,
+			size = u64(size_of(WGPU_Screen_Space_Reflections_Uniform)),
+		},
+	}
+	renderer.screen_space_reflections_bind_group = wgpu.DeviceCreateBindGroup(
+		renderer.device,
+		&wgpu.BindGroupDescriptor {
+			label = "Scrapbot Screen-Space Reflections Bind Group",
+			layout = renderer.screen_space_reflections_bind_group_layout,
+			entryCount = uint(len(reflections_entries)),
+			entries = raw_data(reflections_entries[:]),
+		},
+	)
+	if renderer.screen_space_reflections_bind_group == nil {
+		return "failed to create screen-space reflections bind group"
+	}
 	renderer.temporal_resolved_texture, renderer.temporal_resolved_view, err =
 		wgpu_create_post_texture(
 			renderer,
@@ -750,6 +932,7 @@ wgpu_ensure_post_targets :: proc(
 			size = u64(size_of(WGPU_Temporal_AA_Uniform)),
 		},
 		{binding = 8, textureView = renderer.ambient_occlusion_views[2]},
+		{binding = 9, textureView = renderer.screen_space_reflections_view},
 	}
 	renderer.temporal_aa_bind_group = wgpu.DeviceCreateBindGroup(
 		renderer.device,
@@ -892,9 +1075,15 @@ wgpu_encode_bloom_and_composite :: proc(
 	output_view: wgpu.TextureView,
 	depth_view: wgpu.TextureView,
 	width, height: u32,
+	camera: shared.Camera_Component,
+	has_camera: bool,
 ) -> string {
 	if err := wgpu_ensure_post_targets(renderer, width, height, depth_view); err != "" {
 		return err
+	}
+	resolved_camera := camera
+	if !has_camera {
+		resolved_camera = shared.camera_defaults()
 	}
 	ambient_occlusion_width := max(u32(1), (width + 1) / 2)
 	ambient_occlusion_height := max(u32(1), (height + 1) / 2)
@@ -904,58 +1093,108 @@ wgpu_encode_bloom_and_composite :: proc(
 	if renderer.temporal_history_valid {
 		history_valid = 1
 	}
-	ambient_occlusion_uniform := WGPU_Ambient_Occlusion_Uniform {
-		projection = {projection[0], projection[5], projection[10], projection[14]},
-		viewport = viewport,
-		dimensions = {f32(width), f32(height), projection[8], projection[9]},
-		parameters = {1.25, 0.035, 1.35, 1.15},
-	}
-	wgpu.QueueWriteBuffer(
-		renderer.queue,
-		renderer.ambient_occlusion_uniform_buffer,
-		0,
-		&ambient_occlusion_uniform,
-		size_of(ambient_occlusion_uniform),
-	)
-	ambient_occlusion_timestamps, ambient_occlusion_timestamps_enabled := wgpu_gpu_pass_timestamps(
-		renderer,
-		.Ambient_Occlusion,
-	)
-	ambient_occlusion_timestamps_ptr: ^wgpu.PassTimestampWrites
-	if ambient_occlusion_timestamps_enabled {
-		ambient_occlusion_timestamps_ptr = &ambient_occlusion_timestamps
-	}
-	ambient_occlusion_pass := wgpu.CommandEncoderBeginComputePass(
-		encoder,
-		&wgpu.ComputePassDescriptor {
-			label = "Scrapbot Ambient Occlusion Compute Pass",
-			timestampWrites = ambient_occlusion_timestamps_ptr,
-		},
-	)
-	if ambient_occlusion_pass == nil {
-		return "failed to begin ambient occlusion compute pass"
-	}
-	ambient_occlusion_pipelines := [?]wgpu.ComputePipeline {
-		renderer.ambient_occlusion_pipeline,
-		renderer.ambient_occlusion_blur_horizontal_pipeline,
-		renderer.ambient_occlusion_blur_vertical_pipeline,
-	}
-	for pipeline, index in ambient_occlusion_pipelines {
-		wgpu.ComputePassEncoderSetPipeline(ambient_occlusion_pass, pipeline)
-		wgpu.ComputePassEncoderSetBindGroup(
-			ambient_occlusion_pass,
+	if resolved_camera.ambient_occlusion {
+		ambient_occlusion_uniform := WGPU_Ambient_Occlusion_Uniform {
+			projection = {projection[0], projection[5], projection[10], projection[14]},
+			viewport = viewport,
+			dimensions = {f32(width), f32(height), projection[8], projection[9]},
+			parameters = {1.25, 0.035, 1.35, 1.15},
+		}
+		wgpu.QueueWriteBuffer(
+			renderer.queue,
+			renderer.ambient_occlusion_uniform_buffer,
 			0,
-			renderer.ambient_occlusion_bind_groups[index],
+			&ambient_occlusion_uniform,
+			size_of(ambient_occlusion_uniform),
+		)
+		ambient_occlusion_timestamps, ambient_occlusion_timestamps_enabled :=
+			wgpu_gpu_pass_timestamps(renderer, .Ambient_Occlusion)
+		ambient_occlusion_timestamps_ptr: ^wgpu.PassTimestampWrites
+		if ambient_occlusion_timestamps_enabled {
+			ambient_occlusion_timestamps_ptr = &ambient_occlusion_timestamps
+		}
+		ambient_occlusion_pass := wgpu.CommandEncoderBeginComputePass(
+			encoder,
+			&wgpu.ComputePassDescriptor {
+				label = "Scrapbot Ambient Occlusion Compute Pass",
+				timestampWrites = ambient_occlusion_timestamps_ptr,
+			},
+		)
+		if ambient_occlusion_pass == nil {
+			return "failed to begin ambient occlusion compute pass"
+		}
+		ambient_occlusion_pipelines := [?]wgpu.ComputePipeline {
+			renderer.ambient_occlusion_pipeline,
+			renderer.ambient_occlusion_blur_horizontal_pipeline,
+			renderer.ambient_occlusion_blur_vertical_pipeline,
+		}
+		for pipeline, index in ambient_occlusion_pipelines {
+			wgpu.ComputePassEncoderSetPipeline(ambient_occlusion_pass, pipeline)
+			wgpu.ComputePassEncoderSetBindGroup(
+				ambient_occlusion_pass,
+				0,
+				renderer.ambient_occlusion_bind_groups[index],
+			)
+			wgpu.ComputePassEncoderDispatchWorkgroups(
+				ambient_occlusion_pass,
+				(ambient_occlusion_width + 7) / 8,
+				(ambient_occlusion_height + 7) / 8,
+				1,
+			)
+		}
+		wgpu.ComputePassEncoderEnd(ambient_occlusion_pass)
+		wgpu.ComputePassEncoderRelease(ambient_occlusion_pass)
+	}
+	if resolved_camera.screen_space_reflections {
+		reflections_uniform := WGPU_Screen_Space_Reflections_Uniform {
+			projection = {projection[0], projection[5], projection[10], projection[14]},
+			viewport = viewport,
+			parameters = {40.0, 0.08, 0.10, 0.65},
+			_padding = {projection[8], projection[9], 0, 0},
+		}
+		wgpu.QueueWriteBuffer(
+			renderer.queue,
+			renderer.screen_space_reflections_uniform_buffer,
+			0,
+			&reflections_uniform,
+			size_of(reflections_uniform),
+		)
+		reflections_timestamps, reflections_timestamps_enabled := wgpu_gpu_pass_timestamps(
+			renderer,
+			.Screen_Space_Reflections,
+		)
+		reflections_timestamps_ptr: ^wgpu.PassTimestampWrites
+		if reflections_timestamps_enabled {
+			reflections_timestamps_ptr = &reflections_timestamps
+		}
+		reflections_pass := wgpu.CommandEncoderBeginComputePass(
+			encoder,
+			&wgpu.ComputePassDescriptor {
+				label = "Scrapbot Screen-Space Reflections Compute Pass",
+				timestampWrites = reflections_timestamps_ptr,
+			},
+		)
+		if reflections_pass == nil {
+			return "failed to begin screen-space reflections compute pass"
+		}
+		wgpu.ComputePassEncoderSetPipeline(
+			reflections_pass,
+			renderer.screen_space_reflections_pipeline,
+		)
+		wgpu.ComputePassEncoderSetBindGroup(
+			reflections_pass,
+			0,
+			renderer.screen_space_reflections_bind_group,
 		)
 		wgpu.ComputePassEncoderDispatchWorkgroups(
-			ambient_occlusion_pass,
-			(ambient_occlusion_width + 7) / 8,
-			(ambient_occlusion_height + 7) / 8,
+			reflections_pass,
+			(width + 7) / 8,
+			(height + 7) / 8,
 			1,
 		)
+		wgpu.ComputePassEncoderEnd(reflections_pass)
+		wgpu.ComputePassEncoderRelease(reflections_pass)
 	}
-	wgpu.ComputePassEncoderEnd(ambient_occlusion_pass)
-	wgpu.ComputePassEncoderRelease(ambient_occlusion_pass)
 	temporal_uniform := WGPU_Temporal_AA_Uniform {
 		previous_view_projection = renderer.temporal_previous_view_projection,
 		inverse_view = renderer.temporal_inverse_view,
@@ -963,6 +1202,13 @@ wgpu_encode_bloom_and_composite :: proc(
 		previous_projection = renderer.temporal_previous_projection,
 		viewport = viewport,
 		parameters = {projection[8], projection[9], history_valid, 0.9},
+		features = {
+			1 if resolved_camera.temporal_antialiasing else 0,
+			1 if resolved_camera.fast_antialiasing else 0,
+			1 if resolved_camera.ambient_occlusion else 0,
+			1 if resolved_camera.bloom else 0,
+		},
+		reflections = {1 if resolved_camera.screen_space_reflections else 0, 0, 0, 0},
 	}
 	wgpu.QueueWriteBuffer(
 		renderer.queue,
@@ -999,58 +1245,65 @@ wgpu_encode_bloom_and_composite :: proc(
 		height = height,
 		depthOrArrayLayers = 1,
 	}
-	wgpu.CommandEncoderCopyTextureToTexture(
-		encoder,
-		&wgpu.TexelCopyTextureInfo{texture = renderer.temporal_resolved_texture, aspect = .All},
-		&wgpu.TexelCopyTextureInfo{texture = renderer.temporal_history_texture, aspect = .All},
-		&copy_size,
-	)
-	wgpu.CommandEncoderCopyTextureToTexture(
-		encoder,
-		&wgpu.TexelCopyTextureInfo {
-			texture = renderer.temporal_resolved_depth_texture,
-			aspect = .All,
-		},
-		&wgpu.TexelCopyTextureInfo {
-			texture = renderer.temporal_history_depth_texture,
-			aspect = .All,
-		},
-		&copy_size,
-	)
-
-	bloom_timestamps, bloom_timestamps_enabled := wgpu_gpu_pass_timestamps(renderer, .Bloom)
-	bloom_timestamps_ptr: ^wgpu.PassTimestampWrites
-	if bloom_timestamps_enabled {
-		bloom_timestamps_ptr = &bloom_timestamps
-	}
-	pass := wgpu.CommandEncoderBeginComputePass(
-		encoder,
-		&wgpu.ComputePassDescriptor {
-			label = "Scrapbot Bloom Compute Pass",
-			timestampWrites = bloom_timestamps_ptr,
-		},
-	)
-	if pass == nil {
-		return "failed to begin bloom compute pass"
-	}
-	for index in 0 ..< WGPU_BLOOM_LEVELS {
-		pipeline := renderer.bloom_downsample_pipeline
-		if index == 0 {
-			pipeline = renderer.bloom_bright_pipeline
-		}
-		level_width := max(u32(1), width >> u32(index + 1))
-		level_height := max(u32(1), height >> u32(index + 1))
-		wgpu.ComputePassEncoderSetPipeline(pass, pipeline)
-		wgpu.ComputePassEncoderSetBindGroup(pass, 0, renderer.bloom_compute_bind_groups[index])
-		wgpu.ComputePassEncoderDispatchWorkgroups(
-			pass,
-			(level_width + 7) / 8,
-			(level_height + 7) / 8,
-			1,
+	if resolved_camera.temporal_antialiasing {
+		wgpu.CommandEncoderCopyTextureToTexture(
+			encoder,
+			&wgpu.TexelCopyTextureInfo {
+				texture = renderer.temporal_resolved_texture,
+				aspect = .All,
+			},
+			&wgpu.TexelCopyTextureInfo{texture = renderer.temporal_history_texture, aspect = .All},
+			&copy_size,
+		)
+		wgpu.CommandEncoderCopyTextureToTexture(
+			encoder,
+			&wgpu.TexelCopyTextureInfo {
+				texture = renderer.temporal_resolved_depth_texture,
+				aspect = .All,
+			},
+			&wgpu.TexelCopyTextureInfo {
+				texture = renderer.temporal_history_depth_texture,
+				aspect = .All,
+			},
+			&copy_size,
 		)
 	}
-	wgpu.ComputePassEncoderEnd(pass)
-	wgpu.ComputePassEncoderRelease(pass)
+
+	if resolved_camera.bloom {
+		bloom_timestamps, bloom_timestamps_enabled := wgpu_gpu_pass_timestamps(renderer, .Bloom)
+		bloom_timestamps_ptr: ^wgpu.PassTimestampWrites
+		if bloom_timestamps_enabled {
+			bloom_timestamps_ptr = &bloom_timestamps
+		}
+		pass := wgpu.CommandEncoderBeginComputePass(
+			encoder,
+			&wgpu.ComputePassDescriptor {
+				label = "Scrapbot Bloom Compute Pass",
+				timestampWrites = bloom_timestamps_ptr,
+			},
+		)
+		if pass == nil {
+			return "failed to begin bloom compute pass"
+		}
+		for index in 0 ..< WGPU_BLOOM_LEVELS {
+			pipeline := renderer.bloom_downsample_pipeline
+			if index == 0 {
+				pipeline = renderer.bloom_bright_pipeline
+			}
+			level_width := max(u32(1), width >> u32(index + 1))
+			level_height := max(u32(1), height >> u32(index + 1))
+			wgpu.ComputePassEncoderSetPipeline(pass, pipeline)
+			wgpu.ComputePassEncoderSetBindGroup(pass, 0, renderer.bloom_compute_bind_groups[index])
+			wgpu.ComputePassEncoderDispatchWorkgroups(
+				pass,
+				(level_width + 7) / 8,
+				(level_height + 7) / 8,
+				1,
+			)
+		}
+		wgpu.ComputePassEncoderEnd(pass)
+		wgpu.ComputePassEncoderRelease(pass)
+	}
 	err := wgpu_encode_fullscreen_pass(
 		renderer,
 		encoder,
@@ -1065,7 +1318,11 @@ wgpu_encode_bloom_and_composite :: proc(
 	}
 	renderer.temporal_previous_view_projection = renderer.temporal_current_view_projection
 	renderer.temporal_previous_projection = renderer.temporal_current_projection
-	renderer.temporal_history_valid = true
-	renderer.temporal_sample_index += 1
+	renderer.temporal_history_valid = resolved_camera.temporal_antialiasing
+	if resolved_camera.temporal_antialiasing {
+		renderer.temporal_sample_index += 1
+	} else {
+		renderer.temporal_sample_index = 0
+	}
 	return ""
 }

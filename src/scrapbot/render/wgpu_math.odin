@@ -142,11 +142,15 @@ wgpu_temporal_camera_state :: proc(
 		forward = shared.camera_forward(camera.transform.rotation),
 		fov = fov,
 		has_camera = true,
+		temporal_antialiasing = camera.camera.temporal_antialiasing,
 	}
 }
 
 wgpu_temporal_camera_continuous :: proc(previous, current: WGPU_Temporal_Camera) -> bool {
 	if previous.has_camera != current.has_camera {
+		return false
+	}
+	if previous.temporal_antialiasing != current.temporal_antialiasing {
 		return false
 	}
 	offset := vec3_sub(current.position, previous.position)

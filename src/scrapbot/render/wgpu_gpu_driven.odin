@@ -23,15 +23,15 @@ wgpu_create_gpu_world_pipeline :: proc(
 	cull_mode: wgpu.CullMode,
 	label: string,
 ) -> wgpu.RenderPipeline {
-	target := wgpu.ColorTargetState {
-		format = .RGBA16Float,
-		writeMask = wgpu.ColorWriteMaskFlags_All,
+	targets := [2]wgpu.ColorTargetState {
+		{format = .RGBA16Float, writeMask = wgpu.ColorWriteMaskFlags_All},
+		{format = .RGBA16Float, writeMask = wgpu.ColorWriteMaskFlags_All},
 	}
 	fragment := wgpu.FragmentState {
 		module = renderer.gpu_driven_shader,
 		entryPoint = "fs_main",
-		targetCount = 1,
-		targets = &target,
+		targetCount = len(targets),
+		targets = raw_data(targets[:]),
 	}
 	return wgpu.DeviceCreateRenderPipeline(
 		renderer.device,
@@ -1904,11 +1904,14 @@ wgpu_prepare_gpu_draw_batches :: proc(
 	}
 	renderer.temporal_camera = temporal_camera
 	renderer.temporal_camera_valid = true
-	jitter := wgpu_temporal_jitter(
-		renderer.temporal_sample_index,
-		u32(viewport.width),
-		u32(viewport.height),
-	)
+	jitter: Vec2
+	if render_list.has_camera && render_list.camera.camera.temporal_antialiasing {
+		jitter = wgpu_temporal_jitter(
+			renderer.temporal_sample_index,
+			u32(viewport.width),
+			u32(viewport.height),
+		)
+	}
 	jittered_projection := wgpu_jitter_projection(projection, jitter)
 	jittered_view_projection := mat4_mul(jittered_projection, view)
 	renderer.temporal_current_view_projection = jittered_view_projection

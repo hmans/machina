@@ -52,17 +52,31 @@ test_scene_float_format_is_short_human_readable_and_roundtrips_f32 :: proc(t: ^t
 }
 
 @(test)
-test_scene_camera_serialization_persists_effective_exposure :: proc(t: ^testing.T) {
+test_scene_camera_serialization_persists_render_features :: proc(t: ^testing.T) {
 	builder := strings.builder_make()
 	defer strings.builder_destroy(&builder)
+	camera := shared.camera_defaults()
+	camera.far = 100
+	camera.exposure = 1.5
+	camera.temporal_antialiasing = false
+	camera.fast_antialiasing = true
+	camera.ambient_occlusion = false
+	camera.screen_space_reflections = true
+	camera.bloom = false
 	entity := shared.Scene_Entity {
 		id = shared.entity_uuid_from_engine_name("scene-save-camera"),
 		name = "Camera",
 		has_camera = true,
-		camera = {fov = 60, near = 0.1, far = 100, exposure = 1.5},
+		camera = camera,
 	}
 	write_scene_entity(&builder, &entity)
-	testing.expect(t, strings.contains(strings.to_string(builder), "exposure = 1.5"))
+	serialized := strings.to_string(builder)
+	testing.expect(t, strings.contains(serialized, "exposure = 1.5"))
+	testing.expect(t, strings.contains(serialized, "temporal_antialiasing = false"))
+	testing.expect(t, strings.contains(serialized, "fast_antialiasing = true"))
+	testing.expect(t, strings.contains(serialized, "ambient_occlusion = false"))
+	testing.expect(t, strings.contains(serialized, "screen_space_reflections = true"))
+	testing.expect(t, strings.contains(serialized, "bloom = false"))
 }
 
 @(test)

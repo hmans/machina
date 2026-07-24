@@ -488,6 +488,72 @@ read_full_transform_table :: proc "c" (
 	return transform, ""
 }
 
+read_full_camera_table :: proc "c" (
+	L: Lua_State,
+	payload_index: c.int,
+	original: shared.Camera_Component,
+) -> (
+	value: shared.Camera_Component,
+	err: string,
+) {
+	value = original
+	if err = read_ui_number_field(L, payload_index, "fov", &value.fov); err != "" {
+		return
+	}
+	if err = read_ui_number_field(L, payload_index, "near", &value.near); err != "" {
+		return
+	}
+	if err = read_ui_number_field(L, payload_index, "far", &value.far); err != "" {
+		return
+	}
+	if err = read_ui_number_field(L, payload_index, "exposure", &value.exposure); err != "" {
+		return
+	}
+	if err = read_ui_bool_field(
+		L,
+		payload_index,
+		"temporal_antialiasing",
+		&value.temporal_antialiasing,
+	); err != "" {
+		return
+	}
+	if err = read_ui_bool_field(L, payload_index, "fast_antialiasing", &value.fast_antialiasing);
+	   err != "" {
+		return
+	}
+	if err = read_ui_bool_field(L, payload_index, "ambient_occlusion", &value.ambient_occlusion);
+	   err != "" {
+		return
+	}
+	if err = read_ui_bool_field(
+		L,
+		payload_index,
+		"screen_space_reflections",
+		&value.screen_space_reflections,
+	); err != "" {
+		return
+	}
+	if err = read_ui_bool_field(L, payload_index, "bloom", &value.bloom); err != "" {
+		return
+	}
+	if math.is_nan(value.fov) ||
+	   math.is_inf(value.fov) ||
+	   value.fov < 1 ||
+	   value.fov > 179 ||
+	   math.is_nan(value.near) ||
+	   math.is_inf(value.near) ||
+	   value.near <= 0 ||
+	   math.is_nan(value.far) ||
+	   math.is_inf(value.far) ||
+	   value.far <= value.near ||
+	   math.is_nan(value.exposure) ||
+	   math.is_inf(value.exposure) ||
+	   value.exposure <= 0 {
+		return value, "invalid scrapbot.camera payload"
+	}
+	return value, ""
+}
+
 read_full_world_environment_table :: proc "c" (
 	L: Lua_State,
 	payload_index: c.int,

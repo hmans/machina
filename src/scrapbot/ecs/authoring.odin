@@ -619,12 +619,7 @@ set_registered_component_membership :: proc(
 				remove_transform(world, entity_index)
 			}
 		case .Camera:
-			set_optional_camera(
-				world,
-				entity_index,
-				present,
-				{fov = 60, near = 0.1, far = 1000, exposure = 1},
-			)
+			set_optional_camera(world, entity_index, present, shared.camera_defaults())
 			bump_component_revision(world, entity_index)
 			mark_render_entity_dirty(world, entity_index)
 		case .World_Environment:

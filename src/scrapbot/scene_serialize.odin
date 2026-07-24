@@ -38,6 +38,27 @@ write_scene_entity :: proc(builder: ^strings.Builder, entity: ^shared.Scene_Enti
 		write_scene_value(builder, "near", scene_f32(entity.camera.near))
 		write_scene_value(builder, "far", scene_f32(entity.camera.far))
 		write_scene_value(builder, "exposure", scene_f32(shared.camera_exposure(entity.camera)))
+		write_scene_value(
+			builder,
+			"temporal_antialiasing",
+			scene_bool(entity.camera.temporal_antialiasing),
+		)
+		write_scene_value(
+			builder,
+			"fast_antialiasing",
+			scene_bool(entity.camera.fast_antialiasing),
+		)
+		write_scene_value(
+			builder,
+			"ambient_occlusion",
+			scene_bool(entity.camera.ambient_occlusion),
+		)
+		write_scene_value(
+			builder,
+			"screen_space_reflections",
+			scene_bool(entity.camera.screen_space_reflections),
+		)
+		write_scene_value(builder, "bloom", scene_bool(entity.camera.bloom))
 	}
 	if entity.has_world_environment {
 		value := entity.world_environment

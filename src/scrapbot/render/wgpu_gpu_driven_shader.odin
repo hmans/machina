@@ -417,11 +417,25 @@ fn cluster_index(position: vec2<f32>, view_depth: f32) -> u32 {
 	return tile.x + tile.y * cluster.counts.x + slice * cluster.counts.x * cluster.counts.y;
 }
 
+struct Fragment_Output {
+	@location(0) color: vec4<f32>,
+	@location(1) surface: vec4<f32>,
+};
+
+fn octahedral_encode(direction: vec3<f32>) -> vec2<f32> {
+	let denominator = abs(direction.x) + abs(direction.y) + abs(direction.z);
+	var encoded = direction.xy / max(denominator, 0.000001);
+	if (direction.z < 0.0) {
+		encoded = (vec2<f32>(1.0) - abs(encoded.yx)) * sign(encoded);
+	}
+	return encoded;
+}
+
 @fragment
 fn fs_main(
 	input: Vertex_Output,
 	@builtin(front_facing) front_facing: bool,
-) -> @location(0) vec4<f32> {
+) -> Fragment_Output {
 	let base_color_sample = textureSample(base_color_texture, base_color_sampler, input.uv);
 	if (material.flags.z > 0.5 && base_color_sample.a * input.color.a < material.alpha.x) {
 		discard;
@@ -510,7 +524,15 @@ fn fs_main(
 	}
 	let emissive_map = textureSample(emissive_texture, emissive_sampler, input.uv).rgb;
 	let emissive = mix(input.emissive, input.emissive * emissive_map, material.flags.x);
-	return vec4<f32>((color + emissive) * environment.exposure, 1.0);
+	var output: Fragment_Output;
+	output.color = vec4<f32>((color + emissive) * environment.exposure, 1.0);
+	let view_normal = normalize((render.view * vec4<f32>(normal, 0.0)).xyz);
+	output.surface = vec4<f32>(
+		octahedral_encode(view_normal) * 0.5 + vec2<f32>(0.5),
+		roughness,
+		metallic,
+	);
+	return output;
 }
 
 struct Mask_Output {

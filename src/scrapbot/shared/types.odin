@@ -269,6 +269,11 @@ Camera_Component :: struct {
 	near: f32,
 	far: f32,
 	exposure: f32,
+	temporal_antialiasing: bool,
+	fast_antialiasing: bool,
+	ambient_occlusion: bool,
+	screen_space_reflections: bool,
+	bloom: bool,
 }
 
 @(private = "file")

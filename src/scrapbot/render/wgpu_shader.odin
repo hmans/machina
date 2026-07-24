@@ -334,6 +334,136 @@ fn downsample_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 }
 `
 
+WGPU_SCREEN_SPACE_REFLECTIONS_SHADER :: `
+struct Reflection_Uniform {
+	projection: vec4<f32>,
+	viewport: vec4<f32>,
+	parameters: vec4<f32>,
+	padding: vec4<f32>,
+};
+
+@group(0) @binding(0) var scene_color: texture_2d<f32>;
+@group(0) @binding(1) var linear_sampler: sampler;
+@group(0) @binding(2) var scene_depth: texture_depth_2d;
+@group(0) @binding(3) var surface_data: texture_2d<f32>;
+@group(0) @binding(4) var reflection_output: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(5) var<uniform> reflection: Reflection_Uniform;
+
+fn octahedral_decode(encoded: vec2<f32>) -> vec3<f32> {
+	let value = encoded * 2.0 - vec2<f32>(1.0);
+	var normal = vec3<f32>(value, 1.0 - abs(value.x) - abs(value.y));
+	if (normal.z < 0.0) {
+		let folded = (vec2<f32>(1.0) - abs(normal.yx)) * sign(normal.xy);
+		normal = vec3<f32>(folded, normal.z);
+	}
+	return normalize(normal);
+}
+
+fn reconstruct_view_position(pixel: vec2<i32>, depth: f32) -> vec3<f32> {
+	let viewport_uv =
+		(vec2<f32>(pixel) + vec2<f32>(0.5) - reflection.viewport.xy) /
+		reflection.viewport.zw;
+	let ndc = viewport_uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0);
+	let view_z = -reflection.projection.w / (depth + reflection.projection.z);
+	return vec3<f32>(
+		(ndc.x + reflection.padding.x) * -view_z / reflection.projection.x,
+		(ndc.y + reflection.padding.y) * -view_z / reflection.projection.y,
+		view_z,
+	);
+}
+
+fn project_view_position(position: vec3<f32>) -> vec2<f32> {
+	let inverse_depth = 1.0 / max(-position.z, 0.0001);
+	let ndc = vec2<f32>(
+		position.x * reflection.projection.x * inverse_depth - reflection.padding.x,
+		position.y * reflection.projection.y * inverse_depth - reflection.padding.y,
+	);
+	return reflection.viewport.xy +
+		(ndc * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5)) * reflection.viewport.zw;
+}
+
+fn inside_viewport(position: vec2<f32>) -> bool {
+	return all(position >= reflection.viewport.xy + vec2<f32>(1.0)) &&
+		all(position <= reflection.viewport.xy + reflection.viewport.zw - vec2<f32>(2.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn screen_space_reflections_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
+	let dimensions = textureDimensions(reflection_output);
+	if (invocation.x >= dimensions.x || invocation.y >= dimensions.y) {
+		return;
+	}
+	let pixel = vec2<i32>(invocation.xy);
+	let pixel_center = vec2<f32>(pixel) + vec2<f32>(0.5);
+	if (!inside_viewport(pixel_center)) {
+		textureStore(reflection_output, pixel, vec4<f32>(0.0));
+		return;
+	}
+	let depth = textureLoad(scene_depth, pixel, 0);
+	let surface = textureLoad(surface_data, pixel, 0);
+	let roughness = surface.z;
+	if (depth >= 0.999999 || roughness >= reflection.parameters.w) {
+		textureStore(reflection_output, pixel, vec4<f32>(0.0));
+		return;
+	}
+	let origin = reconstruct_view_position(pixel, depth);
+	let normal = octahedral_decode(surface.xy);
+	let incident = normalize(origin);
+	let direction = normalize(reflect(incident, normal));
+	if (direction.z >= -0.001) {
+		textureStore(reflection_output, pixel, vec4<f32>(0.0));
+		return;
+	}
+	let maximum_distance = reflection.parameters.x;
+	let thickness = max(reflection.parameters.y, -origin.z * 0.0015);
+	let stride = max(reflection.parameters.z, -origin.z * 0.002);
+	var distance = stride * 2.0;
+	var hit_uv = vec2<f32>(0.0);
+	var hit = false;
+	for (var step = 0u; step < 64u; step = step + 1u) {
+		let ray_position = origin + direction * distance;
+		if (distance > maximum_distance || ray_position.z >= -0.001) {
+			break;
+		}
+		let sample_position = project_view_position(ray_position);
+		if (!inside_viewport(sample_position)) {
+			break;
+		}
+		let sample_pixel = vec2<i32>(floor(sample_position));
+		let sample_depth = textureLoad(scene_depth, sample_pixel, 0);
+		if (sample_depth < 0.999999) {
+			let scene_position = reconstruct_view_position(sample_pixel, sample_depth);
+			let delta = ray_position.z - scene_position.z;
+			if (delta <= 0.0 && delta >= -thickness) {
+				hit_uv = sample_position / vec2<f32>(dimensions);
+				hit = true;
+				break;
+			}
+		}
+		distance += stride * (1.0 + f32(step) * 0.035);
+	}
+	if (!hit) {
+		textureStore(reflection_output, pixel, vec4<f32>(0.0));
+		return;
+	}
+	let viewport_uv = (hit_uv * vec2<f32>(dimensions) - reflection.viewport.xy) /
+		reflection.viewport.zw;
+	let edge_distance = min(
+		min(viewport_uv.x, 1.0 - viewport_uv.x),
+		min(viewport_uv.y, 1.0 - viewport_uv.y),
+	);
+	let edge_fade = smoothstep(0.0, 0.08, edge_distance);
+	let distance_fade = 1.0 - clamp(distance / maximum_distance, 0.0, 1.0);
+	let roughness_fade = 1.0 - smoothstep(0.15, reflection.parameters.w, roughness);
+	let grazing = pow(1.0 - max(dot(-incident, normal), 0.0), 3.0);
+	let dielectric = mix(0.04, 1.0, surface.w);
+	let fresnel = dielectric + (1.0 - dielectric) * grazing;
+	let confidence = edge_fade * distance_fade * roughness_fade * fresnel;
+	let color = textureSampleLevel(scene_color, linear_sampler, hit_uv, 0.0).rgb;
+	textureStore(reflection_output, pixel, vec4<f32>(color * confidence, confidence));
+}
+`
+
 WGPU_TEMPORAL_AA_SHADER :: `
 struct Temporal_AA_Uniform {
 	previous_view_projection: mat4x4<f32>,
@@ -342,6 +472,8 @@ struct Temporal_AA_Uniform {
 	previous_projection: vec4<f32>,
 	viewport: vec4<f32>,
 	parameters: vec4<f32>,
+	features: vec4<f32>,
+	reflections: vec4<f32>,
 };
 
 @group(0) @binding(0) var current_color: texture_2d<f32>;
@@ -353,6 +485,7 @@ struct Temporal_AA_Uniform {
 @group(0) @binding(6) var resolved_depth: texture_storage_2d<r32float, write>;
 @group(0) @binding(7) var<uniform> temporal: Temporal_AA_Uniform;
 @group(0) @binding(8) var ambient_occlusion: texture_2d<f32>;
+@group(0) @binding(9) var screen_space_reflections: texture_2d<f32>;
 
 fn viewport_minimum() -> vec2<i32> {
 	return vec2<i32>(floor(temporal.viewport.xy));
@@ -378,11 +511,103 @@ fn reconstruct_view_position(pixel: vec2<i32>, depth: f32) -> vec3<f32> {
 	);
 }
 
+fn linear_view_depth(pixel: vec2<i32>) -> f32 {
+	let depth = textureLoad(current_depth, pixel, 0);
+	if (depth >= 0.999999) {
+		return 100000.0;
+	}
+	return -reconstruct_view_position(pixel, depth).z;
+}
+
+fn ambient_occlusion_at(pixel: vec2<i32>) -> f32 {
+	let full_dimensions = vec2<i32>(textureDimensions(resolved_color));
+	let ao_dimensions = vec2<i32>(textureDimensions(ambient_occlusion));
+	let ao_position =
+		(vec2<f32>(pixel) + vec2<f32>(0.5)) *
+		vec2<f32>(ao_dimensions) /
+		vec2<f32>(full_dimensions) -
+		vec2<f32>(0.5);
+	let base = vec2<i32>(floor(ao_position));
+	let fraction = fract(ao_position);
+	let center_depth = linear_view_depth(pixel);
+	var visibility = 0.0;
+	var weight_total = 0.0;
+	for (var y = 0; y <= 1; y += 1) {
+		for (var x = 0; x <= 1; x += 1) {
+			let offset = vec2<i32>(x, y);
+			let ao_pixel = clamp(base + offset, vec2<i32>(0), ao_dimensions - vec2<i32>(1));
+			let representative_pixel = clamp(
+				ao_pixel * 2 + vec2<i32>(1),
+				viewport_minimum(),
+				viewport_maximum(),
+			);
+			let sample_depth = linear_view_depth(representative_pixel);
+			let bilinear = mix(1.0 - fraction.x, fraction.x, f32(x)) *
+				mix(1.0 - fraction.y, fraction.y, f32(y));
+			let depth_sigma = max(0.01, center_depth * 0.002);
+			let depth_delta = sample_depth - center_depth;
+			let depth_weight = exp(
+				-(depth_delta * depth_delta) /
+				max(2.0 * depth_sigma * depth_sigma, 0.000001),
+			);
+			let weight = bilinear * depth_weight;
+			visibility += textureLoad(ambient_occlusion, ao_pixel, 0).r * weight;
+			weight_total += weight;
+		}
+	}
+	if (weight_total <= 0.0001) {
+		let nearest = clamp(
+			vec2<i32>(round(ao_position)),
+			vec2<i32>(0),
+			ao_dimensions - vec2<i32>(1),
+		);
+		return textureLoad(ambient_occlusion, nearest, 0).r;
+	}
+	return visibility / weight_total;
+}
+
+fn ambient_visibility_at(pixel: vec2<i32>) -> f32 {
+	if (temporal.features.z > 0.5) {
+		return ambient_occlusion_at(pixel);
+	}
+	return 1.0;
+}
+
 fn current_color_at(pixel: vec2<i32>) -> vec3<f32> {
-	let dimensions = vec2<f32>(textureDimensions(resolved_color));
-	let uv = (vec2<f32>(pixel) + vec2<f32>(0.5)) / dimensions;
-	let visibility = textureSampleLevel(ambient_occlusion, linear_sampler, uv, 0.0).r;
-	return textureLoad(current_color, pixel, 0).rgb * visibility;
+	var reflection_color = vec3<f32>(0.0);
+	if (temporal.reflections.x > 0.5) {
+		reflection_color = textureLoad(screen_space_reflections, pixel, 0).rgb;
+	}
+	return textureLoad(current_color, pixel, 0).rgb * ambient_visibility_at(pixel) +
+		reflection_color;
+}
+
+fn fast_antialias(pixel: vec2<i32>) -> vec3<f32> {
+	let minimum = viewport_minimum();
+	let maximum = viewport_maximum();
+	let north = current_color_at(clamp(pixel + vec2<i32>(0, -1), minimum, maximum));
+	let south = current_color_at(clamp(pixel + vec2<i32>(0, 1), minimum, maximum));
+	let west = current_color_at(clamp(pixel + vec2<i32>(-1, 0), minimum, maximum));
+	let east = current_color_at(clamp(pixel + vec2<i32>(1, 0), minimum, maximum));
+	let center = current_color_at(pixel);
+	let luma = vec3<f32>(0.299, 0.587, 0.114);
+	let center_luma = dot(center, luma);
+	let north_luma = dot(north, luma);
+	let south_luma = dot(south, luma);
+	let west_luma = dot(west, luma);
+	let east_luma = dot(east, luma);
+	let minimum_luma = min(center_luma, min(min(north_luma, south_luma), min(west_luma, east_luma)));
+	let maximum_luma = max(center_luma, max(max(north_luma, south_luma), max(west_luma, east_luma)));
+	let contrast = maximum_luma - minimum_luma;
+	if (contrast < max(0.0312, maximum_luma * 0.125)) {
+		return center;
+	}
+	let horizontal = abs(west_luma - east_luma);
+	let vertical = abs(north_luma - south_luma);
+	if (horizontal >= vertical) {
+		return center * 0.5 + (west + east) * 0.25;
+	}
+	return center * 0.5 + (north + south) * 0.25;
 }
 
 fn current_neighborhood(pixel: vec2<i32>) -> array<vec3<f32>, 2> {
@@ -410,12 +635,21 @@ fn temporal_aa_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 		return;
 	}
 	let pixel = vec2<i32>(invocation.xy);
+	let ambient_visibility = ambient_visibility_at(pixel);
 	let color = current_color_at(pixel);
 	let depth = textureLoad(current_depth, pixel, 0);
 	var result = color;
 	if (
 		inside_viewport(pixel) &&
+		temporal.features.x <= 0.5 &&
+		temporal.features.y > 0.5
+	) {
+		result = fast_antialias(pixel);
+	}
+	if (
+		inside_viewport(pixel) &&
 		depth < 0.999999 &&
+		temporal.features.x > 0.5 &&
 		temporal.parameters.z > 0.5
 	) {
 		let view_position = reconstruct_view_position(pixel, depth);
@@ -469,7 +703,7 @@ fn temporal_aa_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 			}
 		}
 	}
-	textureStore(resolved_color, pixel, vec4<f32>(result, 1.0));
+	textureStore(resolved_color, pixel, vec4<f32>(result, temporal.features.w));
 	textureStore(resolved_depth, pixel, vec4<f32>(depth, 0.0, 0.0, 0.0));
 }
 `
@@ -547,20 +781,15 @@ fn view_normal(pixel: vec2<i32>, center: vec3<f32>) -> vec3<f32> {
 	return normal;
 }
 
-const SAMPLE_DIRECTIONS = array<vec2<f32>, 12>(
-	vec2<f32>( 1.0000,  0.0000),
-	vec2<f32>( 0.5000,  0.8660),
-	vec2<f32>(-0.5000,  0.8660),
-	vec2<f32>(-1.0000,  0.0000),
-	vec2<f32>(-0.5000, -0.8660),
-	vec2<f32>( 0.5000, -0.8660),
-	vec2<f32>( 0.9239,  0.3827),
-	vec2<f32>( 0.1305,  0.9914),
-	vec2<f32>(-0.7934,  0.6088),
-	vec2<f32>(-0.9239, -0.3827),
-	vec2<f32>(-0.1305, -0.9914),
-	vec2<f32>( 0.7934, -0.6088),
-);
+fn spatial_rotation(pixel: vec2<i32>) -> f32 {
+	var value =
+		u32(pixel.x) * 0x8da6b343u ^
+		u32(pixel.y) * 0xd8163841u;
+	value ^= value >> 16u;
+	value *= 0x7feb352du;
+	value ^= value >> 15u;
+	return f32(value & 0xffffu) * (6.28318530718 / 65536.0);
+}
 
 @compute @workgroup_size(8, 8)
 fn ambient_occlusion_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
@@ -584,10 +813,13 @@ fn ambient_occlusion_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 		2.0,
 		96.0,
 	);
+	let rotation = spatial_rotation(ao_pixel);
 	var occlusion = 0.0;
-	for (var index = 0u; index < 12u; index += 1u) {
-		let ring = 0.20 + 0.80 * (f32(index) + 0.5) / 12.0;
-		let offset = vec2<i32>(round(SAMPLE_DIRECTIONS[index] * projected_radius * ring));
+	for (var index = 0u; index < 16u; index += 1u) {
+		let ring = sqrt((f32(index) + 1.0) / 16.0);
+		let angle = rotation + f32(index) * 2.39996322973;
+		let direction = vec2<f32>(cos(angle), sin(angle));
+		let offset = vec2<i32>(round(direction * projected_radius * ring));
 		let sample_pixel = clamp_full_pixel(pixel + offset);
 		let sample_depth = depth_at(sample_pixel);
 		if (sample_depth >= 0.999999) {
@@ -600,10 +832,11 @@ fn ambient_occlusion_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 			continue;
 		}
 		let horizon = max(dot(normal, difference / distance) - bias, 0.0);
-		occlusion += horizon * (1.0 - distance / radius);
+		let normalized_distance = distance / radius;
+		occlusion += horizon * (1.0 - normalized_distance * normalized_distance);
 	}
 	let amount = clamp(
-		occlusion * settings.parameters.z * (3.0 / 12.0),
+		occlusion * settings.parameters.z * (2.0 / 16.0),
 		0.0,
 		1.0,
 	);
@@ -639,7 +872,12 @@ fn bilateral_blur(pixel: vec2<i32>, axis: vec2<i32>) -> f32 {
 		} else if (abs(offset) == 2) {
 			spatial_weight = 0.06;
 		}
-		let depth_weight = 1.0 / (1.0 + abs(sample_depth - center_depth) * 8.0);
+		let depth_sigma = max(0.01, center_depth * 0.002);
+		let depth_delta = sample_depth - center_depth;
+		let depth_weight = exp(
+			-(depth_delta * depth_delta) /
+				max(2.0 * depth_sigma * depth_sigma, 0.000001),
+		);
 		let weight = spatial_weight * depth_weight;
 		total += textureLoad(source_occlusion, sample_pixel, 0).r * weight;
 		weight_total += weight;
@@ -715,7 +953,8 @@ fn composite_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
 	bloom += textureSample(bloom_2, linear_sampler, input.uv).rgb * 0.20;
 	bloom += textureSample(bloom_3, linear_sampler, input.uv).rgb * 0.13;
 	bloom += textureSample(bloom_4, linear_sampler, input.uv).rgb * 0.07;
-	let hdr = textureSample(hdr_texture, linear_sampler, input.uv).rgb + bloom * 0.8;
+	let resolved = textureSample(hdr_texture, linear_sampler, input.uv);
+	let hdr = resolved.rgb + bloom * (0.8 * resolved.a);
 	return vec4<f32>(aces(hdr), 1.0);
 }
 `

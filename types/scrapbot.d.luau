@@ -290,9 +290,27 @@ export type ReadonlyScrapbotTransform = {
 export type ScrapbotTransformComponent = ScrapbotComponent<ScrapbotTransform, ReadonlyScrapbotTransform>
 
 export type ScrapbotCamera = {
+	fov: number,
+	near: number,
+	far: number,
+	exposure: number,
+	temporal_antialiasing: boolean,
+	fast_antialiasing: boolean,
+	ambient_occlusion: boolean,
+	screen_space_reflections: boolean,
+	bloom: boolean,
 }
 
 export type ReadonlyScrapbotCamera = {
+	read fov: number,
+	read near: number,
+	read far: number,
+	read exposure: number,
+	read temporal_antialiasing: boolean,
+	read fast_antialiasing: boolean,
+	read ambient_occlusion: boolean,
+	read screen_space_reflections: boolean,
+	read bloom: boolean,
 }
 
 export type ScrapbotCameraComponent = ScrapbotComponent<ScrapbotCamera, ReadonlyScrapbotCamera>

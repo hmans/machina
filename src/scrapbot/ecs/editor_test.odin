@@ -55,7 +55,15 @@ test_editor_scene_camera_is_an_ecs_entity_and_fly_system_moves_it :: proc(t: ^te
 			has_transform = true,
 			transform = {position = {0, 1, 8}, rotation = {-0.1, 0, 0}, scale = {1, 1, 1}},
 			has_camera = true,
-			camera = {fov = 55, near = 0.2, far = 250},
+			camera = {
+				fov = 55,
+				near = 0.2,
+				far = 250,
+				temporal_antialiasing = false,
+				fast_antialiasing = true,
+				ambient_occlusion = false,
+				bloom = false,
+			},
 		},
 	)
 	world := build_world(&scene)
@@ -80,6 +88,10 @@ test_editor_scene_camera_is_an_ecs_entity_and_fly_system_moves_it :: proc(t: ^te
 	testing.expect(t, has_camera)
 	testing.expect(t, camera.entity.id.index == u32(entity_index))
 	testing.expect(t, camera.camera.fov == 55)
+	testing.expect(t, !camera.camera.temporal_antialiasing)
+	testing.expect(t, camera.camera.fast_antialiasing)
+	testing.expect(t, !camera.camera.ambient_occlusion)
+	testing.expect(t, !camera.camera.bloom)
 
 	before := camera.transform.position
 	editor_scene_camera_system(

@@ -91,6 +91,11 @@ fov = 60
 near = 0.1
 far = 100
 exposure = 1
+temporal_antialiasing = true
+fast_antialiasing = false
+ambient_occlusion = true
+screen_space_reflections = false
+bloom = true
 
 [[entities]]
 id = "%s"

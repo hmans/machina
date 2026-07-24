@@ -568,6 +568,32 @@ far = 100
 	defer destroy_scene(&default_exposure)
 	testing.expect(t, default_result.err == .None)
 	testing.expect_value(t, default_exposure.entities[0].camera.exposure, f32(1))
+	testing.expect(t, default_exposure.entities[0].camera.temporal_antialiasing)
+	testing.expect(t, !default_exposure.entities[0].camera.fast_antialiasing)
+	testing.expect(t, default_exposure.entities[0].camera.ambient_occlusion)
+	testing.expect(t, !default_exposure.entities[0].camera.screen_space_reflections)
+	testing.expect(t, default_exposure.entities[0].camera.bloom)
+
+	configured, configured_result := parse_scene(
+		`[[entities]]
+id = "a6000000-0000-4000-8000-000000000093"
+name = "Camera"
+
+[entities.camera]
+temporal_antialiasing = false
+fast_antialiasing = true
+ambient_occlusion = false
+screen_space_reflections = true
+bloom = false
+`,
+	)
+	defer destroy_scene(&configured)
+	testing.expect(t, configured_result.err == .None)
+	testing.expect(t, !configured.entities[0].camera.temporal_antialiasing)
+	testing.expect(t, configured.entities[0].camera.fast_antialiasing)
+	testing.expect(t, !configured.entities[0].camera.ambient_occlusion)
+	testing.expect(t, configured.entities[0].camera.screen_space_reflections)
+	testing.expect(t, !configured.entities[0].camera.bloom)
 
 	invalid, invalid_result := parse_scene(
 		`[[entities]]

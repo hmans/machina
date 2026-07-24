@@ -23,7 +23,7 @@ Most components use the same suffix in every public surface:
 
 `scrapbot.geometry` and `scrapbot.material` are resource-creation namespaces in Luau, so their component handles use the `_component` suffix. Scene geometry names, material UUIDs, and `mesh.primitive` strings resolve to generational resource handles when the world is built.
 
-The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type reference for the current project. Camera fields and the resource-backed mesh, geometry, and material payloads are not exposed for Luau mutation yet; their handles currently provide query membership.
+The generated `.scrapbot/types/scrapbot.d.luau` file is the precise type reference for the current project. Resource-backed mesh, geometry, and material payloads are not exposed for Luau mutation yet; their handles currently provide query membership.
 
 ## Complete public inventory
 
@@ -94,8 +94,13 @@ Parent UUIDs must resolve to another entity with a Transform and may not form a 
 | `near` | number | Positive near clipping plane. |
 | `far` | number | Far clipping plane, greater than `near`. |
 | `exposure` | number | Positive linear camera-exposure multiplier. Defaults to `1` and multiplies project render exposure. |
+| `temporal_antialiasing` | boolean | Enables projection jitter and retained depth-aware temporal resolution. Defaults to `true`. |
+| `fast_antialiasing` | boolean | Enables a lightweight current-frame fullscreen edge filter when temporal antialiasing is disabled. Defaults to `false`; TAA takes precedence when both are enabled. |
+| `ambient_occlusion` | boolean | Enables half-resolution, rotated depth-reconstructed ambient occlusion with depth-aware blur and upsampling. Defaults to `true`. |
+| `screen_space_reflections` | boolean | Enables material-aware screen-space reflections for sufficiently smooth visible surfaces. Defaults to `false`. |
+| `bloom` | boolean | Enables the five-level HDR bloom pyramid. Defaults to `true`. |
 
-The camera reads position and orientation from a Transform on the same entity. The active camera's exposure affects direct lighting, image-based lighting, the visible environment, emission, and bloom together before tone mapping. Its Luau component handle currently exposes membership only; camera field mutation is an editor/scene-authoring surface in this slice.
+The camera reads position and orientation from a Transform on the same entity. The active camera's exposure and render-feature switches control that rendered view, including while an editor fly camera supplies the editor viewport's pose. SSR ray-marches the current frame's HDR color, depth, and material surface data; as a screen-space effect, it cannot reflect off-screen or occluded objects and fades uncertain, rough, distant, and screen-edge hits. Disabling AO, SSR, or bloom skips their compute work; disabling TAA removes jitter and history copies. Luau queries expose and may write the complete payload when the system declares `scrapbot.camera` in `writes`.
 
 ### `scrapbot.world_environment`
 

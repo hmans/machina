@@ -780,7 +780,7 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 				}
 			case "camera":
 				if !current.has_camera {
-					current.camera.exposure = 1
+					current.camera = shared.camera_defaults()
 				}
 				current.has_camera = true
 				switch key {
@@ -792,6 +792,16 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						current.camera.far, found = parse_f32(value)
 					case "exposure":
 						current.camera.exposure, found = parse_f32(value)
+					case "temporal_antialiasing":
+						current.camera.temporal_antialiasing, found = parse_bool(value)
+					case "fast_antialiasing":
+						current.camera.fast_antialiasing, found = parse_bool(value)
+					case "ambient_occlusion":
+						current.camera.ambient_occlusion, found = parse_bool(value)
+					case "screen_space_reflections":
+						current.camera.screen_space_reflections, found = parse_bool(value)
+					case "bloom":
+						current.camera.bloom, found = parse_bool(value)
 					case:
 						return scene, fail(
 							.Invalid_Field,
@@ -799,10 +809,7 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						)
 				}
 				if !found {
-					return scene, fail(
-						.Invalid_Field,
-						fmt.tprintf("camera.%s must be a number", key),
-					)
+					return scene, fail(.Invalid_Field, fmt.tprintf("invalid camera.%s", key))
 				}
 			case "world_environment":
 				current.has_world_environment = true

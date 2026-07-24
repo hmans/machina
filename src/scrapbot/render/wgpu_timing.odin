@@ -300,12 +300,15 @@ wgpu_publish_gpu_timing :: proc(renderer: ^WGPU_Renderer, stats: ^Render_Stats) 
 		renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Temporal_AA)]
 	stats.gpu_ambient_occlusion_ms =
 		renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Ambient_Occlusion)]
+	stats.gpu_screen_space_reflections_ms =
+		renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Screen_Space_Reflections)]
 	stats.gpu_bloom_ms = renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Bloom)]
 	stats.gpu_composite_ms =
 		renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.Composite)]
 	stats.gpu_post_ms =
 		stats.gpu_temporal_aa_ms +
 		stats.gpu_ambient_occlusion_ms +
+		stats.gpu_screen_space_reflections_ms +
 		stats.gpu_bloom_ms +
 		stats.gpu_composite_ms
 	stats.gpu_ui_ms = renderer.gpu_timestamp_phase_ms[int(WGPU_GPU_Timestamp_Phase.UI)]

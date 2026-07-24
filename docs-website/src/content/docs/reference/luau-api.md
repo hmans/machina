@@ -58,7 +58,7 @@ Built-in handles:
 - `scrapbot.ui_input`
 - `scrapbot.ui_checkbox`
 
-See the [Engine Component Reference](/reference/components/) for the complete field inventory, defaults, constraints, scene names, and native Odin descriptors. Camera, mesh, geometry, and material are currently membership handles with opaque resource-backed query payloads.
+See the [Engine Component Reference](/reference/components/) for the complete field inventory, defaults, constraints, scene names, and native Odin descriptors. Camera query payloads expose projection, exposure, and render-feature settings. Mesh, geometry, and material remain membership handles with opaque resource-backed query payloads.
 
 Light query payloads expose `color` and `intensity`; directional lights also expose `direction`, and point lights expose `range`. Systems can animate a point light by writing the same entity's transform.
 
