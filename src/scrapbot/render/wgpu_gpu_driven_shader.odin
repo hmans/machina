@@ -345,6 +345,106 @@ fn procedural_daylight() -> f32 {
 	return smoothstep(-0.12, 0.05, direction.y - horizon_elevation);
 }
 
+fn procedural_environment_radiance(sample_direction: vec3<f32>, roughness: f32) -> vec3<f32> {
+	if (environment.background_max_specular_lod >= 0.0) {
+		return vec3<f32>(0.0);
+	}
+	let direction = normalize(sample_direction);
+	let sky_tint = environment.atmosphere_sky_tint.rgb;
+	let ground_tint = environment.atmosphere_ground_color.rgb;
+	let turbidity = clamp(environment.atmosphere_parameters.x, 0.0, 10.0);
+	let atmosphere_thickness = clamp(environment.atmosphere_parameters.y, 0.1, 5.0);
+	let horizon_softness = clamp(environment.atmosphere_parameters.z, 0.1, 5.0);
+	let sun_size = clamp(environment.atmosphere_parameters.w, 0.1, 10.0);
+	let planet_radius = 1.0;
+	let observer_radius = 1.00012;
+	let horizon_elevation = -sqrt(
+		1.0 - (planet_radius * planet_radius) / (observer_radius * observer_radius)
+	);
+	let atmosphere_elevation = clamp(direction.y, -1.0, 1.0) - horizon_elevation;
+	let daylight = procedural_daylight();
+	let sky_height = pow(
+		clamp(atmosphere_elevation / (1.0 - horizon_elevation), 0.0, 1.0),
+		0.35,
+	);
+	let ground_depth = pow(
+		clamp(-atmosphere_elevation / (1.0 + horizon_elevation), 0.0, 1.0),
+		0.45,
+	);
+	let sky_horizon = mix(
+		vec3<f32>(0.004, 0.008, 0.025),
+		vec3<f32>(0.30, 0.58, 0.88),
+		daylight,
+	) * sky_tint;
+	let sky_zenith = mix(
+		vec3<f32>(0.0004, 0.0012, 0.008),
+		vec3<f32>(0.018, 0.095, 0.34),
+		daylight,
+	) * sky_tint;
+	var sky_color = mix(sky_horizon, sky_zenith, sky_height);
+	let haze_warmth = clamp((turbidity - 2.0) / 8.0, 0.0, 1.0);
+	let day_haze_color = mix(
+		vec3<f32>(0.68, 0.82, 0.94),
+		vec3<f32>(0.94, 0.70, 0.46),
+		haze_warmth,
+	);
+	let haze_color = mix(
+		vec3<f32>(0.006, 0.010, 0.026),
+		day_haze_color,
+		daylight,
+	) * sky_tint;
+	let aerial_haze = exp(
+		-abs(atmosphere_elevation) * 13.0 / atmosphere_thickness,
+	);
+	sky_color = mix(
+		sky_color,
+		haze_color,
+		aerial_haze * clamp(0.38 + turbidity * 0.10, 0.0, 0.9),
+	);
+	let ground_daylight = mix(0.018, 1.0, daylight);
+	let ground_horizon = ground_tint * ground_daylight;
+	let ground_nadir = ground_tint * vec3<f32>(0.23, 0.21, 0.20) * ground_daylight;
+	let ground_color = mix(ground_horizon, ground_nadir, ground_depth);
+	let sky_mask = smoothstep(
+		-0.004 * horizon_softness,
+		0.006 * horizon_softness,
+		atmosphere_elevation,
+	);
+	var radiance = mix(ground_color, sky_color, sky_mask);
+	let blur = roughness * roughness;
+	let average_sky = mix(
+		vec3<f32>(0.003, 0.006, 0.018),
+		vec3<f32>(0.16, 0.29, 0.46) * sky_tint,
+		daylight,
+	);
+	let average_ground = ground_tint * mix(0.012, 0.32, daylight);
+	let average_environment = mix(average_ground, average_sky, 0.62);
+	radiance = mix(radiance, average_environment, blur * 0.65);
+	let sun_direction_length = length(environment.sun_direction_intensity.xyz);
+	if (
+		sun_direction_length > 0.0001 &&
+		environment.sun_direction_intensity.w > 0.0
+	) {
+		let sun_direction = environment.sun_direction_intensity.xyz / sun_direction_length;
+		let sun_visibility = smoothstep(
+			-0.02,
+			0.02,
+			sun_direction.y - horizon_elevation,
+		);
+		let alignment = max(dot(direction, sun_direction), 0.0);
+		let sun_exponent = mix(1024.0, 4.0, blur) / sun_size;
+		let sun_lobe = pow(alignment, sun_exponent);
+		let sun_energy = mix(6.0, 0.18, blur);
+		radiance +=
+			environment.sun_color.rgb *
+			environment.sun_direction_intensity.w *
+			sun_lobe *
+			sun_energy *
+			sun_visibility;
+	}
+	return max(radiance, vec3<f32>(0.0));
+}
+
 fn shadow_cascade_index(view_depth: f32) -> u32 {
 	if (view_depth <= render.shadow_cascade_splits.x) {
 		return 0u;
@@ -492,7 +592,6 @@ fn fs_main(
 	let n_dot_v = max(dot(normal, view), 0.0);
 	let ambient_fresnel = fresnel_schlick_roughness(n_dot_v, f0, roughness);
 	let ambient_diffuse = (vec3<f32>(1.0) - ambient_fresnel) * (1.0 - metallic) * base_color;
-	let ambient_specular = ambient_fresnel * mix(0.9, 0.2, roughness);
 	if (environment.enabled > 0.5) {
 		let irradiance = textureSampleLevel(irradiance_cube, environment_sampler, rotate_environment(normal), 0.0).rgb;
 		let reflection = reflect(-view, normal);
@@ -509,24 +608,21 @@ fn fs_main(
 		color += specular_ibl * occlusion * environment.intensity;
 	} else {
 		indirect_diffuse += render.ambient.rgb * ambient_diffuse * occlusion;
-		color += render.ambient.rgb * ambient_specular * occlusion;
 		if (environment.background_max_specular_lod < 0.0) {
-			let daylight = procedural_daylight();
-			let hemisphere = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
-			let sky_fill = mix(
-				vec3<f32>(0.0005, 0.0012, 0.006),
-				vec3<f32>(0.10, 0.18, 0.30) * environment.atmosphere_sky_tint.rgb,
-				daylight,
-			);
-			let ground_fill = mix(
-				vec3<f32>(0.0003, 0.0004, 0.0007),
-				environment.atmosphere_ground_color.rgb * 0.08,
-				daylight,
-			);
+			let reflection = reflect(-view, normal);
+			let procedural_irradiance = procedural_environment_radiance(normal, 1.0);
+			let procedural_specular = procedural_environment_radiance(reflection, roughness);
+			let brdf = environment_brdf(n_dot_v, roughness);
 			indirect_diffuse +=
 				ambient_diffuse *
-				mix(ground_fill, sky_fill, hemisphere) *
-				occlusion;
+				procedural_irradiance *
+				occlusion *
+				environment.intensity;
+			color +=
+				procedural_specular *
+				(ambient_fresnel * brdf.x + brdf.y) *
+				occlusion *
+				environment.intensity;
 		}
 	}
 	let emissive_map = textureSample(emissive_texture, emissive_sampler, input.uv).rgb;

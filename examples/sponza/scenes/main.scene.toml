@@ -4,9 +4,9 @@ name = "World Environment"
 
 [entities.world_environment]
 lighting = "5a000000-0000-4000-8000-000000000002"
-lighting_intensity = 0.2
+lighting_intensity = 0.42
 lighting_rotation = 25
-exposure = 0.9
+exposure = 1
 background_visible = true
 background = ""
 background_intensity = 1
@@ -37,7 +37,7 @@ scale = [1, 1, 1]
 fov = 55
 near = 0.1
 far = 100
-exposure = 0.9
+exposure = 1
 temporal_antialiasing = true
 fast_antialiasing = false
 ambient_occlusion = true
@@ -56,7 +56,7 @@ name = "Soft Ambient"
 
 [entities.ambient_light]
 color = [0.3, 0.4, 0.62]
-intensity = 0.04
+intensity = 0.08
 
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000004"
@@ -65,7 +65,7 @@ name = "Sun"
 [entities.directional_light]
 direction = [-0.45, -0.72, -0.53]
 color = [1, 0.8, 0.58]
-intensity = 0.65
+intensity = 1.35
 
 [[entities]]
 id = "5a100000-0000-4000-8000-000000000005"

@@ -6,7 +6,24 @@ import shared "../shared"
 import ui "../ui"
 
 import "core:math"
+import "core:strings"
 import "core:testing"
+
+@(test)
+test_world_shaders_light_procedural_skies_through_the_pbr_environment_path :: proc(t: ^testing.T) {
+	shaders := [?]string{WGPU_GPU_DRIVEN_SHADER, WGPU_RENDER_SHADER}
+	for shader in shaders {
+		testing.expect(t, strings.contains(shader, "fn procedural_environment_radiance"))
+		testing.expect(
+			t,
+			strings.contains(
+				shader,
+				"procedural_specular *\n\t\t\t\t(ambient_fresnel * brdf.x + brdf.y)",
+			),
+		)
+		testing.expect(t, !strings.contains(shader, "ambient_specular * occlusion"))
+	}
+}
 
 @(test)
 test_cluster_index_budget_starts_at_256_and_grows_geometrically :: proc(t: ^testing.T) {
