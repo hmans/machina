@@ -29,6 +29,21 @@ test_world_shaders_light_procedural_skies_through_the_pbr_environment_path :: pr
 }
 
 @(test)
+test_composite_dithers_tone_mapped_output_in_fixed_display_space :: proc(t: ^testing.T) {
+	testing.expect(t, strings.contains(WGPU_COMPOSITE_SHADER, "fn presentation_dither"))
+	testing.expect(t, strings.contains(WGPU_COMPOSITE_SHADER, "fn linear_to_srgb"))
+	testing.expect(t, strings.contains(WGPU_COMPOSITE_SHADER, "fn srgb_to_linear"))
+	testing.expect(t, strings.contains(WGPU_COMPOSITE_SHADER, "noise / 255.0"))
+	testing.expect(
+		t,
+		strings.contains(
+			WGPU_COMPOSITE_SHADER,
+			"presentation_dither(aces(hdr), input.position.xy)",
+		),
+	)
+}
+
+@(test)
 test_world_shaders_prefer_authored_tangent_frames_with_a_derivative_fallback :: proc(
 	t: ^testing.T,
 ) {

@@ -85,7 +85,7 @@ Fog, AO, and SSR join the current HDR signal before temporal resolution. Enabled
 
 When TAA is off, the renderer removes projection jitter and history traffic. Optional fast AA then uses only the current resolved frame. Resize, world replacement, depth replacement, camera cuts, and TAA mode changes invalidate temporal history.
 
-World-environment and active-camera exposure multiply together. Enabled bloom builds five bright-pass levels before one ACES-style tone-map pass presents through an sRGB target.
+World-environment and active-camera exposure multiply together. Enabled bloom builds five bright-pass levels before one ACES-style tone-map pass presents through an sRGB target. A fixed screen-space sub-LSB dither breaks up 8-bit bands in smooth sky and fog gradients without introducing a temporally changing pattern.
 
 Disabled AO, SSR, and bloom skip their compute dispatches. Project UI, gizmos, and editor chrome render afterward, so world postprocessing never softens text or controls.
 

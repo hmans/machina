@@ -1580,6 +1580,34 @@ fn aces(color: vec3<f32>) -> vec3<f32> {
 	);
 }
 
+fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
+	return select(
+		1.055 * pow(color, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055),
+		12.92 * color,
+		color <= vec3<f32>(0.0031308),
+	);
+}
+
+fn srgb_to_linear(color: vec3<f32>) -> vec3<f32> {
+	return select(
+		pow((color + vec3<f32>(0.055)) / 1.055, vec3<f32>(2.4)),
+		color / 12.92,
+		color <= vec3<f32>(0.04045),
+	);
+}
+
+fn presentation_dither(color: vec3<f32>, pixel: vec2<f32>) -> vec3<f32> {
+	// Fixed screen-space interleaved gradient noise breaks up 8-bit display
+	// bands without adding a temporally changing pattern for TAA to chase.
+	let noise = fract(52.9829189 * fract(dot(pixel, vec2<f32>(0.06711056, 0.00583715)))) - 0.5;
+	let encoded = clamp(
+		linear_to_srgb(color) + vec3<f32>(noise / 255.0),
+		vec3<f32>(0.0),
+		vec3<f32>(1.0),
+	);
+	return srgb_to_linear(encoded);
+}
+
 @fragment
 fn composite_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
 	var bloom = textureSample(bloom_0, linear_sampler, input.uv).rgb * 0.34;
@@ -1589,7 +1617,7 @@ fn composite_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
 	bloom += textureSample(bloom_4, linear_sampler, input.uv).rgb * 0.07;
 	let resolved = textureSample(hdr_texture, linear_sampler, input.uv);
 	let hdr = resolved.rgb + bloom * (0.8 * resolved.a);
-	return vec4<f32>(aces(hdr), 1.0);
+	return vec4<f32>(presentation_dither(aces(hdr), input.position.xy), 1.0);
 }
 `
 
