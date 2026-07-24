@@ -2,6 +2,8 @@
 
 This example loads Khronos's glTF 2.0 Sponza scene through Scrapbot's real incremental model importer. It exercises 103 textured primitives, 25 metallic-roughness materials, alpha-cutout surfaces, low-contrast outdoor image-based lighting from Poly Haven's Kloppenheim 01 Pure Sky, cascaded shadows, depth-aware temporal antialiasing, eleven gently animated clustered point lights arranged as warm and cool architectural pools, and a subtle 30-second camera dolly into the atrium.
 
+The `World Environment` entity owns the scene's single procedural sun. Editing its sun fields keeps the visible sky, volumetric scattering, direct lighting, and primary shadow cascades on the same direction and intensity.
+
 Install the pinned, checksum-verified external model and HDRI, then run it:
 
 ```sh

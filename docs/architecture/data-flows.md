@@ -117,7 +117,11 @@ Active-camera pose and FOV construct the background ray basis. Camera exposure m
 
 Backend-neutral extraction converts an above-horizon procedural sun into the first bounded directional-light input. WGPU then uses the ordinary GGX and cascaded-shadow paths without creating another authored entity. Below the horizon, the derived direct light disappears and both the sky and analytic environment lighting transition toward night.
 
-Explicit ECS lights remain additive. WGPU retains active point lights in a geometrically growing buffer and rebuilds 16×9×24 cluster membership only after point-light, camera, viewport, or capacity changes. Four stabilized camera-relative projections feed independent shadow-cull lanes and depth-array layers.
+Explicit ECS lights remain additive. Only the first directional render light owns the current shadow cascades and directional volumetric scattering. Later directional lights are direct, unshadowed surface contributions.
+
+Scenes that need one coherent sun should use either the procedural environment sun or one authored directional light, not both.
+
+WGPU retains active point lights in a geometrically growing buffer and rebuilds 16×9×24 cluster membership only after point-light, camera, viewport, or capacity changes. Four stabilized camera-relative projections feed independent shadow-cull lanes and depth-array layers.
 
 One optional `scrapbot.volumetric_fog` component supplies a global exponential height medium. Postprocessing reads only that component storage's compact active set, clamps the reflected payload, and folds six deterministic ray samples into the temporal resolve. Each sample uses the first directional light and a filtered lookup into the same four shadow cascades as opaque rendering. There is no extra fog target or stochastic per-frame pattern. Clustered point-light volumes and local media remain separate follow-up work.
 

@@ -51,7 +51,11 @@ A scene's World Environment independently selects lighting and its visible backg
 - turbidity, atmosphere thickness, and horizon softness;
 - sun direction, color, intensity, size, and glow.
 
-The spherical horizon clips the sun and drives the daylight, twilight, and night transition. Above the horizon, the sun becomes the first directional render light and drives direct GGX lighting plus the primary shadow cascades. Explicit ECS lights remain additive.
+The spherical horizon clips the sun and drives the daylight, twilight, and night transition. Above the horizon, the sun becomes the first directional render light and drives direct GGX lighting plus the primary shadow cascades.
+
+Explicit ECS lights remain additive. Only the first directional render light owns the current shadow cascades and directional volumetric scattering. Later directional lights are unshadowed surface contributions.
+
+Use either the procedural sun or one authored directional light when a scene needs a single coherent sun.
 
 ### Volumetric fog
 
