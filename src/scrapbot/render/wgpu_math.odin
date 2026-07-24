@@ -111,6 +111,12 @@ wgpu_jitter_projection :: proc(projection: Mat4, jitter: Vec2) -> Mat4 {
 	return result
 }
 
+// Temporal history is resolved into a stable pixel grid. Reprojecting into
+// that history must therefore use the unjittered camera projection.
+wgpu_temporal_history_view_projection :: proc(projection, view: Mat4) -> Mat4 {
+	return mat4_mul(projection, view)
+}
+
 wgpu_device_depth_to_view_distance :: proc(depth: f32, projection: Mat4) -> f32 {
 	return projection[14] / (depth + projection[10])
 }

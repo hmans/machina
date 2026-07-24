@@ -1916,7 +1916,10 @@ wgpu_prepare_gpu_draw_batches :: proc(
 	}
 	jittered_projection := wgpu_jitter_projection(projection, jitter)
 	jittered_view_projection := mat4_mul(jittered_projection, view)
-	renderer.temporal_current_view_projection = jittered_view_projection
+	renderer.temporal_current_view_projection = wgpu_temporal_history_view_projection(
+		projection,
+		view,
+	)
 	renderer.temporal_current_projection = {
 		jittered_projection[0],
 		jittered_projection[5],

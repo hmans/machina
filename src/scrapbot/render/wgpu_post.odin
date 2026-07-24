@@ -1401,14 +1401,19 @@ wgpu_encode_bloom_and_composite :: proc(
 		projection = renderer.temporal_current_projection,
 		previous_projection = renderer.temporal_previous_projection,
 		viewport = viewport,
-		parameters = {projection[8], projection[9], history_valid, 0.97},
+		parameters = {projection[8], projection[9], history_valid, 0.995},
 		features = {
 			1 if resolved_camera.temporal_antialiasing else 0,
 			1 if resolved_camera.fast_antialiasing else 0,
 			1 if resolved_camera.ambient_occlusion else 0,
 			1 if resolved_camera.bloom else 0,
 		},
-		reflections = {1 if resolved_camera.screen_space_reflections else 0, 0, 0, 0},
+		reflections = {
+			1 if resolved_camera.screen_space_reflections else 0,
+			0,
+			0,
+			f32(renderer.temporal_sample_index % 8),
+		},
 	}
 	fog := wgpu_volumetric_fog_settings(world)
 	temporal_uniform.fog_color_density = {fog.color.x, fog.color.y, fog.color.z, fog.density}

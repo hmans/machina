@@ -976,6 +976,14 @@ fn apply_volumetric_fog(
 	let world_direction = normalize((temporal.inverse_view * vec4<f32>(view_direction, 0.0)).xyz);
 	let camera_position = temporal.inverse_view[3].xyz;
 	let step_length = ray_distance / f32(FOG_STEP_COUNT);
+	// Rotate a low-discrepancy sub-step offset through the temporal sample
+	// sequence. TAA integrates these samples into smooth shafts without the
+	// fixed depth slices produced by midpoint-only ray marching.
+	let spatial_phase = fract(
+		52.9829189 *
+			fract(dot(vec2<f32>(pixel), vec2<f32>(0.06711056, 0.00583715))),
+	);
+	let temporal_phase = fract(spatial_phase + temporal.reflections.w * 0.754877666);
 	var directional_radiance = vec3<f32>(0.0);
 	if (render.light_counts.x > 0u) {
 		let light_direction = normalize(-render.directional_direction_intensity[0].xyz);
@@ -996,7 +1004,7 @@ fn apply_volumetric_fog(
 	var transmittance = 1.0;
 	var scattering = vec3<f32>(0.0);
 	for (var step = 0u; step < FOG_STEP_COUNT; step += 1u) {
-		let distance = (f32(step) + 0.5) * step_length;
+		let distance = (f32(step) + temporal_phase) * step_length;
 		let world_position = camera_position + world_direction * distance;
 		let height_offset = world_position.y - temporal.fog_height_distance.x;
 		let height_density = clamp(
@@ -1050,9 +1058,27 @@ fn fast_antialias(pixel: vec2<i32>) -> vec3<f32> {
 	return center * 0.5 + (north + south) * 0.25;
 }
 
+fn rgb_to_ycocg(color: vec3<f32>) -> vec3<f32> {
+	return vec3<f32>(
+		color.r * 0.25 + color.g * 0.5 + color.b * 0.25,
+		color.r * 0.5 - color.b * 0.5,
+		-color.r * 0.25 + color.g * 0.5 - color.b * 0.25,
+	);
+}
+
+fn ycocg_to_rgb(color: vec3<f32>) -> vec3<f32> {
+	return vec3<f32>(
+		color.x + color.y - color.z,
+		color.x + color.z,
+		color.x - color.y - color.z,
+	);
+}
+
 fn current_neighborhood(pixel: vec2<i32>) -> array<vec3<f32>, 2> {
 	var minimum = vec3<f32>(1e20);
 	var maximum = vec3<f32>(-1e20);
+	var first_moment = vec3<f32>(0.0);
+	var second_moment = vec3<f32>(0.0);
 	for (var y = -1; y <= 1; y += 1) {
 		for (var x = -1; x <= 1; x += 1) {
 			let sample_pixel = clamp(
@@ -1060,12 +1086,21 @@ fn current_neighborhood(pixel: vec2<i32>) -> array<vec3<f32>, 2> {
 				viewport_minimum(),
 				viewport_maximum(),
 			);
-			let color = current_color_at(sample_pixel);
+			let color = rgb_to_ycocg(current_color_at(sample_pixel));
 			minimum = min(minimum, color);
 			maximum = max(maximum, color);
+			first_moment += color;
+			second_moment += color * color;
 		}
 	}
-	return array<vec3<f32>, 2>(minimum, maximum);
+	let mean = first_moment / 9.0;
+	let deviation = sqrt(max(second_moment / 9.0 - mean * mean, vec3<f32>(0.0)));
+	let variance_minimum = mean - deviation * 2.5;
+	let variance_maximum = mean + deviation * 2.5;
+	return array<vec3<f32>, 2>(
+		max(minimum, variance_minimum),
+		min(maximum, variance_maximum),
+	);
 }
 
 @compute @workgroup_size(8, 8)
@@ -1100,8 +1135,16 @@ fn temporal_aa_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 			let previous_ndc = previous_clip.xy / previous_clip.w;
 			let previous_viewport_uv =
 				previous_ndc * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
-			let previous_pixel =
+			let previous_projected_pixel =
 				temporal.viewport.xy + previous_viewport_uv * temporal.viewport.zw;
+			let jitter_motion = vec2<f32>(
+				temporal.parameters.x * temporal.viewport.z * 0.5,
+				-temporal.parameters.y * temporal.viewport.w * 0.5,
+			);
+			// The reconstructed surface point comes from the current jittered
+			// sample ray. Remove that sample offset from the reprojected
+			// coordinate because history itself lives on the stable output grid.
+			let previous_pixel = previous_projected_pixel - jitter_motion;
 			let previous_full_uv =
 				previous_pixel / vec2<f32>(dimensions);
 			let previous_pixel_i = vec2<i32>(floor(previous_pixel));
@@ -1110,12 +1153,42 @@ fn temporal_aa_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 				all(previous_viewport_uv <= vec2<f32>(1.0)) &&
 				inside_viewport(previous_pixel_i)
 			) {
-				let stored_depth = textureLoad(history_depth, previous_pixel_i, 0).r;
-				let stored_linear_depth =
+				let expected_linear_depth = previous_clip.w;
+				let depth_tolerance = max(0.01, expected_linear_depth * 0.01);
+				var stored_depth = textureLoad(history_depth, previous_pixel_i, 0).r;
+				var stored_linear_depth =
 					temporal.previous_projection.w /
 					(stored_depth + temporal.previous_projection.z);
-				let expected_linear_depth = previous_clip.w;
-				let depth_tolerance = max(0.002, expected_linear_depth * 0.0005);
+				var closest_depth_delta =
+					abs(stored_linear_depth - expected_linear_depth);
+				// Reprojection commonly lands between four history texels.
+				// The ordinary interior path needs one load; search the other
+				// candidates only when that first surface does not match.
+				if (stored_depth >= 0.999999 || closest_depth_delta > depth_tolerance) {
+					for (var depth_y = 0; depth_y <= 1; depth_y += 1) {
+						for (var depth_x = 0; depth_x <= 1; depth_x += 1) {
+							let depth_pixel = clamp(
+								previous_pixel_i + vec2<i32>(depth_x, depth_y),
+								viewport_minimum(),
+								viewport_maximum(),
+							);
+							let candidate_depth = textureLoad(history_depth, depth_pixel, 0).r;
+							if (candidate_depth >= 0.999999) {
+								continue;
+							}
+							let candidate_linear_depth =
+								temporal.previous_projection.w /
+								(candidate_depth + temporal.previous_projection.z);
+							let candidate_delta =
+								abs(candidate_linear_depth - expected_linear_depth);
+							if (candidate_delta < closest_depth_delta) {
+								stored_depth = candidate_depth;
+								stored_linear_depth = candidate_linear_depth;
+								closest_depth_delta = candidate_delta;
+							}
+						}
+					}
+				}
 				if (
 					stored_depth < 0.999999 &&
 					abs(stored_linear_depth - expected_linear_depth) <= depth_tolerance
@@ -1124,19 +1197,22 @@ fn temporal_aa_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 					// History contains resolved fog, while the inexpensive
 					// neighborhood samples are pre-fog. Translate the bounds
 					// into the same radiometric space before clipping history.
-					let fog_offset = fogged_color - color;
-					let history = clamp(
-						textureSampleLevel(
+					let fog_offset_ycocg = rgb_to_ycocg(fogged_color) -
+						rgb_to_ycocg(color);
+					let history_ycocg = clamp(
+						rgb_to_ycocg(textureSampleLevel(
 							history_color,
 							linear_sampler,
 							previous_full_uv,
 							0.0,
-						).rgb,
-						source_bounds[0] + fog_offset,
-						source_bounds[1] + fog_offset,
+						).rgb),
+						source_bounds[0] + fog_offset_ycocg,
+						source_bounds[1] + fog_offset_ycocg,
 					);
+					let history = ycocg_to_rgb(history_ycocg);
 					let motion_pixels = length(
-						(previous_pixel - (vec2<f32>(pixel) + vec2<f32>(0.5))),
+						previous_pixel -
+							(vec2<f32>(pixel) + vec2<f32>(0.5)),
 					);
 					let history_weight = mix(
 						temporal.parameters.w,

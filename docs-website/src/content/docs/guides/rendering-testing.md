@@ -65,7 +65,7 @@ The primary directional light supplies anisotropic in-scattering. Its four casca
 
 `point_light_intensity` independently opts clustered point lights into the medium. Every ray step reuses its complete GPU-built view-frustum cluster; Scrapbot does not build or upload another fog-only light list.
 
-Fog composes before TAA and bloom. Its sample positions are deterministic rather than freshly randomized per frame, avoiding temporal sparkle during slow camera motion. Remove the component or set `density = 0` to make it a no-op. See [`scrapbot.volumetric_fog`](/reference/components/#scrapbotvolumetric_fog) for every field.
+Fog composes before TAA and bloom. A low-discrepancy sub-step offset rotates across the eight-frame temporal sequence. TAA integrates those samples into smooth shafts without the bands produced by fixed midpoint slices. Remove the component or set `density = 0` to make it a no-op. See [`scrapbot.volumetric_fog`](/reference/components/#scrapbotvolumetric_fog) for every field.
 
 This implementation remains one global volume. It does not yet support local fog shapes or authored quality controls.
 
@@ -81,7 +81,7 @@ AO attenuates only indirect diffuse light. It does not dirty direct lights, spec
 
 Enabled SSR marches a reflected view ray through scene depth and samples HDR color only at confirmed on-screen hits. Confidence fades rough, distant, uncertain, and screen-edge hits.
 
-Fog, AO, and SSR join the current HDR signal before temporal resolution. Enabled TAA uses an eight-sample projection-jitter sequence bounded to a quarter pixel, camera reprojection, previous-depth rejection, and current-neighborhood clamping. The compact footprint reduces visible static-view breathing while retaining subpixel coverage.
+Fog, AO, and SSR join the current HDR signal before temporal resolution. Enabled TAA uses an eight-sample projection-jitter sequence bounded to a quarter pixel. History lives on a stable output grid and is camera-reprojected with the sample offset removed. A local depth match and YCoCg variance clipping reject invalid history without making a motionless view follow the jitter pattern.
 
 When TAA is off, the renderer removes projection jitter and history traffic. Optional fast AA then uses only the current resolved frame. Resize, world replacement, depth replacement, camera cuts, and TAA mode changes invalidate temporal history.
 

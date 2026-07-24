@@ -111,6 +111,12 @@ test_wgpu_temporal_jitter_stays_inside_quarter_pixel_and_cycles :: proc(t: ^test
 		testing.expect(t, screen_x <= 0.25)
 		testing.expect(t, screen_y <= 0.25)
 	}
+	projection := mat4_perspective(math.to_radians(f32(60)), 16.0 / 9.0, 0.1, 100)
+	view := mat4_look_at({1, 2, 3}, {}, {0, 1, 0})
+	history_view_projection := wgpu_temporal_history_view_projection(projection, view)
+	testing.expect_value(t, history_view_projection, mat4_mul(projection, view))
+	jittered_projection := wgpu_jitter_projection(projection, first)
+	testing.expect(t, history_view_projection != mat4_mul(jittered_projection, view))
 }
 
 @(test)
@@ -1513,8 +1519,25 @@ test_volumetric_fog_shader_is_energy_normalized_shadowed_and_temporally_resolved
 	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "fog_point_light_radiance"))
 	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "cluster_light_counts"))
 	testing.expect(t, !strings.contains(WGPU_TEMPORAL_AA_SHADER, "FOG_MAX_POINT_LIGHTS_PER_STEP"))
-	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "source_bounds[0] + fog_offset"))
-	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "source_bounds[1] + fog_offset"))
+	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "let spatial_phase = fract"))
+	testing.expect(
+		t,
+		strings.contains(WGPU_TEMPORAL_AA_SHADER, "temporal.reflections.w * 0.754877666"),
+	)
+	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "f32(step) + temporal_phase"))
+	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "closest_depth_delta"))
+	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "fn rgb_to_ycocg"))
+	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "fn ycocg_to_rgb"))
+	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "deviation * 2.5"))
+	testing.expect(
+		t,
+		strings.contains(WGPU_TEMPORAL_AA_SHADER, "source_bounds[0] + fog_offset_ycocg"),
+	)
+	testing.expect(
+		t,
+		strings.contains(WGPU_TEMPORAL_AA_SHADER, "source_bounds[1] + fog_offset_ycocg"),
+	)
+	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "jitter_motion"))
 	testing.expect(t, strings.contains(WGPU_TEMPORAL_AA_SHADER, "mix(fogged_color, history"))
 	testing.expect(t, !strings.contains(WGPU_TEMPORAL_AA_SHADER, "43758.5453"))
 }

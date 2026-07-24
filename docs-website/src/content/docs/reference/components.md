@@ -171,7 +171,7 @@ The renderer integrates 16 stable midpoint samples along each visible camera ray
 
 When enabled, each midpoint reads every relevant point light from the same GPU-built view-frustum cluster used by opaque surface lighting. Point-light scattering is currently unshadowed.
 
-Fog is composed before temporal antialiasing and bloom. The sampling pattern is deterministic, so a stationary view does not acquire fresh noise each frame. Local fog volumes, froxels, and explicit quality controls remain follow-up work.
+Fog is composed before temporal antialiasing and bloom. Its low-discrepancy sub-step offset rotates across the eight-frame temporal sequence, allowing TAA to integrate smooth shafts without exposing fixed ray-march slices. Local fog volumes, froxels, and explicit quality controls remain follow-up work.
 
 Luau systems can query and write the complete payload after declaring `scrapbot.volumetric_fog` in their access lists. Presence enables the feature; removing the component or setting `density` to zero makes the shader a no-op without allocating a separate fog target.
 

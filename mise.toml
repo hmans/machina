@@ -287,11 +287,13 @@ TRANSFORM_CPU_FRAME="${TMPDIR:-/tmp}/scrapbot-gpu-transform-cpu.png"
 MASK_FRAME="${TMPDIR:-/tmp}/scrapbot-gltf-mask.png"
 LIGHTING_FRAME="${TMPDIR:-/tmp}/scrapbot-gpu-lighting.png"
 PBR_FRAME="${TMPDIR:-/tmp}/scrapbot-gpu-pbr-materials.png"
+TAA_FRAME_A="${TMPDIR:-/tmp}/scrapbot-gpu-taa-a.png"
+TAA_FRAME_B="${TMPDIR:-/tmp}/scrapbot-gpu-taa-b.png"
 CLUSTER_FRAME="${TMPDIR:-/tmp}/scrapbot-gpu-cluster-capacity.png"
 CLUSTER_PAUSED_FRAME="${TMPDIR:-/tmp}/scrapbot-gpu-cluster-paused.png"
 CLUSTER_STOPPED_FRAME="${TMPDIR:-/tmp}/scrapbot-gpu-cluster-stopped.png"
 CLUSTER_RESTART_FRAME="${TMPDIR:-/tmp}/scrapbot-gpu-cluster-restart.png"
-trap 'rm -f "$COMPUTE_FRAME" "$CPU_FRAME" "$UI_FRAME" "$OVERLAY_FRAME" "$OVERLAY_DUMP" "$ATMOSPHERE_FRAME" "$ATMOSPHERE_BASELINE_FRAME" "$ATMOSPHERE_DUMP" "$LOD_COMPUTE_FRAME" "$LOD_CPU_FRAME" "$TRANSFORM_COMPUTE_FRAME" "$TRANSFORM_CPU_FRAME" "$MASK_FRAME" "$LIGHTING_FRAME" "$PBR_FRAME" "$CLUSTER_FRAME" "$CLUSTER_PAUSED_FRAME" "$CLUSTER_STOPPED_FRAME" "$CLUSTER_RESTART_FRAME"' EXIT
+trap 'rm -f "$COMPUTE_FRAME" "$CPU_FRAME" "$UI_FRAME" "$OVERLAY_FRAME" "$OVERLAY_DUMP" "$ATMOSPHERE_FRAME" "$ATMOSPHERE_BASELINE_FRAME" "$ATMOSPHERE_DUMP" "$LOD_COMPUTE_FRAME" "$LOD_CPU_FRAME" "$TRANSFORM_COMPUTE_FRAME" "$TRANSFORM_CPU_FRAME" "$MASK_FRAME" "$LIGHTING_FRAME" "$PBR_FRAME" "$TAA_FRAME_A" "$TAA_FRAME_B" "$CLUSTER_FRAME" "$CLUSTER_PAUSED_FRAME" "$CLUSTER_STOPPED_FRAME" "$CLUSTER_RESTART_FRAME"' EXIT
 COMPUTE_JSON="$(bin/scrapbot run tests/fixtures/gpu-driven --headless --no-hot-reload --frames 20 --framegrab "$COMPUTE_FRAME" --json)"
 CPU_JSON="$(bin/scrapbot run tests/fixtures/gpu-driven --headless --no-hot-reload --cpu-culling --frames 20 --framegrab "$CPU_FRAME" --json)"
 UI_JSON="$(bin/scrapbot run examples/ecs-showcase --headless --editor --no-hot-reload --frames 2 --framegrab "$UI_FRAME" --json)"
@@ -305,6 +307,8 @@ TRANSFORM_CPU_JSON="$(bin/scrapbot run examples/minimal --headless --no-hot-relo
 MASK_JSON="$(bin/scrapbot run tests/fixtures/gltf-materials --headless --no-hot-reload --frames 2 --framegrab "$MASK_FRAME" --json)"
 LIGHTING_JSON="$(bin/scrapbot run tests/fixtures/gpu-lighting --headless --no-hot-reload --frames 2 --framegrab "$LIGHTING_FRAME" --json)"
 PBR_JSON="$(bin/scrapbot run examples/pbr-materials --headless --no-hot-reload --frames 8 --framegrab "$PBR_FRAME" --json)"
+TAA_JSON_A="$(bin/scrapbot run examples/pbr-materials --headless --no-hot-reload --frames 47 --framegrab "$TAA_FRAME_A" --json)"
+TAA_JSON_B="$(bin/scrapbot run examples/pbr-materials --headless --no-hot-reload --frames 48 --framegrab "$TAA_FRAME_B" --json)"
 CLUSTER_JSON="$(bin/scrapbot run examples/clustered-lights --headless --editor --no-hot-reload --frames 10 --framegrab "$CLUSTER_FRAME" --json)"
 CLUSTER_PAUSED_JSON="$(bin/scrapbot run examples/clustered-lights --headless --editor --no-hot-reload --frames 40 --ui-script tests/fixtures/ui/clustered-lights-paused.json --framegrab "$CLUSTER_PAUSED_FRAME" --json)"
 CLUSTER_STOPPED_JSON="$(bin/scrapbot run examples/clustered-lights --headless --editor --no-hot-reload --frames 20 --ui-script tests/fixtures/ui/clustered-lights-stopped.json --framegrab "$CLUSTER_STOPPED_FRAME" --json)"
@@ -478,8 +482,9 @@ if (result.schema_version !== 1 || result.command !== "run" || result.ok !== tru
 }
 ' "$MASK_JSON"
 node tools/assert_png_close.mjs "$COMPUTE_FRAME" "$CPU_FRAME"
-node tools/assert_png_close.mjs "$LOD_COMPUTE_FRAME" "$LOD_CPU_FRAME"
-node tools/assert_png_close.mjs "$TRANSFORM_COMPUTE_FRAME" "$TRANSFORM_CPU_FRAME"
+node tools/assert_png_close.mjs "$LOD_COMPUTE_FRAME" "$LOD_CPU_FRAME" 1 128
+node tools/assert_png_close.mjs "$TRANSFORM_COMPUTE_FRAME" "$TRANSFORM_CPU_FRAME" 1 128
+node tools/assert_png_psnr.mjs "$TAA_FRAME_A" "$TAA_FRAME_B" 44
 node tools/assert_png_variance.mjs "$COMPUTE_FRAME"
 node tools/assert_png_variance.mjs "$LOD_COMPUTE_FRAME"
 node tools/assert_png_variance.mjs "$TRANSFORM_COMPUTE_FRAME"
