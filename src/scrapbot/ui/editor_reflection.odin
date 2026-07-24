@@ -917,6 +917,9 @@ editor_reflected_component_valid :: proc(
 	switch definition_name {
 		case "scrapbot.camera":
 			exposure := shared.camera_exposure(entity.camera)
+			automatic_exposure_min := shared.camera_automatic_exposure_min(entity.camera)
+			automatic_exposure_max := shared.camera_automatic_exposure_max(entity.camera)
+			automatic_exposure_speed := shared.camera_automatic_exposure_speed(entity.camera)
 			return(
 				entity.camera.fov >= 1 &&
 				entity.camera.fov <= 179 &&
@@ -924,7 +927,16 @@ editor_reflected_component_valid :: proc(
 				entity.camera.far > entity.camera.near &&
 				!math.is_nan(exposure) &&
 				!math.is_inf(exposure) &&
-				exposure > 0 \
+				exposure > 0 &&
+				!math.is_nan(automatic_exposure_min) &&
+				!math.is_inf(automatic_exposure_min) &&
+				automatic_exposure_min > 0 &&
+				!math.is_nan(automatic_exposure_max) &&
+				!math.is_inf(automatic_exposure_max) &&
+				automatic_exposure_max >= automatic_exposure_min &&
+				!math.is_nan(automatic_exposure_speed) &&
+				!math.is_inf(automatic_exposure_speed) &&
+				automatic_exposure_speed > 0 \
 			)
 		case "scrapbot.ambient_light":
 			return(

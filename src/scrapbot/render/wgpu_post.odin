@@ -489,6 +489,110 @@ wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 		return "failed to create screen-space reflections uniform buffer"
 	}
 
+	automatic_exposure_chain := wgpu.ShaderSourceWGSL {
+		chain = {sType = .ShaderSourceWGSL},
+		code = WGPU_AUTOMATIC_EXPOSURE_SHADER,
+	}
+	renderer.automatic_exposure_shader = wgpu.DeviceCreateShaderModule(
+		renderer.device,
+		&wgpu.ShaderModuleDescriptor {
+			nextInChain = &automatic_exposure_chain,
+			label = "Scrapbot Automatic Exposure Shader",
+		},
+	)
+	if renderer.automatic_exposure_shader == nil {
+		return "failed to create automatic exposure shader"
+	}
+	automatic_exposure_layout_entries := [?]wgpu.BindGroupLayoutEntry {
+		{
+			binding = 0,
+			visibility = {.Compute},
+			texture = {sampleType = .Float, viewDimension = ._2D},
+		},
+		{
+			binding = 1,
+			visibility = {.Compute},
+			buffer = {
+				type = .Uniform,
+				minBindingSize = u64(size_of(WGPU_Automatic_Exposure_Settings)),
+			},
+		},
+		{
+			binding = 2,
+			visibility = {.Compute, .Fragment},
+			buffer = {
+				type = .Storage,
+				minBindingSize = u64(size_of(WGPU_Automatic_Exposure_State)),
+			},
+		},
+	}
+	renderer.automatic_exposure_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
+		renderer.device,
+		&wgpu.BindGroupLayoutDescriptor {
+			label = "Scrapbot Automatic Exposure Bind Group Layout",
+			entryCount = uint(len(automatic_exposure_layout_entries)),
+			entries = raw_data(automatic_exposure_layout_entries[:]),
+		},
+	)
+	if renderer.automatic_exposure_bind_group_layout == nil {
+		return "failed to create automatic exposure bind group layout"
+	}
+	renderer.automatic_exposure_pipeline_layout = wgpu.DeviceCreatePipelineLayout(
+		renderer.device,
+		&wgpu.PipelineLayoutDescriptor {
+			label = "Scrapbot Automatic Exposure Pipeline Layout",
+			bindGroupLayoutCount = 1,
+			bindGroupLayouts = &renderer.automatic_exposure_bind_group_layout,
+		},
+	)
+	if renderer.automatic_exposure_pipeline_layout == nil {
+		return "failed to create automatic exposure pipeline layout"
+	}
+	renderer.automatic_exposure_pipeline = wgpu.DeviceCreateComputePipeline(
+		renderer.device,
+		&wgpu.ComputePipelineDescriptor {
+			label = "Scrapbot Automatic Exposure Pipeline",
+			layout = renderer.automatic_exposure_pipeline_layout,
+			compute = {
+				module = renderer.automatic_exposure_shader,
+				entryPoint = "automatic_exposure_cs",
+			},
+		},
+	)
+	if renderer.automatic_exposure_pipeline == nil {
+		return "failed to create automatic exposure pipeline"
+	}
+	renderer.automatic_exposure_settings_buffer = wgpu.DeviceCreateBuffer(
+		renderer.device,
+		&wgpu.BufferDescriptor {
+			label = "Scrapbot Automatic Exposure Settings Buffer",
+			usage = {.Uniform, .CopyDst},
+			size = u64(size_of(WGPU_Automatic_Exposure_Settings)),
+		},
+	)
+	renderer.automatic_exposure_state_buffer = wgpu.DeviceCreateBuffer(
+		renderer.device,
+		&wgpu.BufferDescriptor {
+			label = "Scrapbot Automatic Exposure State Buffer",
+			usage = {.Storage, .CopyDst},
+			size = u64(size_of(WGPU_Automatic_Exposure_State)),
+		},
+	)
+	if renderer.automatic_exposure_settings_buffer == nil ||
+	   renderer.automatic_exposure_state_buffer == nil {
+		return "failed to allocate automatic exposure buffers"
+	}
+	initial_exposure := WGPU_Automatic_Exposure_State {
+		values = {1, 1, 1, 1},
+	}
+	wgpu.QueueWriteBuffer(
+		renderer.queue,
+		renderer.automatic_exposure_state_buffer,
+		0,
+		&initial_exposure,
+		size_of(initial_exposure),
+	)
+
 	bloom_layout_entries := [?]wgpu.BindGroupLayoutEntry {
 		{
 			binding = 0,
@@ -500,6 +604,14 @@ wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 			binding = 2,
 			visibility = {.Compute},
 			storageTexture = {access = .WriteOnly, format = .RGBA16Float, viewDimension = ._2D},
+		},
+		{
+			binding = 3,
+			visibility = {.Compute},
+			buffer = {
+				type = .ReadOnlyStorage,
+				minBindingSize = u64(size_of(WGPU_Automatic_Exposure_State)),
+			},
 		},
 	}
 	renderer.bloom_compute_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
@@ -559,7 +671,7 @@ wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 	if renderer.composite_shader == nil {
 		return "failed to create HDR composite shader"
 	}
-	composite_entries: [2 + WGPU_BLOOM_LEVELS]wgpu.BindGroupLayoutEntry
+	composite_entries: [3 + WGPU_BLOOM_LEVELS]wgpu.BindGroupLayoutEntry
 	composite_entries[0] = {
 		binding = 0,
 		visibility = {.Fragment},
@@ -576,6 +688,14 @@ wgpu_create_post_process_pipelines :: proc(renderer: ^WGPU_Renderer) -> string {
 			visibility = {.Fragment},
 			texture = {sampleType = .Float, viewDimension = ._2D},
 		}
+	}
+	composite_entries[2 + WGPU_BLOOM_LEVELS] = {
+		binding = u32(2 + WGPU_BLOOM_LEVELS),
+		visibility = {.Fragment},
+		buffer = {
+			type = .ReadOnlyStorage,
+			minBindingSize = u64(size_of(WGPU_Automatic_Exposure_State)),
+		},
 	}
 	renderer.composite_bind_group_layout = wgpu.DeviceCreateBindGroupLayout(
 		renderer.device,
@@ -698,6 +818,10 @@ wgpu_create_post_texture :: proc(
 }
 
 wgpu_release_post_targets :: proc(renderer: ^WGPU_Renderer) {
+	if renderer.automatic_exposure_bind_group != nil {
+		wgpu.BindGroupRelease(renderer.automatic_exposure_bind_group)
+		renderer.automatic_exposure_bind_group = nil
+	}
 	if renderer.composite_bind_group != nil {
 		wgpu.BindGroupRelease(renderer.composite_bind_group)
 		renderer.composite_bind_group = nil
@@ -806,6 +930,7 @@ wgpu_release_post_targets :: proc(renderer: ^WGPU_Renderer) {
 	renderer.post_height = 0
 	renderer.post_depth_view = nil
 	renderer.temporal_history_valid = false
+	renderer.automatic_exposure_valid = false
 }
 
 wgpu_release_post_process :: proc(renderer: ^WGPU_Renderer) {
@@ -863,6 +988,24 @@ wgpu_release_post_process :: proc(renderer: ^WGPU_Renderer) {
 	}
 	if renderer.screen_space_reflections_shader != nil {
 		wgpu.ShaderModuleRelease(renderer.screen_space_reflections_shader)
+	}
+	if renderer.automatic_exposure_settings_buffer != nil {
+		wgpu.BufferRelease(renderer.automatic_exposure_settings_buffer)
+	}
+	if renderer.automatic_exposure_state_buffer != nil {
+		wgpu.BufferRelease(renderer.automatic_exposure_state_buffer)
+	}
+	if renderer.automatic_exposure_pipeline != nil {
+		wgpu.ComputePipelineRelease(renderer.automatic_exposure_pipeline)
+	}
+	if renderer.automatic_exposure_pipeline_layout != nil {
+		wgpu.PipelineLayoutRelease(renderer.automatic_exposure_pipeline_layout)
+	}
+	if renderer.automatic_exposure_bind_group_layout != nil {
+		wgpu.BindGroupLayoutRelease(renderer.automatic_exposure_bind_group_layout)
+	}
+	if renderer.automatic_exposure_shader != nil {
+		wgpu.ShaderModuleRelease(renderer.automatic_exposure_shader)
 	}
 	if renderer.composite_pipeline != nil {
 		wgpu.RenderPipelineRelease(renderer.composite_pipeline)
@@ -1140,6 +1283,34 @@ wgpu_ensure_post_targets :: proc(
 		return "failed to create temporal AA bind group"
 	}
 
+	automatic_exposure_entries := [?]wgpu.BindGroupEntry {
+		{binding = 0, textureView = renderer.temporal_resolved_view},
+		{
+			binding = 1,
+			buffer = renderer.automatic_exposure_settings_buffer,
+			offset = 0,
+			size = u64(size_of(WGPU_Automatic_Exposure_Settings)),
+		},
+		{
+			binding = 2,
+			buffer = renderer.automatic_exposure_state_buffer,
+			offset = 0,
+			size = u64(size_of(WGPU_Automatic_Exposure_State)),
+		},
+	}
+	renderer.automatic_exposure_bind_group = wgpu.DeviceCreateBindGroup(
+		renderer.device,
+		&wgpu.BindGroupDescriptor {
+			label = "Scrapbot Automatic Exposure Bind Group",
+			layout = renderer.automatic_exposure_bind_group_layout,
+			entryCount = uint(len(automatic_exposure_entries)),
+			entries = raw_data(automatic_exposure_entries[:]),
+		},
+	)
+	if renderer.automatic_exposure_bind_group == nil {
+		return "failed to create automatic exposure bind group"
+	}
+
 	for index in 0 ..< WGPU_BLOOM_LEVELS {
 		level_width := max(u32(1), width >> u32(index + 1))
 		level_height := max(u32(1), height >> u32(index + 1))
@@ -1174,6 +1345,12 @@ wgpu_ensure_post_targets :: proc(
 			{binding = 0, textureView = source},
 			{binding = 1, sampler = renderer.post_sampler},
 			{binding = 2, textureView = renderer.bloom_views[index]},
+			{
+				binding = 3,
+				buffer = renderer.automatic_exposure_state_buffer,
+				offset = 0,
+				size = u64(size_of(WGPU_Automatic_Exposure_State)),
+			},
 		}
 		renderer.bloom_compute_bind_groups[index] = wgpu.DeviceCreateBindGroup(
 			renderer.device,
@@ -1188,7 +1365,7 @@ wgpu_ensure_post_targets :: proc(
 			return "failed to create bloom bind groups"
 		}
 	}
-	composite_entries: [2 + WGPU_BLOOM_LEVELS]wgpu.BindGroupEntry
+	composite_entries: [3 + WGPU_BLOOM_LEVELS]wgpu.BindGroupEntry
 	composite_entries[0] = {
 		binding = 0,
 		textureView = renderer.temporal_resolved_view,
@@ -1202,6 +1379,12 @@ wgpu_ensure_post_targets :: proc(
 			binding = u32(index + 2),
 			textureView = renderer.bloom_views[index],
 		}
+	}
+	composite_entries[2 + WGPU_BLOOM_LEVELS] = {
+		binding = u32(2 + WGPU_BLOOM_LEVELS),
+		buffer = renderer.automatic_exposure_state_buffer,
+		offset = 0,
+		size = u64(size_of(WGPU_Automatic_Exposure_State)),
 	}
 	renderer.composite_bind_group = wgpu.DeviceCreateBindGroup(
 		renderer.device,
@@ -1271,6 +1454,7 @@ wgpu_encode_bloom_and_composite :: proc(
 	camera: shared.Camera_Component,
 	has_camera: bool,
 	world: ^shared.World,
+	delta_time: f32,
 ) -> string {
 	if err := wgpu_ensure_post_targets(renderer, width, height, depth_view); err != "" {
 		return err
@@ -1487,6 +1671,65 @@ wgpu_encode_bloom_and_composite :: proc(
 			},
 			&copy_size,
 		)
+	}
+
+	if resolved_camera.automatic_exposure {
+		automatic_exposure_settings := WGPU_Automatic_Exposure_Settings {
+			viewport = viewport,
+			parameters = {
+				shared.camera_automatic_exposure_min(resolved_camera),
+				shared.camera_automatic_exposure_max(resolved_camera),
+				shared.camera_automatic_exposure_speed(resolved_camera),
+				clamp(delta_time, f32(0), f32(0.25)),
+			},
+			control = {
+				1,
+				shared.camera_exposure(resolved_camera),
+				1 if !renderer.automatic_exposure_valid else 0,
+				0.18,
+			},
+		}
+		wgpu.QueueWriteBuffer(
+			renderer.queue,
+			renderer.automatic_exposure_settings_buffer,
+			0,
+			&automatic_exposure_settings,
+			size_of(automatic_exposure_settings),
+		)
+		automatic_exposure_pass := wgpu.CommandEncoderBeginComputePass(
+			encoder,
+			&wgpu.ComputePassDescriptor{label = "Scrapbot Automatic Exposure Compute Pass"},
+		)
+		if automatic_exposure_pass == nil {
+			return "failed to begin automatic exposure compute pass"
+		}
+		wgpu.ComputePassEncoderSetPipeline(
+			automatic_exposure_pass,
+			renderer.automatic_exposure_pipeline,
+		)
+		wgpu.ComputePassEncoderSetBindGroup(
+			automatic_exposure_pass,
+			0,
+			renderer.automatic_exposure_bind_group,
+		)
+		wgpu.ComputePassEncoderDispatchWorkgroups(automatic_exposure_pass, 1, 1, 1)
+		wgpu.ComputePassEncoderEnd(automatic_exposure_pass)
+		wgpu.ComputePassEncoderRelease(automatic_exposure_pass)
+		renderer.automatic_exposure_valid = true
+		renderer.automatic_exposure_enabled = true
+	} else if renderer.automatic_exposure_enabled || !renderer.automatic_exposure_valid {
+		manual_exposure := WGPU_Automatic_Exposure_State {
+			values = {1, 1, 1, 1},
+		}
+		wgpu.QueueWriteBuffer(
+			renderer.queue,
+			renderer.automatic_exposure_state_buffer,
+			0,
+			&manual_exposure,
+			size_of(manual_exposure),
+		)
+		renderer.automatic_exposure_valid = true
+		renderer.automatic_exposure_enabled = false
 	}
 
 	if resolved_camera.bloom {

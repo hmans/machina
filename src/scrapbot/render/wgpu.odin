@@ -217,6 +217,18 @@ WGPU_Temporal_Camera :: struct {
 	temporal_antialiasing: bool,
 }
 
+WGPU_Automatic_Exposure_Settings :: struct {
+	viewport: [4]f32,
+	parameters: [4]f32,
+	control: [4]f32,
+}
+#assert(size_of(WGPU_Automatic_Exposure_Settings) == 48)
+
+WGPU_Automatic_Exposure_State :: struct {
+	values: [4]f32,
+}
+#assert(size_of(WGPU_Automatic_Exposure_State) == 16)
+
 WGPU_Draw_Batch :: struct {
 	geometry: shared.Geometry_Handle,
 	material: shared.Material_Handle,
@@ -638,6 +650,7 @@ WGPU_Renderer :: struct {
 	pipeline: wgpu.RenderPipeline,
 	shadow_pipeline: wgpu.RenderPipeline,
 	post_shader: wgpu.ShaderModule,
+	automatic_exposure_shader: wgpu.ShaderModule,
 	temporal_aa_shader: wgpu.ShaderModule,
 	ambient_occlusion_shader: wgpu.ShaderModule,
 	composite_shader: wgpu.ShaderModule,
@@ -663,6 +676,14 @@ WGPU_Renderer :: struct {
 	temporal_sample_index: u64,
 	temporal_history_valid: bool,
 	temporal_camera_valid: bool,
+	automatic_exposure_bind_group_layout: wgpu.BindGroupLayout,
+	automatic_exposure_pipeline_layout: wgpu.PipelineLayout,
+	automatic_exposure_pipeline: wgpu.ComputePipeline,
+	automatic_exposure_settings_buffer: wgpu.Buffer,
+	automatic_exposure_state_buffer: wgpu.Buffer,
+	automatic_exposure_bind_group: wgpu.BindGroup,
+	automatic_exposure_valid: bool,
+	automatic_exposure_enabled: bool,
 	ambient_occlusion_bind_group_layout: wgpu.BindGroupLayout,
 	ambient_occlusion_pipeline_layout: wgpu.PipelineLayout,
 	ambient_occlusion_pipeline: wgpu.ComputePipeline,
@@ -1678,6 +1699,7 @@ wgpu_encode_render_pass :: proc(
 	config: ^Run_Config,
 	label: string,
 	target_width, target_height: u32,
+	delta_time: f32,
 ) -> string {
 	world_start := time.tick_now()
 	if err := wgpu_sync_ui_fonts(renderer, registry); err != "" { return err }
@@ -1831,6 +1853,7 @@ wgpu_encode_render_pass :: proc(
 		renderer.render_list.camera.camera,
 		renderer.render_list.has_camera,
 		world,
+		delta_time,
 	); err != "" {
 		return err
 	}
@@ -2456,6 +2479,7 @@ wgpu_draw_frame :: proc(
 		"Scrapbot Geometry Pass",
 		renderer.width,
 		renderer.height,
+		delta_time,
 	); err != "" {
 		return false, false, err
 	}
@@ -2648,6 +2672,7 @@ wgpu_render_offscreen_frame :: proc(
 		"Scrapbot Headless Geometry Pass",
 		width,
 		height,
+		1.0 / 60.0,
 	); err != "" {
 		return err
 	}

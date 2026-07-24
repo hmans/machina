@@ -469,6 +469,10 @@ WGPU_POST_PROCESS_SHADER :: `
 @group(0) @binding(0) var source_texture: texture_2d<f32>;
 @group(0) @binding(1) var linear_sampler: sampler;
 @group(0) @binding(2) var destination_texture: texture_storage_2d<rgba16float, write>;
+struct Automatic_Exposure_State {
+	values: vec4<f32>,
+};
+@group(0) @binding(3) var<storage, read> automatic_exposure: Automatic_Exposure_State;
 
 fn tent_sample(uv: vec2<f32>) -> vec3<f32> {
 	let texel = 1.0 / vec2<f32>(textureDimensions(source_texture));
@@ -490,7 +494,7 @@ fn bright_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 	if (invocation.x >= dimensions.x || invocation.y >= dimensions.y) {
 		return;
 	}
-	let color = tent_sample(destination_uv(invocation.xy));
+	let color = tent_sample(destination_uv(invocation.xy)) * automatic_exposure.values.x;
 	let brightness = max(color.r, max(color.g, color.b));
 	let knee = 0.5;
 	let soft = clamp(brightness - 1.0 + knee, 0.0, 2.0 * knee);
@@ -517,6 +521,73 @@ fn downsample_cs(@builtin(global_invocation_id) invocation: vec3<u32>) {
 	color += textureSampleLevel(source_texture, linear_sampler, uv + vec2<f32>( texel.x, -texel.y), 0.0).rgb * 0.08;
 	color += textureSampleLevel(source_texture, linear_sampler, uv + vec2<f32>(-texel.x, -texel.y), 0.0).rgb * 0.08;
 	textureStore(destination_texture, vec2<i32>(invocation.xy), vec4<f32>(color, 1.0));
+}
+`
+
+WGPU_AUTOMATIC_EXPOSURE_SHADER :: `
+struct Automatic_Exposure_Settings {
+	viewport: vec4<f32>,
+	parameters: vec4<f32>,
+	control: vec4<f32>,
+};
+
+struct Automatic_Exposure_State {
+	values: vec4<f32>,
+};
+
+@group(0) @binding(0) var source_texture: texture_2d<f32>;
+@group(0) @binding(1) var<uniform> settings: Automatic_Exposure_Settings;
+@group(0) @binding(2) var<storage, read_write> exposure: Automatic_Exposure_State;
+
+var<workgroup> log_luminance_samples: array<f32, 256>;
+
+@compute @workgroup_size(256)
+fn automatic_exposure_cs(
+	@builtin(local_invocation_index) local_index: u32,
+) {
+	let grid = vec2<u32>(local_index & 15u, local_index >> 4u);
+	let grid_uv = (vec2<f32>(grid) + vec2<f32>(0.5)) / 16.0;
+	let dimensions = vec2<i32>(textureDimensions(source_texture));
+	let sample_position = clamp(
+		vec2<i32>(settings.viewport.xy + grid_uv * settings.viewport.zw),
+		vec2<i32>(0),
+		dimensions - vec2<i32>(1),
+	);
+	let color = max(textureLoad(source_texture, sample_position, 0).rgb, vec3<f32>(0.0));
+	let luminance = max(dot(color, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.0001);
+	log_luminance_samples[local_index] = clamp(log2(luminance), -16.0, 16.0);
+	workgroupBarrier();
+
+	var stride = 128u;
+	loop {
+		if (local_index < stride) {
+			log_luminance_samples[local_index] +=
+				log_luminance_samples[local_index + stride];
+		}
+		workgroupBarrier();
+		if (stride == 1u) {
+			break;
+		}
+		stride = stride >> 1u;
+	}
+
+	if (local_index == 0u) {
+		let average_luminance = exp2(log_luminance_samples[0] / 256.0);
+		let target_exposure = clamp(
+			settings.control.w * settings.control.y / max(average_luminance, 0.0001),
+			settings.parameters.x,
+			settings.parameters.y,
+		);
+		let reset = settings.control.z > 0.5;
+		let adaptation =
+			1.0 - exp(-settings.parameters.z * max(settings.parameters.w, 0.0));
+		let adapted = select(
+			mix(exposure.values.x, target_exposure, adaptation),
+			target_exposure,
+			reset,
+		);
+		exposure.values = vec4<f32>(adapted, average_luminance, target_exposure, 1.0);
+	}
 }
 `
 
@@ -1567,6 +1638,10 @@ WGPU_COMPOSITE_SHADER :: `
 @group(0) @binding(4) var bloom_2: texture_2d<f32>;
 @group(0) @binding(5) var bloom_3: texture_2d<f32>;
 @group(0) @binding(6) var bloom_4: texture_2d<f32>;
+struct Automatic_Exposure_State {
+	values: vec4<f32>,
+};
+@group(0) @binding(7) var<storage, read> automatic_exposure: Automatic_Exposure_State;
 
 struct Fullscreen_Output {
 	@builtin(position) position: vec4<f32>,
@@ -1631,7 +1706,9 @@ fn composite_fs(input: Fullscreen_Output) -> @location(0) vec4<f32> {
 	bloom += textureSample(bloom_3, linear_sampler, input.uv).rgb * 0.13;
 	bloom += textureSample(bloom_4, linear_sampler, input.uv).rgb * 0.07;
 	let resolved = textureSample(hdr_texture, linear_sampler, input.uv);
-	let hdr = resolved.rgb + bloom * (0.8 * resolved.a);
+	let hdr =
+		resolved.rgb * automatic_exposure.values.x +
+		bloom * (0.8 * resolved.a);
 	return vec4<f32>(presentation_dither(aces(hdr), input.position.xy), 1.0);
 }
 `

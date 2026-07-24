@@ -95,14 +95,22 @@ Parent UUIDs must resolve to another entity with a Transform and may not form a 
 | `fov` | number | Vertical field of view in degrees. The editor constrains authored values to 1–179. |
 | `near` | number | Positive near clipping plane. |
 | `far` | number | Far clipping plane, greater than `near`. |
-| `exposure` | number | Positive linear camera-exposure multiplier. Defaults to `1` and multiplies project render exposure. |
+| `exposure` | number | Positive linear exposure multiplier. Defaults to `1`; it is fixed exposure when automatic exposure is off and compensation when it is on. |
+| `automatic_exposure` | boolean | Enables GPU-resident, viewport-scoped luminance metering and adaptation. Defaults to `false`. |
+| `automatic_exposure_min` | number | Positive minimum automatic exposure. Defaults to `0.125`. |
+| `automatic_exposure_max` | number | Maximum automatic exposure, at least the minimum. Defaults to `8`. |
+| `automatic_exposure_speed` | number | Positive adaptation rate in inverse seconds. Defaults to `2`. |
 | `temporal_antialiasing` | boolean | Enables projection jitter and retained depth-aware temporal resolution. Defaults to `true`. |
 | `fast_antialiasing` | boolean | Enables a lightweight current-frame fullscreen edge filter when temporal antialiasing is disabled. Defaults to `false`; TAA takes precedence when both are enabled. |
 | `ambient_occlusion` | boolean | Enables half-resolution, thickness-aware visibility-bitmask ambient occlusion with mapped surface normals, joint depth/normal filtering, and indirect-diffuse-only composition. Defaults to `true`. |
 | `screen_space_reflections` | boolean | Enables material-aware screen-space reflections for sufficiently smooth visible surfaces. Defaults to `false`. |
 | `bloom` | boolean | Enables the five-level HDR bloom pyramid. Defaults to `true`. |
 
-The camera reads position and orientation from a Transform on the same entity. The active camera's exposure and render-feature switches control that rendered view, including while an editor fly camera supplies the editor viewport's pose. SSR ray-marches the current frame's HDR color, depth, and material surface data; as a screen-space effect, it cannot reflect off-screen or occluded objects and fades uncertain, rough, distant, and screen-edge hits. Disabling AO, SSR, or bloom skips their compute work; disabling TAA removes jitter and history copies. Luau queries expose and may write the complete payload when the system declares `scrapbot.camera` in `writes`.
+The camera reads position and orientation from a Transform on the same entity. The active camera's exposure and render-feature switches control that rendered view, including while an editor fly camera supplies the editor viewport's pose.
+
+Automatic exposure samples only the active rendered viewport—not editor chrome—and adapts one persistent GPU exposure value without a CPU readback. Bloom and final composition consume the same value. Disabling it skips the metering dispatch and preserves the fixed-exposure path.
+
+SSR ray-marches the current frame's HDR color, depth, and material surface data. As a screen-space effect, it cannot reflect off-screen or occluded objects and fades uncertain, rough, distant, and screen-edge hits. Disabling AO, SSR, or bloom skips their compute work; disabling TAA removes jitter and history copies. Luau queries expose and may write the complete payload when the system declares `scrapbot.camera` in `writes`.
 
 ### `scrapbot.world_environment`
 

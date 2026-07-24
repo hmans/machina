@@ -58,6 +58,10 @@ test_scene_camera_serialization_persists_render_features :: proc(t: ^testing.T) 
 	camera := shared.camera_defaults()
 	camera.far = 100
 	camera.exposure = 1.5
+	camera.automatic_exposure = true
+	camera.automatic_exposure_min = 0.25
+	camera.automatic_exposure_max = 6
+	camera.automatic_exposure_speed = 3
 	camera.temporal_antialiasing = false
 	camera.fast_antialiasing = true
 	camera.ambient_occlusion = false
@@ -72,6 +76,10 @@ test_scene_camera_serialization_persists_render_features :: proc(t: ^testing.T) 
 	write_scene_entity(&builder, &entity)
 	serialized := strings.to_string(builder)
 	testing.expect(t, strings.contains(serialized, "exposure = 1.5"))
+	testing.expect(t, strings.contains(serialized, "automatic_exposure = true"))
+	testing.expect(t, strings.contains(serialized, "automatic_exposure_min = 0.25"))
+	testing.expect(t, strings.contains(serialized, "automatic_exposure_max = 6"))
+	testing.expect(t, strings.contains(serialized, "automatic_exposure_speed = 3"))
 	testing.expect(t, strings.contains(serialized, "temporal_antialiasing = false"))
 	testing.expect(t, strings.contains(serialized, "fast_antialiasing = true"))
 	testing.expect(t, strings.contains(serialized, "ambient_occlusion = false"))

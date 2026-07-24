@@ -502,6 +502,9 @@ wgpu_sync_environment :: proc(
 	camera_exposure := f32(1)
 	if render_list != nil && render_list.has_camera {
 		camera_exposure = shared.camera_exposure(render_list.camera.camera)
+		if render_list.camera.camera.automatic_exposure {
+			camera_exposure = 1
+		}
 	}
 	if math.is_nan(camera_exposure) || math.is_inf(camera_exposure) || camera_exposure <= 0 {
 		camera_exposure = 1

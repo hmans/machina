@@ -19,7 +19,7 @@ Lifecycle meanings:
 | `scrapbot.keyboard_input` | Runtime input | Derived | Read-only | Singleton per-frame keyboard held/pressed/released snapshot; scheduler-visible and not entity-attached. |
 | `scrapbot.pointer_input` | Runtime input | Derived | Read-only | Singleton per-frame pointer position/delta/wheel/button snapshot; scheduler-visible and not entity-attached. |
 | `scrapbot.transform` | Spatial | Authored | Yes | UUID-parented local position, rotation, and scale; source for resolved world transforms. |
-| `scrapbot.camera` | Spatial/render | Authored | Yes | Selects camera projection, linear exposure, and per-view TAA/fast-AA/AO/SSR/bloom policy; project camera is distinct from the editor fly camera. |
+| `scrapbot.camera` | Spatial/render | Authored | Yes | Selects camera projection, fixed or GPU-adaptive exposure, and per-view TAA/fast-AA/AO/SSR/bloom policy; project camera is distinct from the editor fly camera. |
 | `scrapbot.world_environment` | Environment/render | Authored | Yes | Singleton scene selection for imported lighting, procedural or imported sky presentation, and base exposure. |
 | `scrapbot.volumetric_fog` | Environment/render | Authored | Yes | Singleton global height/distance medium with ambient, shadowed directional, and clustered point-light scattering. |
 | `scrapbot.ambient_light` | Lighting | Authored | Yes | Compact scene-wide ambient light input. |
@@ -86,11 +86,11 @@ These entries deliberately omit exhaustive field/default documentation. Follow t
 
 ### `scrapbot.camera`
 
-- **Contract:** Perspective projection, positive linear exposure, and per-view temporal-AA, fast-AA, ambient-occlusion, screen-space-reflection, and bloom switches attached to an entity whose Transform supplies the project-camera pose. TAA takes precedence over fast AA. Zero-valued legacy/programmatic components use an effective exposure of `1`; authored TOML defaults TAA/AO/bloom on and fast AA/SSR off.
+- **Contract:** Perspective projection, positive fixed exposure or opt-in GPU-adaptive exposure, and per-view temporal-AA, fast-AA, ambient-occlusion, screen-space-reflection, and bloom switches attached to an entity whose Transform supplies the project-camera pose. Automatic exposure clamps to authored positive bounds, adapts at an authored positive inverse-seconds rate, and treats manual exposure as compensation. TAA takes precedence over fast AA. Zero-valued legacy/programmatic components normalize to fixed exposure `1`, automatic bounds `0.125`–`8`, and speed `2`; authored TOML defaults automatic exposure off, TAA/AO/bloom on, and fast AA/SSR off.
 - **Storage/lifecycle:** Dedicated typed ECS storage; authored.
 - **Producers:** Scene loading, editor/component authoring, validated Luau query writeback, and native membership commands.
-- **Consumers:** Active-camera selection, render-view construction, postprocess dispatch/jitter/history policy, global environment/exposure uniform, visible-sky ray construction, editor camera mesh/frustum visualization, and scene picking.
-- **Invalidation:** Membership is structural; projection, exposure, render-feature, or Transform changes update compact camera input. Exposure changes rewrite only the environment uniform. TAA mode changes reject temporal history; disabled AO/SSR/bloom skip their compute work. The editor fly camera contributes pose/lens while inheriting the active project camera's render-feature policy.
+- **Consumers:** Active-camera selection, render-view construction, postprocess dispatch/jitter/history/exposure policy, global environment uniform, visible-sky ray construction, editor camera mesh/frustum visualization, and scene picking.
+- **Invalidation:** Membership is structural; projection, exposure, render-feature, or Transform changes update compact camera input. Fixed exposure changes rewrite only the environment uniform. Automatic exposure uses a persistent GPU scalar and one bounded metering dispatch per enabled frame; disabling it restores scalar `1` once and performs no metering work. TAA mode changes reject temporal history; disabled AO/SSR/bloom skip their compute work. The editor fly camera contributes pose/lens while inheriting the active project camera's render-feature policy.
 - **Surfaces:** Public in scene TOML, generated Luau query data/writeback, automatic editor inspection/history, and persistence; native Odin currently exposes membership. See the [public component reference](../../docs-website/src/content/docs/reference/components.md#scrapbotcamera).
 - **Source/tests:** `ecs/world.odin`, `render/render.odin`, `render/camera_visualizer.odin`; `render/camera_visualizer_test.odin`, `render/render_test.odin`.
 

@@ -819,6 +819,14 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 						current.camera.far, found = parse_f32(value)
 					case "exposure":
 						current.camera.exposure, found = parse_f32(value)
+					case "automatic_exposure":
+						current.camera.automatic_exposure, found = parse_bool(value)
+					case "automatic_exposure_min":
+						current.camera.automatic_exposure_min, found = parse_f32(value)
+					case "automatic_exposure_max":
+						current.camera.automatic_exposure_max, found = parse_f32(value)
+					case "automatic_exposure_speed":
+						current.camera.automatic_exposure_speed, found = parse_f32(value)
 					case "temporal_antialiasing":
 						current.camera.temporal_antialiasing, found = parse_bool(value)
 					case "fast_antialiasing":
@@ -1471,11 +1479,25 @@ parse_scene :: proc(source: string) -> (scene: Scene, result: Parse_Result) {
 		}
 		if entity.has_camera {
 			exposure := entity.camera.exposure
-			if math.is_nan(exposure) || math.is_inf(exposure) || exposure <= 0 {
+			automatic_exposure_min := shared.camera_automatic_exposure_min(entity.camera)
+			automatic_exposure_max := shared.camera_automatic_exposure_max(entity.camera)
+			automatic_exposure_speed := shared.camera_automatic_exposure_speed(entity.camera)
+			if math.is_nan(exposure) ||
+			   math.is_inf(exposure) ||
+			   exposure <= 0 ||
+			   math.is_nan(automatic_exposure_min) ||
+			   math.is_inf(automatic_exposure_min) ||
+			   automatic_exposure_min <= 0 ||
+			   math.is_nan(automatic_exposure_max) ||
+			   math.is_inf(automatic_exposure_max) ||
+			   automatic_exposure_max < automatic_exposure_min ||
+			   math.is_nan(automatic_exposure_speed) ||
+			   math.is_inf(automatic_exposure_speed) ||
+			   automatic_exposure_speed <= 0 {
 				return scene, fail(
 					.Invalid_Field,
 					fmt.tprintf(
-						"camera exposure on '%s' must be finite and positive",
+						"camera exposure settings on '%s' must be finite, positive, and ordered",
 						entity.name,
 					),
 				)

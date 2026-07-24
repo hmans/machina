@@ -376,7 +376,7 @@ push_query_component_table :: proc "c" (
 		case "scrapbot.camera":
 			if entity.camera_index >= 0 && entity.camera_index < len(world.cameras) {
 				value := world.cameras[entity.camera_index]
-				lua_createtable(L, 0, 8)
+				lua_createtable(L, 0, 13)
 				lua_pushnumber(L, f64(value.fov))
 				lua_setfield(L, -2, "fov")
 				lua_pushnumber(L, f64(value.near))
@@ -385,6 +385,14 @@ push_query_component_table :: proc "c" (
 				lua_setfield(L, -2, "far")
 				lua_pushnumber(L, f64(shared.camera_exposure(value)))
 				lua_setfield(L, -2, "exposure")
+				lua_pushboolean(L, 1 if value.automatic_exposure else 0)
+				lua_setfield(L, -2, "automatic_exposure")
+				lua_pushnumber(L, f64(shared.camera_automatic_exposure_min(value)))
+				lua_setfield(L, -2, "automatic_exposure_min")
+				lua_pushnumber(L, f64(shared.camera_automatic_exposure_max(value)))
+				lua_setfield(L, -2, "automatic_exposure_max")
+				lua_pushnumber(L, f64(shared.camera_automatic_exposure_speed(value)))
+				lua_setfield(L, -2, "automatic_exposure_speed")
 				lua_pushboolean(L, 1 if value.temporal_antialiasing else 0)
 				lua_setfield(L, -2, "temporal_antialiasing")
 				lua_pushboolean(L, 1 if value.fast_antialiasing else 0)

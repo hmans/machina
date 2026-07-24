@@ -40,6 +40,26 @@ write_scene_entity :: proc(builder: ^strings.Builder, entity: ^shared.Scene_Enti
 		write_scene_value(builder, "exposure", scene_f32(shared.camera_exposure(entity.camera)))
 		write_scene_value(
 			builder,
+			"automatic_exposure",
+			scene_bool(entity.camera.automatic_exposure),
+		)
+		write_scene_value(
+			builder,
+			"automatic_exposure_min",
+			scene_f32(shared.camera_automatic_exposure_min(entity.camera)),
+		)
+		write_scene_value(
+			builder,
+			"automatic_exposure_max",
+			scene_f32(shared.camera_automatic_exposure_max(entity.camera)),
+		)
+		write_scene_value(
+			builder,
+			"automatic_exposure_speed",
+			scene_f32(shared.camera_automatic_exposure_speed(entity.camera)),
+		)
+		write_scene_value(
+			builder,
 			"temporal_antialiasing",
 			scene_bool(entity.camera.temporal_antialiasing),
 		)

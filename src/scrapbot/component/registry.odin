@@ -140,6 +140,22 @@ init_registry :: proc(registry: ^Registry) {
 			Field_Definition{name = "near", field_type = .Number},
 			Field_Definition{name = "far", field_type = .Number},
 			Field_Definition{name = "exposure", field_type = .Number},
+			Field_Definition{name = "automatic_exposure", field_type = .Bool},
+			Field_Definition {
+				name = "automatic_exposure_min",
+				field_type = .Number,
+				editor = {draggable = true, step = 0.125, has_minimum = true, minimum = 0.001},
+			},
+			Field_Definition {
+				name = "automatic_exposure_max",
+				field_type = .Number,
+				editor = {draggable = true, step = 0.25, has_minimum = true, minimum = 0.001},
+			},
+			Field_Definition {
+				name = "automatic_exposure_speed",
+				field_type = .Number,
+				editor = {draggable = true, step = 0.1, has_minimum = true, minimum = 0.001},
+			},
 			Field_Definition{name = "temporal_antialiasing", field_type = .Bool},
 			Field_Definition{name = "fast_antialiasing", field_type = .Bool},
 			Field_Definition{name = "ambient_occlusion", field_type = .Bool},

@@ -452,6 +452,11 @@ fov = 60
 scrapbot.system(Cameras, {
 	writes = { scrapbot.camera },
 }, function(time, entity, camera)
+	camera.exposure = 1.25
+	camera.automatic_exposure = true
+	camera.automatic_exposure_min = 0.5
+	camera.automatic_exposure_max = 4
+	camera.automatic_exposure_speed = 1.5
 	camera.temporal_antialiasing = false
 	camera.fast_antialiasing = true
 	camera.ambient_occlusion = false
@@ -465,6 +470,11 @@ end)
 	testing.expectf(t, result.err == "", "script registration failed: %s", result.err)
 	step_err := step_runtime(&runtime, &world, 0.5)
 	testing.expectf(t, step_err == "", "camera writeback failed: %s", step_err)
+	testing.expect_value(t, world.cameras[0].exposure, f32(1.25))
+	testing.expect(t, world.cameras[0].automatic_exposure)
+	testing.expect_value(t, world.cameras[0].automatic_exposure_min, f32(0.5))
+	testing.expect_value(t, world.cameras[0].automatic_exposure_max, f32(4))
+	testing.expect_value(t, world.cameras[0].automatic_exposure_speed, f32(1.5))
 	testing.expect(t, !world.cameras[0].temporal_antialiasing)
 	testing.expect(t, world.cameras[0].fast_antialiasing)
 	testing.expect(t, !world.cameras[0].ambient_occlusion)

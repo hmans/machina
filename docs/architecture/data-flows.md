@@ -113,7 +113,7 @@ Cameras and lights are compact frame inputs. One authored `scrapbot.world_enviro
 
 Editor mutation and validated Luau writeback update the authoritative ECS payload and bump only that entity's component revision. The `scrapbot.environment` phase retains the singleton entity and revision. It scans membership only after structural changes and copies settings only after value changes.
 
-Active-camera pose and FOV construct the background ray basis. Camera exposure multiplies world-environment exposure in the shared environment uniform. Exposure or atmosphere edits rewrite that uniform without rebuilding imported textures.
+Active-camera pose and FOV construct the background ray basis. Fixed camera exposure multiplies world-environment exposure in the shared environment uniform. Exposure or atmosphere edits rewrite that uniform without rebuilding imported textures.
 
 Backend-neutral extraction converts an above-horizon procedural sun into the first bounded directional-light input. This remains active when image-based lighting is imported separately; only an imported visible background replaces the procedural sky and its sun. WGPU then uses the ordinary GGX and cascaded-shadow paths without creating another authored entity. Below the horizon, the derived direct light disappears and both the sky and analytic environment lighting transition toward night.
 
@@ -137,7 +137,7 @@ Material revisions trigger one dependent-instance pass. WGPU replaces only that 
 
 ### Camera-selected postprocessing
 
-The active camera owns TAA, current-frame fast AA, AO, SSR, and bloom switches. The editor fly camera contributes pose and lens while inheriting this policy.
+The active camera owns fixed/automatic exposure plus TAA, current-frame fast AA, AO, SSR, and bloom switches. The editor fly camera contributes pose and lens while inheriting this policy.
 
 Global volumetric fog is scene-owned rather than camera-owned. It composes before temporal resolution and bloom, stops at scene depth or its authored distance bound, and becomes a shader no-op when absent or at zero density.
 
@@ -151,7 +151,9 @@ AO reconstructs view positions from depth. Each sample marks a constant-thicknes
 
 SSR ray-marches depth and samples confirmed current-frame HDR hits. The result feeds temporal resolution with confidence weighting.
 
-Disabling TAA removes jitter and history traffic. Disabling AO, SSR, or bloom skips that compute dispatch. These value changes never reconcile renderable membership or rebuild imported textures.
+When automatic exposure is enabled, one GPU workgroup samples 256 stratified pixels inside the active viewport, reduces their log luminance, and exponentially adapts a persistent clamped scalar. The scalar remains GPU-resident and is shared by bloom extraction and final composition. Temporal HDR history stays scene-linear.
+
+Disabling TAA removes jitter and history traffic. Disabling automatic exposure, AO, SSR, or bloom skips that compute dispatch. These value changes never reconcile renderable membership or rebuild imported textures.
 
 ## Performance diagnostics
 

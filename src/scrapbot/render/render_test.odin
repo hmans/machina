@@ -44,6 +44,29 @@ test_composite_dithers_tone_mapped_output_in_fixed_display_space :: proc(t: ^tes
 }
 
 @(test)
+test_automatic_exposure_is_gpu_resident_viewport_scoped_and_shared_by_bloom_and_composite :: proc(
+	t: ^testing.T,
+) {
+	testing.expect(t, strings.contains(WGPU_AUTOMATIC_EXPOSURE_SHADER, "@workgroup_size(256)"))
+	testing.expect(t, strings.contains(WGPU_AUTOMATIC_EXPOSURE_SHADER, "settings.viewport"))
+	testing.expect(t, strings.contains(WGPU_AUTOMATIC_EXPOSURE_SHADER, "log2(luminance)"))
+	testing.expect(
+		t,
+		strings.contains(WGPU_AUTOMATIC_EXPOSURE_SHADER, "exp2(log_luminance_samples[0]"),
+	)
+	testing.expect(
+		t,
+		strings.contains(
+			WGPU_AUTOMATIC_EXPOSURE_SHADER,
+			"settings.control.w * settings.control.y",
+		),
+	)
+	testing.expect(t, strings.contains(WGPU_AUTOMATIC_EXPOSURE_SHADER, "1.0 - exp("))
+	testing.expect(t, strings.contains(WGPU_POST_PROCESS_SHADER, "automatic_exposure.values.x"))
+	testing.expect(t, strings.contains(WGPU_COMPOSITE_SHADER, "automatic_exposure.values.x"))
+}
+
+@(test)
 test_world_shaders_filter_directional_shadows_with_a_wide_tent_kernel :: proc(t: ^testing.T) {
 	shaders := [?]string{WGPU_GPU_DRIVEN_SHADER, WGPU_RENDER_SHADER}
 	for shader in shaders {
@@ -199,6 +222,10 @@ test_wgpu_temporal_camera_continuity_rejects_cuts :: proc(t: ^testing.T) {
 @(test)
 test_camera_render_feature_defaults_preserve_current_renderer_policy :: proc(t: ^testing.T) {
 	camera := shared.camera_defaults()
+	testing.expect(t, !camera.automatic_exposure)
+	testing.expect_value(t, camera.automatic_exposure_min, f32(0.125))
+	testing.expect_value(t, camera.automatic_exposure_max, f32(8))
+	testing.expect_value(t, camera.automatic_exposure_speed, f32(2))
 	testing.expect(t, camera.temporal_antialiasing)
 	testing.expect(t, !camera.fast_antialiasing)
 	testing.expect(t, camera.ambient_occlusion)

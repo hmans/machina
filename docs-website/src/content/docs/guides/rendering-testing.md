@@ -87,7 +87,9 @@ When TAA is off, the renderer removes projection jitter and history traffic. Opt
 
 The primary directional light uses four stabilized shadow cascades. Opaque receivers resolve each cascade with a wider tent-weighted filter and blend across cascade boundaries; volumetric fog uses a cheaper filtered lookup at every ray-march step.
 
-World-environment and active-camera exposure multiply together. Enabled bloom builds five bright-pass levels before one ACES-style tone-map pass presents through an sRGB target. A fixed screen-space sub-LSB dither breaks up 8-bit bands in smooth sky and fog gradients without introducing a temporally changing pattern.
+World-environment and active-camera exposure multiply together. A camera may instead enable automatic exposure: one GPU workgroup meters 256 viewport-stratified log-luminance samples, clamps the target, and exponentially adapts a persistent GPU scalar. There is no CPU readback or synchronization point. The manual camera exposure becomes compensation, and both bloom extraction and final composition consume the same adapted scalar.
+
+Enabled bloom builds five bright-pass levels before one ACES-style tone-map pass presents through an sRGB target. A fixed screen-space sub-LSB dither breaks up 8-bit bands in smooth sky and fog gradients without introducing a temporally changing pattern.
 
 Disabled AO, SSR, and bloom skip their compute dispatches. Project UI, gizmos, and editor chrome render afterward, so world postprocessing never softens text or controls.
 

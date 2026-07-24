@@ -600,6 +600,22 @@ far = 100
 	defer destroy_scene(&default_exposure)
 	testing.expect(t, default_result.err == .None)
 	testing.expect_value(t, default_exposure.entities[0].camera.exposure, f32(1))
+	testing.expect(t, !default_exposure.entities[0].camera.automatic_exposure)
+	testing.expect_value(
+		t,
+		shared.camera_automatic_exposure_min(default_exposure.entities[0].camera),
+		f32(0.125),
+	)
+	testing.expect_value(
+		t,
+		shared.camera_automatic_exposure_max(default_exposure.entities[0].camera),
+		f32(8),
+	)
+	testing.expect_value(
+		t,
+		shared.camera_automatic_exposure_speed(default_exposure.entities[0].camera),
+		f32(2),
+	)
 	testing.expect(t, default_exposure.entities[0].camera.temporal_antialiasing)
 	testing.expect(t, !default_exposure.entities[0].camera.fast_antialiasing)
 	testing.expect(t, default_exposure.entities[0].camera.ambient_occlusion)
@@ -612,6 +628,10 @@ id = "a6000000-0000-4000-8000-000000000093"
 name = "Camera"
 
 [entities.camera]
+automatic_exposure = true
+automatic_exposure_min = 0.25
+automatic_exposure_max = 6
+automatic_exposure_speed = 1.5
 temporal_antialiasing = false
 fast_antialiasing = true
 ambient_occlusion = false
@@ -621,6 +641,10 @@ bloom = false
 	)
 	defer destroy_scene(&configured)
 	testing.expect(t, configured_result.err == .None)
+	testing.expect(t, configured.entities[0].camera.automatic_exposure)
+	testing.expect_value(t, configured.entities[0].camera.automatic_exposure_min, f32(0.25))
+	testing.expect_value(t, configured.entities[0].camera.automatic_exposure_max, f32(6))
+	testing.expect_value(t, configured.entities[0].camera.automatic_exposure_speed, f32(1.5))
 	testing.expect(t, !configured.entities[0].camera.temporal_antialiasing)
 	testing.expect(t, configured.entities[0].camera.fast_antialiasing)
 	testing.expect(t, !configured.entities[0].camera.ambient_occlusion)
@@ -638,6 +662,19 @@ exposure = 0
 	)
 	defer destroy_scene(&invalid)
 	testing.expect(t, invalid_result.err == .Invalid_Field)
+
+	invalid_range, invalid_range_result := parse_scene(
+		`[[entities]]
+id = "a6000000-0000-4000-8000-000000000094"
+name = "Camera"
+
+[entities.camera]
+automatic_exposure_min = 4
+automatic_exposure_max = 1
+`,
+	)
+	defer destroy_scene(&invalid_range)
+	testing.expect(t, invalid_range_result.err == .Invalid_Field)
 }
 
 @(test)

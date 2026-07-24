@@ -509,6 +509,34 @@ read_full_camera_table :: proc "c" (
 	if err = read_ui_number_field(L, payload_index, "exposure", &value.exposure); err != "" {
 		return
 	}
+	if err = read_ui_bool_field(L, payload_index, "automatic_exposure", &value.automatic_exposure);
+	   err != "" {
+		return
+	}
+	if err = read_ui_number_field(
+		L,
+		payload_index,
+		"automatic_exposure_min",
+		&value.automatic_exposure_min,
+	); err != "" {
+		return
+	}
+	if err = read_ui_number_field(
+		L,
+		payload_index,
+		"automatic_exposure_max",
+		&value.automatic_exposure_max,
+	); err != "" {
+		return
+	}
+	if err = read_ui_number_field(
+		L,
+		payload_index,
+		"automatic_exposure_speed",
+		&value.automatic_exposure_speed,
+	); err != "" {
+		return
+	}
 	if err = read_ui_bool_field(
 		L,
 		payload_index,
@@ -548,7 +576,16 @@ read_full_camera_table :: proc "c" (
 	   value.far <= value.near ||
 	   math.is_nan(value.exposure) ||
 	   math.is_inf(value.exposure) ||
-	   value.exposure <= 0 {
+	   value.exposure <= 0 ||
+	   math.is_nan(value.automatic_exposure_min) ||
+	   math.is_inf(value.automatic_exposure_min) ||
+	   value.automatic_exposure_min <= 0 ||
+	   math.is_nan(value.automatic_exposure_max) ||
+	   math.is_inf(value.automatic_exposure_max) ||
+	   value.automatic_exposure_max < value.automatic_exposure_min ||
+	   math.is_nan(value.automatic_exposure_speed) ||
+	   math.is_inf(value.automatic_exposure_speed) ||
+	   value.automatic_exposure_speed <= 0 {
 		return value, "invalid scrapbot.camera payload"
 	}
 	return value, ""

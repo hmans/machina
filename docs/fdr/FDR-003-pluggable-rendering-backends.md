@@ -22,6 +22,7 @@ Pluggable rendering backends allow Scrapbot to start with `wgpu-native` while ke
   - derives an above-horizon procedural sun as the first directional render light;
   - applies half-resolution, 32-sector visibility-bitmask AO only to indirect diffuse;
   - resolves TAA with camera reprojection, previous-depth rejection, and neighborhood clamping;
+  - optionally meters viewport log luminance and adapts exposure entirely on the GPU;
   - builds five bloom levels, then tone maps once into the sRGB presentation target.
 - Project UI, transform gizmos, editor-only project-camera bodies and projection frusta, and editor chrome render after world postprocessing and do not bloom.
 - Eligible entities receive internal render-instance components automatically.
@@ -116,7 +117,7 @@ The built-in indexed primitive generators cover cubes, planes, icospheres, UV sp
 
 **Decision:** Render the world into floating-point color, compact surface data, and a separate indirect-diffuse contribution.
 
-The active camera controls TAA, current-frame fast AA, half-resolution AO, SSR, and five-level bloom.
+The active camera controls fixed or automatic exposure, TAA, current-frame fast AA, half-resolution AO, SSR, and five-level bloom.
 
 One optional authored `scrapbot.volumetric_fog` component supplies a global exponential height medium. The temporal resolve integrates 16 low-discrepancy sub-step samples, rotated across its eight-frame sequence, up to scene depth or the authored distance bound. Ambient scattering is unshadowed; anisotropic primary-directional scattering uses a 2×2 UV-space filter and the same cascade transition bands as opaque geometry. Projects may independently opt clustered point lights into the medium. Absence or zero density takes a no-op branch and allocates no fog target.
 
@@ -126,9 +127,11 @@ SSR performs a bounded current-frame view-space ray march and fades uncertain, d
 
 TAA jitters the projection with an eight-sample sequence bounded to a quarter pixel. Retained color/depth history lives on a stable output grid, so camera reprojection uses unjittered matrices and removes the current sample offset before reading history. A local 2×2 depth search avoids rejecting valid subpixel history at silhouettes, while YCoCg variance clipping limits stale color. Resize, world replacement, depth replacement, camera cuts, and TAA mode changes reject history. Culling stays unjittered.
 
+Automatic exposure uses one 256-thread GPU workgroup to reduce viewport-stratified log-luminance samples and exponentially adapt a persistent clamped scalar. HDR history remains scene-linear. Bloom and final composition share the scalar, while manual camera exposure becomes compensation. There is no CPU readback.
+
 The editor fly view inherits the project camera's switches. Disabled features skip their compute or history work. Tone map once, then draw UI.
 **Why:** Architectural contacts and crevices need indirect-light grounding, participating media needs depth-aware and shadow-aware scattering, smooth materials need local reflections, bloom requires values above display white, broad halos need multiple spatial scales, subpixel geometry and texture detail need temporal supersampling, and text must remain crisp. Reusing depth supports fog bounds, AO, reflection ray intersection, and camera reprojection without another geometry pass or velocity target. See ADR-029.
-**Tradeoff:** Screen-space effects cannot see off-screen or occluded sources. SSR currently uses a fixed bounded linear march and fades rough reflections instead of tracing Hi-Z or filtering them. Camera-only temporal reprojection lacks exact motion for animated objects; previous-depth rejection and neighborhood clamping bound the resulting history error until per-object motion vectors exist. Fog is currently one global 16-step volume; each step evaluates its complete clustered point-light list, while local volumes, froxels, and quality controls remain follow-up work. Camera fields expose coarse switches, while AO/SSR/temporal/fast-AA/bloom quality and weights remain fixed engine defaults. The compute paths require storage-texture support; full-resolution surface, indirect-diffuse, reflection, color, and depth history consume additional GPU memory; and the final composite remains a fullscreen render pass. Presentation dithering uses a fixed screen-space pattern: it removes coherent 8-bit bands without temporal shimmer, at the cost of intentionally introducing sub-LSB spatial noise into tone-mapped world pixels.
+**Tradeoff:** Screen-space effects cannot see off-screen or occluded sources. SSR currently uses a fixed bounded linear march and fades rough reflections instead of tracing Hi-Z or filtering them. Camera-only temporal reprojection lacks exact motion for animated objects; previous-depth rejection and neighborhood clamping bound the resulting history error until per-object motion vectors exist. Fog is currently one global 16-step volume; each step evaluates its complete clustered point-light list, while local volumes, froxels, and quality controls remain follow-up work. Automatic exposure uses a bounded sparse meter rather than a full histogram and exposes only bounds, speed, and compensation. Camera fields expose coarse switches, while AO/SSR/temporal/fast-AA/bloom quality and weights remain fixed engine defaults. The compute paths require storage-texture support; full-resolution surface, indirect-diffuse, reflection, color, and depth history consume additional GPU memory; and the final composite remains a fullscreen render pass. Presentation dithering uses a fixed screen-space pattern: it removes coherent 8-bit bands without temporal shimmer, at the cost of intentionally introducing sub-LSB spatial noise into tone-mapped world pixels.
 
 ### 13. Keep visibility and indirect state in the backend
 
